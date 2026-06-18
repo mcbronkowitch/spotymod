@@ -23,14 +23,14 @@ inline void audio_file_name(const uint8_t slot_idx, char* out_name)
 {
     #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
     #pragma GCC diagnostic ignored "-Wuninitialized"
-    sprintf(out_name, "%s.WAV", (char*)kSlotName[slot_idx].c_str());
+    sprintf(out_name, "%s.wav", (char*)kSlotName[slot_idx].c_str());
 }
 
 inline void audio_file_path(const Deck::Ref deck, const uint8_t tape_idx, const uint8_t slot_idx, char* out_path)
 {
     sprintf(
         out_path, 
-        "/%s/%s/%s.WAV", 
+        "/%s/%s/%s.wav", 
         (char*)kRootDir.c_str(),
         (char*)kTapeName[tape_idx].c_str(),
         (char*)kSlotName[slot_idx].c_str()
@@ -87,12 +87,17 @@ void DeckStorage::previous_tape()
 void DeckStorage::_read_slots()
 {
     if (_state != State::selecting) return;
-    char audio_path[11]; // /A/G/1.WAV
+    char audio_path[11]; // /A/G/1.wav
     for (size_t i = 0; i < _slots.size(); i++) {
         audio_file_path(_deck->ref, _tape_idx, i, audio_path);
         _slots[i].is_empty = !_card->file_exists(audio_path);
     }
     _slot_idx = _tape_idx == _recent_tape_idx ? _recent_slot_idx : kNone;
+}
+
+void DeckStorage::select_slot_at(const uint8_t idx) { 
+    if (idx >= kStorageSlotCount) return;
+    _slot_idx = idx; 
 }
 
 void DeckStorage::save()
@@ -151,6 +156,10 @@ void DeckStorage::load()
     audio_file_name(_slot_idx, name);
     ad.file_name = name;
     
+    _deck->voxs().clear_cue();
+    ad.cue_points = _deck->voxs().cue_points();
+    ad.cue_count = _deck->voxs().cue_count();
+
     _card->init_read_audio(ad);
     _state = State::loading;
 }
@@ -169,7 +178,7 @@ void DeckStorage::preload()
 {
     uint8_t tape, slot;
     if (!_read_preload_source(tape, slot)) return;
-    char audio_path[11]; // /SK/G/1.WAV
+    char audio_path[11]; // /SK/G/1.wav
     audio_file_path(_deck->ref, tape, slot, audio_path);
     if (_card->file_exists(audio_path)) {
         _tape_idx = tape;
@@ -266,7 +275,7 @@ void DeckStorage::process()
             else { 
                 if (_card->notify_finish_processing()) {
                     _deck->buffer().set_rec_size(_card->size_audio());
-                    _deck->apply_start_size();
+                    if (_deck->mode() == Mode::Slice) _deck->make_grid();
                     if (!_is_preloading && Config::dynamic().is_preload_on()) _save_preload_source();
                 }
                 _is_preloading = false;

@@ -1,6 +1,5 @@
 #include "core.ui.h"
 #include "Utility/dsp.h"
-#include "config.h"
 
 using namespace spotykach;
 using namespace infrasonic;
@@ -338,6 +337,9 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     else if (_is_changing(_size_quarters[ref])) {
         _show_size_quarters(ref, default_color);
     }
+    else if (_is_changing(_pos_offset[ref])) {
+        _show_start_offset_interval(ref, default_color);
+    }
     else if (_touched.test(ref == Deck::A ? GritA : GritB)) {
         auto fx_color = grit_color(deck.fx().grit_mode());
         _show_value(_grit_intens[ref], ring, fx_color, ValueDisplay::Always);
@@ -364,14 +366,14 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     }  
     else if (!deck.is_empty()) {
         // BUFFER SEGMENT ///////////////////////////////////////////
-        auto segment_start = deck.norm_start();
+        auto segment_start = deck.voxs().norm_start();
         auto segment_size = 0.f;
         if (deck.mode() == Mode::Drift) {
-            segment_size = deck.voxs().win_spread() * .95f;
+            segment_size = deck.voxs().norm_spread() * .95f;
             segment_start -= segment_size * .5f;
         }
         else {
-            segment_size = deck.norm_size(true);  
+            segment_size = deck.voxs().norm_size();  
         }
         ring.set_segment(segment_start, segment_start + segment_size);
         // PLAYHEADS /////////////////////////////////////////////////
@@ -393,7 +395,7 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
                 // RED
                 ring.set_brightness(.6f);
                 ring.set_hex_color(kRed);
-                segment_start = deck.norm_start() - red_value * .5f;
+                segment_start = deck.voxs().norm_start() - red_value * .5f;
                 ring.set_segment(segment_start, segment_start + red_value, true);
                 if (_size[ref].in_value() > _size[ref].value()) {
                     ring.add_point(segment_start, .8f, true);
@@ -403,7 +405,7 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
                 float white_value = std::min(_size[ref].in_value(), _size[ref].value()) * .95f;
                 ring.set_brightness(.8f);
                 ring.set_hex_color(kWhite);
-                segment_start = deck.norm_start() - white_value * .5f;
+                segment_start = deck.voxs().norm_start() - white_value * .5f;
                 ring.set_segment(segment_start, segment_start + white_value, true);
             }
             else {
@@ -450,29 +452,6 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     _show_value(_env[ref], ring);
     _show_value(_env_size[ref], ring);
     _show_pitch(ref);
-
-    if (_is_changing(_poly_slice[ref])) 
-    {
-        ring.clear();
-        auto start = 0.f;
-        if (!_poly_slice[ref].is_tracking()) {
-            start = _poly_slice[ref].in_value() < .5f ? 0.f : .5f;    
-            ring.set_brightness(.6f);
-            ring.set_hex_color(kRed);
-            ring.set_segment(start, start + .495f);
-        }
-        ring.set_brightness(.6f);
-        ring.set_hex_color(kWhite);
-        if (_poly_slice[ref].value() < .5f) {
-            ring.set_segment(.2f, .3f, true);
-        }
-        else {
-            ring.set_segment(.5f, .535f, true);
-            ring.set_segment(.65f, .7f, true);
-            ring.set_segment(.825f, .855f, true);
-            ring.set_segment(.97f, 1.f, true);
-        }
-    }
     
     ring.set_updated();
 }
@@ -570,6 +549,14 @@ void CoreUI::_show_size_quarters(const Deck::Ref ref, const uint32_t color)
     for (uint8_t i = 0; i < steps; i++) {
         _ring[ref].set_point_hex_color(i % 4 ? color : kWhite);
         _ring[ref].set_point(i * 2 + 4, .7f);
+    }
+}
+void CoreUI::_show_start_offset_interval(const Deck::Ref ref, const uint32_t color)
+{  
+    auto steps = 1 + round(_pos_offset[ref].value() * kStartOffsetMaxInterval);
+    for (uint8_t i = 0; i < steps; i++) {
+        _ring[ref].set_point_hex_color(i == 0 ? kWhite : color);
+        _ring[ref].set_point(i * 3 + 4, .7f);
     }
 }
 void CoreUI::_show_error(const Deck::Ref ref)

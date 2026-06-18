@@ -5,7 +5,7 @@
 #include "hw/card.h"
 #include "hw/buffer.sdram.h"
 #include "core/deck.h"
-#include "config.h"
+#include "core/config.h"
 #include "nocopy.h"
 
 namespace spotykach {
@@ -58,7 +58,7 @@ public:
     Slot slot_at(const uint8_t idx) const { return _slots[idx]; }
     bool can_load() const { return _slot_idx != kNone && !_slots[_slot_idx].is_empty; }
     uint8_t selected_slot_idx() const { return _slot_idx; }
-    void select_slot_at(const uint8_t idx) { _slot_idx = idx; }
+    void select_slot_at(const uint8_t idx);
     void reset_recent_slot() { _recent_slot_idx = kNone; }
 
 protected:

@@ -12,9 +12,6 @@ _pattern_divider     { Divider(kPPQNIntern, Every::_32th) },
 _tempo               { 0.43f },
 _record_tempo        { 0.f },
 _start_step_kof      { 1.f },
-_norm_size           { 1.f },
-_norm_size_mod       { 0.f },
-_size_mod_on         { false },
 _in_out_mix          { .5f },
 _in_out_mix_offset   { 0.f },
 _feedback            { kDefaultFeedback },
@@ -88,10 +85,9 @@ void Deck::_set_mode(const Mode new_mode)
             g.set_speed_mode(SpeedMode::Tape);
             g.apply_speed();
             g.apply_shape();
-            g.set_snap_to_slice(false);
-            g.set_cont_start_mod(true);
-            g.set_cont_pitch_mod(true);
-            _set_size();
+            g.set_snap_to_cue(false);
+            g.set_start_mod_cont(true);
+            g.set_pitch_mod_cont(true);
             if (_needs_kickstart()) _dispatch();
             break;
 
@@ -102,11 +98,10 @@ void Deck::_set_mode(const Mode new_mode)
             g.apply_speed();
             g.apply_pitch();
             g.apply_shape();
-            g.set_snap_to_slice(true);
-            g.set_cont_start_mod(false);
-            g.set_cont_pitch_mod(false);
-            _set_grid();
-            _set_size();
+            g.set_snap_to_cue(true);
+            g.set_start_mod_cont(false);
+            g.set_pitch_mod_cont(false);
+            make_grid();
             _resolve_playhead();
             break;
         
@@ -116,10 +111,9 @@ void Deck::_set_mode(const Mode new_mode)
             g.set_speed_mode(SpeedMode::Tape);
             g.apply_speed();
             g.apply_shape();
-            g.set_snap_to_slice(false);
-            g.set_cont_start_mod(true);
-            g.set_cont_pitch_mod(true);
-            _set_size();
+            g.set_snap_to_cue(false);
+            g.set_start_mod_cont(true);
+            g.set_pitch_mod_cont(true);
             break;
 
         case Mode::None: break;
@@ -159,6 +153,7 @@ void Deck::_set_buf_armed(const bool on)
     _is_armed = on;
     if (on) {
         _buffer.clear();
+        _generator.clear_cue();
         switch (_mode) {
             case Mode::Reel: _detector.set_armed(true); break;
             case Mode::Slice: _is_record_queued = true; break;
@@ -168,7 +163,6 @@ void Deck::_set_buf_armed(const bool on)
     }
     else if (_mode == Mode::Reel || _mode == Mode::Drift) {
         _stop_recording();
-        _set_size();
     }  
 };
 void Deck::_clock_recording() 
@@ -180,8 +174,7 @@ void Deck::_clock_recording()
         else if (_is_record_queued) {
             _is_record_queued = false;
             _is_cut_queued = true;
-            _set_grid(true);
-            _set_size();
+            make_grid();
         }    
     }
     else if (_is_record_queued) {
@@ -195,7 +188,7 @@ void Deck::_start_recording()
 }
 void Deck::_stop_recording() 
 {
-    apply_start_size();
+    if (_mode == Mode::Slice) make_grid();
     _detector.set_armed(false);
     _buffer.set_recording(false);
 };
@@ -214,8 +207,7 @@ float Deck::tempo_to_fit(const float frac)
     auto bpm = 2880000 * (1 + round(frac * 15)) / _buffer.rec_size();
     _tempo = bpm;
     _record_tempo = bpm;
-    _set_grid(true);
-    _set_size();
+    make_grid();
     return bpm;
 }
 void Deck::tick(const bool common_tick, const bool is_key) 
@@ -245,94 +237,22 @@ void Deck::tick(const bool common_tick, const bool is_key)
     if (e != nullptr && e->on && (!_generator.is_suspended() || !_generator.is_generating())) {
         auto hold = true;
         if (_mode == Mode::Slice) {
-            hold = _track.is_empty() && common_tick;
+            hold = Config::dynamic().is_slice_mono(ref) || (_track.is_empty() && common_tick);
         }
         _dispatcher.event_on(e, hold);
     }
 }
 
-// Start //////////////////////////////////////////
-float Deck::norm_start() const { 
-    return _generator.start();
-}
-void Deck::set_start(const float val)
-{
-    _norm_start = val;
-    _set_start();
-}
-void Deck::_set_start() 
-{
-    _generator.set_start(_norm_start);
-}
-void Deck::set_start_mod_on(const bool on)
-{
-    if (_start_mod_on && !on) start_mod_in(0);
-    _start_mod_on = on;
-}
-void Deck::start_mod_in(const float val)
-{
-    if (!_start_mod_on) return;
-    auto norm_start_mod = std::abs(val) < 0.01 ? 0 : val;
-    _generator.set_start_offset(norm_start_mod);
-}
-
 // Size /////////////////////////////////////////
-float Deck::norm_size(const bool incl_mod) const {
-    if (_buffer.is_empty()) return 0.f;
-    switch (_mode) {
-        case Mode::Slice: 
-            if (incl_mod) return static_cast<float>(_loop_ticks) / _max_loop_ticks;
-            else return std::round(std::max(_norm_size * _max_loop_ticks, 1.f)) / _max_loop_ticks;
-        
-        default: 
-            auto size = _norm_size * _norm_size;
-            return incl_mod ? size + _norm_size_mod : size;
-    }
-}
-void Deck::set_size(const float norm_size) 
-{
-    _norm_size = std::clamp(norm_size, 0.f, 1.f);
-    _set_size();
-};
-void Deck::set_size_mod_on(const bool on) 
-{ 
-    if (_size_mod_on && !on) size_mod_in(0);
-    _size_mod_on = on;
-}
-void Deck::size_mod_in(const float val) 
-{
-    if (!_size_mod_on) return;
-    _norm_size_mod = std::abs(val) < 0.01 ? 0 : val;
-    _generator.set_size_offset(_norm_size_mod);
-    switch (_mode) {
-        case Mode::Slice:
-            _quantize_loop(std::clamp(_norm_size + _norm_size_mod, 0.f, 1.f));   
-            break;
-
-        default: break;
-    }
-}
-void Deck::_set_size()
-{
-    switch (_mode) {
-        case Mode::Slice:
-            _quantize_loop(_norm_size);
-            _generator.set_size(std::max(_norm_size, norm_size(false)));
-            break;
-
-        default: 
-            _generator.set_size(_norm_size);
-    }
-}
-void Deck::_set_grid(const bool round) 
+void Deck::make_grid()
 {   
     _record_tempo = _tempo;
     if (is_overdubbing()) return;
     auto ticks = _buffer.rec_size() * _tempo / 720000.f; //4PPQN
-    _max_loop_ticks = round ? std::round(ticks) : ticks;
+    _max_loop_ticks = _mode == Mode::Slice ? std::round(ticks) : ticks;
     _loop_tick_count = -1;
     _through_loop_ticks = -1;
-    _generator.auto_slice(_start_step_kof / _record_tempo, _max_loop_ticks * .5f); //_max_loop_ticks are in 16ths
+    _generator.auto_cue(_start_step_kof / _record_tempo, _max_loop_ticks * .5f); //_max_loop_ticks are in 16ths
 }
 void Deck::_quantize_loop(const float norm_size) 
 {
@@ -345,14 +265,7 @@ void Deck::_quantize_loop(const float norm_size)
     _loop_ticks = loop_ticks;
 }
 
-void Deck::apply_start_size()
-{
-    _set_grid(_mode == Mode::Slice);
-    _set_size();
-    _set_start();
-}
-
-// Play /..////////////////////////////////////////
+// Play /////////////////////////////////////////
 void Deck::toggle_play() 
 {   
     if (_is_playing) {
@@ -398,6 +311,7 @@ void Deck::stop()
     _is_playing = false;
     _loop_tick_count = -1;
     _through_loop_ticks = -1;
+    _generator.reset_start_offset();
     _dispatcher.all_off();
     _track.rewind();
 }
@@ -421,6 +335,11 @@ void Deck::_resolve_playhead()
 }
 
 // Render ///////////////////////////////////////////
+void Deck::prepare()
+{
+    _generator.apply_dimensions();
+    if (_mode == Mode::Slice) _quantize_loop(_generator.norm_size());
+}
 void Deck::process_out(const float in0, const float in1, float& out0, float& out1) 
 {
     float bus[2] = { 0.f, 0.f};
@@ -452,10 +371,8 @@ void Deck::process_in(const float in0, const float in1)
 
     if (_buffer.read_reset_did_cut() && _buffer.is_recording()) {
         _is_cut_queued = false;
-        _set_grid();
-        _set_size();
         switch (_mode) {
-            case Mode::Slice: _is_play_queued = true; break;
+            case Mode::Slice: make_grid(); _is_play_queued = true; break;
             default: play(); break;
         }
     }
@@ -487,10 +404,11 @@ void Deck::trigger(Event* event)
         }
         _track.add_event(event);
     }
-    if (_mode == Mode::Slice && _force_mono) {
+    auto is_mono = Config::dynamic().is_slice_mono(ref);
+    if (_mode == Mode::Slice && is_mono) {
         _loop_tick_count = 0;
     }   
-    _dispatcher.event_on(event, _mode != Mode::Slice || _force_mono);
+    _dispatcher.event_on(event, _mode != Mode::Slice || is_mono);
 };
 void Deck::clear_sequence() {
     _track.disarm(true);
@@ -541,7 +459,9 @@ const Event* Deck::_internal_event(const bool common_tick, const bool track_tick
         /* that's where the looping in Slice is happening */
         auto kickstart = _loop_tick_count < 0 || _needs_kickstart();
         if (_adjust_count) {
-            _loop_tick_count = _through_loop_ticks;
+            if (!_generator.start_offset_interval()) {
+                _loop_tick_count = _through_loop_ticks;
+            }
             _adjust_count = false;
         }
         else {

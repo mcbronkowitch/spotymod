@@ -16,6 +16,7 @@ static float snapped_speed(const float speed)
 CoreUI::CoreUI(Hardware& hw, Core& core, Settings& settings, Storage& storage):
 _hw                 { hw },
 _core               { core },
+_midi               { CoreMIDI(hw, core) },
 _settings           { settings },
 _storage            { storage },
 _calibrator         { Calibrator(hw, settings) },
@@ -25,7 +26,8 @@ _clock_led_on       { false },
 _tap_was_tapped     { false }
 {};
 
-void CoreUI::init() {
+void CoreUI::init() 
+{
     _hw.StartAdcs();
 
     _blink_timer.Init();
@@ -48,17 +50,24 @@ void CoreUI::init() {
     auto on_clock_out = std::bind(&CoreUI::_process_clock_out, this);
     _core.driver().set_on_clock_out(on_clock_out);
 
+    auto on_play = std::bind(&CoreUI::_toggle_play, this, _1, _2);
+    auto on_record = std::bind(&CoreUI::_toggle_record, this, _1, _2);
+    auto on_note = std::bind(&CoreUI::_on_midi_note_on, this, _1, _2);
+    _midi.set_on_play(on_play);
+    _midi.set_on_record(on_record);
+    _midi.set_on_note_on(on_note);
+
     _speed_map.init();
 
     for (int i = 0; i < Hardware::LED_LAST; i++) _led[i].init(i);
 };
-
 void CoreUI::_init_values()
 {
     for (auto ref: { Deck::A, Deck::B }) {
         
         auto& deck = _core.deck(ref);
-        _pos[ref].set(deck.norm_start());
+        _pos[ref].set(0.f);
+        _pos_offset[ref].set(0.f);
         _size[ref].set(1.f);
         _speed[ref].set(.5f);
         _mix[ref].set(.5f);
@@ -66,7 +75,6 @@ void CoreUI::_init_values()
         _env[ref].set(0.f);
         _env_size[ref].set(1.f);
         _win[ref].set(.2f);
-        _poly_slice[ref].set(.51f);
 
         _mod_speed[ref].set(.3f);
         _mod_amp[ref].set(0.f);
@@ -112,8 +120,8 @@ void CoreUI::process()
 
     auto& deck_a = _core.deck(Deck::A);
     auto& deck_b = _core.deck(Deck::B);
-    auto is_chord_a = deck_a.mode() == Mode::Drift;
-    auto is_chord_b = deck_b.mode() == Mode::Drift;
+    auto is_drift_a = deck_a.mode() == Mode::Drift;
+    auto is_drift_b = deck_b.mode() == Mode::Drift;
 
     auto blink = _arm_blink_timer.HasPassedMs(250);
     if (blink) _arm_blink_timer.Restart();
@@ -135,49 +143,46 @@ void CoreUI::process()
         if (_touched.test(FluxA)) {
             deck_a.fx().set_flux_fb(_flux_fb[Deck::A].value());
         }
+        else if (_touched.test(Alt)) {
+            deck_a.voxs().set_start_offset_interval(_pos_offset[Deck::A].value());
+        }
         else {
-            deck_a.set_start(_pos[Deck::A].value());
+            deck_a.voxs().set_start(_pos[Deck::A].value());
         }
     }
     if (_apply.test(Hardware::CTRL_POS_B)) {
         if (_touched.test(FluxB)) {
             deck_b.fx().set_flux_fb(_flux_fb[Deck::B].value());
         }
+        else if (_touched.test(Alt)) {
+            deck_b.voxs().set_start_offset_interval(_pos[Deck::B].value());
+        }
         else {
-            deck_b.set_start(_pos[Deck::B].value());
+            deck_b.voxs().set_start(_pos[Deck::B].value());
         }
     }
     if (_apply.test(Hardware::CTRL_ENV_A)) {
-        if (is_chord_a) deck_a.set_size(_env_size[Deck::A].value());
+        if (is_drift_a) deck_a.voxs().set_env_size(_env_size[Deck::A].value());
         deck_a.voxs().set_shape(_env[Deck::A].value());
     }
     if (_apply.test(Hardware::CTRL_ENV_B)) {
-        if (is_chord_b) deck_b.set_size(_env_size[Deck::B].value());
+        if (is_drift_b) deck_b.voxs().set_env_size(_env_size[Deck::B].value());
         deck_b.voxs().set_shape(_env[Deck::B].value());
     }
     if (_apply.test(Hardware::CTRL_SIZE_A)) {
-        if (is_chord_a) {
+        if (is_drift_a) {
             deck_a.voxs().set_win_size(_win[Deck::A].value());
-            deck_a.voxs().set_win_spread(_size[Deck::A].value());
-        }
-        else if (deck_a.mode() == Mode::Slice && _touched.test(Alt)) {
-            deck_a.set_force_mono((1.f - _poly_slice[Deck::A].value()) > .5f);
+            deck_a.voxs().set_size(_size[Deck::A].value(), _touched.test(Alt));
         }
         else {
-            deck_a.set_size(_size[Deck::A].value());
+            deck_a.voxs().set_size(_size[Deck::A].value(), _touched.test(Alt));
         }
     }
     if (_apply.test(Hardware::CTRL_SIZE_B)) {
-        if (is_chord_b) {
+        if (is_drift_b) {
             deck_b.voxs().set_win_size(_win[Deck::B].value());
-            deck_b.voxs().set_win_spread(_size[Deck::B].value());
         }
-        else if (deck_b.mode() == Mode::Slice && _touched.test(Alt)) {
-            deck_b.set_force_mono((1.f - _poly_slice[Deck::B].value()) > .5f);
-        }
-        else {
-            deck_b.set_size(_size[Deck::B].value());
-        }
+        deck_b.voxs().set_size(_size[Deck::B].value(), _touched.test(Alt));
     }
     if (_apply.test(Hardware::CTRL_PITCH_A)) {
         if (_touched.test(FluxA)) {
@@ -266,7 +271,7 @@ void CoreUI::process()
     }
 };
 
-// CV ///////////////////////////////////////
+// Inputs ........................................
 void CoreUI::read_cv() {
     auto& deck_a = _core.deck(Deck::A);
 
@@ -278,8 +283,9 @@ void CoreUI::read_cv() {
     auto cor_pos_size_mod_a = _calibrator.correct(Hardware::CV_SIZE_POS_A, pos_size_mod_a);
     cor_pos_size_mod_a = std::round(cor_pos_size_mod_a * 1000.f) / 1000.f;
 
-    deck_a.size_mod_in(cor_pos_size_mod_a);
-    deck_a.start_mod_in(cor_pos_size_mod_a);
+    deck_a.voxs().set_start_mod(cor_pos_size_mod_a);
+    deck_a.voxs().set_size_mod(cor_pos_size_mod_a);
+    
 
     auto raw_cv_a = _hw.GetControlVoltageValue(Hardware::CV_V_OCT_A);
     auto voct_a = _calibrator.correctVOctA(raw_cv_a);
@@ -295,8 +301,8 @@ void CoreUI::read_cv() {
     auto pos_size_mod_b = _hw.GetControlVoltageValue(Hardware::CV_SIZE_POS_B);
     auto cor_pos_size_mod_b = _calibrator.correct(Hardware::CV_SIZE_POS_B, pos_size_mod_b);
     cor_pos_size_mod_b = std::round(cor_pos_size_mod_b * 1000.f) / 1000.f;
-    deck_b.size_mod_in(cor_pos_size_mod_b);
-    deck_b.start_mod_in(cor_pos_size_mod_b);
+    deck_b.voxs().set_start_mod(cor_pos_size_mod_b);
+    deck_b.voxs().set_size_mod(cor_pos_size_mod_b);
 
     auto raw_cv_b = _hw.GetControlVoltageValue(Hardware::CV_V_OCT_B);
     auto voct_b = _calibrator.correctVOctB(raw_cv_b);
@@ -307,8 +313,6 @@ void CoreUI::read_cv() {
     auto cor_mix_mod = _calibrator.correct(Hardware::CV_CROSSFADE, mix_mod);
     _core.mix_mod_in(cor_mix_mod);
 }
-
-// Gate /////////////////////////////////////
 void CoreUI::process_gate_in()
 { 
     if (_storage.of(Deck::A).is_idle()) {
@@ -350,7 +354,7 @@ void CoreUI::_process_gate_out(const Deck::Ref ref)
     }
 }
 
-// Knobs ////////////////////////////////////
+// Knobs & Switches ..............................
 void CoreUI::_process_ui_queue()
 {
     auto& deck_a = _core.deck(Deck::A); 
@@ -392,8 +396,7 @@ void CoreUI::_process_ui_queue()
                                 _set_tempo_by_size(Deck::A, val);
                             }
                             else {
-                                _size[Deck::A].process(val, !is_alt_touched, changing_id_a);
-                                _poly_slice[Deck::A].process(val, is_alt_touched, changing_id_a);    
+                                _size[Deck::A].process(val, true, changing_id_a);
                                 _size_quarters[Deck::A].set(val);
                             }
                         }
@@ -409,7 +412,10 @@ void CoreUI::_process_ui_queue()
                     break;
 
                 case Hardware::CTRL_POS_A:
-                    _pos[Deck::A].process(val, !fx_a_touched, changing_id_a);
+                    _pos[Deck::A].process(val, !fx_a_touched && !is_alt_touched, changing_id_a);
+                    if (deck_a.voxs().has_cue()) {
+                        _pos_offset[Deck::A].process(val, !fx_a_touched && is_alt_touched, changing_id_a);
+                    }
                     _flux_fb[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
                     break;
 
@@ -425,7 +431,7 @@ void CoreUI::_process_ui_queue()
 
                 case Hardware::CTRL_PITCH_A: {
                     if (_storage.of(Deck::A).state() == DeckStorage::State::selecting) {
-                        _storage.of(Deck::A).select_slot_at(val * kStorageSlotCount);
+                        _storage.of(Deck::A).select_slot_at(std::round(val * (kStorageSlotCount - 1)));
                         break;
                     }
 
@@ -469,8 +475,7 @@ void CoreUI::_process_ui_queue()
                                 _set_tempo_by_size(Deck::B, val);
                             }
                             else {
-                                _size[Deck::B].process(val, !is_alt_touched, changing_id_b);
-                                _poly_slice[Deck::B].process(val, is_alt_touched, changing_id_b);
+                                _size[Deck::B].process(val, true, changing_id_b);
                                 _size_quarters[Deck::B].set(val);
                             }
                         }
@@ -486,6 +491,9 @@ void CoreUI::_process_ui_queue()
 
                 case Hardware::CTRL_POS_B:
                     _pos[Deck::B].process(val, !fx_b_touched, changing_id_b);
+                    if (deck_b.voxs().has_cue()) {
+                        _pos_offset[Deck::B].process(val, !fx_b_touched && is_alt_touched, changing_id_b);
+                    }
                     _flux_fb[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
                     break;
 
@@ -501,7 +509,7 @@ void CoreUI::_process_ui_queue()
                 
                 case Hardware::CTRL_PITCH_B: {                    
                     if (_storage.of(Deck::B).state() == DeckStorage::State::selecting) {
-                        _storage.of(Deck::B).select_slot_at(val * kStorageSlotCount);
+                        _storage.of(Deck::B).select_slot_at(std::round(val * (kStorageSlotCount - 1)));
                         break;
                     }
 
@@ -535,8 +543,6 @@ void CoreUI::_process_ui_queue()
         }
     }
 }
-
-// Switchess ////////////////////////////////
 void CoreUI::_process_switches() 
 {
     auto& deck_a = _core.deck(Deck::A);
@@ -576,8 +582,8 @@ void CoreUI::_process_switches()
     }
 
     // Size/Pos A switch
-    deck_a.set_start_mod_on(sr1.test(5) || !sr1.test(4));
-    deck_a.set_size_mod_on(sr1.test(4) || !sr1.test(5));
+    deck_a.voxs().set_start_mod_on(sr1.test(5) || !sr1.test(4));
+    deck_a.voxs().set_size_mod_on(sr1.test(4) || !sr1.test(5));
 
     // Mod B Type switch
     auto& mod_b = _core.mod(Deck::B);
@@ -603,8 +609,8 @@ void CoreUI::_process_switches()
     }
 
     // Size/Pos B switch
-    deck_b.set_start_mod_on(sr2.test(1) || !sr2.test(0));
-    deck_b.set_size_mod_on(sr2.test(0) || !sr2.test(1));
+    deck_b.voxs().set_start_mod_on(sr2.test(1) || !sr2.test(0));
+    deck_b.voxs().set_size_mod_on(sr2.test(0) || !sr2.test(1));
 
     // Manual tempo tap switch
     // Update no faster than 500Hz
@@ -653,33 +659,89 @@ void CoreUI::_process_switches()
     }
 }
 
-// Clock /////////////////////////////////////
+// Clock ..........................................
+static bool clock_state = false;
+void CoreUI::tick()
+{
+    auto&d = _core.driver();
+    auto new_state = false;
+    auto midi_state = _midi.process();
+    switch (d.source()) {
+        case Driver::Source::ts4: new_state = _hw.GetClockInputState(); break;
+        case Driver::Source::midi: new_state = midi_state; break;
+        default: break;
+    }
+    d.tick(new_state && !clock_state);
+    clock_state = new_state;
+}
 void CoreUI::_on_quarter(const bool is_key_quarter) 
 {
     _clock_led_on = true;
     _show_key_quarter = is_key_quarter;
 }
-
-// Calibration //////////////////////////////
-void CoreUI::calibrate(const bool recalibrate) {
-    _calibrator.init(recalibrate);
-}
-
-bool CoreUI::_is_changing(const MValue& value) const
-{
-    return _changing_value_id[Deck::A] == value.id() || _changing_value_id[Deck::B] == value.id();
-}
-
-void CoreUI::_reset_changing_value_id()
-{
-   _changing_value_id.fill(0);
-   _clock_source_changed = false;
-}
-
 void CoreUI::_set_tempo_by_size(const Deck::Ref ref, const float fraction)
 {
     auto bpm = _core.deck(ref).tempo_to_fit(fraction);
     auto norm = Tempo::abs_to_norm(bpm); 
     _tempo.set(norm);
     _core.driver().set_tempo_norm(norm);
+}
+void CoreUI::_process_clock_out()
+{
+    _midi.send_clock();
+}
+
+// Calibration .....................................
+void CoreUI::calibrate(const bool recalibrate) {
+    _calibrator.init(recalibrate);
+}
+
+// Track value .....................................
+bool CoreUI::_is_changing(const MValue& value) const
+{
+    return _changing_value_id[Deck::A] == value.id() || _changing_value_id[Deck::B] == value.id();
+}
+void CoreUI::_reset_changing_value_id()
+{
+   _changing_value_id.fill(0);
+   _clock_source_changed = false;
+}
+
+// Play & Record ...................................
+void CoreUI::_toggle_play(const Deck::Ref ref, const bool reverse)
+{
+    if (!_storage.of(ref).is_idle()) return;
+
+    auto& deck = _core.deck(ref);
+    deck.disarm();
+    if (deck.is_empty()) _show_empty(ref);
+    if (!deck.is_overdubbing() && (!deck.is_playing() || deck.is_reverse() == reverse)) {
+        _core.driver().toggle_play(ref);
+    }
+    deck.set_reverse(reverse);
+}
+void CoreUI::_toggle_record(const Deck::Ref ref, const bool internal)
+{
+    if (!_storage.of(ref).is_idle()) return;
+
+    auto& deck = _core.deck(ref);
+    auto src = internal ? Deck::Source::internal : Deck::Source::external;
+    _core.set_source(src, ref);
+    deck.toggle_recording();
+    _storage.of(ref).reset_recent_slot();
+}
+void CoreUI::_trigger(const Deck::Ref ref, const float speed, const bool discont) 
+{
+    auto e = make_event();
+    e.discont = discont;
+    e.p3 = speed;
+    e.p3_on = true;
+    _core.deck(ref).trigger(&e);
+    _show_gate_in(ref);
+}
+
+// MIDI ............................................
+void CoreUI::_on_midi_note_on(const Deck::Ref ref, const uint8_t num)
+{
+    _trigger(ref, _speed_map.bipolar_pitch2speed(num - 60), true);
 }

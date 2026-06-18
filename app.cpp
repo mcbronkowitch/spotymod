@@ -38,6 +38,7 @@ class AppImpl {
 
         _ui.set_lfo(out0, out1);
     }
+    Core& core() { return _core; }
     CoreUI& ui() { return _ui; }
 
     void ProcessAudio(AudioHandle::InputBuffer  in,
@@ -69,6 +70,7 @@ static int8_t leds_update_counter = 0;
 void T5Callback(void* data) 
 {
     impl.ui().process_gate_in();
+    impl.core().prepare();
     if (leds_update_counter++ == 3) {
         leds_update_counter = 0;
         impl.ui().render_leds();
@@ -130,6 +132,7 @@ void AppImpl::Init()
 
     StartT5Callback(T5Callback, 250);
 
+    
     _hw.StartDAC(DACCallback);
 
     auto& audio = _hw.seed.audio_handle;
@@ -157,7 +160,6 @@ void AppImpl::Loop()
         }
 
         _ui.process();
-        _core.prepare();
         #ifdef STORAGE
         _storage.process();
         #endif
