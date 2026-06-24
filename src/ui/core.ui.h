@@ -82,6 +82,7 @@ private:
     void _toggle_record(const Deck::Ref, const bool internal);
     void _trigger(const Deck::Ref, const float speed, const bool discont = false);
     void _on_midi_note_on(const Deck::Ref, const uint8_t num);
+    void _on_midi_cc(const Deck::Ref, const CC, const float);
 
     // LEDs ...............................................
     void _draw_leds();

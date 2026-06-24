@@ -53,9 +53,11 @@ void CoreUI::init()
     auto on_play = std::bind(&CoreUI::_toggle_play, this, _1, _2);
     auto on_record = std::bind(&CoreUI::_toggle_record, this, _1, _2);
     auto on_note = std::bind(&CoreUI::_on_midi_note_on, this, _1, _2);
+    auto on_cc = std::bind(&CoreUI::_on_midi_cc, this, _1, _2, _3);
     _midi.set_on_play(on_play);
     _midi.set_on_record(on_record);
     _midi.set_on_note_on(on_note);
+    _midi.set_on_cc(on_cc);
 
     _speed_map.init();
 
@@ -754,4 +756,32 @@ void CoreUI::_trigger(const Deck::Ref ref, const float speed, const bool discont
 void CoreUI::_on_midi_note_on(const Deck::Ref ref, const uint8_t num)
 {
     _trigger(ref, _speed_map.bipolar_pitch2speed(num - 60), true);
+}
+void CoreUI::_on_midi_cc(const Deck::Ref ref, const CC cc, const float val)
+{
+    switch (cc) {
+        case CC::CrossFade: break;
+        case CC::Start: {
+            _pos[ref].set(val);
+            _apply.set(ref == Deck::A ? Hardware::CTRL_POS_A : Hardware::CTRL_POS_B);
+            break;
+        }
+        case CC::Size: break;
+        case CC::Env: break;
+        case CC::Pitch: break;
+        case CC::IOMix: break;
+        case CC::DeckFB: break;
+        case CC::EnvSize: break;
+        case CC::WinSize: break;
+        case CC::ModCycle: break;
+        case CC::ModGlow: break;
+        case CC::GritOn: break;
+        case CC::GritIntens: break;
+        case CC::GritMix: break;
+        case CC::FluxOn: break;
+        case CC::FluxIntes: break;
+        case CC::FluxFB: break;
+        case CC::FluxMix: break;
+        default: break;
+    }
 }

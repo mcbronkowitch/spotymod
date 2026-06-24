@@ -112,40 +112,24 @@ void CoreMIDI::_process_cc(daisy::ControlChangeEvent& event)
     auto& c = Config::dynamic();
     if (event.channel == c.midi_channel(Deck::A)) ref = Deck::A;
     else if (event.channel == c.midi_channel(Deck::B)) ref = Deck::B;
-
     switch (event.control_number) {
-        case CC::CrossFade: break;
-        case CC::RecExt: if (event.value > 0) _handle_record(ref, false); break;
-        case CC::RecInt: if (event.value > 0) _handle_record(ref, true); break;
-        case CC::Start: break;
-        case CC::Size: break;
-        case CC::Env: break;
-        case CC::Pitch: break;
-        case CC::IOMix: break;
-        case CC::DeckFB: break;
-        case CC::EnvSize: break;
-        case CC::WinSize: break;
-        case CC::Fwd: if (event.value > 0) _handle_play(ref, false); break;
-        case CC::Rev: if (event.value > 0) _handle_play(ref, true); break;
-        case CC::ModCycle: break;
-        case CC::ModGlow: break;
-        case CC::GritOn: break;
-        case CC::GritIntens: break;
-        case CC::GritMix: break;
-        case CC::FluxOn: break;
-        case CC::FluxIntes: break;
-        case CC::FluxFB: break;
-        case CC::FluxMix: break;
-        default: break;
+        case CC::RecExt: {
+            if (event.value > 0 && _on_record) _on_record(ref, false); 
+            break;
+        }
+        case CC::RecInt: {
+            if (event.value > 0 && _on_record) _on_record(ref, true); 
+            break;
+        }
+        case CC::Fwd: {
+            if (event.value > 0 && _on_play) _on_play(ref, false); 
+            break;
+        }
+        case CC::Rev: {
+            if (event.value > 0 && _on_play) _on_play(ref, true); 
+            break;
+        }
+        default: 
+            if (_on_cc) _on_cc(ref, (CC)event.control_number, event.value / 127.f);
     }
-
-}
-void CoreMIDI::_handle_play(const Deck::Ref ref, const bool reverse)
-{
-    if (_on_play) _on_play(ref, reverse);
-}
- 
-void CoreMIDI::_handle_record(const Deck::Ref ref, const bool internal)
-{
-    if (_on_record) _on_record(ref, internal);
 }
