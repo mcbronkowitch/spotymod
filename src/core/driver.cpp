@@ -56,14 +56,31 @@ void Driver::toggle_source()
         }
     }
     _clock.Run();
+    _reset_timer.Restart();
 }
 
 void Driver::tick(const bool external_tick) 
 {
-    _clock.Tick(external_tick);
-
-    if (_clock.ExternalClock()) return;
-    _clock.SetTempo(_tempo.bpm());
+    if (external_tick) {
+        if (!_clock.IsRunning()) {
+            _clock.Run();
+        }
+        _reset_timer.Restart();
+        _clock.Tick(true);
+    }
+    else {
+        // 1 second is chosen because the maximum expected interval between 
+        // ticks at 4PPQN = 60000 / 20bpm / 4PPQN = 750ms. If more - we consider
+        // there's no clock coming in.
+        if (_clock.ExternalClock() && _reset_timer.HasPassedMs(1000)) {
+            _clock.Stop();
+            _divider_reset_counts(true);
+        }
+        else {
+            _clock.Tick(false);
+            _clock.SetTempo(_tempo.bpm());
+        }
+    }
 };
 
 void Driver::toggle_play(Deck::Ref deck) {    
@@ -117,7 +134,7 @@ void Driver::reset()
 
 void Driver::_divider_reset_counts(const bool force)
 {
-    if (_reset_timer.HasPassedUs(4000/*4ms*/) || force) { 
+    if (_reset_timer.HasPassedMs(4) || force) { 
         //The clock is stopped or we're long after the tick, 
         // so the next one will be the key
         _key_tick_count = 0;
