@@ -130,6 +130,6 @@ void CoreMIDI::_process_cc(daisy::ControlChangeEvent& event)
             break;
         }
         default: 
-            if (_on_cc) _on_cc(ref, (CC)event.control_number, event.value / 127.f);
+            if (_on_cc) _on_cc(ref, (CC)event.control_number, std::clamp(event.value / 127.f, 0.f, 1.f));
     }
 }
