@@ -173,9 +173,11 @@ private:
     std::array<MValue, Deck::Count> _grit_intens;
     std::array<MValue, Deck::Count>_flux_fb;
     
+    
+    std::array<float, Deck::Count> _pitch_knob_val;
+    std::array<MValue, Deck::Count> _speed;
     std::array<MValue, Deck::Count> _mix;
     std::array<MValue, Deck::Count> _feedback;
-    std::array<MValue, Deck::Count> _speed;
     std::array<MValue, Deck::Count> _pos;
     std::array<MValue, Deck::Count> _pos_offset;
     std::array<MValue, Deck::Count> _size;

@@ -198,6 +198,7 @@ void CoreUI::process()
             }
             if (deck_a.mode() == Mode::Slice) deck_a.voxs().set_pitch(speed_a);
             else deck_a.voxs().set_speed(speed_a);
+            _pitch_knob_val[Deck::A] = speed_a;
         }
     }
     if (_apply.test(Hardware::CTRL_PITCH_B)) {
@@ -214,6 +215,7 @@ void CoreUI::process()
             }
             if (deck_b.mode() == Mode::Slice) deck_b.voxs().set_pitch(speed_b);
             else deck_b.voxs().set_speed(speed_b);
+            _pitch_knob_val[Deck::B] = speed_b;
         }
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_A)) {
@@ -268,6 +270,14 @@ void CoreUI::process()
     _apply.reset();
     if ((!_tap_hold.passed() && !_touched.test(Alt)) && _value_display_timeout.is_passed()) {
         _reset_changing_value_id();
+
+        // Re-apply quantized pitch knob value
+        for (auto d: { Deck::A, Deck::B }) {
+            if (_pitch_quantized.test(d)) {
+                _speed[d].set(_pitch_knob_val[d]);
+                _pitch_quantized.reset(d);
+            }
+        }
     }
 };
 
