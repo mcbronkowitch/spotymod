@@ -15,41 +15,60 @@ _core   { core }
 void CoreMIDI::send_clock()
 {
     _hw.midi_uart.EnqueueMessage(MidiTxMessage::SystemRealtimeClock());
+    _hw.midi_usb.EnqueueMessage(MidiTxMessage::SystemRealtimeClock());
 }
 
 bool CoreMIDI::process()
 {
-    _hw.midi_uart.Listen();
     bool has_clock = false;
-    while(_hw.midi_uart.HasEvents())
-    {
+
+    _hw.midi_uart.Listen();
+    while(_hw.midi_uart.HasEvents()) {
         auto event = _hw.midi_uart.PopEvent();
-        switch(event.type)
-        {
-            case MidiMessageType::SystemRealTime: {
-                has_clock = _process_realtime(event) || has_clock; 
-            }
-            break;
-            
-            case MidiMessageType::NoteOn: {
-                auto e = event.AsNoteOn();
-                _process_note_on(e);
-            }
-            break;
-
-            case MidiMessageType::ControlChange: {
-                auto e = event.AsControlChange();
-                _process_cc(e);
-            }
-
-            default: break;
-        }
+        has_clock = _process_event(event) || has_clock;
     }
+
+    #ifndef DEBUG
+    _hw.midi_usb.Listen();
+    while(_hw.midi_usb.HasEvents()) {
+        auto event = _hw.midi_usb.PopEvent();
+        has_clock = _process_event(event) || has_clock;
+    }
+    #endif
+
     // Modified libDaisy MIDI handlers require explicit call to transmit
     // enqueued messages instead of blocking every time a message is sent
     _hw.midi_uart.TransmitEnqueuedMessages();
+    #ifndef DEBUG
+    _hw.midi_usb.TransmitEnqueuedMessages();
+    #endif
+    
     return has_clock;
 }
+bool CoreMIDI::_process_event(daisy::MidiEvent& event)
+{
+    switch(event.type) {
+        case MidiMessageType::SystemRealTime: {
+            return _process_realtime(event); 
+        }
+        
+        case MidiMessageType::NoteOn: {
+            auto e = event.AsNoteOn();
+            _process_note_on(e);
+            return false;
+        }
+
+        case MidiMessageType::ControlChange: {
+            auto e = event.AsControlChange();
+            _process_cc(e);
+            return false;
+        }
+
+        default: 
+            return false;
+    }
+}
+
 void CoreMIDI::_process_note_on(daisy::NoteOnEvent& note_on)
 {
     auto ref = Deck::Count;

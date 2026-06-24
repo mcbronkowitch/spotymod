@@ -29,6 +29,7 @@ public:
     }
 
 private:
+    bool _process_event(daisy::MidiEvent&);
     bool _process_realtime(daisy::MidiEvent&);
     void _process_note_on(daisy::NoteOnEvent&);
     void _process_cc(daisy::ControlChangeEvent&);

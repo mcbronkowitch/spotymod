@@ -5,8 +5,8 @@
             "compilerPath": "arm-none-eabi-g++.exe",
             "cppStandard": "gnu++17",
             "defines": [
-                "_DEBUG",
-                "DEBUG",
+                // "_DEBUG",
+                // "DEBUG",
                 "UNICODE",
                 "_UNICODE",
                 "__arm__",
@@ -39,8 +39,8 @@
             "cStandard": "c11",
             "cppStandard": "gnu++17",
             "defines": [
-                "_DEBUG",
-                "DEBUG",
+                // "_DEBUG",
+                // "DEBUG",
                 "UNICODE",
                 "_UNICODE",
                 "__arm__",
