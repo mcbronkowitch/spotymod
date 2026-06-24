@@ -214,10 +214,6 @@ private:
 
     bool _show_rec_a;
     bool _show_rec_b;
-    bool _middle_pitch_a;
-    bool _middle_pitch_b;
-    float pitch_seg_a;
-    float pitch_seg_b;
 
     std::bitset<2> _gate_in;
     TimeInterval<8/*ms*/> _gate_a_latency;

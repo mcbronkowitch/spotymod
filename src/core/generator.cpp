@@ -203,14 +203,14 @@ float mapped_speed(const float val)
 }
 // For tape mode it's both speed and pitch,
 // for digital -> time stretching
-bool Generator::set_speed(float speed) 
+void Generator::set_speed(float speed) 
 {
   switch (_speed_mode) {
     case SpeedMode::Tape: {
       _norm_pitch_speed = speed;
       _target_increment = mapped_speed(speed);
       for (auto& v: _voxs) { v.set_playhead_shift(0.f); }
-      return std::abs(_target_increment - 1.f) < .002f;
+      break;
     }
 
     case SpeedMode::Digital: {
@@ -225,11 +225,10 @@ bool Generator::set_speed(float speed)
           v.set_playhead_shift(shift);
           v.set_envelope_increment(speed);
         }
-        return 1.f;
+        break;
     }
 
-    default: 
-        return 1.f;
+    default: break;
   }
 };
 // Only for digital mode, when speed and pitch are detached

@@ -197,7 +197,7 @@ void CoreUI::process()
                 speed_a = snapped_speed(speed_a);
             }
             if (deck_a.mode() == Mode::Slice) deck_a.voxs().set_pitch(speed_a);
-            else _middle_pitch_a = deck_a.voxs().set_speed(speed_a);
+            else deck_a.voxs().set_speed(speed_a);
         }
     }
     if (_apply.test(Hardware::CTRL_PITCH_B)) {
@@ -213,7 +213,7 @@ void CoreUI::process()
                 speed_b = snapped_speed(speed_b);
             }
             if (deck_b.mode() == Mode::Slice) deck_b.voxs().set_pitch(speed_b);
-            else _middle_pitch_b = deck_b.voxs().set_speed(speed_b);
+            else deck_b.voxs().set_speed(speed_b);
         }
     }
     if (_apply.test(Hardware::CTRL_MODFREQ_A)) {
