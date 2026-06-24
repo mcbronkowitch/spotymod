@@ -122,7 +122,7 @@ void Vox::process(float& out0, float& out1) {
             out1 += w_out1;
         }
         if (!_is_suspended) {
-            //_att *= _env.process(_mode == Mode::Linear ? _envelope_increment : 1.f);
+            _att *= _env.process(_mode == Mode::Linear ? _envelope_increment : 1.f);
             _iterator ++;
         }
         if (_mode == Mode::Spread) _att *= 0.5f;
