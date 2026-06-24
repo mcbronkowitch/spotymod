@@ -757,31 +757,110 @@ void CoreUI::_on_midi_note_on(const Deck::Ref ref, const uint8_t num)
 {
     _trigger(ref, _speed_map.bipolar_pitch2speed(num - 60), true);
 }
+
+static Hardware::AnalogControlId apply_id(
+    const Deck::Ref ref, 
+    const Hardware::AnalogControlId opt_a, 
+    const Hardware::AnalogControlId opt_b)
+    {
+        return ref == Deck::A ? opt_a : opt_b;    
+    }
 void CoreUI::_on_midi_cc(const Deck::Ref ref, const CC cc, const float val)
 {
+    using HW = Hardware;
     switch (cc) {
-        case CC::CrossFade: break;
-        case CC::Start: {
-            _pos[ref].set(val);
-            _apply.set(ref == Deck::A ? Hardware::CTRL_POS_A : Hardware::CTRL_POS_B);
+        case CC::CrossFade: {
+            _core.set_mix(val);
             break;
         }
-        case CC::Size: break;
-        case CC::Env: break;
-        case CC::Pitch: break;
-        case CC::IOMix: break;
-        case CC::DeckFB: break;
-        case CC::EnvSize: break;
-        case CC::WinSize: break;
-        case CC::ModCycle: break;
-        case CC::ModGlow: break;
-        case CC::GritOn: break;
-        case CC::GritIntens: break;
-        case CC::GritMix: break;
-        case CC::FluxOn: break;
-        case CC::FluxIntes: break;
-        case CC::FluxFB: break;
-        case CC::FluxMix: break;
+        case CC::Start: {
+            _pos[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_POS_A, HW::CTRL_POS_B));
+            break;
+        }
+        case CC::Offset: {
+            _pos_offset[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_POS_A, HW::CTRL_POS_B));
+            break;
+        }
+        case CC::Size: {
+            _size[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_SIZE_A, HW::CTRL_SIZE_B));
+            break;
+        }
+        case CC::Env: {
+            _env[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_ENV_A, HW::CTRL_ENV_B));
+            break;
+        }
+        case CC::Pitch: {
+            _speed[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_PITCH_A, HW::CTRL_PITCH_B));
+            break;
+        } 
+        case CC::IOMix: {
+            _mix[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_SOS_A, HW::CTRL_SOS_B));
+            break;
+        }
+        case CC::DeckFB: {
+            _feedback[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_SOS_A, HW::CTRL_SOS_B));
+            break;
+        }
+        case CC::EnvSize: {
+            _env_size[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_ENV_A, HW::CTRL_ENV_B));
+            break;
+        }
+        case CC::WinSize: {
+            _win[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_SIZE_A, HW::CTRL_SIZE_B));
+            break;
+        }
+        case CC::ModCycle: {
+            _mod_speed[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_MODFREQ_A, HW::CTRL_MODFREQ_B));
+            break;
+        }
+        case CC::ModGlow: { 
+            _mod_amp[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_MOD_AMT_A, HW::CTRL_MOD_AMT_B));
+            break;
+        }
+        case CC::GritOn: {
+            _core.deck(ref).fx().set_grit_on(val > 0);
+            break;
+        }
+        case CC::GritIntens: {
+            _grit_intens[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_PITCH_A, HW::CTRL_PITCH_B));
+            break;
+        }
+        case CC::GritMix: {
+            _grit_mix[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_SOS_A, HW::CTRL_SOS_B));
+            break;
+        }
+        case CC::FluxOn: {
+            _core.deck(ref).fx().set_flux_on(val > 0);
+            break;
+        }
+        case CC::FluxIntes: {
+            _flux_intens[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_PITCH_A, HW::CTRL_PITCH_B));
+            break;
+        }
+        case CC::FluxFB: {
+            _flux_fb[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_POS_A, HW::CTRL_POS_B));
+            break;
+        }
+        case CC::FluxMix: {
+            _flux_mix[ref].set(val);
+            _apply.set(apply_id(ref, HW::CTRL_SOS_A, HW::CTRL_SOS_B));
+            break;
+        }
         default: break;
     }
 }
