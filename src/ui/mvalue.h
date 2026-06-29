@@ -5,12 +5,14 @@ namespace spotykach {
 
 class MValue {
 public:
+  static constexpr auto kDefaultTreshold = .02f;
+
   MValue();
   ~MValue() {}
 
 int id() const { return _id; }
 
-float process(const float value, const bool active, int* id);
+float process(const float value, const bool active, int* id = nullptr, const float thresh = kDefaultTreshold);
 
 bool is_tracking() const { return _is_tracking; }
 
@@ -35,8 +37,6 @@ private:
   NOCOPY(MValue)
 
   bool _set_active(const bool active);
-
-  static constexpr float kTreshold = 0.02;
 
   int _id;
 

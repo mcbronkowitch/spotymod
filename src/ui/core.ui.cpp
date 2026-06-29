@@ -350,7 +350,8 @@ void CoreUI::_process_ui_queue()
 
                     _flux_intens[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
                     _grit_intens[Deck::A].process(val, _touched.test(GritA), changing_id_a);
-                    _speed[Deck::A].process(val, !fx_a_touched, changing_id_a);
+                    auto thresh = is_alt_touched ? .1f : MValue::kDefaultTreshold;
+                    _speed[Deck::A].process(val, !fx_a_touched, changing_id_a, thresh);
                     if (!fx_a_touched) {
                         _pitch_quantized.set(Deck::A, _touched.test(Alt));
                     }
@@ -429,9 +430,9 @@ void CoreUI::_process_ui_queue()
                     _flux_intens[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
                     _grit_intens[Deck::B].process(val, _touched.test(GritB), changing_id_b);
 
-                    auto no_fx_b_touched = !_touched.test(FluxB) && !_touched.test(GritB);
-                    _speed[Deck::B].process(val, no_fx_b_touched, changing_id_b);
-                    if (no_fx_b_touched) {
+                    auto thresh = is_alt_touched ? .1f : MValue::kDefaultTreshold;
+                    _speed[Deck::B].process(val, !fx_b_touched, changing_id_b, thresh);
+                    if (!fx_b_touched) {
                         _pitch_quantized.set(Deck::B, _touched.test(Alt));
                     }
                     break;
