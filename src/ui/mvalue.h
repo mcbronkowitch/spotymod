@@ -16,12 +16,19 @@ bool is_tracking() const { return _is_tracking; }
 
 float in_value() const { return _in_value; }
 
-float value() const { return _value; }
+bool apply() const { return _apply; }
+void set_apply() { _apply = true; }
+
+float value() { 
+  _apply = false;
+  return _value; 
+}
 
 void set(const float value) {
   _is_tracking = false;
   _is_active = false;
   _value = value;
+  _apply = true;
 }
 
 private:
@@ -38,6 +45,7 @@ private:
 
   bool _is_active;
   bool _is_tracking;
+  bool _apply;
 };
 
 };

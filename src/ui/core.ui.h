@@ -143,7 +143,7 @@ private:
         OnMoveDiffOnly
     };
     void _show_value(
-        const MValue&, 
+        MValue&, 
         LEDRing&,
         const uint32_t default_color = 0xffffff, 
         const ValueDisplay display = ValueDisplay::OnMove);
@@ -157,11 +157,9 @@ private:
     Storage& _storage;
     Calibrator _calibrator;
     
-
     daisy::UiEventQueue _ui_queue;
     daisy::PotMonitor<Hardware, Hardware::kNumAnalogControls> _pot_monitor;
     std::bitset<Hardware::CTRL_LAST> _init;
-    std::bitset<Hardware::CTRL_LAST> _apply;
 
     std::array<int, Deck::Count> _changing_value_id;
 
@@ -173,7 +171,6 @@ private:
     std::array<MValue, Deck::Count> _flux_intens;
     std::array<MValue, Deck::Count> _grit_intens;
     std::array<MValue, Deck::Count>_flux_fb;
-    
     
     std::array<float, Deck::Count> _pitch_knob_val;
     std::array<MValue, Deck::Count> _speed;
