@@ -176,12 +176,20 @@ void Hardware::Init(float sr, size_t blocksize)
     cvinputs_[CV_MIX_B].InitBipolarCv(seed.adc.GetPtr(7), kProcessRate);
 
     // --- UART MIDI ---
-    MidiUartHandler::Config midi_cfg;
-    midi_cfg.transport_config.periph = UartHandler::Config::Peripheral::USART_1;
-    midi_cfg.transport_config.rx     = kMidiUartRxPin;
-    midi_cfg.transport_config.tx     = kMidiUartTxPin;
-    midi_uart.Init(midi_cfg);
+    MidiUartHandler::Config midi_uart_cfg;
+    midi_uart_cfg.transport_config.periph = UartHandler::Config::Peripheral::USART_1;
+    midi_uart_cfg.transport_config.rx     = kMidiUartRxPin;
+    midi_uart_cfg.transport_config.tx     = kMidiUartTxPin;
+    midi_uart.Init(midi_uart_cfg);
     midi_uart.StartReceive();
+
+    #ifndef DEBUG
+    // --- USB MIDI ---
+    MidiUsbHandler::Config midi_usb_cfg;
+    midi_usb_cfg.transport_config.periph = MidiUsbTransport::Config::Periph::EXTERNAL;
+    midi_usb.Init(midi_usb_cfg);
+    midi_usb.StartReceive();
+    #endif
 
     // -- DAC --
     DacHandle::Config config;

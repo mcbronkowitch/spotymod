@@ -184,6 +184,7 @@ class Hardware
     infrasonic::Ws2812 leds;
 
     daisy::MidiUartHandler midi_uart;
+    daisy::MidiUsbHandler midi_usb;
 
   private:
     infrasonic::ShiftRegister165 shiftreg_;

@@ -15,41 +15,60 @@ _core   { core }
 void CoreMIDI::send_clock()
 {
     _hw.midi_uart.EnqueueMessage(MidiTxMessage::SystemRealtimeClock());
+    _hw.midi_usb.EnqueueMessage(MidiTxMessage::SystemRealtimeClock());
 }
 
 bool CoreMIDI::process()
 {
-    _hw.midi_uart.Listen();
     bool has_clock = false;
-    while(_hw.midi_uart.HasEvents())
-    {
+
+    _hw.midi_uart.Listen();
+    while(_hw.midi_uart.HasEvents()) {
         auto event = _hw.midi_uart.PopEvent();
-        switch(event.type)
-        {
-            case MidiMessageType::SystemRealTime: {
-                has_clock = _process_realtime(event) || has_clock; 
-            }
-            break;
-            
-            case MidiMessageType::NoteOn: {
-                auto e = event.AsNoteOn();
-                _process_note_on(e);
-            }
-            break;
-
-            case MidiMessageType::ControlChange: {
-                auto e = event.AsControlChange();
-                _process_cc(e);
-            }
-
-            default: break;
-        }
+        has_clock = _process_event(event) || has_clock;
     }
+
+    #ifndef DEBUG
+    _hw.midi_usb.Listen();
+    while(_hw.midi_usb.HasEvents()) {
+        auto event = _hw.midi_usb.PopEvent();
+        has_clock = _process_event(event) || has_clock;
+    }
+    #endif
+
     // Modified libDaisy MIDI handlers require explicit call to transmit
     // enqueued messages instead of blocking every time a message is sent
     _hw.midi_uart.TransmitEnqueuedMessages();
+    #ifndef DEBUG
+    _hw.midi_usb.TransmitEnqueuedMessages();
+    #endif
+    
     return has_clock;
 }
+bool CoreMIDI::_process_event(daisy::MidiEvent& event)
+{
+    switch(event.type) {
+        case MidiMessageType::SystemRealTime: {
+            return _process_realtime(event); 
+        }
+        
+        case MidiMessageType::NoteOn: {
+            auto e = event.AsNoteOn();
+            _process_note_on(e);
+            return false;
+        }
+
+        case MidiMessageType::ControlChange: {
+            auto e = event.AsControlChange();
+            _process_cc(e);
+            return false;
+        }
+
+        default: 
+            return false;
+    }
+}
+
 void CoreMIDI::_process_note_on(daisy::NoteOnEvent& note_on)
 {
     auto ref = Deck::Count;
@@ -93,40 +112,24 @@ void CoreMIDI::_process_cc(daisy::ControlChangeEvent& event)
     auto& c = Config::dynamic();
     if (event.channel == c.midi_channel(Deck::A)) ref = Deck::A;
     else if (event.channel == c.midi_channel(Deck::B)) ref = Deck::B;
-
     switch (event.control_number) {
-        case CC::CrossFade: break;
-        case CC::RecExt: if (event.value > 0) _handle_record(ref, false); break;
-        case CC::RecInt: if (event.value > 0) _handle_record(ref, true); break;
-        case CC::Start: break;
-        case CC::Size: break;
-        case CC::Env: break;
-        case CC::Pitch: break;
-        case CC::IOMix: break;
-        case CC::DeckFB: break;
-        case CC::EnvSize: break;
-        case CC::WinSize: break;
-        case CC::Fwd: if (event.value > 0) _handle_play(ref, false); break;
-        case CC::Rev: if (event.value > 0) _handle_play(ref, true); break;
-        case CC::ModCycle: break;
-        case CC::ModGlow: break;
-        case CC::GritOn: break;
-        case CC::GritIntens: break;
-        case CC::GritMix: break;
-        case CC::FluxOn: break;
-        case CC::FluxIntes: break;
-        case CC::FluxFB: break;
-        case CC::FluxMix: break;
-        default: break;
+        case CC::RecExt: {
+            if (event.value > 0 && _on_record) _on_record(ref, false); 
+            break;
+        }
+        case CC::RecInt: {
+            if (event.value > 0 && _on_record) _on_record(ref, true); 
+            break;
+        }
+        case CC::Fwd: {
+            if (event.value > 0 && _on_play) _on_play(ref, false); 
+            break;
+        }
+        case CC::Rev: {
+            if (event.value > 0 && _on_play) _on_play(ref, true); 
+            break;
+        }
+        default: 
+            if (_on_cc) _on_cc(ref, (CC)event.control_number, std::clamp(event.value / 127.f, 0.f, 1.f));
     }
-
-}
-void CoreMIDI::_handle_play(const Deck::Ref ref, const bool reverse)
-{
-    if (_on_play) _on_play(ref, reverse);
-}
- 
-void CoreMIDI::_handle_record(const Deck::Ref ref, const bool internal)
-{
-    if (_on_record) _on_record(ref, internal);
 }

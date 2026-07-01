@@ -455,7 +455,7 @@ void CoreUI::_draw_ring(const Deck::Ref ref)
     
     ring.set_updated();
 }
-void CoreUI::_show_value(const MValue& val, LEDRing& ring, const uint32_t def_color, const ValueDisplay display)
+void CoreUI::_show_value(MValue& val, LEDRing& ring, const uint32_t def_color, const ValueDisplay display)
 {
     if (display != ValueDisplay::Always && !_is_changing(val)) return;
 

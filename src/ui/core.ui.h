@@ -82,6 +82,7 @@ private:
     void _toggle_record(const Deck::Ref, const bool internal);
     void _trigger(const Deck::Ref, const float speed, const bool discont = false);
     void _on_midi_note_on(const Deck::Ref, const uint8_t num);
+    void _on_midi_cc(const Deck::Ref, const CC, const float);
 
     // LEDs ...............................................
     void _draw_leds();
@@ -142,7 +143,7 @@ private:
         OnMoveDiffOnly
     };
     void _show_value(
-        const MValue&, 
+        MValue&, 
         LEDRing&,
         const uint32_t default_color = 0xffffff, 
         const ValueDisplay display = ValueDisplay::OnMove);
@@ -156,11 +157,9 @@ private:
     Storage& _storage;
     Calibrator _calibrator;
     
-
     daisy::UiEventQueue _ui_queue;
     daisy::PotMonitor<Hardware, Hardware::kNumAnalogControls> _pot_monitor;
     std::bitset<Hardware::CTRL_LAST> _init;
-    std::bitset<Hardware::CTRL_LAST> _apply;
 
     std::array<int, Deck::Count> _changing_value_id;
 
@@ -173,9 +172,10 @@ private:
     std::array<MValue, Deck::Count> _grit_intens;
     std::array<MValue, Deck::Count>_flux_fb;
     
+    std::array<float, Deck::Count> _pitch_knob_val;
+    std::array<MValue, Deck::Count> _speed;
     std::array<MValue, Deck::Count> _mix;
     std::array<MValue, Deck::Count> _feedback;
-    std::array<MValue, Deck::Count> _speed;
     std::array<MValue, Deck::Count> _pos;
     std::array<MValue, Deck::Count> _pos_offset;
     std::array<MValue, Deck::Count> _size;
@@ -214,10 +214,6 @@ private:
 
     bool _show_rec_a;
     bool _show_rec_b;
-    bool _middle_pitch_a;
-    bool _middle_pitch_b;
-    float pitch_seg_a;
-    float pitch_seg_b;
 
     std::bitset<2> _gate_in;
     TimeInterval<8/*ms*/> _gate_a_latency;

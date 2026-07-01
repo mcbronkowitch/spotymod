@@ -27,8 +27,13 @@ public:
     {
         _on_record = on_record;
     }
+    void set_on_cc(std::function<void(const Deck::Ref, const CC, const float)> on_cc)
+    {
+        _on_cc = on_cc;
+    }
 
 private:
+    bool _process_event(daisy::MidiEvent&);
     bool _process_realtime(daisy::MidiEvent&);
     void _process_note_on(daisy::NoteOnEvent&);
     void _process_cc(daisy::ControlChangeEvent&);
@@ -38,6 +43,7 @@ private:
     std::function<void(const Deck::Ref, const uint8_t num)> _on_note_on;
     std::function<void(const Deck::Ref, const bool reverse)> _on_play;
     std::function<void(const Deck::Ref, const bool internal)> _on_record;
+    std::function<void(const Deck::Ref, const CC, const float)> _on_cc;
 
     Hardware&   _hw;
     Core&       _core;

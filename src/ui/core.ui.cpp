@@ -53,9 +53,11 @@ void CoreUI::init()
     auto on_play = std::bind(&CoreUI::_toggle_play, this, _1, _2);
     auto on_record = std::bind(&CoreUI::_toggle_record, this, _1, _2);
     auto on_note = std::bind(&CoreUI::_on_midi_note_on, this, _1, _2);
+    auto on_cc = std::bind(&CoreUI::_on_midi_cc, this, _1, _2, _3);
     _midi.set_on_play(on_play);
     _midi.set_on_record(on_record);
     _midi.set_on_note_on(on_note);
+    _midi.set_on_cc(on_cc);
 
     _speed_map.init();
 
@@ -112,162 +114,74 @@ void CoreUI::process()
     if (_state == State::init_values) {
         _init_values(); // effectively override the first read of the pots
         _reset_changing_value_id();
-        _apply.set();
         _state = State::ready;
     }
 
     _tap_hold.process();
-
-    auto& deck_a = _core.deck(Deck::A);
-    auto& deck_b = _core.deck(Deck::B);
-    auto is_drift_a = deck_a.mode() == Mode::Drift;
-    auto is_drift_b = deck_b.mode() == Mode::Drift;
 
     auto blink = _arm_blink_timer.HasPassedMs(250);
     if (blink) _arm_blink_timer.Restart();
 
     for (auto ref: { Deck::A, Deck::B }) {
         auto& deck = _core.deck(ref);
+        
+        if (_pos[ref].apply()) deck.voxs().set_start(_pos[ref].value());
+        if (_pos_offset[ref].apply()) deck.voxs().set_start_offset_interval(_pos_offset[ref].value());
+        if (_size[ref].apply()) deck.voxs().set_size(_size[ref].value(), _touched.test(Alt));
+        if (_env[ref].apply()) deck.voxs().set_shape(_env[ref].value());
+        if (_speed[ref].apply()) {
+            auto speed = _speed[ref].value();
+            if (_pitch_quantized.test(ref)) {
+                speed = snapped_speed(speed);
+            }
+            if (deck.mode() == Mode::Slice) deck.voxs().set_pitch(speed);
+            else deck.voxs().set_speed(speed);
+            _pitch_knob_val[ref] = speed;
+        }
+
+        if (_env_size[ref].apply()) deck.voxs().set_env_size(_env_size[ref].value());
+        if (_win[ref].apply()) deck.voxs().set_win_size(_win[ref].value());
+
+        if (_mix[ref].apply()) deck.set_inout_mix(_mix[ref].value());
+        if (_feedback[ref].apply()) deck.set_feedback(_feedback[ref].value());
+
+        if (_flux_fb[ref].apply()) deck.fx().set_flux_fb(_flux_fb[ref].value());
+        if (_flux_intens[ref].apply()) deck.fx().set_flux_intensity(_flux_intens[ref].value());
+        if (_grit_intens[ref].apply()) deck.fx().set_grit_intensity(_grit_intens[ref].value());
+        if (_flux_mix[ref].apply()) deck.fx().set_flux_mix(_flux_mix[ref].value());
+        if (_grit_mix[ref].apply()) deck.fx().set_grit_mix(_grit_mix[ref].value());
+
+        if (_mod_speed[ref].apply()) _core.mod(ref).set_speed_norm(_mod_speed[ref].value(), _touched.test(Alt));
+        if (_mod_amp[ref].apply()) _core.mod(ref).set_amp_norm(_mod_amp[ref].value());
+
         if (_hold_clear[ref].process()) {
             _hold_clear[ref].end();
             deck.clear_sequence();
         }
+
         // LEDs /////////
         _draw_ring(ref);
         _draw_fx(ref);
         _draw_alt(ref);    
         _draw_play(ref, blink);
     }
-
-    if (_apply.test(Hardware::CTRL_POS_A)) {
-        if (_touched.test(FluxA)) {
-            deck_a.fx().set_flux_fb(_flux_fb[Deck::A].value());
-        }
-        else if (_touched.test(Alt)) {
-            deck_a.voxs().set_start_offset_interval(_pos_offset[Deck::A].value());
-        }
-        else {
-            deck_a.voxs().set_start(_pos[Deck::A].value());
-        }
-    }
-    if (_apply.test(Hardware::CTRL_POS_B)) {
-        if (_touched.test(FluxB)) {
-            deck_b.fx().set_flux_fb(_flux_fb[Deck::B].value());
-        }
-        else if (_touched.test(Alt)) {
-            deck_b.voxs().set_start_offset_interval(_pos[Deck::B].value());
-        }
-        else {
-            deck_b.voxs().set_start(_pos[Deck::B].value());
-        }
-    }
-    if (_apply.test(Hardware::CTRL_ENV_A)) {
-        if (is_drift_a) deck_a.voxs().set_env_size(_env_size[Deck::A].value());
-        deck_a.voxs().set_shape(_env[Deck::A].value());
-    }
-    if (_apply.test(Hardware::CTRL_ENV_B)) {
-        if (is_drift_b) deck_b.voxs().set_env_size(_env_size[Deck::B].value());
-        deck_b.voxs().set_shape(_env[Deck::B].value());
-    }
-    if (_apply.test(Hardware::CTRL_SIZE_A)) {
-        if (is_drift_a) {
-            deck_a.voxs().set_win_size(_win[Deck::A].value());
-            deck_a.voxs().set_size(_size[Deck::A].value(), _touched.test(Alt));
-        }
-        else {
-            deck_a.voxs().set_size(_size[Deck::A].value(), _touched.test(Alt));
-        }
-    }
-    if (_apply.test(Hardware::CTRL_SIZE_B)) {
-        if (is_drift_b) {
-            deck_b.voxs().set_win_size(_win[Deck::B].value());
-        }
-        deck_b.voxs().set_size(_size[Deck::B].value(), _touched.test(Alt));
-    }
-    if (_apply.test(Hardware::CTRL_PITCH_A)) {
-        if (_touched.test(FluxA)) {
-            deck_a.fx().set_flux_intensity(_flux_intens[Deck::A].value());
-        }
-        else if (_touched.test(GritA)) {
-            deck_a.fx().set_grit_intensity(_grit_intens[Deck::A].value());
-        }
-        else {
-            auto speed_a = _speed[Deck::A].value();
-            if (_pitch_quantized.test(Deck::A)) {
-                speed_a = snapped_speed(speed_a);
-            }
-            if (deck_a.mode() == Mode::Slice) deck_a.voxs().set_pitch(speed_a);
-            else _middle_pitch_a = deck_a.voxs().set_speed(speed_a);
-        }
-    }
-    if (_apply.test(Hardware::CTRL_PITCH_B)) {
-        if (_touched.test(FluxB)) {
-            deck_b.fx().set_flux_intensity(_flux_intens[Deck::B].value());
-        }
-        else if (_touched.test(GritB)) {
-            deck_b.fx().set_grit_intensity(_grit_intens[Deck::B].value());
-        }
-        else {
-            auto speed_b = _speed[Deck::B].value();
-            if (_pitch_quantized.test(Deck::B)) {
-                speed_b = snapped_speed(speed_b);
-            }
-            if (deck_b.mode() == Mode::Slice) deck_b.voxs().set_pitch(speed_b);
-            else _middle_pitch_b = deck_b.voxs().set_speed(speed_b);
-        }
-    }
-    if (_apply.test(Hardware::CTRL_MODFREQ_A)) {
-        if (_tap_hold.passed()) _core.driver().set_tempo_norm(_tempo.value());
-        else _core.mod(Deck::A).set_speed_norm(_mod_speed[Deck::A].value(), _touched.test(Alt));
-    }
-    if (_apply.test(Hardware::CTRL_MOD_AMT_A)) {
-        if (_tap_hold.passed()) _core.set_click_mix(_click_mix.value());
-        else _core.mod(Deck::A).set_amp_norm(_mod_amp[Deck::A].value());
-    }
-    if (_apply.test(Hardware::CTRL_MODFREQ_B)) {
-        if (_tap_hold.passed()) _core.panner().set_speed(_pan_speed.value());
-        else _core.mod(Deck::B).set_speed_norm(_mod_speed[Deck::B].value(), _touched.test(Alt));
-    }
-    if (_apply.test(Hardware::CTRL_MOD_AMT_B)) {
-        if (_tap_hold.passed()) _core.panner().set_range(_pan_range.value());
-        else _core.mod(Deck::B).set_amp_norm(_mod_amp[Deck::B].value());
-    }
-    if (_apply.test(Hardware::CTRL_SOS_A)) {
-        if (_tap_hold.passed()) {
-            _core.driver().set_key_tick_interval_norm(_key_interval.value());
-        }
-        else if (_touched.test(FluxA)) {
-            deck_a.fx().set_flux_mix(_flux_mix[Deck::A].value());
-        }
-        else if (_touched.test(GritA)) {
-            deck_a.fx().set_grit_mix(_grit_mix[Deck::A].value());
-        }
-        else if (_touched.test(Alt)) {
-            deck_a.set_feedback(_feedback[Deck::A].value());
-        }
-        else {
-            deck_a.set_inout_mix(_mix[Deck::A].value());
-        }
-    }
-    if (_apply.test(Hardware::CTRL_SOS_B)) {
-        if (_touched.test(FluxB)) {
-            deck_b.fx().set_flux_mix(_flux_mix[Deck::B].value());
-        }
-        else if (_touched.test(GritB)) {
-            deck_b.fx().set_grit_mix(_grit_mix[Deck::B].value());
-        }
-        else if (_touched.test(Alt)) {
-            deck_b.set_feedback(_feedback[Deck::B].value());
-        }
-        else {
-            deck_b.set_inout_mix(_mix[Deck::B].value());
-        }
-    }
+    if (_tempo.apply()) _core.driver().set_tempo_norm(_tempo.value());
+    if (_pan_speed.apply()) _core.panner().set_speed(_pan_speed.value());
+    if (_pan_range.apply()) _core.panner().set_range(_pan_range.value());
+    if (_click_mix.apply()) _core.set_click_mix(_click_mix.value());
+    if (_key_interval.apply()) _core.driver().set_key_tick_interval_norm(_key_interval.value());
 
     //Don't forget to reset flags
-    _apply.reset();
     if ((!_tap_hold.passed() && !_touched.test(Alt)) && _value_display_timeout.is_passed()) {
         _reset_changing_value_id();
+
+        // Re-apply quantized pitch knob value
+        for (auto d: { Deck::A, Deck::B }) {
+            if (_pitch_quantized.test(d)) {
+                _speed[d].set(_pitch_knob_val[d]);
+                _pitch_quantized.reset(d);
+            }
+        }
     }
 };
 
@@ -372,7 +286,6 @@ void CoreUI::_process_ui_queue()
         auto event = _ui_queue.GetAndRemoveNextEvent();
         if (event.type == UiEventQueue::Event::EventType::potMoved) {
             auto val = event.asPotMoved.newPosition;
-            _apply.set(event.asPotMoved.id);
             switch (event.asPotMoved.id) {
                 // DECK A //////////////////////////////////////
                 case Hardware::CTRL_SOS_A: {
@@ -437,7 +350,8 @@ void CoreUI::_process_ui_queue()
 
                     _flux_intens[Deck::A].process(val, _touched.test(FluxA), changing_id_a);
                     _grit_intens[Deck::A].process(val, _touched.test(GritA), changing_id_a);
-                    _speed[Deck::A].process(val, !fx_a_touched, changing_id_a);
+                    auto thresh = is_alt_touched ? .1f : MValue::kDefaultTreshold;
+                    _speed[Deck::A].process(val, !fx_a_touched, changing_id_a, thresh);
                     if (!fx_a_touched) {
                         _pitch_quantized.set(Deck::A, _touched.test(Alt));
                     }
@@ -516,9 +430,9 @@ void CoreUI::_process_ui_queue()
                     _flux_intens[Deck::B].process(val, _touched.test(FluxB), changing_id_b);
                     _grit_intens[Deck::B].process(val, _touched.test(GritB), changing_id_b);
 
-                    auto no_fx_b_touched = !_touched.test(FluxB) && !_touched.test(GritB);
-                    _speed[Deck::B].process(val, no_fx_b_touched, changing_id_b);
-                    if (no_fx_b_touched) {
+                    auto thresh = is_alt_touched ? .1f : MValue::kDefaultTreshold;
+                    _speed[Deck::B].process(val, !fx_b_touched, changing_id_b, thresh);
+                    if (!fx_b_touched) {
                         _pitch_quantized.set(Deck::B, _touched.test(Alt));
                     }
                     break;
@@ -578,7 +492,7 @@ void CoreUI::_process_switches()
     if (nma != ma) {
         deck_a.set_mode(nma);
         _core.infer_panner_mode();
-        _apply.set(Hardware::CTRL_SIZE_A);
+        _size[Deck::A].set_apply();
     }
 
     // Size/Pos A switch
@@ -605,7 +519,7 @@ void CoreUI::_process_switches()
     if (nmb != mb) {
         deck_b.set_mode(nmb);
         _core.infer_panner_mode();
-        _apply.set(Hardware::CTRL_SIZE_B);
+        _size[Deck::B].set_apply();
     }
 
     // Size/Pos B switch
@@ -744,4 +658,29 @@ void CoreUI::_trigger(const Deck::Ref ref, const float speed, const bool discont
 void CoreUI::_on_midi_note_on(const Deck::Ref ref, const uint8_t num)
 {
     _trigger(ref, _speed_map.bipolar_pitch2speed(num - 60), true);
+}
+void CoreUI::_on_midi_cc(const Deck::Ref ref, const CC cc, const float val)
+{
+    switch (cc) {
+        case CC::CrossFade:  _core.set_mix(val);         break;
+        case CC::Start:      _pos[ref].set(val);         break;
+        case CC::Offset:     _pos_offset[ref].set(val);  break;
+        case CC::Size:       _size[ref].set(val);        break;
+        case CC::Env:        _env[ref].set(val);         break;
+        case CC::Pitch:      _speed[ref].set(val);       break;
+        case CC::IOMix:      _mix[ref].set(val);         break;
+        case CC::DeckFB:     _feedback[ref].set(val);    break;
+        case CC::EnvSize:    _env_size[ref].set(val);    break;
+        case CC::WinSize:    _win[ref].set(val);         break;
+        case CC::ModCycle:   _mod_speed[ref].set(val);   break;
+        case CC::ModGlow:    _mod_amp[ref].set(val);     break;
+        case CC::GritOn:     _core.deck(ref).fx().set_grit_on(val > 0); break;
+        case CC::GritIntens: _grit_intens[ref].set(val); break;
+        case CC::GritMix:    _grit_mix[ref].set(val);    break;
+        case CC::FluxOn:     _core.deck(ref).fx().set_flux_on(val > 0); break;
+        case CC::FluxIntes:  _flux_intens[ref].set(val); break;
+        case CC::FluxFB:     _flux_fb[ref].set(val);     break;
+        case CC::FluxMix:    _flux_mix[ref].set(val);    break;
+        default: break;
+    }
 }

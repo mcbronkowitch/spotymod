@@ -60,7 +60,7 @@ public:
 
   void set_is_wide(const bool);
 
-  bool set_speed(float);
+  void set_speed(float);
   void apply_speed() { set_speed(_norm_pitch_speed); }
 
   bool has_cue() const { return _cue_points_count || _snap_to_cue; }

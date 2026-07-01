@@ -146,7 +146,7 @@ class Storage {
 
         void activate(const Deck::Ref ref)
         {
-            if (_opening_deck != Deck::None) return;
+            if (_opening_deck != Deck::None || of(Deck::A).is_processing() || of(Deck::B).is_processing()) return;
             _opening_deck = ref;
             _counter = 0;
             _timer.Restart();            
