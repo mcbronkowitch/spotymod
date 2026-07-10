@@ -12,6 +12,9 @@ target_include_directories(spky_engine INTERFACE engine)
 add_library(doctest INTERFACE)
 target_include_directories(doctest INTERFACE third_party)
 
+add_library(nlohmann_json INTERFACE)
+target_include_directories(nlohmann_json INTERFACE third_party)
+
 # --- tests ---
 enable_testing()
 add_executable(spky_tests
@@ -31,7 +34,9 @@ add_executable(spky_tests
     engine/instrument.cpp
     tests/test_instrument.cpp
     tests/test_wav.cpp
+    host/render/scenario.cpp
+    tests/test_scenario.cpp
 )
-target_link_libraries(spky_tests PRIVATE spky_engine doctest)
+target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json)
 target_include_directories(spky_tests PRIVATE host)
 add_test(NAME spky_tests COMMAND spky_tests)
