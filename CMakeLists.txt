@@ -17,6 +17,7 @@ enable_testing()
 add_executable(spky_tests
     tests/test_main.cpp
     tests/smoke.cpp
+    tests/test_rng.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest)
 add_test(NAME spky_tests COMMAND spky_tests)
