@@ -22,6 +22,7 @@ add_executable(spky_tests
     tests/test_range.cpp
     engine/mod/lane.cpp
     tests/test_lane.cpp
+    tests/test_step.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest)
 add_test(NAME spky_tests COMMAND spky_tests)
