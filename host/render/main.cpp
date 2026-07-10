@@ -1,0 +1,72 @@
+#include <cstdio>
+#include <cstddef>
+#include <string>
+#include "instrument.h"
+#include "render/scenario.h"
+#include "render/wav_writer.h"
+
+using namespace spky;
+
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        std::printf("usage: render <scenario.json> [out.wav] [mods.csv]\n");
+        return 1;
+    }
+    std::string scen_path = argv[1];
+    std::string wav_path  = argc > 2 ? argv[2] : "out.wav";
+    std::string csv_path  = argc > 3 ? argv[3] : "mods.csv";
+
+    Scenario scen;
+    std::string err;
+    if (!load_scenario(scen_path, scen, err)) {
+        std::printf("scenario error: %s\n", err.c_str());
+        return 2;
+    }
+
+    Instrument inst;
+    inst.init(static_cast<float>(scen.sample_rate));
+    inst.set_tempo_bpm(scen.bpm);
+    for (const auto& e : scen.init_events) apply_event(inst, e);
+
+    WavWriter wav(scen.sample_rate);
+    FILE* csv = std::fopen(csv_path.c_str(), "wb");
+    if (csv) {
+        std::fprintf(csv, "t,"
+            "a_src,a_size,a_pitch,a_motion,a_level,a_pcv,a_gate,"
+            "b_src,b_size,b_pitch,b_motion,b_level,b_pcv,b_gate\n");
+    }
+
+    const size_t total = static_cast<size_t>(scen.duration_s * scen.sample_rate);
+    const int    csv_decim = 64;
+    size_t next_event = 0;
+
+    for (size_t i = 0; i < total; ++i) {
+        double t = static_cast<double>(i) / scen.sample_rate;
+        while (next_event < scen.events.size() && scen.events[next_event].time_s <= t) {
+            apply_event(inst, scen.events[next_event]);
+            ++next_event;
+        }
+
+        float l = 0.f, r = 0.f;
+        inst.process(nullptr, nullptr, &l, &r, 1);
+        wav.push(l, r);
+
+        if (csv && (i % csv_decim == 0)) {
+            std::fprintf(csv, "%.5f", t);
+            for (int p = 0; p < 2; ++p) {
+                for (int s = 0; s < LANE_COUNT; ++s)
+                    std::fprintf(csv, ",%.4f", inst.lane_output(p, s));
+                std::fprintf(csv, ",%.4f,%d", inst.pitch_cv(p), inst.gate(p) ? 1 : 0);
+            }
+            std::fprintf(csv, "\n");
+        }
+    }
+
+    if (csv) std::fclose(csv);
+    if (!wav.write(wav_path)) {
+        std::printf("failed to write %s\n", wav_path.c_str());
+        return 3;
+    }
+    std::printf("wrote %s (%zu frames) and %s\n", wav_path.c_str(), total, csv_path.c_str());
+    return 0;
+}

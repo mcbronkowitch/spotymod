@@ -40,3 +40,15 @@ add_executable(spky_tests
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json)
 target_include_directories(spky_tests PRIVATE host)
 add_test(NAME spky_tests COMMAND spky_tests)
+
+# --- render host CLI ---
+add_executable(render
+    host/render/main.cpp
+    host/render/scenario.cpp
+    engine/mod/lane.cpp
+    engine/mod/super_modulator.cpp
+    engine/parts/part.cpp
+    engine/instrument.cpp
+)
+target_include_directories(render PRIVATE host engine)
+target_link_libraries(render PRIVATE nlohmann_json)
