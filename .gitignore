@@ -4,3 +4,7 @@
 **/build
 *.log
 *.mmon
+/build/
+/env.sh
+/out.wav
+/mods.csv
