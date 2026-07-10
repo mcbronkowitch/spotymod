@@ -26,6 +26,8 @@ add_executable(spky_tests
     tests/test_evolve.cpp
     engine/mod/super_modulator.cpp
     tests/test_super_modulator.cpp
+    engine/parts/part.cpp
+    tests/test_part.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest)
 add_test(NAME spky_tests COMMAND spky_tests)
