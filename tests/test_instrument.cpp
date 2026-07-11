@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <vector>
 #include <cmath>
+#include <algorithm>
 #include "instrument.h"
 #include "fx/reverb.h"
 using namespace spky;
@@ -119,4 +120,50 @@ TEST_CASE("instrument: fx setters reach the parts and reverb setters are null-sa
     inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(inst.fx_target_value(PART_A, FXT_GRIT_INT) >= 0.f);
     CHECK(l == l);   // not NaN
+}
+
+TEST_CASE("instrument: boots both parts on the synth engine with an audible drone") {
+    Instrument inst;
+    inst.init(48000.f);
+    CHECK(inst.engine_id(PART_A) == ENGINE_SYNTH);
+    CHECK(inst.engine_id(PART_B) == ENGINE_SYNTH);
+    float l, r, energy = 0.f;
+    for (int i = 0; i < 48000; ++i) {
+        inst.process(nullptr, nullptr, &l, &r, 1);
+        energy += l * l;
+    }
+    CHECK(inst.active_voices(PART_A) >= 1);
+    CHECK(inst.active_voices(PART_B) >= 1);
+    CHECK(energy > 1e-3f);
+}
+
+TEST_CASE("instrument: voice setters and manual trigger reach the part") {
+    Instrument inst;
+    inst.init(48000.f);
+    inst.set_voice_decay(PART_A, 0.f);      // shortest decay ratio (0.1x cycle)
+    inst.set_step(PART_A, true, 8);
+    inst.set_probability(PART_A, 0.f);
+    float l, r;
+    for (int i = 0; i < 48000 * 3; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.active_voices(PART_A) == 0);
+    inst.trigger_manual(PART_A);
+    inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.active_voices(PART_A) == 1);
+    float peak = 0.f;                        // some voice's envelope is running
+    for (int v = 0; v < 4; ++v) peak = std::max(peak, inst.voice_env(PART_A, v));
+    CHECK(peak > 0.f);
+}
+
+TEST_CASE("instrument: set_engine switches to the test tone and back") {
+    Instrument inst;
+    inst.init(48000.f);
+    inst.set_engine(PART_A, ENGINE_TEST_TONE);
+    float l, r;
+    for (int i = 0; i < 1000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.engine_id(PART_A) == ENGINE_TEST_TONE);
+    CHECK(inst.active_voices(PART_A) == 0);
+    inst.set_engine(PART_A, ENGINE_SYNTH);
+    for (int i = 0; i < 48000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.engine_id(PART_A) == ENGINE_SYNTH);
+    CHECK(inst.active_voices(PART_A) >= 1);   // the drone resumes
 }

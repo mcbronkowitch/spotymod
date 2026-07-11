@@ -59,6 +59,18 @@ public:
     void set_reverb_shimmer(float n) { if (_reverb) _reverb->set_shimmer(n); }
     float fx_target_value(int p, int i) const { return _parts[p].fx_target_value(i); }
 
+    // --- M2 synth voice API (spec "Instrument API") ---
+    void set_engine(int p, EngineId e)       { _parts[p].set_engine(e); }
+    void set_voice_attack(int p, float n)    { _parts[p].set_voice_attack(n); }
+    void set_voice_decay(int p, float n)     { _parts[p].set_voice_decay(n); }
+    void set_voice_resonance(int p, float n) { _parts[p].set_voice_resonance(n); }
+    void set_voice_sub(int p, float n)       { _parts[p].set_voice_sub(n); }
+    void set_voice_detune(int p, float n)    { _parts[p].set_voice_detune(n); }
+    void trigger_manual(int p)               { _parts[p].trigger_manual(); }
+    int  active_voices(int p) const          { return _parts[p].active_voices(); }
+    float voice_env(int p, int v) const      { return _parts[p].voice_env(v); }
+    EngineId engine_id(int p) const          { return _parts[p].engine_id(); }
+
     float lane_output(int p, int s)  const { return _parts[p].lane_output(s); }
     float target_value(int p, int s) const { return _parts[p].target_value(s); }
     bool  lane_fired(int p, int s)   const { return _parts[p].lane_fired(s); }
