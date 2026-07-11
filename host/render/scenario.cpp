@@ -49,6 +49,21 @@ static SyncMode parse_sync(const std::string& s) {
     return SyncMode::Free;
 }
 
+static QuantMode parse_qmode(const std::string& s) {
+    if (s == "chrom") return QuantMode::Chrom;
+    if (s == "free")  return QuantMode::Free;
+    return QuantMode::Scale;
+}
+
+static int parse_scale_name(const std::string& s) {
+    if (s == "min_pent") return SCALE_MIN_PENT;
+    if (s == "aeolian")  return SCALE_AEOLIAN;
+    if (s == "maj_pent") return SCALE_MAJ_PENT;
+    if (s == "lydian")   return SCALE_LYDIAN;
+    if (s == "whole")    return SCALE_WHOLE;
+    return SCALE_DORIAN;   // "dorian" and anything unknown -> the default
+}
+
 void spky::apply_event(Instrument& inst, const Event& e) {
     const std::string& a = e.action;
     if      (a == "set_tempo_bpm")     inst.set_tempo_bpm(e.value);
@@ -66,5 +81,8 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_target_active") inst.set_target_active(e.part, e.slot, e.flag);
     else if (a == "set_target_base")   inst.set_target_base(e.part, e.slot, e.value);
     else if (a == "set_target_depth")  inst.set_target_depth(e.part, e.slot, e.value);
+    else if (a == "set_scale")      inst.set_scale(parse_scale_name(e.svalue));
+    else if (a == "set_quant_mode") inst.set_quant_mode(e.part, parse_qmode(e.svalue));
+    else if (a == "set_root")       inst.set_root(e.part, e.ivalue);
     // unknown actions are ignored on purpose (forward-compatible scenarios)
 }

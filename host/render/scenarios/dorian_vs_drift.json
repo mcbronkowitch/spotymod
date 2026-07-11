@@ -1,0 +1,42 @@
+{
+  "sample_rate": 48000,
+  "bpm": 120,
+  "duration_s": 24,
+  "init": [
+    {"_comment":"PART A - fixed 16-step melody, quantized to the global Dorian scale (boot default, no action needed)."},
+    {"action":"set_sync_mode","part":0,"value":"sync"},
+    {"action":"set_rate","part":0,"value":0.375},
+    {"action":"set_step","part":0,"flag":true,"ivalue":16},
+    {"action":"set_shape","part":0,"value":0.25},
+    {"action":"set_range","part":0,"value":0.65},
+    {"action":"set_smooth","part":0,"value":0.03},
+    {"action":"set_probability","part":0,"value":1.0},
+    {"action":"set_evolve","part":0,"value":0.0},
+    {"action":"set_depth","part":0,"value":1.0},
+    {"action":"set_target_active","part":0,"slot":2,"flag":true},
+    {"action":"set_target_base","part":0,"slot":2,"value":0.45},
+    {"action":"set_target_active","part":0,"slot":4,"flag":false},
+    {"action":"set_target_base","part":0,"slot":4,"value":0.6},
+
+    {"_comment":"PART B - slow flowing voice, starts consonant in the same Dorian."},
+    {"action":"set_sync_mode","part":1,"value":"free"},
+    {"action":"set_rate","part":1,"value":0.25},
+    {"action":"set_shape","part":1,"value":0.6},
+    {"action":"set_range","part":1,"value":0.5},
+    {"action":"set_smooth","part":1,"value":0.4},
+    {"action":"set_depth","part":1,"value":1.0},
+    {"action":"set_target_active","part":1,"slot":2,"flag":true},
+    {"action":"set_target_base","part":1,"slot":2,"value":0.35},
+    {"action":"set_target_active","part":1,"slot":4,"flag":false},
+    {"action":"set_target_base","part":1,"slot":4,"value":0.4}
+  ],
+  "events": [
+    {"_comment":"Bars 1-4: both parts sit in Dorian - consonant."},
+    {"t":8.0,"action":"set_quant_mode","part":1,"value":"chrom"},
+    {"_comment":"8s: part B goes chromatic - drift now steps in semitones."},
+    {"t":12.0,"action":"set_evolve","part":1,"value":0.4},
+    {"t":16.0,"action":"set_quant_mode","part":1,"value":"free"},
+    {"_comment":"16s: part B unquantized - continuous drift against the Dorian melody."},
+    {"t":20.0,"action":"set_evolve","part":1,"value":0.7}
+  ]
+}

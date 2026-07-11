@@ -41,3 +41,27 @@ TEST_CASE("scenario: parses init + timeline and sorts events by time") {
     for (const auto& e : s.events)      apply_event(inst, e);
     std::remove(path);
 }
+
+TEST_CASE("scenario: quantizer actions reach the instrument") {
+    Instrument inst;
+    inst.init(48000.f);
+    Event depth;  depth.action = "set_depth"; depth.part = 0; depth.value = 0.f;
+    apply_event(inst, depth);
+    Event base;   base.action = "set_target_base"; base.part = 0;
+    base.slot = LANE_PITCH; base.value = 0.5f;
+    apply_event(inst, base);
+
+    float l = 0.f, r = 0.f;
+    for (int i = 0; i < 4000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.pitch_cv(0) == doctest::Approx(17.f / 36.f));   // boot dorian
+
+    Event scale;  scale.action = "set_scale"; scale.svalue = "whole";
+    apply_event(inst, scale);
+    for (int i = 0; i < 4000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.pitch_cv(0) == doctest::Approx(18.f / 36.f));   // whole tone
+
+    Event mode;   mode.action = "set_quant_mode"; mode.part = 0; mode.svalue = "free";
+    apply_event(inst, mode);
+    inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.pitch_cv(0) == doctest::Approx(0.5f));          // raw passthrough
+}

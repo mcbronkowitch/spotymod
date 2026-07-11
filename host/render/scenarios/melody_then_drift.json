@@ -3,6 +3,9 @@
   "bpm": 120,
   "duration_s": 24,
   "init": [
+    {"_comment":"Pre-scale-era scene: opt out of the Dorian boot default explicitly."},
+    {"action":"set_quant_mode","part":0,"value":"free"},
+    {"action":"set_quant_mode","part":1,"value":"free"},
     {"_comment":"PART A — a FIXED 16-step melody. shape<=0.75 + prob=1 + evolve=0 => loops identically."},
     {"action":"set_sync_mode","part":0,"value":"sync"},
     {"action":"set_rate","part":0,"value":0.375},
