@@ -56,6 +56,7 @@ add_executable(spky_tests
     host/render/scenario.cpp
     tests/test_scenario.cpp
     tests/test_fx_deps.cpp
+    tests/test_fx_util.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)
