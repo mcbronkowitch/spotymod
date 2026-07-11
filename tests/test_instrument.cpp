@@ -43,3 +43,18 @@ TEST_CASE("instrument: the two parts are decorrelated") {
     }
     CHECK(differ);
 }
+
+TEST_CASE("instrument: set_scale is global and reaches both parts") {
+    Instrument inst;
+    inst.init(48000.f);
+    inst.set_depth(PART_A, 0.f);
+    inst.set_depth(PART_B, 0.f);
+    inst.set_target_base(PART_A, LANE_PITCH, 0.5f);
+    inst.set_target_base(PART_B, LANE_PITCH, 0.5f);
+    inst.set_scale(SCALE_WHOLE);   // 18 semis is a whole-tone degree
+    std::vector<float> l(1), r(1);
+    for (int i = 0; i < 4000; ++i)   // ride out the 40 ms change slew
+        inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+    CHECK(inst.pitch_cv(PART_A) == doctest::Approx(18.f / 36.f));
+    CHECK(inst.pitch_cv(PART_B) == doctest::Approx(18.f / 36.f));
+}

@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include "mod/super_modulator.h"
+#include "pitch/quantizer.h"
 #include "parts/engine_iface.h"
 #include "parts/test_tone_engine.h"
 #include "util/math.h"
@@ -16,6 +17,7 @@ public:
     void init(float sample_rate, uint32_t seed_base);
 
     SuperModulator& mod() { return _mod; }
+    Quantizer& quant() { return _quant; }
 
     void set_depth(float d) { _depth = clampf(d, 0.f, 1.f); }
     void set_tune(float t)  { _tune = clampf(t, 0.f, 1.f); }
@@ -23,7 +25,8 @@ public:
     void set_target_base(int slot, float b)   { _base[slot] = clampf(b, 0.f, 1.f); }
     void set_target_depth(int slot, float d)  { _tdepth[slot] = clampf(d, 0.f, 1.f); }
 
-    float target_value(int slot) const;        // base + mod*depth, clamped 0..1
+    float target_value(int slot) const;
+    float target_raw(int slot) const;          // base + mod*depth, unquantized
     float lane_output(int slot) const { return _mod.lane_output(slot); }
     bool  lane_fired(int slot) const  { return _mod.lane_fired(slot); }
     bool  gate() const { return _gate_ctr > 0; }
@@ -45,6 +48,9 @@ private:
     int   _gate_ctr = 0;
     int   _gate_len = 240;   // ~5 ms @ 48k, recomputed in init()
     float _sr = 48000.f;
+
+    Quantizer _quant;
+    float     _pitch_q = 0.f;
 };
 
 } // namespace spky

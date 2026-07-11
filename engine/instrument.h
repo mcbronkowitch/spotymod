@@ -29,6 +29,13 @@ public:
     void set_target_active(int p, int s, bool on) { _parts[p].set_target_active(s, on); }
     void set_target_base(int p, int s, float n)   { _parts[p].set_target_base(s, n); }
     void set_target_depth(int p, int s, float n)  { _parts[p].set_target_depth(s, n); }
+    void set_scale(int scale_idx) {
+        if (scale_idx < 0) scale_idx = 0;
+        if (scale_idx >= SCALE_LIST_COUNT) scale_idx = SCALE_LIST_COUNT - 1;
+        for (auto& part : _parts) part.quant().set_scale(SCALE_MASKS[scale_idx]);
+    }
+    void set_quant_mode(int p, QuantMode m) { _parts[p].quant().set_mode(m); }
+    void set_root(int p, int semis)         { _parts[p].quant().set_root(semis); }
 
     float lane_output(int p, int s)  const { return _parts[p].lane_output(s); }
     float target_value(int p, int s) const { return _parts[p].target_value(s); }
