@@ -15,6 +15,24 @@ target_include_directories(doctest INTERFACE third_party)
 add_library(nlohmann_json INTERFACE)
 target_include_directories(nlohmann_json INTERFACE third_party)
 
+# --- DaisySP (vendored submodule; only the modules the FX chain needs) ---
+add_library(daisysp_min STATIC
+    lib/DaisySP/Source/Effects/overdrive.cpp
+    lib/DaisySP/Source/Effects/decimator.cpp
+    lib/DaisySP/Source/Effects/sampleratereducer.cpp
+    lib/DaisySP/Source/Control/phasor.cpp
+    lib/DaisySP/DaisySP-LGPL/Source/Effects/reverbsc.cpp
+)
+target_include_directories(daisysp_min PUBLIC
+    lib/DaisySP/Source
+    lib/DaisySP/DaisySP-LGPL/Source
+    PRIVATE
+    lib/DaisySP/Source/Utility
+    lib/DaisySP/Source/Control
+    lib/DaisySP/Source/Effects
+    lib/DaisySP/DaisySP-LGPL/Source/Effects
+)
+
 # --- tests ---
 enable_testing()
 add_executable(spky_tests
@@ -37,8 +55,9 @@ add_executable(spky_tests
     tests/test_wav.cpp
     host/render/scenario.cpp
     tests/test_scenario.cpp
+    tests/test_fx_deps.cpp
 )
-target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json)
+target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)
 add_test(NAME spky_tests COMMAND spky_tests)
 
@@ -52,4 +71,4 @@ add_executable(render
     engine/instrument.cpp
 )
 target_include_directories(render PRIVATE host engine)
-target_link_libraries(render PRIVATE nlohmann_json)
+target_link_libraries(render PRIVATE nlohmann_json daisysp_min)
