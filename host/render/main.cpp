@@ -7,6 +7,10 @@
 
 using namespace spky;
 
+// FX memory, injected per the engine's no-heap contract (FxMem pattern).
+static float s_echo[spky::PART_COUNT][2][spky::Flux::kMaxSamples];
+static spky::AmbientReverb s_reverb;
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::printf("usage: render <scenario.json> [out.wav] [mods.csv]\n");
@@ -24,7 +28,11 @@ int main(int argc, char** argv) {
     }
 
     Instrument inst;
-    inst.init(static_cast<float>(scen.sample_rate));
+    FxMem fx_mem;
+    for (int p = 0; p < PART_COUNT; ++p)
+        for (int c = 0; c < 2; ++c) fx_mem.echo[p][c] = s_echo[p][c];
+    fx_mem.reverb = &s_reverb;
+    inst.init(static_cast<float>(scen.sample_rate), fx_mem);
     inst.set_tempo_bpm(scen.bpm);
     for (const auto& e : scen.init_events) apply_event(inst, e);
 
@@ -33,7 +41,9 @@ int main(int argc, char** argv) {
     if (csv) {
         std::fprintf(csv, "t,"
             "a_src,a_size,a_pitch,a_motion,a_level,a_pcv,a_gate,"
-            "b_src,b_size,b_pitch,b_motion,b_level,b_pcv,b_gate\n");
+            "a_fx0,a_fx1,a_fx2,a_fx3,a_fx4,"
+            "b_src,b_size,b_pitch,b_motion,b_level,b_pcv,b_gate,"
+            "b_fx0,b_fx1,b_fx2,b_fx3,b_fx4\n");
     }
 
     const size_t total = static_cast<size_t>(scen.duration_s * scen.sample_rate);
@@ -57,6 +67,8 @@ int main(int argc, char** argv) {
                 for (int s = 0; s < LANE_COUNT; ++s)
                     std::fprintf(csv, ",%.4f", inst.lane_output(p, s));
                 std::fprintf(csv, ",%.4f,%d", inst.pitch_cv(p), inst.gate(p) ? 1 : 0);
+                for (int s = 0; s < FXT_COUNT; ++s)
+                    std::fprintf(csv, ",%.4f", inst.fx_target_value(p, s));
             }
             std::fprintf(csv, "\n");
         }

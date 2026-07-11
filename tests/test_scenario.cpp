@@ -65,3 +65,38 @@ TEST_CASE("scenario: quantizer actions reach the instrument") {
     inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(inst.pitch_cv(0) == doctest::Approx(0.5f));          // raw passthrough
 }
+
+TEST_CASE("scenario: fx actions reach the instrument") {
+    Instrument inst;
+    inst.init(48000.f);
+
+    Event base;
+    base.action = "set_fx_target_base";
+    base.part = 0;
+    base.slot = FXT_FLUX_TIME;
+    base.value = 0.8f;
+    apply_event(inst, base);
+    CHECK(inst.fx_target_value(0, FXT_FLUX_TIME) == doctest::Approx(0.8f));
+
+    Event on;      // must not crash even without FX memory
+    on.action = "set_fx_on";
+    on.part = 0;
+    on.svalue = "flux";
+    on.flag = true;
+    apply_event(inst, on);
+
+    Event mode;
+    mode.action = "set_grit_mode";
+    mode.part = 1;
+    mode.svalue = "reduce";
+    apply_event(inst, mode);
+
+    Event shim;    // global reverb action: no part, null-safe
+    shim.action = "set_reverb_shimmer";
+    shim.value = 0.5f;
+    apply_event(inst, shim);
+
+    float l = 0.f, r = 0.f;
+    inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(l == l);
+}

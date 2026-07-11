@@ -55,6 +55,14 @@ static QuantMode parse_qmode(const std::string& s) {
     return QuantMode::Scale;
 }
 
+static FxBlock parse_fx_block(const std::string& s) {
+    return s == "grit" ? FxBlock::Grit : FxBlock::Flux;
+}
+
+static GritMode parse_grit_mode(const std::string& s) {
+    return s == "reduce" ? GritMode::Reduce : GritMode::Drive;
+}
+
 static int parse_scale_name(const std::string& s) {
     if (s == "min_pent") return SCALE_MIN_PENT;
     if (s == "aeolian")  return SCALE_AEOLIAN;
@@ -84,5 +92,15 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_scale")      inst.set_scale(parse_scale_name(e.svalue));
     else if (a == "set_quant_mode") inst.set_quant_mode(e.part, parse_qmode(e.svalue));
     else if (a == "set_root")       inst.set_root(e.part, e.ivalue);
+    else if (a == "set_fx_on")            inst.set_fx_on(e.part, parse_fx_block(e.svalue), e.flag);
+    else if (a == "set_grit_mode")        inst.set_grit_mode(e.part, parse_grit_mode(e.svalue));
+    else if (a == "set_fx_target_active") inst.set_fx_target_active(e.part, e.slot, e.flag);
+    else if (a == "set_fx_target_base")   inst.set_fx_target_base(e.part, e.slot, e.value);
+    else if (a == "set_fx_target_depth")  inst.set_fx_target_depth(e.part, e.slot, e.value);
+    else if (a == "set_flux_mix")         inst.set_flux_mix(e.part, e.value);
+    else if (a == "set_grit_mix")         inst.set_grit_mix(e.part, e.value);
+    else if (a == "set_reverb_size")      inst.set_reverb_size(e.value);
+    else if (a == "set_reverb_tone")      inst.set_reverb_tone(e.value);
+    else if (a == "set_reverb_shimmer")   inst.set_reverb_shimmer(e.value);
     // unknown actions are ignored on purpose (forward-compatible scenarios)
 }
