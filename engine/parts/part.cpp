@@ -2,11 +2,13 @@
 
 using namespace spky;
 
-void Part::init(float sample_rate, uint32_t seed_base) {
+void Part::init(float sample_rate, uint32_t seed_base,
+                float* echo_l, float* echo_r) {
     _sr = sample_rate;
     _mod.init(sample_rate, seed_base);
     _tone.init(sample_rate);
     _engine = &_tone;
+    _fx.init(sample_rate, echo_l, echo_r);
     _gate_len = static_cast<int>(sample_rate * 0.005f);
     _gate_ctr = 0;
     _quant.init(sample_rate);                  // boots Dorian / SCALE / root 0
@@ -29,7 +31,15 @@ float Part::target_value(int slot) const {
     return slot == LANE_PITCH ? _pitch_q : target_raw(slot);
 }
 
-void Part::process(float& outL, float& outR) {
+// Same combine rule as target_raw, tapped from the SAME lanes — the FX breathe
+// in the part's own character. Never quantized (that is a PITCH-lane concern).
+float Part::fx_target_value(int slot) const {
+    float mod = _fx_active[slot]
+        ? _mod.lane_output(slot) * _depth * _fx_depth[slot] : 0.f;
+    return clampf(_fx_base[slot] + mod, 0.f, 1.f);
+}
+
+void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     _mod.process();
 
     if (_mod.lane_fired(LANE_PITCH)) _gate_ctr = _gate_len;
@@ -43,4 +53,8 @@ void Part::process(float& outL, float& outR) {
     _engine->set_targets(targets, _tune);
     if (_mod.lane_fired(LANE_PITCH)) _engine->trigger(targets[LANE_PITCH]);
     _engine->process(outL, outR);
+
+    float fxv[FXT_COUNT];
+    for (int i = 0; i < FXT_COUNT; ++i) fxv[i] = fx_target_value(i);
+    _fx.process(outL, outR, sendL, sendR, fxv);
 }
