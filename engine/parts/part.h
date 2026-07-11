@@ -5,6 +5,8 @@
 #include "pitch/quantizer.h"
 #include "parts/engine_iface.h"
 #include "parts/test_tone_engine.h"
+#include "synth/synth_engine.h"
+#include "fx/fx_util.h"
 #include "fx/part_fx.h"
 #include "util/math.h"
 
@@ -33,6 +35,33 @@ public:
     void set_fx_target_depth(int slot, float d)  { _fx_depth[slot] = clampf(d, 0.f, 1.f); }
     float fx_target_value(int slot) const;
 
+    // --- engine selection (M2). Boot default: ENGINE_SYNTH. ---
+    // Click-free: 4 ms SoftSwitch fade-out -> swap -> 4 ms fade-in; the swap
+    // and state re-forwarding happen inside process() at the idle point.
+    void set_engine(EngineId e);
+    EngineId engine_id() const { return _engine_id; }
+
+    // STEP/FLOW reaches both the lanes and the engine (drone rule)
+    void set_step(bool on, int steps);
+
+    // PLAY tap (M6 wires the gesture; the engine sees an ordinary trigger)
+    void trigger_manual();
+
+    // VOICE edit layer - forwarded to the synth engine directly, so edits
+    // stick even while the test tone is the active engine
+    void set_voice_attack(float n)    { _synth.set_attack(n); }
+    void set_voice_decay(float n)     { _synth.set_decay(n); }
+    void set_voice_resonance(float n) { _synth.set_resonance(n); }
+    void set_voice_sub(float n)       { _synth.set_sub(n); }
+    void set_voice_detune(float n)    { _synth.set_detune(n); }
+
+    int active_voices() const {
+        return _engine_id == ENGINE_SYNTH ? _synth.active_voices() : 0;
+    }
+    float voice_env(int v) const {
+        return _engine_id == ENGINE_SYNTH ? _synth.voice_env(v) : 0.f;
+    }
+
     float target_value(int slot) const;
     float target_raw(int slot) const;          // base + mod*depth, unquantized
     float pitch_pre_quant() const;             // PITCH target + TUNE, pre-quantize
@@ -52,6 +81,18 @@ private:
     SuperModulator _mod;
     TestToneEngine _tone;
     IPartEngine*   _engine = nullptr;
+    SynthEngine    _synth;
+    SoftSwitch     _engine_fade;
+    EngineId       _engine_id = ENGINE_SYNTH;
+    EngineId       _pending_engine = ENGINE_SYNTH;
+    bool           _switching = false;
+    bool           _step_on = false;
+    float          _last_master_hz = -1.f;
+
+    IPartEngine* _engine_for(EngineId e) {
+        return e == ENGINE_SYNTH ? static_cast<IPartEngine*>(&_synth)
+                                 : static_cast<IPartEngine*>(&_tone);
+    }
     PartFx         _fx;
 
     std::array<bool,  LANE_COUNT> _active { { false, false, true, false, true } };

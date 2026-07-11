@@ -32,7 +32,7 @@ public:
     void set_smooth(int p, float n)          { _parts[p].mod().set_smooth(n); }
     void set_range(int p, float n)           { _parts[p].mod().set_range(n); }
     void set_evolve(int p, float n)          { _parts[p].mod().set_evolve(n); }
-    void set_step(int p, bool on, int steps) { _parts[p].mod().set_step(on, steps); }
+    void set_step(int p, bool on, int steps) { _parts[p].set_step(on, steps); }
     void set_fixed_slew(int p, bool on)      { _parts[p].mod().set_fixed_slew(on); }
     void set_depth(int p, float n)           { _parts[p].set_depth(n); }
     void set_tune(int p, float n)            { _parts[p].set_tune(n); }
