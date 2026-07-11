@@ -20,7 +20,7 @@ is actually built today, and what is still design-only.
 |-----------|-------|--------|
 | **M1** | Portable engine foundation: SuperModulator, five lanes, `Instrument` API, desktop render host + tests | ✅ **done** |
 | **+ Scales** | Pitch quantization (6 scales, SCALE/CHROM/FREE, root) layered onto the PITCH lane | ✅ **done** (engine + host; UI wiring deferred to M6) |
-| **M1.6** | FX: per-part FLUX (tape echo) + GRIT (drive/reduce), shared ambient reverb, FX params as modulation targets | ⬜ planned |
+| **M1.6** | FX: per-part FLUX (tape echo) + GRIT (drive/reduce), shared ambient reverb, FX params as modulation targets | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M2** | Polyphonic synth voice (replaces the M1 test tone) | ⬜ planned |
 | **M3** | Capture sequencer (freeze the PITCH lane into a loop) | ⬜ planned |
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT | ⬜ planned |
@@ -84,19 +84,26 @@ but not yet wired (that is UI work, i.e. M6).
   hysteresis, change-slew settle time, FREE passthrough, root shift, and that
   `pitch_cv()` only lands on allowed scale degrees in SCALE mode.
 
-## Planned
+### M1.6 — FX ✅
 
-### M1.6 — FX ⬜
-Per-part FX chain (GRIT drive/reduce → FLUX tape echo → FX MIX) ported from the
-original firmware into portable `engine/fx/`, plus **one shared ambient reverb**
-(DaisySP ReverbSc + optional shimmer) with per-part sends tapped post-FX,
-pre-morph. Five curated FX params per part become modulation targets, tapped
-1:1 off the existing lanes (`fx_target_value()`, same `{active, base, depth}`
-pattern as engine targets): GRIT INTENSITY, FLUX TIME, FX MIX, REVERB SEND,
-FLUX FEEDBACK. UX rides the hardware's unassigned FLUX/GRIT pads (tap = on/off,
-hold = edit layer; ALT+GRIT = drive/reduce, ALT+FLUX-hold = global reverb).
-DaisySP becomes an `engine/` dependency (M2 needs it anyway). Full design:
-`2026-07-11-spotykach-fx-design.md`.
+Per-part FLUX (tape echo) + GRIT (drive/reduce) ported from the original
+firmware, a shared ambient reverb (DaisySP `ReverbSc` + optional +12 st
+shimmer), and 5 curated FX parameters per part as first-class modulation
+targets — a second tap on the same five lanes (fixed 1:1 lane → target
+mapping, `engine/fx/part_fx.h`).
+
+- **`engine/fx/`** — `fx_util.h` (XFade/SoftSwitch ports), `grit.*`, `flux.*`,
+  `reverb.*`, `part_fx.*`. DaisySP is now an `engine/` dependency (portable
+  C++; still no libDaisy). Memory is injected (`FxMem`): echo buffers +
+  reverb object — static on desktop, SDRAM on Daisy (M6).
+- **Signal flow** — per part: engine → GRIT → FLUX → FX MIX (equal-gain
+  dry/wet); post-FX send × REVERB SEND (equal-power) into the shared room,
+  which joins the master after the part mix. Bypass is bit-exact.
+- **Host** — 10 new scenario actions, 5 FX columns per part in `mods.csv`,
+  demo scenarios `dub_delay.json` / `ambient_wash.json`.
+- **UI (M6)** — FLUX/GRIT pads, hold-layers, ALT gestures per the FX spec.
+
+## Planned
 
 ### M2 — Polyphonic synth voice ⬜
 4-voice polyphonic engine (DaisySP building blocks) behind `engine_iface`,

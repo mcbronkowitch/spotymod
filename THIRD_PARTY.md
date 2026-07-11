@@ -44,5 +44,11 @@ DaisySP ships an optional module set under `DaisySP/DaisySP-LGPL/` that is
 licensed under the **LGPL**, separate from the MIT-licensed DaisySP core. If a
 compiled firmware binary is distributed that links any DaisySP-LGPL module, the
 LGPL's relinking/attribution obligations apply to that binary. Distributing this
-**source** repository imposes no such obligation. The portable `engine/` core in
-this project is deliberately free of libDaisy/DaisySP and is unaffected.
+**source** repository imposes no such obligation.
+
+As of M1.6 the portable `engine/` core depends on DaisySP (MIT) for its FX
+blocks — still no libDaisy — and `engine/fx/reverb.*` links the LGPL-2.1
+`ReverbSc` module from `DaisySP-LGPL`. Desktop test/render binaries and any
+distributed firmware binary therefore link LGPL code, with the relinking/
+attribution obligations noted above. Distributing this source repository
+imposes no such obligation.
