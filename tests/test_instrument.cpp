@@ -2,6 +2,7 @@
 #include <vector>
 #include <cmath>
 #include "instrument.h"
+#include "fx/reverb.h"
 using namespace spky;
 
 TEST_CASE("instrument: init and render a block without NaNs") {
@@ -57,4 +58,65 @@ TEST_CASE("instrument: set_scale is global and reaches both parts") {
         inst.process(nullptr, nullptr, l.data(), r.data(), 1);
     CHECK(inst.pitch_cv(PART_A) == doctest::Approx(18.f / 36.f));
     CHECK(inst.pitch_cv(PART_B) == doctest::Approx(18.f / 36.f));
+}
+
+static float s_ti_echo[PART_COUNT][2][spky::Flux::kMaxSamples];
+static spky::AmbientReverb s_ti_reverb;
+
+static spky::FxMem test_fx_mem() {
+    spky::FxMem m;
+    for (int p = 0; p < PART_COUNT; ++p)
+        for (int c = 0; c < 2; ++c) m.echo[p][c] = s_ti_echo[p][c];
+    m.reverb = &s_ti_reverb;
+    return m;
+}
+
+TEST_CASE("instrument: all FX off + send 0 is bit-identical to the no-FX build") {
+    Instrument plain;
+    plain.init(48000.f);
+    Instrument fx;
+    fx.init(48000.f, test_fx_mem());
+    for (int p = 0; p < PART_COUNT; ++p)
+        fx.set_fx_target_base(p, FXT_REV_SEND, 0.f);   // before any process()
+    float pl, pr, fl, fr;
+    for (int i = 0; i < 48000; ++i) {
+        plain.process(nullptr, nullptr, &pl, &pr, 1);
+        fx.process(nullptr, nullptr, &fl, &fr, 1);
+        CHECK(fl == pl);
+        CHECK(fr == pr);
+    }
+}
+
+TEST_CASE("instrument: boot reverb send is audible") {
+    Instrument plain;
+    plain.init(48000.f);
+    Instrument fx;
+    fx.init(48000.f, test_fx_mem());   // boot REV_SEND base = 0.25
+    float pl, pr, fl, fr;
+    int diff = 0;
+    for (int i = 0; i < 48000; ++i) {
+        plain.process(nullptr, nullptr, &pl, &pr, 1);
+        fx.process(nullptr, nullptr, &fl, &fr, 1);
+        if (std::fabs(fl - pl) > 1e-5f) ++diff;
+    }
+    CHECK(diff > 1000);
+}
+
+TEST_CASE("instrument: fx setters reach the parts and reverb setters are null-safe") {
+    Instrument inst;
+    inst.init(48000.f);                 // NO reverb, NO buffers
+    inst.set_fx_on(PART_A, FxBlock::Grit, true);
+    inst.set_grit_mode(PART_A, GritMode::Reduce);
+    inst.set_fx_target_active(PART_A, FXT_GRIT_INT, true);
+    inst.set_fx_target_base(PART_A, FXT_GRIT_INT, 0.6f);
+    inst.set_fx_target_depth(PART_A, FXT_GRIT_INT, 0.5f);
+    inst.set_flux_mix(PART_A, 0.4f);
+    inst.set_grit_mix(PART_A, 0.7f);
+    inst.set_reverb_size(0.9f);         // must not crash without a reverb
+    inst.set_reverb_tone(0.2f);
+    inst.set_reverb_shimmer(0.5f);
+    float l, r;
+    inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.fx_target_value(PART_A, FXT_GRIT_INT) >= 0.f);
+    CHECK(l == l);   // not NaN
 }
