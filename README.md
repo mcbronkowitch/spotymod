@@ -101,7 +101,7 @@ identically, then slowly mutates as EVOLVE is dialled in.
 |-----------|-------|--------|
 | **M1** | Portable engine foundation: SuperModulator, five lanes, `Instrument` API, desktop render host + tests | ✅ done |
 | **M1.6** | FX: per-part FLUX (tape echo) + GRIT (drive/reduce), shared ambient reverb, FX params as modulation targets | **done** (engine + host) |
-| **M2** | Polyphonic synth voice (replaces the M1 test tone) | planned |
+| **M2** | Polyphonic synth voice (replaces the M1 test tone) | **done** (engine + host) |
 | **M3** | Capture sequencer (freeze the PITCH lane into a loop) | planned |
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT | planned |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | planned |

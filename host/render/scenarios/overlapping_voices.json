@@ -1,0 +1,42 @@
+{
+  "sample_rate": 48000,
+  "bpm": 84,
+  "duration_s": 48,
+  "init": [
+    {"_comment":"PART A - synth (boot default). STEP Dorian melody at probability 0.6; DECAY ratio pushed long so notes overlap into pads (the spec's 'evolving, quantized melodic texture with overlapping voices')."},
+    {"action":"set_sync_mode","part":0,"value":"sync"},
+    {"action":"set_rate","part":0,"value":0.5},
+    {"action":"set_step","part":0,"flag":true,"ivalue":8},
+    {"action":"set_shape","part":0,"value":0.55},
+    {"action":"set_range","part":0,"value":0.7},
+    {"action":"set_smooth","part":0,"value":0.1},
+    {"action":"set_probability","part":0,"value":0.6},
+    {"action":"set_depth","part":0,"value":1.0},
+    {"action":"set_target_active","part":0,"slot":2,"flag":true},
+    {"action":"set_target_base","part":0,"slot":2,"value":0.45},
+    {"action":"set_target_active","part":0,"slot":4,"flag":true},
+    {"action":"set_target_base","part":0,"slot":4,"value":0.75},
+
+    {"_comment":"TIMBRE breathes gently on its own lane; FILTER sits mid-open."},
+    {"action":"set_target_active","part":0,"slot":0,"flag":true},
+    {"action":"set_target_base","part":0,"slot":0,"value":0.35},
+    {"action":"set_target_depth","part":0,"slot":0,"value":0.4},
+    {"action":"set_target_base","part":0,"slot":1,"value":0.55},
+    {"action":"set_target_active","part":0,"slot":3,"flag":true},
+    {"action":"set_target_base","part":0,"slot":3,"value":0.5},
+
+    {"_comment":"Long decay: ratio knob 0.75 -> ~2.7x cycle (~3.8 s at this rate). A touch of shared room."},
+    {"action":"set_voice_decay","part":0,"value":0.75},
+    {"action":"set_fx_target_base","part":0,"slot":3,"value":0.3},
+
+    {"_comment":"PART B muted for clarity."},
+    {"action":"set_target_active","part":1,"slot":4,"flag":false},
+    {"action":"set_target_base","part":1,"slot":4,"value":0.0}
+  ],
+  "events": [
+    {"t":24.0,"action":"set_probability","part":0,"value":0.85},
+    {"_comment":"24s: denser firing - deeper voice overlap."},
+    {"t":36.0,"action":"set_evolve","part":0,"value":0.3},
+    {"_comment":"36s: the melody starts wandering within Dorian."}
+  ]
+}

@@ -21,7 +21,7 @@ is actually built today, and what is still design-only.
 | **M1** | Portable engine foundation: SuperModulator, five lanes, `Instrument` API, desktop render host + tests | ✅ **done** |
 | **+ Scales** | Pitch quantization (6 scales, SCALE/CHROM/FREE, root) layered onto the PITCH lane | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M1.6** | FX: per-part FLUX (tape echo) + GRIT (drive/reduce), shared ambient reverb, FX params as modulation targets | ✅ **done** (engine + host; UI wiring deferred to M6) |
-| **M2** | Polyphonic synth voice (replaces the M1 test tone) | ⬜ planned |
+| **M2** | Polyphonic synth voice (replaces the M1 test tone) | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M3** | Capture sequencer (freeze the PITCH lane into a loop) | ⬜ planned |
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT | ⬜ planned |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
@@ -103,15 +103,41 @@ mapping, `engine/fx/part_fx.h`).
   demo scenarios `dub_delay.json` / `ambient_wash.json`.
 - **UI (M6)** — FLUX/GRIT pads, hold-layers, ALT gestures per the FX spec.
 
-## Planned
+### M2 — Polyphonic synth voice ✅
 
-### M2 — Polyphonic synth voice ⬜
-4-voice polyphonic engine (DaisySP building blocks) behind `engine_iface`,
-replacing the test tone. Trigger-based round-robin allocation (oldest stolen),
-pitch latched per voice at trigger time (PITCH target + V/Oct, quantized via the
-existing quantizer over the **sum**). Per voice: 2 detuned oscillators + sub,
-wavetable morph, lowpass filter, own AD envelope. Targets: TIMBRE, FILTER, PITCH,
-MOTION, LEVEL.
+4-voice trigger-driven synth engine (`engine/synth/`) is the boot-default
+part engine; `TestToneEngine` stays selectable (`set_engine` — tests, A/B
+reference).
+
+- **Voice** — 2× polyblep `MorphOsc` (single phasor, continuous
+  sine→tri→saw→pulse, detune in cents) + sub sine → DaisySP `Svf` lowpass →
+  exponential AD/ADS envelope (retrigger-from-level) → equal-power pan with
+  slow deterministic per-voice drift. Audio-path sine is the shared
+  polynomial `fast_sin` (`engine/util/fast_sin.h`) — no libm `sinf` in the
+  voice path; drift + envelope coefficients update at control rate
+  (96-sample blocks). CPU-budget constraints from the spec.
+- **Engine** — round-robin allocation, oldest-steal with retrigger-from-
+  level; STEP = plain AD notes; FLOW = sustaining-last-voice drone (sustain
+  0.7, pitch continuously follows the quantized PITCH target; entering FLOW
+  with no sustaining voice auto-triggers — the drone promise). Targets:
+  TIMBRE (morph + t²·DETUNE_MAX detune), FILTER (60 Hz–14 kHz exp), PITCH
+  (latched at trigger, 110·8^p), MOTION (pan fan ±1/±0.5 × width + drift),
+  LEVEL (smoothed master gain).
+- **Tempo-coupled envelopes** — attack/decay are ratios of the master
+  modulation cycle (defaults 2 % / 1.5×, attack floor 2 ms, decay clamp
+  50 ms–20 s), edited via `set_voice_attack/decay/resonance/sub/detune`
+  (VOICE layer; hardware gestures in M6).
+- **Part / Instrument** — `set_engine(EngineId)` with a click-free
+  SoftSwitch crossfade; `set_cycle`/`set_flow` forwarding (default no-ops on
+  `IPartEngine`); `trigger_manual` (PLAY tap); `active_voices` / `voice_env`
+  introspection.
+- **Host** — 7 new scenario actions; `voices` + `v0..v3` CSV columns; demo
+  scenarios `overlapping_voices.json` (the master spec's M2 acceptance demo)
+  and `flow_drone.json`. Existing scenarios pinned to `ENGINE_TEST_TONE`.
+- **UI (M6)** — VOICE edit layer gestures (PLAY-pad hold), PLAY-tap manual
+  trigger wiring, engine-switch gesture.
+
+## Planned
 
 ### M3 — Capture sequencer ⬜
 Per-part freeze of the PITCH lane's last cycle (pitch steps + trigger pattern) —
