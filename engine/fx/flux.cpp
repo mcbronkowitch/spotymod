@@ -36,6 +36,7 @@ void Flux::set_feedback(float norm) {
 }
 
 void Flux::set_mix(float norm) {
+    if (!_buf_ok) return;
     _mix_lin = dbfs2lin(daisysp::fmap(clampf(norm, 0.f, 1.f), -40.f, 0.f));
 }
 

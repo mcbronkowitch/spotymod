@@ -2,8 +2,9 @@
 
 This project bundles or depends on the components listed below. Each retains its
 own copyright and license; the notices in the respective source files are
-authoritative. All components are permissively licensed (MIT), with one optional
-LGPL module set noted under DaisySP.
+authoritative. Most components are permissively licensed (MIT); one separately
+licensed LGPL module set (DaisySP's `ReverbSc`) is linked as of M1.6 — see the
+note under DaisySP.
 
 The Spotykach firmware itself is distributed under the MIT License — see
 [`LICENSE`](LICENSE) (Copyright © 2026 Synthux Academy). This repository is a
