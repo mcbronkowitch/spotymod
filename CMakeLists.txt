@@ -65,6 +65,7 @@ add_executable(spky_tests
     tests/test_reverb.cpp
     engine/fx/part_fx.cpp
     tests/test_part_fx.cpp
+    tests/test_fast_sin.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)
