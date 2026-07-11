@@ -63,6 +63,8 @@ add_executable(spky_tests
     tests/test_flux.cpp
     engine/fx/reverb.cpp
     tests/test_reverb.cpp
+    engine/fx/part_fx.cpp
+    tests/test_part_fx.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)
@@ -79,6 +81,7 @@ add_executable(render
     engine/fx/grit.cpp
     engine/fx/flux.cpp
     engine/fx/reverb.cpp
+    engine/fx/part_fx.cpp
 )
 target_include_directories(render PRIVATE host engine)
 target_link_libraries(render PRIVATE nlohmann_json daisysp_min)
