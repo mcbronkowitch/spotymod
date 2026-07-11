@@ -20,6 +20,7 @@ enable_testing()
 add_executable(spky_tests
     tests/test_main.cpp
     tests/smoke.cpp
+    tests/test_quantizer.cpp
     tests/test_rng.cpp
     tests/test_waveforms.cpp
     tests/test_range.cpp
