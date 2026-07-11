@@ -1,0 +1,229 @@
+#include <doctest/doctest.h>
+#include <algorithm>
+#include <cmath>
+#include <vector>
+#include "synth/synth_engine.h"
+using namespace spky;
+
+// Feed one set of targets: TIMBRE, FILTER, PITCH, MOTION, LEVEL by lane slot.
+static void feed(SynthEngine& e, float pitch, float timbre = 0.f, float filter = 1.f,
+                 float motion = 0.f, float level = 1.f) {
+    float t[LANE_COUNT] = { timbre, filter, pitch, motion, level };
+    e.set_targets(t, 0.5f);
+}
+
+// Fresh engine in "measurement" trim: pure sine, no sub, no detune, mono.
+static void fresh(SynthEngine& e, uint32_t seed = 99) {
+    e.set_seed(seed);
+    e.init(48000.f);
+    e.set_sub(0.f);
+    e.set_detune(0.f);
+    e.set_cycle(1.f);
+    feed(e, 0.5f);
+}
+
+static std::vector<float> render_l(SynthEngine& e, int n) {
+    std::vector<float> out(n);
+    for (auto& s : out) {
+        float l = 0.f, r = 0.f;
+        e.process(l, r);
+        s = l;
+    }
+    return out;
+}
+
+static int crossings(const std::vector<float>& v, size_t from = 0) {
+    int n = 0;
+    for (size_t i = from + 1; i < v.size(); ++i)
+        if (v[i - 1] <= 0.f && v[i] > 0.f) ++n;
+    return n;
+}
+
+TEST_CASE("synth: pitch contract - trigger(p) sounds at 110*8^p Hz, latched in STEP") {
+    SynthEngine e;
+    fresh(e);
+    e.trigger(0.5f);                        // 311.13 Hz
+    auto v1 = render_l(e, 48000);
+    int n1 = crossings(v1, 4800);           // skip the attack; ~311 * 0.9 = 280
+    CHECK(n1 >= 275);
+    CHECK(n1 <= 285);
+
+    SynthEngine e2;
+    fresh(e2);
+    e2.trigger(0.5f);
+    feed(e2, 0.9f);                         // target moves AFTER the trigger...
+    auto v2 = render_l(e2, 48000);
+    CHECK(crossings(v2, 4800) == n1);       // ...a STEP voice must not follow
+}
+
+TEST_CASE("synth: round-robin fills 4 voices; 5th steals the oldest, click-free") {
+    SynthEngine e;
+    fresh(e);
+    e.set_cycle(4.f);                       // long decay: all voices stay active
+    for (int v = 0; v < 4; ++v) {
+        e.trigger(0.2f + 0.15f * v);
+        render_l(e, 960);                   // 20 ms apart
+    }
+    CHECK(e.active_voices() == 4);
+    for (int v = 0; v < 4; ++v) CHECK(e.voice_env(v) > 0.f);
+
+    float env0_at_steal = 0.f;              // voice 0 is the oldest
+    float prev = 0.f, max_delta = 0.f;
+    for (int i = 0; i < 9600; ++i) {
+        if (i == 4800) {
+            env0_at_steal = e.voice_env(0); // level the instant before the steal
+            e.trigger(0.8f);                // 5th note: steal
+        }
+        float l = 0.f, r = 0.f;
+        e.process(l, r);
+        if (i > 0) max_delta = std::max(max_delta, std::fabs(l - prev));
+        prev = l;
+    }
+    CHECK(e.active_voices() == 4);          // reuse, never a 5th voice
+    CHECK(e.voice_env(0) > env0_at_steal);  // retriggered FROM its level, rising
+    CHECK(max_delta < 0.2f);                // no click on the steal
+}
+
+TEST_CASE("synth: decay length tracks set_cycle (ratio 1.5x honored)") {
+    auto silence_time = [](float cycle_s) {
+        SynthEngine e;
+        fresh(e);
+        e.set_cycle(cycle_s);
+        e.trigger(0.5f);
+        int n = 0;
+        while (n < 48000 * 30) {
+            float l = 0.f, r = 0.f;
+            e.process(l, r);
+            ++n;
+            if (e.active_voices() == 0) break;
+        }
+        return n;
+    };
+    // decay = 1.5 x cycle (to -60 dB); voice idles at -80 dB = ~1.33 x that
+    int fast = silence_time(0.5f);          // decay 0.75 s -> idle ~1.0 s
+    int slow = silence_time(2.0f);          // decay 3 s    -> idle ~4 s
+    CHECK(fast > static_cast<int>(0.75f * 48000));
+    CHECK(fast < static_cast<int>(1.4f * 48000));
+    CHECK(slow > static_cast<int>(3.0f * 48000));
+    CHECK(slow < static_cast<int>(5.6f * 48000));
+    CHECK(slow > fast * 3);
+}
+
+TEST_CASE("synth: attack floor 2 ms and decay clamp 50 ms at extreme cycles") {
+    SynthEngine e;
+    fresh(e);
+    e.set_cycle(0.02f);     // attack 2% -> 0.4 ms, floored to 2 ms;
+                            // decay 1.5x -> 30 ms, clamped up to 50 ms
+    e.trigger(0.5f);
+    int to_peak = 0;
+    while (e.voice_env(0) < 1.f && to_peak < 4800) {
+        float l = 0.f, r = 0.f;
+        e.process(l, r);
+        ++to_peak;
+    }
+    CHECK(to_peak >= 80);                   // ~96 samples = 2 ms (ctrl-rate slack)
+    CHECK(to_peak <= 200);
+    int n = to_peak;
+    while (e.active_voices() > 0 && n < 48000) {
+        float l = 0.f, r = 0.f;
+        e.process(l, r);
+        ++n;
+    }
+    CHECK(n - to_peak > static_cast<int>(0.05f * 48000));         // >= 50 ms decay
+    CHECK(n - to_peak < static_cast<int>(0.05f * 48000 * 2.0f));
+    float l = 0.f, r = 0.f;                 // STEP silence is EXACT zero
+    e.process(l, r);
+    CHECK(l == 0.f);
+    CHECK(r == 0.f);
+}
+
+TEST_CASE("synth: FLOW drone - auto-trigger, sustain 0.7, pitch tracks, demotion") {
+    SynthEngine e;
+    fresh(e);
+    feed(e, 0.25f);                         // 185.0 Hz
+    e.set_flow(true);                       // no sustaining voice -> auto-trigger
+    auto v = render_l(e, 48000);
+    CHECK(e.active_voices() >= 1);
+    CHECK(e.sustain_voice() >= 0);
+    int n = crossings(v, 4800);             // ~185 * 0.9 = 166
+    CHECK(n >= 160);
+    CHECK(n <= 172);
+
+    render_l(e, 48000 * 3);                 // ride decay-to-sustain out
+    CHECK(e.voice_env(e.sustain_voice()) == doctest::Approx(0.7f).epsilon(0.03));
+
+    feed(e, 0.75f);                         // 523.3 Hz: the drone must follow
+    render_l(e, 9600);                      // let the control rate catch up
+    auto v2 = render_l(e, 48000);
+    int n2 = crossings(v2);
+    CHECK(n2 >= 515);
+    CHECK(n2 <= 532);
+
+    int old_voice = e.sustain_voice();      // a new fire demotes the old drone
+    e.trigger(0.25f);
+    CHECK(e.sustain_voice() != old_voice);
+    render_l(e, 48000 * 8);                 // demoted voice decays to zero
+    CHECK(e.voice_env(old_voice) == 0.f);
+    CHECK(e.voice_env(e.sustain_voice()) == doctest::Approx(0.7f).epsilon(0.03));
+}
+
+TEST_CASE("synth: entering FLOW mid-run with no sustaining voice auto-triggers") {
+    SynthEngine e;
+    fresh(e);
+    render_l(e, 4800);                      // STEP, no trigger: stays silent
+    CHECK(e.active_voices() == 0);
+    e.set_flow(true);                       // drone promise
+    render_l(e, 4800);
+    CHECK(e.active_voices() >= 1);
+    CHECK(e.sustain_voice() >= 0);
+}
+
+TEST_CASE("synth: MOTION width 0 is dead mono; width 1 separates the channels") {
+    SynthEngine e;
+    fresh(e);
+    e.set_flow(true);                       // steady drone to measure
+    feed(e, 0.5f, 0.f, 1.f, 0.f);           // width 0
+    float max_diff = 0.f;
+    for (int i = 0; i < 48000; ++i) {
+        float l = 0.f, r = 0.f;
+        e.process(l, r);
+        max_diff = std::max(max_diff, std::fabs(l - r));
+    }
+    CHECK(max_diff == 0.f);                 // identical gains -> bit-equal L/R
+
+    SynthEngine e2;
+    fresh(e2);
+    e2.set_flow(true);
+    feed(e2, 0.5f, 0.f, 1.f, 1.f);          // width 1: voice 0 fans hard left
+    float suml = 0.f, sumr = 0.f;
+    for (int i = 0; i < 48000; ++i) {
+        float l = 0.f, r = 0.f;
+        e2.process(l, r);
+        suml += l * l;
+        sumr += r * r;
+    }
+    CHECK(std::fabs(suml - sumr) / (suml + sumr + 1e-9f) > 0.2f);
+}
+
+TEST_CASE("synth: identical seed + call sequence is bit-identical") {
+    auto run = [] {
+        SynthEngine e;
+        e.set_seed(1234);
+        e.init(48000.f);
+        e.set_cycle(0.8f);
+        e.set_flow(true);
+        std::vector<float> out;
+        out.reserve(96000);
+        for (int i = 0; i < 48000; ++i) {
+            float t[LANE_COUNT] = { 0.4f, 0.7f, 0.5f, 0.8f, 0.9f };
+            e.set_targets(t, 0.5f);
+            if (i == 10000 || i == 20000) e.trigger(0.3f);
+            float l = 0.f, r = 0.f;
+            e.process(l, r);
+            out.push_back(l);
+            out.push_back(r);
+        }
+        return out;
+    };
+    CHECK(run() == run());
+}

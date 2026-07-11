@@ -3,8 +3,13 @@
 
 namespace spky {
 
+// Selectable part engines. ENGINE_SYNTH is the boot default from M2 on;
+// the test tone stays selectable (tests, A/B reference). The M5 sampler
+// will extend this enum.
+enum EngineId { ENGINE_TEST_TONE = 0, ENGINE_SYNTH = 1 };
+
 // A part's sound engine. Consumes the 5 normalized target values; produces
-// stereo audio. M1 ships TestToneEngine; SynthVoice (M2) and SamplerEngine
+// stereo audio. TestToneEngine (M1), SynthEngine (M2) and SamplerEngine
 // (M5) implement the same interface behind the same Part.
 class IPartEngine {
 public:
@@ -13,6 +18,12 @@ public:
     virtual void set_targets(const float* targets /*[LANE_COUNT]*/, float tune) = 0;
     virtual void trigger(float pitch_norm) = 0;
     virtual void process(float& outL, float& outR) = 0;
+
+    // M2 additions - default no-ops so engines that don't care (test tone,
+    // M5 sampler) ignore them. Part forwards both: cycle on change (not per
+    // sample), flow on STEP/FLOW switches.
+    virtual void set_cycle(float /*seconds*/) {}   // master-lane cycle length
+    virtual void set_flow(bool /*flow*/) {}        // true = FLOW, false = STEP
 };
 
 } // namespace spky
