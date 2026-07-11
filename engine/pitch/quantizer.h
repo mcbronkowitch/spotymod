@@ -97,6 +97,9 @@ private:
         return (mask >> deg) & 1;
     }
 
+    // Outward search from the rounded center: the first allowed note at
+    // integer distance d is the float-nearest up to the lo/hi tie, which is
+    // resolved by comparing real distances (equal -> lower note wins).
     int nearest_note(float semis, uint16_t mask) const {
         const int center = static_cast<int>(semis + 0.5f);
         for (int d = 0; d <= 12; ++d) {

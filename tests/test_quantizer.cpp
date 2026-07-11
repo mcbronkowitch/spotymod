@@ -39,11 +39,8 @@ TEST_CASE("quantizer: root shifts the allowed degrees") {
 
 TEST_CASE("quantizer: every scale mask maps output onto its own degrees") {
     for (int s = 0; s < SCALE_LIST_COUNT; ++s) {
-        Quantizer q;
-        q.init(48000.f);
-        q.set_scale(SCALE_MASKS[s]);
         for (float v : {0.f, 0.2f, 0.4f, 0.6f, 0.8f, 1.f}) {
-            Quantizer fresh;
+            Quantizer fresh;                       // fresh per value: no hysteresis/slew carry-over
             fresh.init(48000.f);
             fresh.set_scale(SCALE_MASKS[s]);
             float semis = fresh.process(v) * 36.f;
