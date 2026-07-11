@@ -22,6 +22,7 @@ add_library(daisysp_min STATIC
     lib/DaisySP/Source/Effects/sampleratereducer.cpp
     lib/DaisySP/Source/Control/phasor.cpp
     lib/DaisySP/DaisySP-LGPL/Source/Effects/reverbsc.cpp
+    lib/DaisySP/Source/Filters/svf.cpp
 )
 target_include_directories(daisysp_min PUBLIC
     lib/DaisySP/Source
@@ -68,6 +69,8 @@ add_executable(spky_tests
     tests/test_fast_sin.cpp
     tests/test_morph_osc.cpp
     tests/test_env.cpp
+    engine/synth/voice.cpp
+    tests/test_voice.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)
@@ -85,6 +88,7 @@ add_executable(render
     engine/fx/flux.cpp
     engine/fx/reverb.cpp
     engine/fx/part_fx.cpp
+    engine/synth/voice.cpp
 )
 target_include_directories(render PRIVATE host engine)
 target_link_libraries(render PRIVATE nlohmann_json daisysp_min)
