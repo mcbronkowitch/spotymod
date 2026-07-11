@@ -63,6 +63,10 @@ static GritMode parse_grit_mode(const std::string& s) {
     return s == "reduce" ? GritMode::Reduce : GritMode::Drive;
 }
 
+static EngineId parse_engine(const std::string& s) {
+    return s == "test_tone" ? ENGINE_TEST_TONE : ENGINE_SYNTH;
+}
+
 static int parse_scale_name(const std::string& s) {
     if (s == "min_pent") return SCALE_MIN_PENT;
     if (s == "aeolian")  return SCALE_AEOLIAN;
@@ -102,5 +106,12 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_reverb_size")      inst.set_reverb_size(e.value);
     else if (a == "set_reverb_tone")      inst.set_reverb_tone(e.value);
     else if (a == "set_reverb_shimmer")   inst.set_reverb_shimmer(e.value);
+    else if (a == "set_engine")          inst.set_engine(e.part, parse_engine(e.svalue));
+    else if (a == "set_voice_attack")    inst.set_voice_attack(e.part, e.value);
+    else if (a == "set_voice_decay")     inst.set_voice_decay(e.part, e.value);
+    else if (a == "set_voice_resonance") inst.set_voice_resonance(e.part, e.value);
+    else if (a == "set_voice_sub")       inst.set_voice_sub(e.part, e.value);
+    else if (a == "set_voice_detune")    inst.set_voice_detune(e.part, e.value);
+    else if (a == "trigger_manual")      inst.trigger_manual(e.part);
     // unknown actions are ignored on purpose (forward-compatible scenarios)
 }

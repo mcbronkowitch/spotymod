@@ -41,9 +41,9 @@ int main(int argc, char** argv) {
     if (csv) {
         std::fprintf(csv, "t,"
             "a_src,a_size,a_pitch,a_motion,a_level,a_pcv,a_gate,"
-            "a_fx0,a_fx1,a_fx2,a_fx3,a_fx4,"
+            "a_fx0,a_fx1,a_fx2,a_fx3,a_fx4,a_voices,a_v0,a_v1,a_v2,a_v3,"
             "b_src,b_size,b_pitch,b_motion,b_level,b_pcv,b_gate,"
-            "b_fx0,b_fx1,b_fx2,b_fx3,b_fx4\n");
+            "b_fx0,b_fx1,b_fx2,b_fx3,b_fx4,b_voices,b_v0,b_v1,b_v2,b_v3\n");
     }
 
     const size_t total = static_cast<size_t>(scen.duration_s * scen.sample_rate);
@@ -69,6 +69,9 @@ int main(int argc, char** argv) {
                 std::fprintf(csv, ",%.4f,%d", inst.pitch_cv(p), inst.gate(p) ? 1 : 0);
                 for (int s = 0; s < FXT_COUNT; ++s)
                     std::fprintf(csv, ",%.4f", inst.fx_target_value(p, s));
+                std::fprintf(csv, ",%d", inst.active_voices(p));
+                for (int v = 0; v < 4; ++v)
+                    std::fprintf(csv, ",%.4f", inst.voice_env(p, v));
             }
             std::fprintf(csv, "\n");
         }

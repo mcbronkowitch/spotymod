@@ -3,6 +3,8 @@
   "bpm": 75,
   "duration_s": 40,
   "init": [
+    {"action":"set_engine","part":0,"value":"test_tone"},
+    {"action":"set_engine","part":1,"value":"test_tone"},
     {"_comment":"PART A - dorian STEP melody into a dub tape echo. FLUX TIME is fixed (stable delay, no tape pitch-glide); lane 4 (x3/2) swells FLUX FEEDBACK."},
     {"action":"set_sync_mode","part":0,"value":"sync"},
     {"action":"set_rate","part":0,"value":0.35},

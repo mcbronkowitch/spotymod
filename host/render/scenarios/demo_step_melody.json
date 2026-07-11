@@ -3,6 +3,8 @@
   "bpm": 110,
   "duration_s": 16,
   "init": [
+    {"action":"set_engine","part":0,"value":"test_tone"},
+    {"action":"set_engine","part":1,"value":"test_tone"},
     {"action":"set_sync_mode","part":0,"value":"sync"},
     {"action":"set_rate","part":0,"value":0.5},
     {"action":"set_step","part":0,"flag":true,"ivalue":16},

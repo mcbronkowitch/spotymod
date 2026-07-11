@@ -3,6 +3,8 @@
   "bpm": 60,
   "duration_s": 48,
   "init": [
+    {"action":"set_engine","part":0,"value":"test_tone"},
+    {"action":"set_engine","part":1,"value":"test_tone"},
     {"_comment":"Global scale is Dorian by boot default; both parts in SCALE mode. Every pitch snaps to a Dorian degree."},
 
     {"_comment":"PART A - slow lead: 8-step sequence drifting across the Dorian scale, heavily smoothed so notes glide and hang."},

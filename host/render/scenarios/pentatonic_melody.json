@@ -3,6 +3,8 @@
   "bpm": 60,
   "duration_s": 48,
   "init": [
+    {"action":"set_engine","part":0,"value":"test_tone"},
+    {"action":"set_engine","part":1,"value":"test_tone"},
     {"_comment":"Switch the global scale to minor pentatonic; both parts in SCALE mode. Every pitch snaps to a pentatonic degree - no wrong notes."},
     {"action":"set_scale","value":"min_pent"},
 

@@ -3,6 +3,8 @@
   "bpm": 120,
   "duration_s": 24,
   "init": [
+    {"action":"set_engine","part":0,"value":"test_tone"},
+    {"action":"set_engine","part":1,"value":"test_tone"},
     {"_comment":"Pre-scale-era scene: opt out of the Dorian boot default explicitly."},
     {"action":"set_quant_mode","part":0,"value":"free"},
     {"action":"set_quant_mode","part":1,"value":"free"},

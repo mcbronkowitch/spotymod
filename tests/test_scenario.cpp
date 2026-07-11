@@ -100,3 +100,45 @@ TEST_CASE("scenario: fx actions reach the instrument") {
     inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(l == l);
 }
+
+TEST_CASE("scenario: M2 synth actions reach the instrument") {
+    Instrument inst;
+    inst.init(48000.f);
+    inst.set_voice_decay(0, 0.f);            // shortest decay: fast test
+    inst.set_step(0, true, 8);
+    inst.set_probability(0, 0.f);
+    float l = 0.f, r = 0.f;
+    for (int i = 0; i < 48000 * 3; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.active_voices(0) == 0);       // boot drone released and gone
+
+    Event trig;                              // trigger_manual is observable
+    trig.action = "trigger_manual";
+    trig.part = 0;
+    apply_event(inst, trig);
+    inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.active_voices(0) == 1);
+
+    Event eng;                               // set_engine is observable
+    eng.action = "set_engine";
+    eng.part = 0;
+    eng.svalue = "test_tone";
+    apply_event(inst, eng);
+    for (int i = 0; i < 1000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(inst.engine_id(0) == ENGINE_TEST_TONE);
+    CHECK(inst.active_voices(0) == 0);
+
+    // the five voice-parameter actions dispatch without crashing (their
+    // audible effect is pinned by the engine/env unit tests)
+    const char* voice_actions[] = { "set_voice_attack", "set_voice_decay",
+                                    "set_voice_resonance", "set_voice_sub",
+                                    "set_voice_detune" };
+    for (const char* a : voice_actions) {
+        Event e;
+        e.action = a;
+        e.part = 0;
+        e.value = 0.5f;
+        apply_event(inst, e);
+    }
+    inst.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(l == l);                           // not NaN
+}
