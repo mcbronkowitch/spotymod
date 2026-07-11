@@ -36,32 +36,67 @@ constexpr uint16_t CHROM_MASK = 0x0FFF;
 class Quantizer {
 public:
     static constexpr float SPAN_SEMIS = 36.f;
+    static constexpr float HYST_SEMIS = 0.30f;   // switch ~15 cents past midpoint
 
-    void init(float sample_rate) { (void)sample_rate; }
+    void init(float sample_rate) {
+        _slew_len = static_cast<int>(sample_rate * 0.04f);   // ~40 ms change slew
+        _slew_ctr = 0;
+        _have_note = false;
+        _have_out = false;
+    }
 
-    void set_scale(uint16_t mask12) { _scale = mask12; }
-    void set_mode(QuantMode m)      { _mode = m; }
-    void set_root(int semis)        { _root = semis; }
+    void set_scale(uint16_t mask12) { if (mask12 != _scale) { _scale = mask12; on_change(); } }
+    void set_mode(QuantMode m)      { if (m != _mode)       { _mode = m;       on_change(); } }
+    void set_root(int semis)        { if (semis != _root)   { _root = semis;   on_change(); } }
 
     QuantMode mode() const { return _mode; }
 
     float process(float norm) {
-        if (_mode == QuantMode::Free) return norm;
+        if (_mode == QuantMode::Free) {
+            _last_out = norm;
+            _have_out = true;
+            _have_note = false;
+            return norm;
+        }
         const uint16_t mask = (_mode == QuantMode::Chrom) ? CHROM_MASK : _scale;
         const float semis = clampf(norm, 0.f, 1.f) * SPAN_SEMIS;
-        return static_cast<float>(nearest_note(semis, mask)) / SPAN_SEMIS;
+        int note = nearest_note(semis, mask);
+        if (_have_note && note != _last_note && allowed(_last_note, mask)) {
+            const float d_last = std::fabs(semis - static_cast<float>(_last_note));
+            const float d_note = std::fabs(semis - static_cast<float>(note));
+            if (d_last - d_note < HYST_SEMIS) note = _last_note;   // hold
+        }
+        _last_note = note;
+        _have_note = true;
+
+        float out = static_cast<float>(note) / SPAN_SEMIS;
+        if (_slew_ctr > 0) {
+            --_slew_ctr;
+            const float t = 1.f - static_cast<float>(_slew_ctr) / static_cast<float>(_slew_len);
+            out = lerpf(_slew_from, out, t);
+        }
+        _last_out = out;
+        _have_out = true;
+        return out;
     }
 
 private:
+    void on_change() {
+        _have_note = false;                       // re-pick without hysteresis
+        if (_have_out && _mode != QuantMode::Free) {
+            _slew_from = _last_out;               // soften the jump (~40 ms)
+            _slew_ctr = _slew_len;
+        } else {
+            _slew_ctr = 0;                        // into FREE: instant passthrough
+        }
+    }
+
     bool allowed(int k, uint16_t mask) const {
         int deg = (k - _root) % 12;
         if (deg < 0) deg += 12;
         return (mask >> deg) & 1;
     }
 
-    // Outward search from the rounded center: the first allowed note at
-    // integer distance d is the float-nearest up to the lo/hi tie, which is
-    // resolved by comparing real distances (equal -> lower note wins).
     int nearest_note(float semis, uint16_t mask) const {
         const int center = static_cast<int>(semis + 0.5f);
         for (int d = 0; d <= 12; ++d) {
@@ -80,6 +115,13 @@ private:
     QuantMode _mode  = QuantMode::Scale;
     uint16_t  _scale = SCALE_MASKS[SCALE_DORIAN];
     int       _root  = 0;
+    int       _last_note = 0;
+    bool      _have_note = false;
+    float     _last_out  = 0.f;
+    bool      _have_out  = false;
+    float     _slew_from = 0.f;
+    int       _slew_ctr  = 0;
+    int       _slew_len  = 1920;
 };
 
 } // namespace spky

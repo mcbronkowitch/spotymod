@@ -53,3 +53,54 @@ TEST_CASE("quantizer: every scale mask maps output onto its own degrees") {
         }
     }
 }
+
+TEST_CASE("quantizer: hysteresis holds the note ~15 cents past the midpoint") {
+    Quantizer q;
+    q.init(48000.f);
+    q.set_mode(QuantMode::Chrom);
+    CHECK(q.process(17.0f / 36.f) == doctest::Approx(17.f / 36.f));
+    // 17.55 is past the 17.5 midpoint but inside the hysteresis band -> hold
+    CHECK(q.process(17.55f / 36.f) == doctest::Approx(17.f / 36.f));
+    // 17.7 is clearly past -> switch
+    CHECK(q.process(17.7f / 36.f) == doctest::Approx(18.f / 36.f));
+    // coming back: 17.55 from above stays on 18 (symmetric band)
+    CHECK(q.process(17.55f / 36.f) == doctest::Approx(18.f / 36.f));
+}
+
+TEST_CASE("quantizer: config change slews ~40 ms instead of clicking") {
+    Quantizer q;
+    q.init(48000.f);
+    for (int i = 0; i < 100; ++i) q.process(0.5f);          // settled on 17/36
+    q.set_root(1);                                          // target becomes 18/36
+    float first = q.process(0.5f);
+    CHECK(first > 17.f / 36.f);
+    CHECK(first < 18.f / 36.f);                             // mid-slew, no jump
+    float prev = first, last = first;
+    for (int i = 0; i < 1920; ++i) {                        // 40 ms @ 48k
+        last = q.process(0.5f);
+        CHECK(last >= prev - 1e-6f);                        // monotonic ramp up
+        prev = last;
+    }
+    CHECK(last == doctest::Approx(18.f / 36.f));
+}
+
+TEST_CASE("quantizer: switching to FREE is an instant passthrough") {
+    Quantizer q;
+    q.init(48000.f);
+    for (int i = 0; i < 100; ++i) q.process(0.5f);
+    q.set_mode(QuantMode::Free);
+    CHECK(q.process(0.512345f) == 0.512345f);               // exact, no slew
+}
+
+TEST_CASE("quantizer: leaving FREE slews from the last raw output") {
+    Quantizer q;
+    q.init(48000.f);
+    q.set_mode(QuantMode::Free);
+    for (int i = 0; i < 100; ++i) q.process(0.5f);
+    q.set_mode(QuantMode::Scale);                           // dorian -> 17/36
+    float first = q.process(0.5f);
+    CHECK(first < 0.5f);
+    CHECK(first > 17.f / 36.f);                             // gliding down
+    for (int i = 0; i < 1920; ++i) q.process(0.5f);
+    CHECK(q.process(0.5f) == doctest::Approx(17.f / 36.f));
+}
