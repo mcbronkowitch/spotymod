@@ -64,3 +64,26 @@ TEST_CASE("reverb: shimmer changes the tail") {
         if (std::fabs(plain[i] - shim[i]) > 1e-6f) ++diff;
     CHECK(diff > 1000);
 }
+
+// Regression: the shimmer feedback loop must stay bounded at the most extreme
+// settings a user can dial (max room + max shimmer) under a sustained input.
+// The original fixed 0.5 feedback gain drove the loop gain past 1 and the tail
+// grew ~4x every half second to +Inf (which plays back as silence after a
+// click). The size-compensated, soft-clipped feedback keeps it finite.
+TEST_CASE("reverb: shimmer feedback stays bounded at extreme settings") {
+    s_rev.init(48000.f);
+    s_rev.set_size(0.99f);        // maximum room
+    s_rev.set_tone(0.55f);
+    s_rev.set_shimmer(1.f);       // maximum shimmer
+    float peak = 0.f;
+    bool finite = true;
+    for (int i = 0; i < 48000 * 8; ++i) {   // 8 s of sustained drive
+        float in = 0.4f * std::sin(6.2831853f * 220.f * i / 48000.f);
+        float wl = 0.f, wr = 0.f;
+        s_rev.process(in, in, wl, wr);
+        if (!std::isfinite(wl) || !std::isfinite(wr)) { finite = false; break; }
+        peak = std::max(peak, std::max(std::fabs(wl), std::fabs(wr)));
+    }
+    CHECK(finite);       // never runs away to +Inf
+    CHECK(peak < 8.f);   // bounded well below a blow-up
+}

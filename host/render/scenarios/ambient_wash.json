@@ -16,11 +16,11 @@
     {"action":"set_target_active","part":0,"slot":4,"flag":true},
     {"action":"set_target_base","part":0,"slot":4,"value":0.65},
 
-    {"action":"set_reverb_size","value":0.85},
+    {"action":"set_reverb_size","value":0.7},
     {"action":"set_reverb_tone","value":0.55},
-    {"action":"set_reverb_shimmer","value":0.6},
+    {"action":"set_reverb_shimmer","value":0.45},
     {"action":"set_fx_target_active","part":0,"slot":3,"flag":true},
-    {"action":"set_fx_target_base","part":0,"slot":3,"value":0.35},
+    {"action":"set_fx_target_base","part":0,"slot":3,"value":0.28},
     {"action":"set_fx_target_depth","part":0,"slot":3,"value":0.6},
 
     {"action":"set_fx_on","part":0,"value":"flux","flag":true},
@@ -39,11 +39,11 @@
     {"action":"set_target_active","part":1,"slot":4,"flag":true},
     {"action":"set_target_base","part":1,"slot":4,"value":0.5},
     {"action":"set_fx_target_active","part":1,"slot":3,"flag":true},
-    {"action":"set_fx_target_base","part":1,"slot":3,"value":0.3},
+    {"action":"set_fx_target_base","part":1,"slot":3,"value":0.24},
     {"action":"set_fx_target_depth","part":1,"slot":3,"value":0.5}
   ],
   "events": [
-    {"t":32.0,"action":"set_reverb_shimmer","value":0.85},
+    {"t":32.0,"action":"set_reverb_shimmer","value":0.6},
     {"_comment":"32s: more glitter as the wash peaks."}
   ]
 }

@@ -25,6 +25,7 @@ private:
     daisysp::ReverbSc _rev;
     daisysp::PitchShifter _shift;
     float _shim = 0.f;
+    float _fb = 0.7f;   // current reverb feedback (for shimmer size-compensation)
     float _last_l = 0.f;
     float _last_r = 0.f;
 };

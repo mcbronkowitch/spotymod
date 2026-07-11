@@ -16,7 +16,8 @@ void AmbientReverb::init(float sample_rate) {
 }
 
 void AmbientReverb::set_size(float norm) {
-    _rev.SetFeedback(daisysp::fmap(clampf(norm, 0.f, 1.f), 0.4f, 0.99f));
+    _fb = daisysp::fmap(clampf(norm, 0.f, 1.f), 0.4f, 0.99f);
+    _rev.SetFeedback(_fb);
 }
 
 void AmbientReverb::set_tone(float norm) {
@@ -30,9 +31,16 @@ void AmbientReverb::set_shimmer(float norm) {
 
 void AmbientReverb::process(float in_l, float in_r, float& out_l, float& out_r) {
     if (_shim > 0.f) {
+        // Shimmer re-injects the +12 st-shifted previous wet frame into the
+        // room. The room's own gain is roughly 1/(1 - feedback), so the
+        // original fixed feedback gain (0.5) drove the loop gain past 1 at
+        // large sizes and the tail exploded to +Inf (silence on playback).
+        // Two guards keep it bounded at every size/shimmer setting: scale the
+        // feedback by (1 - reverb feedback) so it tracks the room's gain, and
+        // soft-clip it as a hard safety net so the loop can never run away.
         float mono = 0.5f * (_last_l + _last_r);
-        float shifted = _shift.Process(mono);
-        float g = _shim * 0.5f;      // fixed headroom on the feedback path
+        float shifted = daisysp::SoftClip(_shift.Process(mono));
+        float g = _shim * (1.f - _fb);
         in_l += shifted * g;
         in_r += shifted * g;
     }
