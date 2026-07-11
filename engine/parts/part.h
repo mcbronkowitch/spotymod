@@ -27,6 +27,7 @@ public:
 
     float target_value(int slot) const;
     float target_raw(int slot) const;          // base + mod*depth, unquantized
+    float pitch_pre_quant() const;             // PITCH target + TUNE, pre-quantize
     float lane_output(int slot) const { return _mod.lane_output(slot); }
     bool  lane_fired(int slot) const  { return _mod.lane_fired(slot); }
     bool  gate() const { return _gate_ctr > 0; }
