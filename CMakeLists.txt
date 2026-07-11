@@ -57,6 +57,8 @@ add_executable(spky_tests
     tests/test_scenario.cpp
     tests/test_fx_deps.cpp
     tests/test_fx_util.cpp
+    engine/fx/grit.cpp
+    tests/test_grit.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)
@@ -70,6 +72,7 @@ add_executable(render
     engine/mod/super_modulator.cpp
     engine/parts/part.cpp
     engine/instrument.cpp
+    engine/fx/grit.cpp
 )
 target_include_directories(render PRIVATE host engine)
 target_link_libraries(render PRIVATE nlohmann_json daisysp_min)
