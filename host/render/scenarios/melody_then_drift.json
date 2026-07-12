@@ -8,7 +8,7 @@
     {"_comment":"Pre-scale-era scene: opt out of the Dorian boot default explicitly."},
     {"action":"set_quant_mode","part":0,"value":"free"},
     {"action":"set_quant_mode","part":1,"value":"free"},
-    {"_comment":"PART A — a FIXED 16-step melody. shape<=0.75 + prob=1 + evolve=0 => loops identically."},
+    {"_comment":"PART A — a FIXED 16-step melody. shape<=0.75 + prob=1 + entropy=0 => loops identically."},
     {"action":"set_sync_mode","part":0,"value":"sync"},
     {"action":"set_rate","part":0,"value":0.375},
     {"action":"set_step","part":0,"flag":true,"ivalue":16},
@@ -32,7 +32,7 @@
   "events": [
     {"_comment":"Bars 1-4 (0-8s): the melody just loops, unchanged."},
     {"t":8.0,"action":"set_entropy","part":0,"value":0.25},
-    {"_comment":"8s: EVOLVE begins — shape/phase/rate random-walk, melody starts mutating."},
+    {"_comment":"8s: ENTROPY up — shape/phase/rate random-walk, melody starts mutating."},
     {"t":12.0,"action":"set_probability","part":0,"value":0.8},
     {"_comment":"12s: some steps freeze/hold -> rhythmic variation."},
     {"t":14.0,"action":"set_entropy","part":0,"value":0.5},

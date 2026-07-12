@@ -22,7 +22,8 @@ is actually built today, and what is still design-only.
 | **+ Scales** | Pitch quantization (6 scales, SCALE/CHROM/FREE, root) layered onto the PITCH lane | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M1.6** | FX: per-part FLUX (tape echo) + GRIT (drive/reduce), shared ambient reverb, FX params as modulation targets | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M2** | Polyphonic synth voice (replaces the M1 test tone) | ✅ **done** (engine + host; UI wiring deferred to M6) |
-| **M3** | Capture sequencer (freeze the PITCH lane into a loop) | ⬜ planned |
+| **M3** | Capture sequencer (freeze the PITCH lane into a loop) | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **+ Entropy** | Looping S&H melody buffer; bipolar ENTROPY (erode / loop / grow) replaces EVOLVE | ✅ **done** (engine + host; switch mapping in M6) |
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT | ⬜ planned |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
@@ -44,9 +45,10 @@ include), audible via the desktop renderer.
 - **SuperModulator per part** (`engine/mod/super_modulator.*`) — one macro
   surface (RATE, SHAPE, PROBABILITY, SMOOTH, RANGE, DEPTH) over **five
   independent lanes**, each at a fixed musical ratio of the master rate.
-- **Modulation lanes** (`engine/mod/lane.*`) — three run modes:
-  **FLOW** (smooth LFO), **STEP** (clock-quantized sample & hold), **ENTROPY**
-  (per-cycle random walk). Own phase, own RNG stream, own probability dice per
+- **Modulation lanes** (`engine/mod/lane.*`) — two run modes, **FLOW**
+  (smooth LFO) and **STEP** (clock-quantized sequences), plus the bipolar
+  **ENTROPY** control (erode / loop / grow — see the entropy sequencer
+  entry below). Own phase, own RNG stream, own probability dice per
   lane. Continuous waveform morph (sine → triangle → ramp → pulse → S&H) in
   `engine/mod/waveforms.h`; RANGE mapping (off → unipolar → bipolar) in
   `engine/mod/range.h`; deterministic RNG in `engine/mod/rng.h`.
@@ -137,13 +139,50 @@ reference).
 - **UI (M6)** — VOICE edit layer gestures (PLAY-pad hold), PLAY-tap manual
   trigger wiring, engine-switch gesture.
 
-## Planned
+### M3 — Capture sequencer ✅
 
-### M3 — Capture sequencer ⬜
-Per-part freeze of the PITCH lane's last cycle (pitch steps + trigger pattern) —
-swaps the lane's *source*, not the system. RATE still drives loop speed, PROBABILITY
-thins live, SMOOTH glides, TUNE transposes, ENTROPY affects only live lanes.
-Stores **raw** lane values so re-scaling re-voices the captured melody. Volatile.
+Per-part freeze of the PITCH lane's last cycle into a replayable loop
+(`capture_now` / `set_replay` in scenarios; `ALT + SEQ` on hardware, M6).
+Capture swaps the lane's *source*, not the system.
+
+- **CaptureLoop** (`engine/mod/capture.h`) — header-only double buffer
+  (2 × 192 slots): the lane rolls its pre-smooth target + trigger pattern
+  into the ring every generative sample; `capture_now` freezes the last
+  full cycle. A dumb buffer — `ModLane` owns all slot timing, so record
+  and replay share one phase→slot mapping.
+- **ModLane replay** — recorded fired slots become the boundaries; live
+  PROBABILITY dice thin the frozen loop (fail = hold), SMOOTH / RANGE /
+  TUNE / quantizer stay live, ENTROPY is ignored on the replaying lane.
+  Recording never touches the RNG — bit-determinism preserved.
+- **SuperModulator / Instrument** — one loop per part, wired to the PITCH
+  lane; `capture_now` / `set_replay` / `replaying` / `loop_valid`.
+- **Host** — `capture_now`/`set_replay` scenario actions, `a_cap`/`b_cap`
+  CSV columns, demos `capture_loop.json` + `capture_pentatonic.json` /
+  `capture_duet.json`.
+- **UI (M6)** — ALT+SEQ gesture, ring step-pattern display with playhead.
+
+### Entropy sequencer ✅ (reworks the lane core, post-M3)
+
+Listening to M3 renders showed STEP + S&H melodies were unusable note
+salad (one random value per cycle, or pure noise per step). Now every
+lane owns a looping 32-slot step buffer (seeded at init — a melody exists
+from cycle one), and the LOOP/EVOLVE toggle became one bipolar **ENTROPY**
+control:
+
+- **0 — LOOP**: the melody repeats exactly (the LOOP contract, finally
+  honored in the S&H zone).
+- **> 0 — GROW**: fired steps mutate via a root-gravity random walk (small
+  intervals common, leaps rare); the phase/shape/rate walk runs scaled by
+  entropy.
+- **< 0 — ERODE**: fired steps pull toward the root, note by note, down to
+  a single tone; the walk settles back toward neutral.
+- Mutation only on fired steps (suppressed steps hold note and slot);
+  `shape_value()` returns the S&H operand exactly at SHAPE = 1; scenario
+  action renamed `set_evolve` → `set_entropy`; demos
+  `demo_step_melody.json` (entropy showcase) + `entropy_duet.json`.
+- **UI (M6)** — panel switch 2 becomes ERODE / LOOP / GROW.
+
+## Planned
 
 ### M4 — Center section ⬜
 MORPH (fader, equal-power A↔B), COUPLE (ALT + fader, mutual phase/rate pull),
