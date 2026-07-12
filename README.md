@@ -38,7 +38,7 @@ melody can rise while the filter falls. (A single output driving all targets
 would just move everything in unison — a tremolo, not an instrument.)
 
 Each lane can run as a smooth LFO (**FLOW**), a stepped sequence (**STEP**), or
-slowly mutate over time (**EVOLVE**). A center section — **MORPH / COUPLE /
+grow, loop, or erode over time (**ENTROPY**). A center section — **MORPH / COUPLE /
 DRIFT / SPOT** — makes the interaction between the two parts playable, and CV +
 gate outputs extend the modulation to the rest of the rack.
 
@@ -98,10 +98,10 @@ This writes:
 
 - **`out.wav`** — the rendered audio.
 - **`mods.csv`** — every lane's output plus pitch CV / gate per part, decimated
-  for plotting. Ideal for *seeing* what FLOW / STEP / EVOLVE actually do.
+  for plotting. Ideal for *seeing* what FLOW / STEP / ENTROPY actually do.
 
 `melody_then_drift` is a good starting point: a fixed 16-step melody that loops
-identically, then slowly mutates as EVOLVE is dialled in.
+identically, then grows or erodes as ENTROPY is dialled off center.
 
 ## Roadmap
 

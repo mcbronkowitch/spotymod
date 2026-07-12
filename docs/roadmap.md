@@ -45,7 +45,7 @@ include), audible via the desktop renderer.
   surface (RATE, SHAPE, PROBABILITY, SMOOTH, RANGE, DEPTH) over **five
   independent lanes**, each at a fixed musical ratio of the master rate.
 - **Modulation lanes** (`engine/mod/lane.*`) — three run modes:
-  **FLOW** (smooth LFO), **STEP** (clock-quantized sample & hold), **EVOLVE**
+  **FLOW** (smooth LFO), **STEP** (clock-quantized sample & hold), **ENTROPY**
   (per-cycle random walk). Own phase, own RNG stream, own probability dice per
   lane. Continuous waveform morph (sine → triangle → ramp → pulse → S&H) in
   `engine/mod/waveforms.h`; RANGE mapping (off → unipolar → bipolar) in
@@ -58,7 +58,7 @@ include), audible via the desktop renderer.
   `0..1` setters, `process(in, out, size)`. Single boundary for both hosts.
 - **Desktop render host** (`host/render/`) — scenario JSON → 16-bit stereo WAV +
   `mods.csv` (every lane, pitch CV, gate). Vendored `nlohmann/json`.
-- **Tests** (`tests/`, doctest) — lane STEP quantization, LOOP-vs-EVOLVE
+- **Tests** (`tests/`, doctest) — lane STEP quantization, ENTROPY loop/grow/erode
   determinism, per-step dice, RANGE mapping, RNG determinism, SuperModulator,
   Part routing, WAV writer, scenario parsing.
 
@@ -75,7 +75,7 @@ but not yet wired (that is UI work, i.e. M6).
 - **6 scales, dark → bright:** minor pentatonic, Aeolian, **Dorian (default)**,
   major pentatonic, Lydian, whole tone. Boot default: Dorian, both parts SCALE.
 - **Placement** — last stage of `Part::target_value(LANE_PITCH)`, so SMOOTH
-  glides step through scale notes and EVOLVE walks the scale. `pitch_cv()` is
+  glides step through scale notes and ENTROPY grows or erodes the melody. `pitch_cv()` is
   the single quantized source of truth for engine, CV out, and the future
   capture sequencer.
 - **Host** — `set_scale`, `set_quant_mode`, `set_root` scenario actions; demo
@@ -142,7 +142,7 @@ reference).
 ### M3 — Capture sequencer ⬜
 Per-part freeze of the PITCH lane's last cycle (pitch steps + trigger pattern) —
 swaps the lane's *source*, not the system. RATE still drives loop speed, PROBABILITY
-thins live, SMOOTH glides, TUNE transposes, EVOLVE affects only live lanes.
+thins live, SMOOTH glides, TUNE transposes, ENTROPY affects only live lanes.
 Stores **raw** lane values so re-scaling re-voices the captured melody. Volatile.
 
 ### M4 — Center section ⬜
