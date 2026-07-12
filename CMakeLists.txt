@@ -21,17 +21,14 @@ add_library(daisysp_min STATIC
     lib/DaisySP/Source/Effects/decimator.cpp
     lib/DaisySP/Source/Effects/sampleratereducer.cpp
     lib/DaisySP/Source/Control/phasor.cpp
-    lib/DaisySP/DaisySP-LGPL/Source/Effects/reverbsc.cpp
     lib/DaisySP/Source/Filters/svf.cpp
 )
 target_include_directories(daisysp_min PUBLIC
     lib/DaisySP/Source
-    lib/DaisySP/DaisySP-LGPL/Source
     PRIVATE
     lib/DaisySP/Source/Utility
     lib/DaisySP/Source/Control
     lib/DaisySP/Source/Effects
-    lib/DaisySP/DaisySP-LGPL/Source/Effects
 )
 
 # --- tests ---

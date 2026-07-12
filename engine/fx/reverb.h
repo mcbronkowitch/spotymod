@@ -11,7 +11,8 @@ namespace spky {
 // style playable room. SIZE really rescales the delay reads (turning it
 // Doppler-warps the tail), DECAY crosses 1.0 near the top of its travel
 // into a soft-limited self-sustaining bloom, DEPTH chorus-modulates the
-// lines. Shimmer is gone (so is the DaisySP-LGPL dependency).
+// lines. Shimmer is gone (so is the separately-licensed DaisySP dependency
+// it relied on).
 //
 // BIG object (~130 KB — the float delay buffer is an inline member). Never
 // stack-allocate: the desktop host owns it as a static; the M6 firmware

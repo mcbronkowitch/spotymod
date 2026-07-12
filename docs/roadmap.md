@@ -89,8 +89,8 @@ but not yet wired (that is UI work, i.e. M6).
 ### M1.6 — FX ✅
 
 Per-part FLUX (tape echo) + GRIT (drive/reduce) ported from the original
-firmware, a shared ambient reverb (DaisySP `ReverbSc` + optional +12 st
-shimmer), and 5 curated FX parameters per part as first-class modulation
+firmware, a shared ambient reverb *(core replaced in M4.5 — Oliverb port,
+shimmer removed)*, and 5 curated FX parameters per part as first-class modulation
 targets — a second tap on the same five lanes (fixed 1:1 lane → target
 mapping, `engine/fx/part_fx.h`).
 
@@ -216,6 +216,19 @@ rate (one 96-sample block) and wired through narrow `ModLane` /
   convergence/anchor) + `weather_spot.json` (DRIFT weather + SPOT + SETTLE).
 - **UI (M6)** — MORPH fader, ALT + fader for COUPLE, SPOT-hold + fader for
   DRIFT, SPOT tap gesture.
+
+### M4.5 — Ambient reverb v2 (Oliverb port) ✅
+
+The shared room becomes a playable instrument (spec:
+`2026-07-12-spotykach-ambient-reverb-v2-design.md`, residency repo): vendored
+MIT Oliverb core (Clouds Parasite) under `third_party/oliverb/` — float32,
+48 kHz, deterministic. SIZE rescales the delay reads live (Doppler tail
+warp), DECAY crosses 100 % at ~0.9 of its travel into a soft-limited bloom
+(cap 1.05), TONE is the in-loop damping, DEPTH chorus-modulates the lines.
+`set_shimmer` is gone (API + scenario action). Removing `ReverbSc` +
+`PitchShifter` drops the DaisySP-LGPL dependency — the build is MIT-clean.
+Facade, injection point (`FxMem`), and wet-only routing unchanged; the M6
+shell places the ~130 KB object in SDRAM as before.
 
 ## Planned
 

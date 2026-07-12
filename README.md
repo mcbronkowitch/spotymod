@@ -112,6 +112,7 @@ identically, then grows or erodes as ENTROPY is dialled off center.
 | **M2** | Polyphonic synth voice (replaces the M1 test tone) | **done** (engine + host) |
 | **M3** | Capture sequencer (freeze the PITCH lane into a loop) | **done** (engine + host) |
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT / SETTLE | **done** (engine + host) |
+| **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, DEPTH; shimmer & LGPL removed | **done** (engine + host) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | planned |
 
