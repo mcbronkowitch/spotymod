@@ -4,6 +4,7 @@
 #include "parts/part.h"
 #include "mod/lane_id.h"
 #include "fx/reverb.h"
+#include "center/center.h"
 
 namespace spky {
 
@@ -83,11 +84,25 @@ public:
     bool replaying(int p) const     { return _parts[p].mod().replaying(); }
     bool loop_valid(int p) const    { return _parts[p].mod().loop_valid(); }
 
+    // --- M4 center section ---
+    void set_morph(float m)  { _center.set_morph(m); }
+    void set_couple(float c) { _center.set_couple(c); }
+    void set_drift(float d)  { _center.set_drift(d); }
+    void spot()   { _center.spot(_parts[PART_A].mod(),   _parts[PART_B].mod()); }
+    void settle() { _center.settle(_parts[PART_A].mod(), _parts[PART_B].mod()); }
+    float morph()     const { return _center.morph(); }
+    float couple()    const { return _center.couple(); }
+    float drift()     const { return _center.drift(); }
+    float weather()   const { return _center.weather(); }
+    float phase_err() const { return _center.phase_err(); }
+
     void process(const float* inL, const float* inR, float* outL, float* outR, size_t n);
 
 private:
     std::array<Part, PART_COUNT> _parts;
     AmbientReverb* _reverb = nullptr;
+    Center _center;
+    int    _ctrl_ctr = 0;    // counts down to the next control-rate Center::update
     float _sr = 48000.f;
     float _bpm = 120.f;
 };

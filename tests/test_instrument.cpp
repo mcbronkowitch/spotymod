@@ -4,6 +4,7 @@
 #include <algorithm>
 #include "instrument.h"
 #include "fx/reverb.h"
+#include "mod/super_modulator.h"
 using namespace spky;
 
 TEST_CASE("instrument: init and render a block without NaNs") {
@@ -166,4 +167,70 @@ TEST_CASE("instrument: set_engine switches to the test tone and back") {
     for (int i = 0; i < 48000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(inst.engine_id(PART_A) == ENGINE_SYNTH);
     CHECK(inst.active_voices(PART_A) >= 1);   // the drone resumes
+}
+
+TEST_CASE("instrument M4: couple 0 + drift 0 -> PITCH lane matches a bare SuperModulator") {
+    Instrument inst; inst.init(48000.f);
+    inst.set_couple(0.f); inst.set_drift(0.f);
+    inst.set_rate(PART_A, 0.5f);
+    SuperModulator ref; ref.init(48000.f, 0x1234abcdu);   // PART_A seed (see instrument.cpp)
+    ref.set_rate(0.5f);
+    bool same = true;
+    std::vector<float> l(1), r(1);
+    for (int i = 0; i < 20000; ++i) {
+        inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+        ref.process();
+        if (inst.lane_output(PART_A, LANE_PITCH) != ref.lane_output(LANE_PITCH)) same = false;
+    }
+    CHECK(same);   // Center writes rate_scale=1 / shape_offset=0 -> zero perturbation
+}
+
+// Two tests: DRY isolation is exact (no reverb), SEND isolation is a decaying
+// tail (with reverb). One combined test was wrong — at morph 1 the DRY path is
+// gone immediately, but the shared reverb keeps ringing out the send injected
+// during the 0.5->1 morph ramp, so an absolute "difference < 1e-5 within 1 s"
+// contradicts the design ("only its already-committed tail rings out").
+TEST_CASE("instrument M4: morph=1 isolates part A's dry path") {
+    Instrument x; x.init(48000.f);                 // no reverb: a pure dry-isolation check
+    Instrument y; y.init(48000.f);
+    x.set_morph(1.f); y.set_morph(1.f);            // full B; part A must stop contributing
+    x.set_rate(PART_A, 0.3f); x.set_target_base(PART_A, LANE_PITCH, 0.2f);
+    y.set_rate(PART_A, 0.9f); y.set_target_base(PART_A, LANE_PITCH, 0.9f);   // A differs a lot
+    float xl, xr, yl, yr, maxd = 0.f;
+    for (int i = 0; i < 48000; ++i) {
+        x.process(nullptr, nullptr, &xl, &xr, 1);
+        y.process(nullptr, nullptr, &yl, &yr, 1);
+        if (i > 16000) { float d = std::fabs(xl - yl); if (d > maxd) maxd = d; }  // after morph snaps to 1
+    }
+    CHECK(maxd < 1e-5f);   // A's dry contribution is gone (gain_a = cos(pi/2) ~ 0)
+}
+
+TEST_CASE("instrument M4: morph=1 injects no new reverb from part A (send isolated)") {
+    static float echoX[PART_COUNT][2][Flux::kMaxSamples];
+    static float echoY[PART_COUNT][2][Flux::kMaxSamples];
+    static AmbientReverb rvX, rvY;
+    FxMem mx, my;
+    for (int p = 0; p < PART_COUNT; ++p)
+        for (int c = 0; c < 2; ++c) { mx.echo[p][c] = echoX[p][c]; my.echo[p][c] = echoY[p][c]; }
+    mx.reverb = &rvX; my.reverb = &rvY;
+    Instrument x; x.init(48000.f, mx);
+    Instrument y; y.init(48000.f, my);
+    x.set_morph(1.f); y.set_morph(1.f);
+    x.set_reverb_size(0.1f); y.set_reverb_size(0.1f);   // short tail so 3 s covers full decay
+    x.set_rate(PART_A, 0.3f); x.set_target_base(PART_A, LANE_PITCH, 0.2f);
+    y.set_rate(PART_A, 0.9f); y.set_target_base(PART_A, LANE_PITCH, 0.9f);
+    float xl, xr, yl, yr, early = 0.f, late = 0.f;
+    const int N = 48000 * 3;
+    for (int i = 0; i < N; ++i) {
+        x.process(nullptr, nullptr, &xl, &xr, 1);
+        y.process(nullptr, nullptr, &yl, &yr, 1);
+        float d = std::fabs(xl - yl);
+        if (i < 24000)      { if (d > early) early = d; }   // first 0.5 s: morph ramp injects A
+        if (i >= N - 24000) { if (d > late)  late  = d; }   // final 0.5 s: only a decayed tail
+    }
+    // No new A energy enters the shared reverb at morph 1 -> the divergence is a
+    // decaying tail: the final window is far below the early transient, near zero.
+    CHECK(early > 1e-4f);
+    CHECK(late < early * 0.05f);
+    CHECK(late < 1e-4f);
 }
