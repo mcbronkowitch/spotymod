@@ -68,7 +68,7 @@ void ModLane::kick(float dphase, float dshape) {
     if (_replaying()) return;              // captured loop never mutates (M3/M4 guard)
     _phase += dphase;
     _phase -= std::floor(_phase);          // permanent wrap into [0,1)
-    _kick_shape += dshape;                 // decays back to 0 over ~0.4 s
+    _kick_shape += dshape;                 // decays back to 0 over ~1.5 s
 }
 
 void ModLane::settle() {
