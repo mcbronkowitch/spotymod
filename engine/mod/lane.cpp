@@ -24,6 +24,11 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _ev_phase = 0.f;
     _ev_shape = 0.f;
     _ev_rate  = 0.f;
+    _shape_offset = 0.f;
+    _kick_shape   = 0.f;
+    _kick_coef    = std::exp(-1.f / (1.5f * _sr));   // SPOT shape decay tau = 1.5 s
+    _settle_coef  = std::exp(-1.f / (0.3f * _sr));   // SETTLE glide tau = 0.3 s
+    _settle_ctr   = 0;
     _rec_slot = -1;
     _rec_fired = false;
     _replay = false;
@@ -59,6 +64,17 @@ void ModLane::_update_slew() {
     _slew.init(_sr, t);
 }
 
+void ModLane::kick(float dphase, float dshape) {
+    if (_replaying()) return;              // captured loop never mutates (M3/M4 guard)
+    _phase += dphase;
+    _phase -= std::floor(_phase);          // permanent wrap into [0,1)
+    _kick_shape += dshape;                 // decays back to 0 over ~1.5 s
+}
+
+void ModLane::settle() {
+    _settle_ctr = static_cast<int>(_sr * 1.0f);   // glide EVOLVE + kick over ~1 s
+}
+
 void ModLane::reset(float phase) {
     _phase = clampf(phase, 0.f, 0.999999f);
     _cur_step = -1;
@@ -68,7 +84,7 @@ void ModLane::reset(float phase) {
 float ModLane::_compute_raw() const {
     float ph = _phase + _ev_phase;
     ph -= std::floor(ph);
-    float sh = clampf(_shape + _ev_shape, 0.f, 1.f);
+    float sh = clampf(_shape + _ev_shape + _shape_offset + _kick_shape, 0.f, 1.f);
     return shape_value(ph, sh, _seq[_sh_slot()]);
 }
 
@@ -140,6 +156,14 @@ void ModLane::_replay_step() {
 
 float ModLane::process() {
     _fired = false;
+    _kick_shape *= _kick_coef;                 // SPOT shape offset fades toward 0
+    if (_settle_ctr > 0) {                     // SETTLE: glide EVOLVE walks + kick to 0
+        --_settle_ctr;
+        _ev_phase   *= _settle_coef;
+        _ev_shape   *= _settle_coef;
+        _ev_rate    *= _settle_coef;
+        _kick_shape *= _settle_coef;
+    }
     const bool replay = _replaying();
 
     _phase += _phase_inc * (replay ? 1.f : (1.f + _ev_rate));  // no EVOLVE rate on replay

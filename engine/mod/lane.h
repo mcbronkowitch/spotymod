@@ -36,6 +36,11 @@ public:
     void set_replay(bool on) { _replay = on; if (on) _play_slot = -1; }
     bool replaying() const { return _replaying(); }
 
+    // --- M4 center hooks ---
+    void set_shape_offset(float o) { _shape_offset = o; }  // DRIFT bank-wide shape tap
+    void kick(float dphase, float dshape);                 // SPOT: phase jump + decaying shape
+    void settle();                                         // panic: glide EVOLVE + kick to 0
+
 private:
     void  _update_slew();
     void  _on_boundary();
@@ -73,6 +78,13 @@ private:
     float _ev_phase = 0.f;   // EVOLVE random-walk offsets: shape / phase / rate (Task 7)
     float _ev_shape = 0.f;
     float _ev_rate  = 0.f;
+
+    // M4 center hooks
+    float _shape_offset = 0.f;   // DRIFT shape tap (set per control tick)
+    float _kick_shape   = 0.f;   // SPOT shape offset, decays with _kick_coef
+    float _kick_coef    = 1.f;   // per-sample decay for _kick_shape (tau ~ 1.5 s)
+    int   _settle_ctr   = 0;     // >0: gliding EVOLVE walks + kick to 0
+    float _settle_coef  = 1.f;   // per-sample settle glide (tau ~ 0.3 s)
 
     // M3 capture (recording state; replay state added in Task 3)
     CaptureLoop* _capture_loop = nullptr;
