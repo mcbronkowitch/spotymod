@@ -79,16 +79,18 @@ TEST_CASE("super: sync_mode getter reflects the set mode") {
     CHECK(m.sync_mode() == SyncMode::Sync);
 }
 
-TEST_CASE("super: spot kicks the live lanes deterministically") {
+TEST_CASE("super: spot stumbles every lane except the PITCH master lane") {
     SuperModulator a; a.init(48000.f, 1u);
     float before[LANE_COUNT];
     for (int i = 0; i < LANE_COUNT; ++i) before[i] = a.lane_phase(i);
     Rng rng; rng.seed(77u);
     a.spot(rng);
+    // PITCH is the anchor everything else stumbles around — SPOT leaves it alone.
+    CHECK(a.lane_phase(LANE_PITCH) == doctest::Approx(before[LANE_PITCH]));
     int moved = 0;
     for (int i = 0; i < LANE_COUNT; ++i)
-        if (std::fabs(a.lane_phase(i) - before[i]) > 1e-6f) ++moved;
-    CHECK(moved >= 3);
+        if (i != LANE_PITCH && std::fabs(a.lane_phase(i) - before[i]) > 1e-6f) ++moved;
+    CHECK(moved >= 3);   // the other four lanes stumble
 
     // determinism: same seed -> same kicks
     SuperModulator x; x.init(48000.f, 1u);

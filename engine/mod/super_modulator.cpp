@@ -63,11 +63,14 @@ void SuperModulator::process() {
 }
 
 void SuperModulator::spot(Rng& rng) {
-    // Draw a kick for every lane so the RNG stream is independent of replay
-    // state; ModLane::kick() no-ops on the replaying PITCH lane.
+    // SPOT stumbles every lane EXCEPT the PITCH master lane: the melody is the
+    // anchor everything else stumbles around, so pitch is never a target of the
+    // stumble (extends the replaying PITCH loop's immunity to the live lane too).
+    // Draw a kick for every lane so the RNG stream stays independent of which
+    // lanes are skipped.
     for (int i = 0; i < LANE_COUNT; ++i) {
         float dphase = rng.next_bipolar() * 0.5f;    // uniform +/- 1/2 cycle
         float dshape = rng.next_bipolar() * 0.35f;   // uniform +/- 0.35
-        _lanes[i].kick(dphase, dshape);
+        if (i != LANE_PITCH) _lanes[i].kick(dphase, dshape);
     }
 }
