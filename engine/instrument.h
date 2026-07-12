@@ -55,9 +55,10 @@ public:
     void set_fx_target_depth(int p, int i, float n){ _parts[p].set_fx_target_depth(i, n); }
     void set_flux_mix(int p, float n)              { _parts[p].fx().set_flux_mix(n); }
     void set_grit_mix(int p, float n)              { _parts[p].fx().set_grit_mix(n); }
-    void set_reverb_size(float n)    { if (_reverb) _reverb->set_size(n); }
-    void set_reverb_tone(float n)    { if (_reverb) _reverb->set_tone(n); }
-    void set_reverb_shimmer(float n) { if (_reverb) _reverb->set_shimmer(n); }
+    void set_reverb_size(float n)  { if (_reverb) _reverb->set_size(n); }
+    void set_reverb_decay(float n) { if (_reverb) _reverb->set_decay(n); }
+    void set_reverb_tone(float n)  { if (_reverb) _reverb->set_tone(n); }
+    void set_reverb_depth(float n) { if (_reverb) _reverb->set_depth(n); }
     float fx_target_value(int p, int i) const { return _parts[p].fx_target_value(i); }
 
     // --- M2 synth voice API (spec "Instrument API") ---

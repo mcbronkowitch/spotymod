@@ -116,7 +116,8 @@ TEST_CASE("instrument: fx setters reach the parts and reverb setters are null-sa
     inst.set_grit_mix(PART_A, 0.7f);
     inst.set_reverb_size(0.9f);         // must not crash without a reverb
     inst.set_reverb_tone(0.2f);
-    inst.set_reverb_shimmer(0.5f);
+    inst.set_reverb_decay(0.7f);
+    inst.set_reverb_depth(0.5f);
     float l, r;
     inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(inst.fx_target_value(PART_A, FXT_GRIT_INT) >= 0.f);
@@ -216,7 +217,8 @@ TEST_CASE("instrument M4: morph=1 injects no new reverb from part A (send isolat
     Instrument x; x.init(48000.f, mx);
     Instrument y; y.init(48000.f, my);
     x.set_morph(1.f); y.set_morph(1.f);
-    x.set_reverb_size(0.1f); y.set_reverb_size(0.1f);   // short tail so 3 s covers full decay
+    x.set_reverb_decay(0.15f); y.set_reverb_decay(0.15f);   // short tail so 3 s covers full decay
+    x.set_reverb_size(0.2f);   y.set_reverb_size(0.2f);     // small room too
     x.set_rate(PART_A, 0.3f); x.set_target_base(PART_A, LANE_PITCH, 0.2f);
     y.set_rate(PART_A, 0.9f); y.set_target_base(PART_A, LANE_PITCH, 0.9f);
     float xl, xr, yl, yr, early = 0.f, late = 0.f;

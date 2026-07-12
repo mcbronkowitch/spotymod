@@ -91,10 +91,10 @@ TEST_CASE("scenario: fx actions reach the instrument") {
     mode.svalue = "reduce";
     apply_event(inst, mode);
 
-    Event shim;    // global reverb action: no part, null-safe
-    shim.action = "set_reverb_shimmer";
-    shim.value = 0.5f;
-    apply_event(inst, shim);
+    Event dec;     // global reverb action: no part, null-safe
+    dec.action = "set_reverb_decay";
+    dec.value = 0.5f;
+    apply_event(inst, dec);
 
     float l = 0.f, r = 0.f;
     inst.process(nullptr, nullptr, &l, &r, 1);
