@@ -100,3 +100,45 @@ TEST_CASE("center drift: at full drift the two banks' rates move apart (opposite
     CHECK(a_moved);
     CHECK(b_moved);
 }
+
+namespace {
+void run_coupled(Rig& r, int samples) {
+    int ctrl = 0;
+    for (int i = 0; i < samples; ++i) {
+        if (ctrl == 0) { r.c.update(r.a, r.b, r.pa, r.pb); ctrl = Center::kCtrlInterval; }
+        --ctrl;
+        r.a.process(); r.b.process();
+    }
+}
+} // namespace
+
+TEST_CASE("center couple: couple 1 locks two free banks and converges their rates") {
+    Rig r; r.init(3u);
+    r.a.set_sync_mode(SyncMode::Free); r.b.set_sync_mode(SyncMode::Free);
+    r.a.set_rate(0.5f); r.b.set_rate(0.52f);
+    r.c.set_couple(1.f);
+    run_coupled(r, 48000 * 12);
+    CHECK(std::fabs(r.c.phase_err()) < 0.03f);
+    CHECK(r.a.master_hz() == doctest::Approx(r.b.master_hz()).epsilon(0.03));
+}
+
+TEST_CASE("center couple: couple 0 leaves both rate hooks at unity") {
+    Rig r; r.init(3u);
+    r.a.set_rate(0.4f); r.b.set_rate(0.7f);
+    float ba = r.a.base_hz(), bb = r.b.base_hz();
+    r.c.set_couple(0.f); r.c.set_drift(0.f);
+    run_coupled(r, 48000);
+    CHECK(r.a.master_hz() == doctest::Approx(ba));
+    CHECK(r.b.master_hz() == doctest::Approx(bb));
+}
+
+TEST_CASE("center couple: a SYNC bank anchors, its rate is not scaled") {
+    Rig r; r.init(3u);
+    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
+    r.a.set_sync_mode(SyncMode::Sync); r.a.set_rate(0.625f);   // anchor: 2 Hz
+    r.b.set_sync_mode(SyncMode::Free); r.b.set_rate(0.3f);
+    float anchor = r.a.base_hz();
+    r.c.set_couple(1.f);
+    run_coupled(r, 48000 * 8);
+    CHECK(r.a.master_hz() == doctest::Approx(anchor));
+}

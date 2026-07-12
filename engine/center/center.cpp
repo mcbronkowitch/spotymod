@@ -16,6 +16,10 @@ constexpr float kTuneTap[2]  = { 0.5f, -0.9f };   // x kTuneCents
 constexpr float kRateOct   = 0.5f;                // up to +/- 1/2 octave
 constexpr float kShapeMax  = 0.15f;               // up to +/- 0.15 shape
 constexpr float kTuneCents = 25.f;                // up to +/- 25 cents
+
+constexpr float kK           = 0.15f;   // Kuramoto phase-pull gain (tune by ear)
+constexpr float kRateClampLo = 0.5f;
+constexpr float kRateClampHi = 2.0f;
 }
 
 void Center::init(float sample_rate, uint32_t seed) {
@@ -59,9 +63,28 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     pa.set_detune_cents(kTuneCents * kTuneTap[0] * w);
     pb.set_detune_cents(kTuneCents * kTuneTap[1] * w);
 
-    // --- COUPLE multiplier (unity until Task 6) ---
-    const float mult_a = 1.f;
-    const float mult_b = 1.f;
+    // --- COUPLE (Kuramoto PLL: convergence toward the geometric mean + phase pull) ---
+    float dphi = a.pitch_phase() - b.pitch_phase();
+    dphi -= std::floor(dphi + 0.5f);            // wrap to [-0.5, 0.5)
+    _phase_err = dphi;
+
+    const float fa = a.base_hz(), fb = b.base_hz();
+    const bool a_free = a.sync_mode() == SyncMode::Free;
+    const bool b_free = b.sync_mode() == SyncMode::Free;
+    const bool mixed  = a_free != b_free;
+
+    // convergence: FREE banks slide toward the geometric mean; SYNC banks anchor.
+    const float conv_a = a_free ? std::pow(fb / fa, _couple * 0.5f) : 1.f;
+    const float conv_b = b_free ? std::pow(fa / fb, _couple * 0.5f) : 1.f;
+
+    // phase pull: opposite sign on the two banks; a SYNC bank in a MIXED pair
+    // stays the pure anchor (no pull); when both SYNC only the phase pull acts.
+    const float s = std::sin(TWO_PI * dphi);
+    const float pull_a = (!a_free && mixed) ? 1.f : (1.f - _couple * kK * s);
+    const float pull_b = (!b_free && mixed) ? 1.f : (1.f + _couple * kK * s);
+
+    const float mult_a = clampf(conv_a * pull_a, kRateClampLo, kRateClampHi);
+    const float mult_b = clampf(conv_b * pull_b, kRateClampLo, kRateClampHi);
 
     // single rate hook = COUPLE x DRIFT rate tap
     a.set_rate_scale(mult_a * rate_drift_a);
