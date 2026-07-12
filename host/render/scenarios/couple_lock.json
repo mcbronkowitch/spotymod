@@ -1,0 +1,21 @@
+{
+  "sample_rate": 48000,
+  "bpm": 120,
+  "duration_s": 40,
+  "init": [
+    {"action":"set_engine","part":0,"value":"synth"},
+    {"action":"set_engine","part":1,"value":"synth"},
+    {"action":"set_sync_mode","part":0,"value":"free"},
+    {"action":"set_sync_mode","part":1,"value":"free"},
+    {"action":"set_rate","part":0,"value":0.45},
+    {"action":"set_rate","part":1,"value":0.62},
+    {"action":"set_target_active","part":0,"slot":2,"flag":true},
+    {"action":"set_target_active","part":1,"slot":2,"flag":true},
+    {"action":"set_morph","value":0.5}
+  ],
+  "events": [
+    {"t":8.0,"action":"set_couple","value":0.4},
+    {"t":18.0,"action":"set_couple","value":1.0},
+    {"t":30.0,"action":"set_couple","value":0.0}
+  ]
+}

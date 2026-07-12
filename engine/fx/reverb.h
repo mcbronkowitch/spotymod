@@ -5,9 +5,10 @@
 namespace spky {
 
 // The one shared room behind both parts. Input is the summed per-part sends
-// (post-FX, pre-morph); output is wet-only and joins the master AFTER the
-// part mix. Optional shimmer: a +12 st pitch shifter on the previous wet
-// frame, fed back into the reverb input — fully skipped at shimmer == 0.
+// (post-FX; the send is morph-scaled in the Instrument mix) and joins the
+// master AFTER the part mix as a wet-only signal. Optional shimmer: a +12 st
+// pitch shifter on the previous wet frame, fed back into the reverb input —
+// fully skipped at shimmer == 0.
 //
 // BIG object (~530 KB — ReverbSc's aux buffer and the shifter's delay lines
 // are inline members). Never stack-allocate: the desktop host owns it as a

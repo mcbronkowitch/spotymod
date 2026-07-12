@@ -24,7 +24,7 @@ is actually built today, and what is still design-only.
 | **M2** | Polyphonic synth voice (replaces the M1 test tone) | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M3** | Capture sequencer (freeze the PITCH lane into a loop) | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **+ Entropy** | Looping S&H melody buffer; bipolar ENTROPY (erode / loop / grow) replaces EVOLVE | ✅ **done** (engine + host; switch mapping in M6) |
-| **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT | ⬜ planned |
+| **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -182,13 +182,42 @@ control:
   `demo_step_melody.json` (entropy showcase) + `entropy_duet.json`.
 - **UI (M6)** — panel switch 2 becomes ERODE / LOOP / GROW.
 
-## Planned
+### M4 — Center section ✅
 
-### M4 — Center section ⬜
-MORPH (fader, equal-power A↔B), COUPLE (ALT + fader, mutual phase/rate pull),
-DRIFT (SPOT-hold + fader, slow global weather), SPOT tap (per-lane random
-phase/shape jolt). Fader layering with slew catch-up; CV_CROSSFADE always acts on
-MORPH.
+One `Center` class owns MORPH / COUPLE / DRIFT / SPOT, computed at control
+rate (one 96-sample block) and wired through narrow `ModLane` /
+`SuperModulator` / `Part` hooks — no engine-level branching.
+
+- **MORPH** — fader, equal-power A↔B blend of both the dry mix and the
+  reverb send (supersedes the M1.6 pre-morph-send rule: a fully
+  morphed-away part injects no new reverb, only its already-committed tail
+  rings out); boot default 0.5, smoothed.
+- **COUPLE** — ALT + fader, a Kuramoto phase-locked loop between the two
+  parts' master rates: mutual phase pull (no phase jumps) with a ×0.5..×2
+  rate clamp, locking in 1–2 cycles at couple = 1 and staying quiet at low
+  couple; a `sync_mode` anchor part holds its rate fixed as the other locks
+  to it.
+- **DRIFT** — SPOT-hold + fader, one shared Ornstein-Uhlenbeck "weather"
+  walk (τ ≈ 45 s, bounded) feeding six hardcoded taps (rate ± ½ octave,
+  shape ± 0.15, detune ± 25 cents, per lane); `set_drift` is smoothed.
+- **SPOT** — per-lane random kick: a permanent ±½-cycle phase jump plus a
+  ±0.35 shape jolt that decays back to 0 (τ ≈ 1.5 s); replay-immune (a
+  captured loop ignores kicks).
+- **SETTLE** — panic glide: DRIFT and the weather walk ease to 0, EVOLVE
+  walk states re-center, and any open SPOT kick decays early; COUPLE and
+  MORPH are untouched.
+- Zero-effect invariant preserved: couple = 0 and drift = 0 reproduce every
+  pre-existing lane/CSV column bit-for-bit, modulo the MORPH mix now being
+  equal-power instead of the old unity-sum placeholder (a level-only
+  change at the boot default).
+- **Host** — five scenario actions (`set_morph`, `set_couple`, `set_drift`,
+  `spot`, `settle`), five `mods.csv` global columns (`morph`, `couple`,
+  `drift`, `weather`, `phase_err`), demos `couple_lock.json` (COUPLE
+  convergence/anchor) + `weather_spot.json` (DRIFT weather + SPOT + SETTLE).
+- **UI (M6)** — MORPH fader, ALT + fader for COUPLE, SPOT-hold + fader for
+  DRIFT, SPOT tap gesture.
+
+## Planned
 
 ### M5 — Sampler engine adapter ⬜
 Adapter around the existing granular Deck/Vox engine (depends only on `Buffer`)
