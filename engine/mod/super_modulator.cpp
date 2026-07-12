@@ -28,6 +28,8 @@ void SuperModulator::init(float sample_rate, uint32_t seed_base) {
         _lanes[i].init(sample_rate, seed_base + static_cast<uint32_t>(i) * 2654435761u);
         _out[i] = 0.f;
     }
+    _capture.reset();
+    _lanes[LANE_PITCH].set_capture_loop(&_capture);   // capture is PITCH-only
     _update_rate();
 }
 

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "mod/lane.h"
 #include "mod/lane_id.h"
+#include "mod/capture.h"
 
 namespace spky {
 
@@ -32,11 +33,18 @@ public:
     float pitch_phase()      const { return _lanes[LANE_PITCH].phase(); }
     float master_hz()        const { return _master_hz; }
 
+    // --- M3 capture sequencer (PITCH lane only) ---
+    void capture_now()       { _capture.capture_now(); }
+    void set_replay(bool on) { _lanes[LANE_PITCH].set_replay(on); }
+    bool replaying()   const { return _lanes[LANE_PITCH].replaying(); }
+    bool loop_valid()  const { return _capture.valid(); }
+
 private:
     void _update_rate();
 
     std::array<ModLane, LANE_COUNT> _lanes;
     std::array<float, LANE_COUNT>   _out {};
+    CaptureLoop                     _capture;   // one loop, PITCH lane only
 
     float    _sr = 48000.f;
     float    _bpm = 120.f;

@@ -227,3 +227,45 @@ TEST_CASE("replay: toggling replay does not jump beyond one boundary step") {
     // phase advances by one sample only; no phase reset on toggle
     CHECK(std::fabs(l.phase() - before) < 0.001f);
 }
+
+static void configure_sm_step(SuperModulator& sm, float prob = 1.f) {
+    sm.init(48000.f, 1000);
+    sm.set_range(1.f);
+    sm.set_shape(0.9f);
+    sm.set_smooth(0.f);
+    sm.set_step(true, 8);
+    sm.set_probability(prob);
+    sm.set_rate(0.5f);           // some audible rate
+    sm.set_sync_mode(SyncMode::Free);
+}
+
+TEST_CASE("SuperModulator: loop_valid false until capture") {
+    SuperModulator sm; configure_sm_step(sm);
+    CHECK(sm.loop_valid() == false);
+    for (int i = 0; i < 48000 * 2; ++i) sm.process();
+    sm.capture_now();
+    CHECK(sm.loop_valid() == true);
+}
+
+TEST_CASE("SuperModulator: replay swaps only the PITCH lane (EVOLVE isolated to live lanes)") {
+    // Two identical modulators drift identically. Replay both; turn EVOLVE on for
+    // a, off for b. The replayed PITCH lane ignores EVOLVE -> a and b match exactly
+    // (drift-immune). The live MOTION lane is driven by EVOLVE -> a diverges from b.
+    SuperModulator a; configure_sm_step(a);
+    SuperModulator b; configure_sm_step(b);
+    for (int i = 0; i < 48000 * 2; ++i) { a.process(); b.process(); }
+    a.capture_now(); b.capture_now();
+    a.set_replay(true);  b.set_replay(true);
+    a.set_evolve(1.f);   b.set_evolve(0.f);
+    CHECK(a.replaying() == true);
+    CHECK(a.loop_valid() == true);
+
+    bool motion_diverged = false;
+    for (int i = 0; i < 48000 * 3; ++i) {
+        a.process(); b.process();
+        CHECK(a.lane_output(LANE_PITCH) == doctest::Approx(b.lane_output(LANE_PITCH)));
+        if (a.lane_output(LANE_MOTION) != doctest::Approx(b.lane_output(LANE_MOTION)))
+            motion_diverged = true;
+    }
+    CHECK(motion_diverged == true);
+}
