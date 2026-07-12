@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Portable engine: header-only for now; carries the include dir.
 add_library(spky_engine INTERFACE)
-target_include_directories(spky_engine INTERFACE engine)
+target_include_directories(spky_engine INTERFACE engine third_party)
 
 # --- third-party (vendored single headers under third_party/, desktop only) ---
 add_library(doctest INTERFACE)
@@ -68,6 +68,7 @@ add_executable(spky_tests
     tests/test_flux.cpp
     engine/fx/reverb.cpp
     tests/test_reverb.cpp
+    tests/test_oliverb.cpp
     engine/fx/part_fx.cpp
     tests/test_part_fx.cpp
     tests/test_fast_sin.cpp
@@ -98,5 +99,5 @@ add_executable(render
     engine/synth/voice.cpp
     engine/synth/synth_engine.cpp
 )
-target_include_directories(render PRIVATE host engine)
+target_include_directories(render PRIVATE host engine third_party)
 target_link_libraries(render PRIVATE nlohmann_json daisysp_min)
