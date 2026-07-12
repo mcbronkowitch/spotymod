@@ -12,7 +12,7 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _rng.seed(seed);
     _phase = 0.f;
     _cur_step = -1;
-    _sh_cycle = _rng.next_bipolar();
+    for (float& v : _seq) v = _rng.next_bipolar();   // a melody exists from cycle one
     _target = 0.f;
     _fired = false;
     _frozen = false;
@@ -64,7 +64,13 @@ float ModLane::_compute_raw() const {
     float ph = _phase + _ev_phase;
     ph -= std::floor(ph);
     float sh = clampf(_shape + _ev_shape, 0.f, 1.f);
-    return shape_value(ph, sh, _sh_cycle);
+    return shape_value(ph, sh, _seq[_sh_slot()]);
+}
+
+int ModLane::_sh_slot() const {
+    if (!_step_mode) return 0;                 // FLOW: one slot, loop-stable per cycle
+    int s = _cur_step < 0 ? 0 : _cur_step;
+    return s % kSeqSlots;
 }
 
 void ModLane::_on_boundary() {
@@ -118,7 +124,6 @@ float ModLane::process() {
         _replay_step();                                 // the loop is the source
     } else {
         if (wrapped) {
-            _sh_cycle = _rng.next_bipolar();            // new S&H value per cycle
             if (_entropy > 0.f) {                       // GROW: EVOLVE random walk (live only)
                 _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _entropy, -0.5f, 0.5f);
                 _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _entropy, -0.25f, 0.25f);

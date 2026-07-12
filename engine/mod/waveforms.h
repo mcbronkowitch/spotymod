@@ -16,8 +16,8 @@ inline float wave_pulse(float ph)    { return ph < 0.5f ? 1.f : -1.f; }
 inline float shape_value(float ph, float shape, float sh_hold) {
     shape = clampf(shape, 0.f, 1.f);
     float seg = shape * 4.f;
-    if (seg >= 3.9999f) seg = 3.9999f;   // keep S&H reachable at shape == 1
     int   i = static_cast<int>(seg);
+    if (i > 3) i = 3;                    // shape == 1 -> f == 1: pure S&H, no pulse bleed
     float f = seg - i;
     switch (i) {
         case 0:  return lerpf(wave_sine(ph),     wave_triangle(ph), f);

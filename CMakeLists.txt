@@ -47,6 +47,7 @@ add_executable(spky_tests
     tests/test_lane.cpp
     tests/test_step.cpp
     tests/test_evolve.cpp
+    tests/test_entropy_seq.cpp
     engine/mod/super_modulator.cpp
     tests/test_super_modulator.cpp
     engine/parts/part.cpp

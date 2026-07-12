@@ -40,6 +40,7 @@ private:
     void  _update_slew();
     void  _on_boundary();
     float _compute_raw() const;
+    int   _sh_slot() const;         // which _seq slot the S&H end reads now
     int   _phase_slot() const;      // floor(phase * kSlots), clamped
     void  _record_slot();           // roll _target + fired into the ring
     bool  _replaying() const;       // replay requested AND loop valid
@@ -62,7 +63,8 @@ private:
     bool  _fixed_slew = false;
 
     int   _cur_step = -1;
-    float _sh_cycle = 0.f;   // per-cycle random for the S&H end of the bank
+    static constexpr int kSeqSlots = 32;
+    float _seq[kSeqSlots] = {};  // looping S&H step buffer — the melody (spec: entropy sequencer)
     float _target = 0.f;     // pre-smooth held value
     bool  _fired = false;
     bool  _frozen = false;
