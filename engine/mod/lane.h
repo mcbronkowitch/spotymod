@@ -41,6 +41,7 @@ private:
     void  _on_boundary();
     float _compute_raw() const;
     int   _sh_slot() const;         // which _seq slot the S&H end reads now
+    void  _mutate_slot(int slot);   // entropy dice + walk/erode on a fired step
     int   _phase_slot() const;      // floor(phase * kSlots), clamped
     void  _record_slot();           // roll _target + fired into the ring
     bool  _replaying() const;       // replay requested AND loop valid

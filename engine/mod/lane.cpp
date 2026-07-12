@@ -7,6 +7,11 @@
 
 using namespace spky;
 
+// Mutation character — tuned by ear; the spec fixes behavior, not constants.
+static constexpr float kGravity  = 0.10f;  // GROW: mild pull toward 0 (the root)
+static constexpr float kErode    = 0.60f;  // ERODE: fraction kept per mutation
+static constexpr float kRootSnap = 0.02f;  // ERODE: below this, land exactly on 0
+
 void ModLane::init(float sample_rate, uint32_t seed) {
     _sr = sample_rate;
     _rng.seed(seed);
@@ -78,9 +83,30 @@ void ModLane::_on_boundary() {
     _frozen = !fire;
     if (fire) {
         _fired = true;
+        if (_entropy != 0.f) _mutate_slot(_sh_slot());  // fired steps only: held
         _target = _compute_raw();   // latch the value at this boundary
     }
-    // if !fire: hold the previous _target (frozen)
+    // if !fire: hold the previous _target (frozen) — and the buffer slot with it
+}
+
+void ModLane::_mutate_slot(int slot) {
+    // Dice: mutation chance grows with |entropy|; squared for fine control near LOOP.
+    if (_rng.next_unipolar() >= _entropy * _entropy) return;
+    float v = _seq[slot];
+    if (_entropy > 0.f) {
+        // GROW: random walk from the old value. The cubed draw makes small
+        // intervals common and leaps rare; width opens with entropy; the
+        // (1 - kGravity) factor is the tonic gravity keeping lines anchored.
+        float r = _rng.next_bipolar();
+        float delta = r * r * r * lerpf(0.5f, 2.f, _entropy);
+        v = clampf((v + delta) * (1.f - kGravity), -1.f, 1.f);
+    } else {
+        // ERODE: pull the note toward 0 (root / base value); snap when close
+        // so sustained erosion lands exactly on a single repeated root note.
+        v *= kErode;
+        if (std::fabs(v) < kRootSnap) v = 0.f;
+    }
+    _seq[slot] = v;
 }
 
 int ModLane::_phase_slot() const {
