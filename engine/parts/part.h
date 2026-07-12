@@ -21,6 +21,7 @@ public:
               float* echo_l = nullptr, float* echo_r = nullptr);
 
     SuperModulator& mod() { return _mod; }
+    const SuperModulator& mod() const { return _mod; }
     Quantizer& quant() { return _quant; }
     PartFx& fx() { return _fx; }
 

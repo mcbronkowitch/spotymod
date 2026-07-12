@@ -77,6 +77,12 @@ public:
     bool  gate(int p)  const { return _parts[p].gate(); }
     float pitch_cv(int p) const { return _parts[p].pitch_cv(); }
 
+    // --- M3 capture sequencer (per part) ---
+    void capture_now(int p)         { _parts[p].mod().capture_now(); }
+    void set_replay(int p, bool on) { _parts[p].mod().set_replay(on); }
+    bool replaying(int p) const     { return _parts[p].mod().replaying(); }
+    bool loop_valid(int p) const    { return _parts[p].mod().loop_valid(); }
+
     void process(const float* inL, const float* inR, float* outL, float* outR, size_t n);
 
 private:

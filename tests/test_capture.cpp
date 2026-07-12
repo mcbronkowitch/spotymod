@@ -269,3 +269,81 @@ TEST_CASE("SuperModulator: replay swaps only the PITCH lane (EVOLVE isolated to 
     }
     CHECK(motion_diverged == true);
 }
+
+// Drive part 0 as a Dorian STEP melody with a capture loop, return it replaying.
+static void inst_capture_replay(Instrument& inst) {
+    inst.init(48000.f);                 // engine-only init (no FX chain)
+    inst.set_tempo_bpm(120.f);
+    inst.set_engine(0, ENGINE_SYNTH);
+    inst.set_step(0, true, 8);
+    inst.set_shape(0, 0.9f);
+    inst.set_smooth(0, 0.f);
+    inst.set_range(0, 1.f);
+    inst.set_probability(0, 1.f);
+    inst.set_depth(0, 1.f);
+    inst.set_rate(0, 0.5f);
+    inst.set_target_active(0, LANE_PITCH, true);
+    inst.set_target_base(0, LANE_PITCH, 0.5f);
+    inst.set_scale(SCALE_DORIAN);
+    inst.set_tune(0, 0.5f);             // neutral
+    float l, r;
+    for (int i = 0; i < 48000 * 2; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    inst.capture_now(0);
+    CHECK(inst.loop_valid(0) == true);
+    inst.set_replay(0, true);
+    CHECK(inst.replaying(0) == true);
+}
+
+TEST_CASE("Instrument: TUNE transposes the replayed loop") {
+    // Two identical replaying instruments; transpose only b. They stay phase-
+    // aligned (same seed/config), so any pitch_cv difference is caused by TUNE.
+    Instrument a; inst_capture_replay(a);
+    Instrument b; inst_capture_replay(b);
+    b.set_tune(0, 1.0f);                 // +max transpose on b only
+    bool differs = false;
+    float l, r;
+    for (int i = 0; i < 9600; ++i) {
+        a.process(nullptr, nullptr, &l, &r, 1);
+        b.process(nullptr, nullptr, &l, &r, 1);
+        if (a.pitch_cv(0) != doctest::Approx(b.pitch_cv(0))) differs = true;
+    }
+    CHECK(differs == true);
+}
+
+TEST_CASE("Instrument: scale change requantizes the replayed loop") {
+    // Same technique: change only b's scale; a stays Dorian (set in the helper).
+    Instrument a; inst_capture_replay(a);
+    Instrument b; inst_capture_replay(b);
+    b.set_scale(SCALE_WHOLE);            // different scale masks -> different pitches
+    bool differs = false;
+    float l, r;
+    for (int i = 0; i < 9600; ++i) {
+        a.process(nullptr, nullptr, &l, &r, 1);
+        b.process(nullptr, nullptr, &l, &r, 1);
+        if (a.pitch_cv(0) != doctest::Approx(b.pitch_cv(0))) differs = true;
+    }
+    CHECK(differs == true);
+}
+
+TEST_CASE("Instrument: recorded fired pattern drives triggers via lane_fired") {
+    Instrument inst; inst_capture_replay(inst);
+    float l, r;
+    int fires = 0;
+    for (int i = 0; i < 48000; ++i) {
+        inst.process(nullptr, nullptr, &l, &r, 1);
+        if (inst.lane_fired(0, LANE_PITCH)) ++fires;
+    }
+    CHECK(fires >= 4);                   // ~8 triggers/cycle at prob 1
+}
+
+TEST_CASE("Instrument: probability thinning on the loop holds notes (fewer triggers)") {
+    Instrument inst; inst_capture_replay(inst);
+    inst.set_probability(0, 0.f);        // all recorded triggers fail -> hold
+    float l, r;
+    int fires = 0;
+    for (int i = 0; i < 48000 * 2; ++i) {
+        inst.process(nullptr, nullptr, &l, &r, 1);
+        if (inst.lane_fired(0, LANE_PITCH)) ++fires;
+    }
+    CHECK(fires == 0);
+}
