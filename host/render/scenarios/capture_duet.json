@@ -8,7 +8,7 @@
 
     {"action":"set_engine","part":0,"value":"synth"},
     {"action":"set_sync_mode","part":0,"value":"sync"},
-    {"action":"set_rate","part":0,"value":0.62},
+    {"action":"set_rate","part":0,"value":0.25},
     {"action":"set_step","part":0,"flag":true,"ivalue":16},
     {"action":"set_shape","part":0,"value":0.9},
     {"action":"set_range","part":0,"value":0.8},
@@ -28,7 +28,7 @@
 
     {"action":"set_engine","part":1,"value":"synth"},
     {"action":"set_sync_mode","part":1,"value":"sync"},
-    {"action":"set_rate","part":1,"value":0.44},
+    {"action":"set_rate","part":1,"value":0.25},
     {"action":"set_step","part":1,"flag":true,"ivalue":8},
     {"action":"set_shape","part":1,"value":0.85},
     {"action":"set_range","part":1,"value":0.7},
