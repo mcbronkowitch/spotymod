@@ -33,6 +33,8 @@ public:
 
     // M3 capture: wired once at init on the PITCH lane only (nullptr elsewhere).
     void set_capture_loop(CaptureLoop* loop) { _capture_loop = loop; }
+    void set_replay(bool on) { _replay = on; if (on) _play_slot = -1; }
+    bool replaying() const { return _replaying(); }
 
 private:
     void  _update_slew();
@@ -40,6 +42,8 @@ private:
     float _compute_raw() const;
     int   _phase_slot() const;      // floor(phase * kSlots), clamped
     void  _record_slot();           // roll _target + fired into the ring
+    bool  _replaying() const;       // replay requested AND loop valid
+    void  _replay_step();           // loop is the source this sample
 
     Rng     _rng;
     OnePole _slew;
@@ -71,6 +75,8 @@ private:
     CaptureLoop* _capture_loop = nullptr;
     int          _rec_slot = -1;    // last ring slot written this pass
     bool         _rec_fired = false;// a boundary has fired since entering _rec_slot
+    bool         _replay = false;   // replay requested (effective only if loop valid)
+    int          _play_slot = -1;   // last slot evaluated while replaying
 };
 
 } // namespace spky

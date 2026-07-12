@@ -21,6 +21,8 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _ev_rate  = 0.f;
     _rec_slot = -1;
     _rec_fired = false;
+    _replay = false;
+    _play_slot = -1;
     _update_slew();
     _slew.reset(0.f);
 }
@@ -87,35 +89,57 @@ void ModLane::_record_slot() {
     _capture_loop->record(slot, _target, _rec_fired);
 }
 
+bool ModLane::_replaying() const {
+    return _replay && _capture_loop && _capture_loop->valid();
+}
+
+void ModLane::_replay_step() {
+    int slot = _phase_slot();
+    if (slot != _play_slot) {
+        _play_slot = slot;
+        if (_capture_loop->fired(slot)) {
+            bool fire = _rng.next_unipolar() < _prob;  // live PROBABILITY dice
+            _frozen = !fire;
+            if (fire) _fired = true;                   // trigger; freeze lifts
+        }
+    }
+    if (!_frozen) _target = _capture_loop->value(slot); // curve, or held step
+}
+
 float ModLane::process() {
     _fired = false;
+    const bool replay = _replaying();
 
-    _phase += _phase_inc * (1.f + _ev_rate);           // EVOLVE also wanders the rate
+    _phase += _phase_inc * (replay ? 1.f : (1.f + _ev_rate));  // no EVOLVE rate on replay
     bool wrapped = false;
     while (_phase >= 1.f) { _phase -= 1.f; wrapped = true; }
 
-    if (wrapped) {
-        _sh_cycle = _rng.next_bipolar();               // new S&H value per cycle
-        if (_evolve > 0.f) {                           // EVOLVE: shape / phase / rate random walk (Task 7)
-            _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _evolve, -0.5f, 0.5f);
-            _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _evolve, -0.25f, 0.25f);
-            _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _evolve, -0.2f, 0.2f);
-        }
-    }
-
-    if (_step_mode) {
-        int step = static_cast<int>(_phase * _steps);
-        if (step >= _steps) step = _steps - 1;
-        if (step != _cur_step) {
-            _cur_step = step;
-            _on_boundary();
-        }
+    if (replay) {
+        _replay_step();                                 // the loop is the source
     } else {
-        if (wrapped) _on_boundary();
-        if (!_frozen) _target = _compute_raw();        // continuous in FLOW
-    }
+        if (wrapped) {
+            _sh_cycle = _rng.next_bipolar();            // new S&H value per cycle
+            if (_evolve > 0.f) {                        // EVOLVE random walk (live only)
+                _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _evolve, -0.5f, 0.5f);
+                _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _evolve, -0.25f, 0.25f);
+                _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _evolve, -0.2f, 0.2f);
+            }
+        }
 
-    if (_capture_loop) _record_slot();                 // roll into the ring
+        if (_step_mode) {
+            int step = static_cast<int>(_phase * _steps);
+            if (step >= _steps) step = _steps - 1;
+            if (step != _cur_step) {
+                _cur_step = step;
+                _on_boundary();
+            }
+        } else {
+            if (wrapped) _on_boundary();
+            if (!_frozen) _target = _compute_raw();     // continuous in FLOW
+        }
+
+        if (_capture_loop) _record_slot();              // roll into the ring
+    }
 
     float smoothed = _slew.process(_target);
     return apply_range(smoothed, _range);

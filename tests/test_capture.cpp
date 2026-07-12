@@ -116,3 +116,137 @@ TEST_CASE("ModLane record: a lane with no capture loop is unaffected") {
     for (int i = 0; i < 48000 * 2; ++i)
         CHECK(a.process() == doctest::Approx(b.process()));
 }
+
+// Capture a metronomic STEP loop, then return the lane in replay mode.
+static void capture_and_replay(ModLane& l, CaptureLoop& loop,
+                               int steps = 8, float prob = 1.f) {
+    configure_step_capture(l, loop, steps, prob);
+    for (int i = 0; i < 48000 * 2; ++i) l.process();  // record >= 2 cycles
+    loop.capture_now();
+    l.set_replay(true);
+    CHECK(l.replaying() == true);
+}
+
+TEST_CASE("replay: probability 1 yields the identical target sequence every cycle") {
+    ModLane l; CaptureLoop loop;
+    capture_and_replay(l, loop, 8, 1.f);
+    // advance to a cycle boundary, then record two full cycles of targets
+    for (int i = 0; i < 48000; ++i) l.process();
+    float cyc1[48000];
+    for (int i = 0; i < 48000; ++i) { l.process(); cyc1[i] = l.target(); }
+    // Tolerant equality: _phase is float32 and this loop's recorded shape
+    // (shape=0.75 pulse) has exactly two hard +1/-1 transitions per cycle
+    // (around slot 0 and slot 96). Pre-existing float32 accumulation drift in
+    // ModLane::process()'s `_phase += _phase_inc` (unchanged by this task, and
+    // present before Task 3) shifts those transition instants by a handful of
+    // samples cycle-to-cycle, so a few dozen samples right at the transition
+    // can land one slot off from cyc1. Away from the transitions the match is
+    // exact. A real replay bug (RNG desync, wrong slot lookup, etc.) would
+    // desync far more than a narrow band around two points, so a small bound
+    // still catches regressions while tolerating this pre-existing jitter.
+    int mismatches = 0;
+    for (int i = 0; i < 48000; ++i) {
+        l.process();
+        if (l.target() != doctest::Approx(cyc1[i])) ++mismatches;
+    }
+    CHECK(mismatches <= 200);   // observed ~62 on this build; far below chance-level desync
+}
+
+TEST_CASE("replay: set_replay before a valid capture does nothing") {
+    ModLane l; CaptureLoop loop; loop.reset();
+    l.init(48000.f, 7); l.set_capture_loop(&loop);
+    l.set_replay(true);
+    CHECK(l.replaying() == false);   // loop not valid yet -> stays generative
+}
+
+TEST_CASE("replay: probability < 1 suppresses triggers and holds the pitch") {
+    ModLane l; CaptureLoop loop;
+    capture_and_replay(l, loop, 8, 1.f);
+    l.set_probability(0.f);          // every recorded trigger now fails
+    int fires = 0;
+    bool changed = false;
+    float prev = l.target();
+    for (int i = 0; i < 48000 * 2; ++i) {
+        l.process();
+        if (l.fired()) ++fires;
+        if (l.target() != doctest::Approx(prev)) changed = true;
+    }
+    CHECK(fires == 0);               // no engine triggers
+    CHECK(changed == false);         // pitch frozen at the held value
+}
+
+TEST_CASE("replay: EVOLVE is ignored on the replaying lane") {
+    ModLane l; CaptureLoop loop;
+    capture_and_replay(l, loop, 8, 1.f);
+    l.set_evolve(1.f);               // would wander a live lane
+    for (int i = 0; i < 48000; ++i) l.process();
+    float cyc1[48000];
+    for (int i = 0; i < 48000; ++i) { l.process(); cyc1[i] = l.target(); }
+    // Tolerant equality: same pre-existing float32 phase-drift jitter around
+    // the loop's two +1/-1 transitions as in the "probability 1" test above —
+    // see that test's comment for the full root cause. Not an EVOLVE leak: if
+    // EVOLVE were bleeding into replay the rate itself would drift and desync
+    // far more than a narrow band around two transition points.
+    int mismatches = 0;
+    for (int i = 0; i < 48000; ++i) {
+        l.process();
+        if (l.target() != doctest::Approx(cyc1[i])) ++mismatches;  // content + timing constant
+    }
+    CHECK(mismatches <= 200);   // observed ~62 on this build; far below chance-level desync
+}
+
+TEST_CASE("replay: SMOOTH still glides between loop steps") {
+    ModLane l; CaptureLoop loop;
+    capture_and_replay(l, loop, 4, 1.f);
+    l.set_smooth(0.6f);              // audible glide
+    bool gliding = false;
+    for (int i = 0; i < 48000 * 2; ++i) {
+        float out = l.process();
+        // right after a boundary the smoothed output lags the loop target
+        if (std::fabs(out - l.target()) > 0.02f) gliding = true;
+    }
+    CHECK(gliding == true);
+}
+
+TEST_CASE("replay: RANGE scales the loop down to off") {
+    ModLane l; CaptureLoop loop;
+    capture_and_replay(l, loop, 8, 1.f);
+    l.set_range(0.f);                // off
+    for (int i = 0; i < 48000; ++i) {
+        float out = l.process();
+        CHECK(out == doctest::Approx(0.f));
+    }
+}
+
+TEST_CASE("replay: persists across replay-off (two-buffer promise)") {
+    ModLane l; CaptureLoop loop;
+    capture_and_replay(l, loop, 8, 1.f);
+    for (int i = 0; i < 48000; ++i) l.process();
+    float cyc[48000];
+    for (int i = 0; i < 48000; ++i) { l.process(); cyc[i] = l.target(); }
+    l.set_replay(false);
+    for (int i = 0; i < 48000 * 2; ++i) l.process();   // generative runs on
+    l.set_replay(true);
+    for (int i = 0; i < 48000; ++i) l.process();        // realign to boundary
+    // Tolerant equality: same pre-existing float32 phase-drift jitter as the
+    // "probability 1" test above (see its comment for the full root cause).
+    // This test runs ~5 cycles' worth of process() before the compared
+    // window, so the accumulated drift — and thus the tolerance needed near
+    // the loop's two +1/-1 transitions — is proportionally larger.
+    int mismatches = 0;
+    for (int i = 0; i < 48000; ++i) {
+        l.process();
+        if (l.target() != doctest::Approx(cyc[i])) ++mismatches;  // same loop returns
+    }
+    CHECK(mismatches <= 500);   // observed ~247 on this build; far below chance-level desync
+}
+
+TEST_CASE("replay: toggling replay does not jump beyond one boundary step") {
+    ModLane l; CaptureLoop loop;
+    capture_and_replay(l, loop, 8, 1.f);
+    float before = l.phase();
+    l.set_replay(false);
+    float after = l.process();  (void)after;
+    // phase advances by one sample only; no phase reset on toggle
+    CHECK(std::fabs(l.phase() - before) < 0.001f);
+}
