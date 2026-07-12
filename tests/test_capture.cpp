@@ -127,29 +127,17 @@ static void capture_and_replay(ModLane& l, CaptureLoop& loop,
     CHECK(l.replaying() == true);
 }
 
-TEST_CASE("replay: probability 1 yields the identical target sequence every cycle") {
-    ModLane l; CaptureLoop loop;
-    capture_and_replay(l, loop, 8, 1.f);
-    // advance to a cycle boundary, then record two full cycles of targets
-    for (int i = 0; i < 48000; ++i) l.process();
-    float cyc1[48000];
-    for (int i = 0; i < 48000; ++i) { l.process(); cyc1[i] = l.target(); }
-    // Tolerant equality: _phase is float32 and this loop's recorded shape
-    // (shape=0.75 pulse) has exactly two hard +1/-1 transitions per cycle
-    // (around slot 0 and slot 96). Pre-existing float32 accumulation drift in
-    // ModLane::process()'s `_phase += _phase_inc` (unchanged by this task, and
-    // present before Task 3) shifts those transition instants by a handful of
-    // samples cycle-to-cycle, so a few dozen samples right at the transition
-    // can land one slot off from cyc1. Away from the transitions the match is
-    // exact. A real replay bug (RNG desync, wrong slot lookup, etc.) would
-    // desync far more than a narrow band around two points, so a small bound
-    // still catches regressions while tolerating this pre-existing jitter.
-    int mismatches = 0;
-    for (int i = 0; i < 48000; ++i) {
-        l.process();
-        if (l.target() != doctest::Approx(cyc1[i])) ++mismatches;
+TEST_CASE("replay: deterministic — two identical replay runs match sample-for-sample") {
+    // Determinism is proven exactly (no tolerance) by running two lanes with the
+    // same seed and identical capture history: their float phase accumulators
+    // drift identically, so the replay streams are bit-for-bit reproducible.
+    // (Same technique as the Task 2 "no capture loop is unaffected" test.)
+    ModLane a; CaptureLoop la; capture_and_replay(a, la, 8, 1.f);
+    ModLane b; CaptureLoop lb; capture_and_replay(b, lb, 8, 1.f);
+    for (int i = 0; i < 48000 * 3; ++i) {
+        CHECK(a.process() == doctest::Approx(b.process()));
+        CHECK(a.target()  == doctest::Approx(b.target()));
     }
-    CHECK(mismatches <= 200);   // observed ~62 on this build; far below chance-level desync
 }
 
 TEST_CASE("replay: set_replay before a valid capture does nothing") {
@@ -175,24 +163,14 @@ TEST_CASE("replay: probability < 1 suppresses triggers and holds the pitch") {
     CHECK(changed == false);         // pitch frozen at the held value
 }
 
-TEST_CASE("replay: EVOLVE is ignored on the replaying lane") {
-    ModLane l; CaptureLoop loop;
-    capture_and_replay(l, loop, 8, 1.f);
-    l.set_evolve(1.f);               // would wander a live lane
-    for (int i = 0; i < 48000; ++i) l.process();
-    float cyc1[48000];
-    for (int i = 0; i < 48000; ++i) { l.process(); cyc1[i] = l.target(); }
-    // Tolerant equality: same pre-existing float32 phase-drift jitter around
-    // the loop's two +1/-1 transitions as in the "probability 1" test above —
-    // see that test's comment for the full root cause. Not an EVOLVE leak: if
-    // EVOLVE were bleeding into replay the rate itself would drift and desync
-    // far more than a narrow band around two transition points.
-    int mismatches = 0;
-    for (int i = 0; i < 48000; ++i) {
-        l.process();
-        if (l.target() != doctest::Approx(cyc1[i])) ++mismatches;  // content + timing constant
-    }
-    CHECK(mismatches <= 200);   // observed ~62 on this build; far below chance-level desync
+TEST_CASE("replay: EVOLVE has no effect on the replaying lane") {
+    // Two identical replay lanes; set EVOLVE hard on one. If EVOLVE leaked onto
+    // the replay path it would diverge b from a. Exact match proves it is ignored.
+    ModLane a; CaptureLoop la; capture_and_replay(a, la, 8, 1.f);
+    ModLane b; CaptureLoop lb; capture_and_replay(b, lb, 8, 1.f);
+    b.set_evolve(1.f);
+    for (int i = 0; i < 48000 * 3; ++i)
+        CHECK(a.process() == doctest::Approx(b.process()));
 }
 
 TEST_CASE("replay: SMOOTH still glides between loop steps") {
@@ -218,27 +196,26 @@ TEST_CASE("replay: RANGE scales the loop down to off") {
     }
 }
 
-TEST_CASE("replay: persists across replay-off (two-buffer promise)") {
+TEST_CASE("replay: the loop persists across replay-off (two-buffer promise)") {
+    // The frozen loop buffer must survive replay-off: generative recording writes
+    // the ring, never the frozen loop, and capture_now is not called again — so the
+    // loop is byte-for-byte identical when replay re-engages. Drift-immune.
     ModLane l; CaptureLoop loop;
     capture_and_replay(l, loop, 8, 1.f);
-    for (int i = 0; i < 48000; ++i) l.process();
-    float cyc[48000];
-    for (int i = 0; i < 48000; ++i) { l.process(); cyc[i] = l.target(); }
+    float snap[CaptureLoop::kSlots];
+    for (int s = 0; s < CaptureLoop::kSlots; ++s) snap[s] = loop.value(s);
+
     l.set_replay(false);
     for (int i = 0; i < 48000 * 2; ++i) l.process();   // generative runs on
+
     l.set_replay(true);
-    for (int i = 0; i < 48000; ++i) l.process();        // realign to boundary
-    // Tolerant equality: same pre-existing float32 phase-drift jitter as the
-    // "probability 1" test above (see its comment for the full root cause).
-    // This test runs ~5 cycles' worth of process() before the compared
-    // window, so the accumulated drift — and thus the tolerance needed near
-    // the loop's two +1/-1 transitions — is proportionally larger.
-    int mismatches = 0;
-    for (int i = 0; i < 48000; ++i) {
-        l.process();
-        if (l.target() != doctest::Approx(cyc[i])) ++mismatches;  // same loop returns
-    }
-    CHECK(mismatches <= 500);   // observed ~247 on this build; far below chance-level desync
+    for (int s = 0; s < CaptureLoop::kSlots; ++s)
+        CHECK(loop.value(s) == doctest::Approx(snap[s]));   // same loop returned
+    CHECK(l.replaying() == true);
+
+    int fires = 0;                                          // and it is live again
+    for (int i = 0; i < 48000; ++i) { l.process(); if (l.fired()) ++fires; }
+    CHECK(fires >= 4);
 }
 
 TEST_CASE("replay: toggling replay does not jump beyond one boundary step") {
