@@ -19,7 +19,8 @@
     {"action":"set_entropy","part":0,"value":0.0},
     {"action":"set_depth","part":0,"value":1.0},
     {"action":"set_target_active","part":0,"slot":2,"flag":true},
-    {"action":"set_target_active","part":0,"slot":4,"flag":true},
+    {"_comment":"LEVEL modulation off: per-step random level (S&H shape) at near-zero SMOOTH clicks on the continuous test tone."},
+    {"action":"set_target_active","part":0,"slot":4,"flag":false},
     {"action":"set_target_base","part":0,"slot":2,"value":0.4},
     {"action":"set_target_base","part":0,"slot":4,"value":0.8}
   ],
