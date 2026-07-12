@@ -347,3 +347,24 @@ TEST_CASE("Instrument: probability thinning on the loop holds notes (fewer trigg
     }
     CHECK(fires == 0);
 }
+
+TEST_CASE("scenario: capture_now + set_replay dispatch through apply_event") {
+    Instrument inst; inst.init(48000.f);
+    inst.set_step(0, true, 8);
+    inst.set_shape(0, 0.9f);
+    inst.set_target_active(0, LANE_PITCH, true);
+    inst.set_rate(0, 0.5f);
+    float l, r;
+    for (int i = 0; i < 48000 * 2; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+
+    Event cap;   cap.action = "capture_now"; cap.part = 0;
+    Event play;  play.action = "set_replay";  play.part = 0; play.flag = true;
+    apply_event(inst, cap);
+    apply_event(inst, play);
+    CHECK(inst.loop_valid(0) == true);
+    CHECK(inst.replaying(0) == true);
+
+    Event stop; stop.action = "set_replay"; stop.part = 0; stop.flag = false;
+    apply_event(inst, stop);
+    CHECK(inst.replaying(0) == false);
+}
