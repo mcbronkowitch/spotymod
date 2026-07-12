@@ -140,6 +140,22 @@ TEST_CASE("replay: deterministic — two identical replay runs match sample-for-
     }
 }
 
+TEST_CASE("replay: target equals the frozen loop value at every slot across cycles (criterion 1)") {
+    // Acceptance criterion 1 at unit level: at probability 1 the lane never
+    // freezes, so every sample the replayed _target must equal the frozen loop
+    // value at the current slot. Holding over 3 cycles proves the loop repeats
+    // identically. The slot is derived from phase exactly as the engine does,
+    // so this is exact and immune to the pre-existing float phase drift.
+    ModLane l; CaptureLoop loop;
+    capture_and_replay(l, loop, 8, 1.f);
+    for (int i = 0; i < 48000 * 3; ++i) {
+        l.process();
+        int slot = static_cast<int>(l.phase() * CaptureLoop::kSlots);
+        if (slot >= CaptureLoop::kSlots) slot = CaptureLoop::kSlots - 1;
+        CHECK(l.target() == doctest::Approx(loop.value(slot)));
+    }
+}
+
 TEST_CASE("replay: set_replay before a valid capture does nothing") {
     ModLane l; CaptureLoop loop; loop.reset();
     l.init(48000.f, 7); l.set_capture_loop(&loop);

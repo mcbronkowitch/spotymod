@@ -7,7 +7,7 @@ namespace spky {
 // calls record() during generative playback, and capture_now() to freeze the
 // rolling ring into the frozen loop. Stores the lane's pre-smooth _target
 // (bipolar [-1,1]) so the full downstream chain (SMOOTH, RANGE in the lane;
-// base/depth/TUNE/quantizer in Part) re-voices the loop live. ~2 KB, static.
+// base/depth/TUNE/quantizer in Part) re-voices the loop live. ~3 KB, static.
 class CaptureLoop {
 public:
     static constexpr int kSlots = 192;   // divides 8/12/16/24/32 evenly
@@ -30,7 +30,9 @@ public:
         _ring[slot].fired = fired;
     }
 
-    // Freeze: copy the rolling ring -> the frozen loop, mark valid.
+    // Freeze: copy the rolling ring -> the frozen loop, mark valid. ModLane
+    // pauses record() during replay, so calling this while replaying just
+    // re-freezes the pre-replay ring window unchanged (harmless).
     void capture_now() {
         for (int i = 0; i < kSlots; ++i) _loop[i] = _ring[i];
         _valid = true;
