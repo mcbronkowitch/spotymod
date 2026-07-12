@@ -27,6 +27,7 @@ public:
 
     void set_depth(float d) { _depth = clampf(d, 0.f, 1.f); }
     void set_tune(float t)  { _tune = clampf(t, 0.f, 1.f); }
+    void set_detune_cents(float c) { _detune_cents = c; }   // DRIFT tune tap; engine pitch only
     void set_target_active(int slot, bool on) { _active[slot] = on; }
     void set_target_base(int slot, float b)   { _base[slot] = clampf(b, 0.f, 1.f); }
     void set_target_depth(int slot, float d)  { _tdepth[slot] = clampf(d, 0.f, 1.f); }
@@ -108,6 +109,7 @@ private:
 
     float _depth = 1.f;
     float _tune = 0.5f;
+    float _detune_cents = 0.f;   // DRIFT detune, applied post-quantizer to the engine only
     int   _gate_ctr = 0;
     int   _gate_len = 240;   // ~5 ms @ 48k, recomputed in init()
     float _sr = 48000.f;

@@ -97,7 +97,8 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     float targets[LANE_COUNT];
     for (int i = 0; i < LANE_COUNT; ++i) targets[i] = target_raw(i);
     targets[LANE_PITCH] = _quant.process(pitch_pre_quant());
-    _pitch_q = targets[LANE_PITCH];
+    _pitch_q = targets[LANE_PITCH];                              // clean, drives pitch_cv()
+    targets[LANE_PITCH] = clampf(_pitch_q + _detune_cents * (1.f / 3600.f), 0.f, 1.f);
 
     _engine->set_targets(targets, _tune);
     if (_mod.lane_fired(LANE_PITCH)) _engine->trigger(targets[LANE_PITCH]);

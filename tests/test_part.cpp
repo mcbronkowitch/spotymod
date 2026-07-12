@@ -15,6 +15,19 @@ TEST_CASE("part: inactive target contributes only its base value") {
     CHECK(p.target_value(LANE_SIZE) == doctest::Approx(0.3f));
 }
 
+TEST_CASE("part detune: engine pitch shifts but pitch_cv stays quantized") {
+    Part p; p.init(48000.f, 1u);
+    p.set_depth(0.f);                          // isolate the base value
+    p.set_target_base(LANE_PITCH, 0.5f);
+    p.set_tune(0.5f);
+    float l, r;
+    for (int i = 0; i < 4000; ++i) p.process(l, r);   // ride out the quantizer slew
+    float cv0 = p.pitch_cv();
+    p.set_detune_cents(50.f);                  // +50 cents on the engine pitch
+    for (int i = 0; i < 4000; ++i) p.process(l, r);
+    CHECK(p.pitch_cv() == doctest::Approx(cv0));       // rack CV out unchanged
+}
+
 TEST_CASE("part: active target modulates around its base, clamped to [0,1]") {
     Part p;
     p.init(48000.f, 5);
