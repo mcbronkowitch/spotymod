@@ -16,7 +16,7 @@
     {"action":"set_range","part":0,"value":0.45},
     {"action":"set_smooth","part":0,"value":0.55},
     {"action":"set_probability","part":0,"value":0.85},
-    {"action":"set_evolve","part":0,"value":0.0},
+    {"action":"set_entropy","part":0,"value":0.0},
     {"action":"set_depth","part":0,"value":1.0},
     {"action":"set_target_active","part":0,"slot":2,"flag":true},
     {"action":"set_target_base","part":0,"slot":2,"value":0.55},
@@ -38,9 +38,9 @@
   ],
   "events": [
     {"_comment":"Long, patient unfolding. Everything stays in minor pentatonic throughout."},
-    {"t":16.0,"action":"set_evolve","part":0,"value":0.15},
+    {"t":16.0,"action":"set_entropy","part":0,"value":0.15},
     {"_comment":"16s: the melody starts to wander, gently, within the scale."},
-    {"t":30.0,"action":"set_evolve","part":1,"value":0.12},
+    {"t":30.0,"action":"set_entropy","part":1,"value":0.12},
     {"t":38.0,"action":"set_shape","part":0,"value":0.45},
     {"_comment":"38s: a touch more contour as the piece opens up, still snapped to pentatonic."}
   ]

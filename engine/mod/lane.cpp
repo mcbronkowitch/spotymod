@@ -31,7 +31,7 @@ void ModLane::set_rate_hz(float hz)   { _phase_inc = (hz > 0.f ? hz : 0.f) / _sr
 void ModLane::set_shape(float s)      { _shape = clampf(s, 0.f, 1.f); }
 void ModLane::set_probability(float p){ _prob = clampf(p, 0.f, 1.f); }
 void ModLane::set_range(float r)      { _range = clampf(r, 0.f, 1.f); }
-void ModLane::set_evolve(float a)     { _evolve = clampf(a, 0.f, 1.f); }
+void ModLane::set_entropy(float e)    { _entropy = clampf(e, -1.f, 1.f); }
 
 void ModLane::set_step(bool on, int steps) {
     _step_mode = on;
@@ -119,11 +119,16 @@ float ModLane::process() {
     } else {
         if (wrapped) {
             _sh_cycle = _rng.next_bipolar();            // new S&H value per cycle
-            if (_evolve > 0.f) {                        // EVOLVE random walk (live only)
-                _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _evolve, -0.5f, 0.5f);
-                _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _evolve, -0.25f, 0.25f);
-                _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _evolve, -0.2f, 0.2f);
-            }
+            if (_entropy > 0.f) {                       // GROW: EVOLVE random walk (live only)
+                _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _entropy, -0.5f, 0.5f);
+                _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _entropy, -0.25f, 0.25f);
+                _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _entropy, -0.2f, 0.2f);
+            } else if (_entropy < 0.f) {                // ERODE: walk settles toward neutral
+                float decay = 1.f + 0.2f * _entropy;    // entropy -1 -> x0.8 per cycle
+                _ev_phase *= decay;
+                _ev_shape *= decay;
+                _ev_rate  *= decay;
+            }                                           // entropy 0 (LOOP): walk frozen
         }
 
         if (_step_mode) {

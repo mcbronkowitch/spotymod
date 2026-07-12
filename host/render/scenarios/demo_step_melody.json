@@ -21,6 +21,6 @@
   "events": [
     {"t":4.0,"action":"set_probability","part":0,"value":0.6},
     {"t":8.0,"action":"set_shape","part":0,"value":0.9},
-    {"t":12.0,"action":"set_evolve","part":0,"value":0.5}
+    {"t":12.0,"action":"set_entropy","part":0,"value":0.5}
   ]
 }

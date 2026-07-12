@@ -179,12 +179,12 @@ TEST_CASE("replay: probability < 1 suppresses triggers and holds the pitch") {
     CHECK(changed == false);         // pitch frozen at the held value
 }
 
-TEST_CASE("replay: EVOLVE has no effect on the replaying lane") {
-    // Two identical replay lanes; set EVOLVE hard on one. If EVOLVE leaked onto
+TEST_CASE("replay: ENTROPY has no effect on the replaying lane") {
+    // Two identical replay lanes; set ENTROPY hard on one. If ENTROPY leaked onto
     // the replay path it would diverge b from a. Exact match proves it is ignored.
     ModLane a; CaptureLoop la; capture_and_replay(a, la, 8, 1.f);
     ModLane b; CaptureLoop lb; capture_and_replay(b, lb, 8, 1.f);
-    b.set_evolve(1.f);
+    b.set_entropy(1.f);
     for (int i = 0; i < 48000 * 3; ++i)
         CHECK(a.process() == doctest::Approx(b.process()));
 }
@@ -263,16 +263,16 @@ TEST_CASE("SuperModulator: loop_valid false until capture") {
     CHECK(sm.loop_valid() == true);
 }
 
-TEST_CASE("SuperModulator: replay swaps only the PITCH lane (EVOLVE isolated to live lanes)") {
-    // Two identical modulators drift identically. Replay both; turn EVOLVE on for
-    // a, off for b. The replayed PITCH lane ignores EVOLVE -> a and b match exactly
-    // (drift-immune). The live MOTION lane is driven by EVOLVE -> a diverges from b.
+TEST_CASE("SuperModulator: replay swaps only the PITCH lane (ENTROPY isolated to live lanes)") {
+    // Two identical modulators drift identically. Replay both; turn ENTROPY on for
+    // a, off for b. The replayed PITCH lane ignores ENTROPY -> a and b match exactly
+    // (drift-immune). The live MOTION lane is driven by ENTROPY -> a diverges from b.
     SuperModulator a; configure_sm_step(a);
     SuperModulator b; configure_sm_step(b);
     for (int i = 0; i < 48000 * 2; ++i) { a.process(); b.process(); }
     a.capture_now(); b.capture_now();
     a.set_replay(true);  b.set_replay(true);
-    a.set_evolve(1.f);   b.set_evolve(0.f);
+    a.set_entropy(1.f);   b.set_entropy(0.f);
     CHECK(a.replaying() == true);
     CHECK(a.loop_valid() == true);
 

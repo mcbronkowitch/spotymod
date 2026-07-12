@@ -47,7 +47,7 @@ void SuperModulator::set_shape(float s)       { for (auto& l : _lanes) l.set_sha
 void SuperModulator::set_probability(float p) { for (auto& l : _lanes) l.set_probability(p); }
 void SuperModulator::set_smooth(float s)      { for (auto& l : _lanes) l.set_smooth(s); }
 void SuperModulator::set_range(float r)       { for (auto& l : _lanes) l.set_range(r); }
-void SuperModulator::set_evolve(float a)      { for (auto& l : _lanes) l.set_evolve(a); }
+void SuperModulator::set_entropy(float a)     { for (auto& l : _lanes) l.set_entropy(a); }
 void SuperModulator::set_step(bool on, int n) { for (auto& l : _lanes) l.set_step(on, n); }
 void SuperModulator::set_fixed_slew(bool on)  { for (auto& l : _lanes) l.set_fixed_slew(on); }
 

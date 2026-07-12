@@ -20,7 +20,7 @@ public:
     void set_fixed_slew(bool on);     // panel switch 3 middle position
     void set_smooth(float s);         // 0..1
     void set_range(float r);          // 0..1
-    void set_evolve(float amount);    // 0 = LOOP (deterministic)
+    void set_entropy(float e);        // -1..+1: erode / loop (0) / grow
 
     float process();                  // advance one sample, return post-range value
 
@@ -55,7 +55,7 @@ private:
     float _prob = 1.f;
     float _range = 1.f;
     float _smooth = 0.f;
-    float _evolve = 0.f;
+    float _entropy = 0.f;
 
     bool  _step_mode = false;
     int   _steps = 8;

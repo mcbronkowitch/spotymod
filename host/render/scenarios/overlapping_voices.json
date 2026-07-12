@@ -36,7 +36,7 @@
   "events": [
     {"t":24.0,"action":"set_probability","part":0,"value":0.85},
     {"_comment":"24s: denser firing - deeper voice overlap."},
-    {"t":36.0,"action":"set_evolve","part":0,"value":0.3},
+    {"t":36.0,"action":"set_entropy","part":0,"value":0.3},
     {"_comment":"36s: the melody starts wandering within Dorian."}
   ]
 }

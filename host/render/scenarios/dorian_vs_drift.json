@@ -13,7 +13,7 @@
     {"action":"set_range","part":0,"value":0.65},
     {"action":"set_smooth","part":0,"value":0.03},
     {"action":"set_probability","part":0,"value":1.0},
-    {"action":"set_evolve","part":0,"value":0.0},
+    {"action":"set_entropy","part":0,"value":0.0},
     {"action":"set_depth","part":0,"value":1.0},
     {"action":"set_target_active","part":0,"slot":2,"flag":true},
     {"action":"set_target_base","part":0,"slot":2,"value":0.45},
@@ -36,9 +36,9 @@
     {"_comment":"Bars 1-4: both parts sit in Dorian - consonant."},
     {"t":8.0,"action":"set_quant_mode","part":1,"value":"chrom"},
     {"_comment":"8s: part B goes chromatic - drift now steps in semitones."},
-    {"t":12.0,"action":"set_evolve","part":1,"value":0.4},
+    {"t":12.0,"action":"set_entropy","part":1,"value":0.4},
     {"t":16.0,"action":"set_quant_mode","part":1,"value":"free"},
     {"_comment":"16s: part B unquantized - continuous drift against the Dorian melody."},
-    {"t":20.0,"action":"set_evolve","part":1,"value":0.7}
+    {"t":20.0,"action":"set_entropy","part":1,"value":0.7}
   ]
 }

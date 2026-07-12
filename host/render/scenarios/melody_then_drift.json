@@ -16,7 +16,7 @@
     {"action":"set_range","part":0,"value":0.65},
     {"action":"set_smooth","part":0,"value":0.03},
     {"action":"set_probability","part":0,"value":1.0},
-    {"action":"set_evolve","part":0,"value":0.0},
+    {"action":"set_entropy","part":0,"value":0.0},
     {"action":"set_depth","part":0,"value":1.0},
 
     {"_comment":"PITCH steps the melody; LEVEL held constant so we hear a clean tune."},
@@ -31,13 +31,13 @@
   ],
   "events": [
     {"_comment":"Bars 1-4 (0-8s): the melody just loops, unchanged."},
-    {"t":8.0,"action":"set_evolve","part":0,"value":0.25},
+    {"t":8.0,"action":"set_entropy","part":0,"value":0.25},
     {"_comment":"8s: EVOLVE begins — shape/phase/rate random-walk, melody starts mutating."},
     {"t":12.0,"action":"set_probability","part":0,"value":0.8},
     {"_comment":"12s: some steps freeze/hold -> rhythmic variation."},
-    {"t":14.0,"action":"set_evolve","part":0,"value":0.5},
+    {"t":14.0,"action":"set_entropy","part":0,"value":0.5},
     {"t":16.0,"action":"set_target_active","part":0,"slot":4,"flag":true},
     {"_comment":"16s: LEVEL lane opens -> the melody starts to breathe in volume."},
-    {"t":20.0,"action":"set_evolve","part":0,"value":0.85}
+    {"t":20.0,"action":"set_entropy","part":0,"value":0.85}
   ]
 }

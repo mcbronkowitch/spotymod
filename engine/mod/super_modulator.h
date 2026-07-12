@@ -20,7 +20,7 @@ public:
     void set_probability(float p);
     void set_smooth(float s);
     void set_range(float r);
-    void set_evolve(float a);
+    void set_entropy(float a);
     void set_step(bool on, int steps);
     void set_fixed_slew(bool on);
 
