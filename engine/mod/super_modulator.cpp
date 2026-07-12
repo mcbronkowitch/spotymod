@@ -30,15 +30,21 @@ void SuperModulator::init(float sample_rate, uint32_t seed_base) {
     }
     _capture.reset();
     _lanes[LANE_PITCH].set_capture_loop(&_capture);   // capture is PITCH-only
+    _rate_scale = 1.f;
     _update_rate();
 }
 
 void SuperModulator::_update_rate() {
     switch (_mode) {
-        case SyncMode::Free:        _master_hz = free_hz(_rate_norm); break;
-        case SyncMode::Sync:        _master_hz = sync_hz(_rate_norm, _bpm, false); break;
-        case SyncMode::SyncTriplet: _master_hz = sync_hz(_rate_norm, _bpm, true); break;
+        case SyncMode::Free:        _base_hz = free_hz(_rate_norm); break;
+        case SyncMode::Sync:        _base_hz = sync_hz(_rate_norm, _bpm, false); break;
+        case SyncMode::SyncTriplet: _base_hz = sync_hz(_rate_norm, _bpm, true); break;
     }
+    _apply_rate();
+}
+
+void SuperModulator::_apply_rate() {
+    _master_hz = _base_hz * _rate_scale;
     for (int i = 0; i < LANE_COUNT; ++i)
         _lanes[i].set_rate_hz(_master_hz * kLaneRatio[i]);
 }
@@ -54,4 +60,14 @@ void SuperModulator::set_fixed_slew(bool on)  { for (auto& l : _lanes) l.set_fix
 void SuperModulator::process() {
     for (int i = 0; i < LANE_COUNT; ++i)
         _out[i] = _lanes[i].process();
+}
+
+void SuperModulator::spot(Rng& rng) {
+    // Draw a kick for every lane so the RNG stream is independent of replay
+    // state; ModLane::kick() no-ops on the replaying PITCH lane.
+    for (int i = 0; i < LANE_COUNT; ++i) {
+        float dphase = rng.next_bipolar() * 0.5f;    // uniform +/- 1/2 cycle
+        float dshape = rng.next_bipolar() * 0.35f;   // uniform +/- 0.35
+        _lanes[i].kick(dphase, dshape);
+    }
 }

@@ -33,6 +33,14 @@ public:
     float pitch_phase()      const { return _lanes[LANE_PITCH].phase(); }
     float master_hz()        const { return _master_hz; }
 
+    // --- M4 center hooks ---
+    void set_rate_scale(float s)  { _rate_scale = s; _apply_rate(); }  // COUPLE * DRIFT rate
+    void set_shape_offset(float o){ for (auto& l : _lanes) l.set_shape_offset(o); }
+    void spot(Rng& rng);          // per-lane SPOT kicks (skips the replaying PITCH lane)
+    void settle()                { for (auto& l : _lanes) l.settle(); }
+    float    base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
+    SyncMode sync_mode() const { return _mode; }
+
     // --- M3 capture sequencer (PITCH lane only) ---
     void capture_now()       { _capture.capture_now(); }
     void set_replay(bool on) { _lanes[LANE_PITCH].set_replay(on); }
@@ -41,6 +49,7 @@ public:
 
 private:
     void _update_rate();
+    void _apply_rate();
 
     std::array<ModLane, LANE_COUNT> _lanes;
     std::array<float, LANE_COUNT>   _out {};
@@ -51,6 +60,8 @@ private:
     float    _rate_norm = 0.5f;
     SyncMode _mode = SyncMode::Free;
     float    _master_hz = 1.f;
+    float    _base_hz    = 1.f;   // rate from knob/sync, before rate_scale
+    float    _rate_scale = 1.f;   // COUPLE * DRIFT rate multiplier
 };
 
 } // namespace spky

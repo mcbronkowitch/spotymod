@@ -50,3 +50,50 @@ TEST_CASE("super: lanes are decorrelated (independent random streams)") {
     }
     CHECK(differ);
 }
+
+TEST_CASE("super: rate_scale multiplies the master rate; base_hz stays put") {
+    SuperModulator m; m.init(48000.f, 42u);
+    m.set_sync_mode(SyncMode::Free); m.set_rate(0.5f);
+    float base = m.base_hz();
+    m.set_rate_scale(2.f);
+    CHECK(m.base_hz()   == doctest::Approx(base));
+    CHECK(m.master_hz() == doctest::Approx(base * 2.f));
+}
+
+TEST_CASE("super: rate_scale 1 is a bit-identical no-op") {
+    SuperModulator a; a.init(48000.f, 42u); a.set_rate(0.5f);
+    SuperModulator b; b.init(48000.f, 42u); b.set_rate(0.5f);
+    b.set_rate_scale(1.f);
+    bool same = true;
+    for (int i = 0; i < 48000; ++i) {
+        a.process(); b.process();
+        for (int s = 0; s < LANE_COUNT; ++s)
+            if (a.lane_output(s) != b.lane_output(s)) same = false;
+    }
+    CHECK(same);
+}
+
+TEST_CASE("super: sync_mode getter reflects the set mode") {
+    SuperModulator m; m.init(48000.f, 42u);
+    m.set_sync_mode(SyncMode::Sync);
+    CHECK(m.sync_mode() == SyncMode::Sync);
+}
+
+TEST_CASE("super: spot kicks the live lanes deterministically") {
+    SuperModulator a; a.init(48000.f, 1u);
+    float before[LANE_COUNT];
+    for (int i = 0; i < LANE_COUNT; ++i) before[i] = a.lane_phase(i);
+    Rng rng; rng.seed(77u);
+    a.spot(rng);
+    int moved = 0;
+    for (int i = 0; i < LANE_COUNT; ++i)
+        if (std::fabs(a.lane_phase(i) - before[i]) > 1e-6f) ++moved;
+    CHECK(moved >= 3);
+
+    // determinism: same seed -> same kicks
+    SuperModulator x; x.init(48000.f, 1u);
+    SuperModulator y; y.init(48000.f, 1u);
+    Rng rx; rx.seed(5u); Rng ry; ry.seed(5u);
+    x.spot(rx); y.spot(ry);
+    CHECK(x.lane_phase(LANE_SOURCE) == y.lane_phase(LANE_SOURCE));
+}
