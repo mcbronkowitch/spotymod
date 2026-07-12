@@ -82,7 +82,7 @@ private:
     // M4 center hooks
     float _shape_offset = 0.f;   // DRIFT shape tap (set per control tick)
     float _kick_shape   = 0.f;   // SPOT shape offset, decays with _kick_coef
-    float _kick_coef    = 1.f;   // per-sample decay for _kick_shape (tau ~ 1.5 s)
+    float _kick_coef    = 1.f;   // per-sample decay for _kick_shape (tau ~ 0.4 s)
     int   _settle_ctr   = 0;     // >0: gliding EVOLVE walks + kick to 0
     float _settle_coef  = 1.f;   // per-sample settle glide (tau ~ 0.3 s)
 

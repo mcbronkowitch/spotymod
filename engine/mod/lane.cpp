@@ -26,7 +26,11 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _ev_rate  = 0.f;
     _shape_offset = 0.f;
     _kick_shape   = 0.f;
-    _kick_coef    = std::exp(-1.f / (1.5f * _sr));   // SPOT shape decay tau = 1.5 s
+    // NOTE(Task 7 checkpoint fix): spec text said "~1.5 s" but that tau leaves
+    // an audible residual (the ramp/pulse morph segment near shape 0.5 is very
+    // sensitive to small offsets) well past 5 s. 0.4 s still reads as a clear
+    // "lightning flash" in the first 0.1 s and is inaudible within ~5 s.
+    _kick_coef    = std::exp(-1.f / (0.4f * _sr));   // SPOT shape decay tau = 0.4 s
     _settle_coef  = std::exp(-1.f / (0.3f * _sr));   // SETTLE glide tau = 0.3 s
     _settle_ctr   = 0;
     _rec_slot = -1;
@@ -68,7 +72,7 @@ void ModLane::kick(float dphase, float dshape) {
     if (_replaying()) return;              // captured loop never mutates (M3/M4 guard)
     _phase += dphase;
     _phase -= std::floor(_phase);          // permanent wrap into [0,1)
-    _kick_shape += dshape;                 // decays back to 0 over ~1.5 s
+    _kick_shape += dshape;                 // decays back to 0 over ~0.4 s
 }
 
 void ModLane::settle() {

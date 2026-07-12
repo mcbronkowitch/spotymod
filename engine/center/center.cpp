@@ -97,8 +97,13 @@ void Center::_step_weather() {
         --_settle_ctr;
         _ou *= _settle_coef;                    // panic: glide the walk to 0
     } else if (_drift > 0.f) {                   // no drift -> no weather system running
-        // Ornstein-Uhlenbeck: mean-revert to 0, add scaled white noise.
-        _ou += (-_ou / kOuTau) * dt + kOuSigma * std::sqrt(dt) * _weather_rng.next_bipolar();
+        // Ornstein-Uhlenbeck: mean-revert to 0, add scaled white noise. Noise
+        // is scaled by _drift (not just gated by it > 0): the smoothed _drift
+        // value asymptotically approaches but never exactly reaches 0, so a
+        // bare boolean gate would let full-strength noise resume the instant
+        // the SETTLE countdown (Task 7 checkpoint fix) expires, even while
+        // _drift is still negligibly small — defeating SETTLE's purpose.
+        _ou += (-_ou / kOuTau) * dt + kOuSigma * _drift * std::sqrt(dt) * _weather_rng.next_bipolar();
     }
     _weather = std::tanh(_ou);                  // softly bounded to (-1, 1)
 }
