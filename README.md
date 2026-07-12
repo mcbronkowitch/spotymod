@@ -1,11 +1,19 @@
-# Spotykach — Modulation-First Firmware
+```text
+    ·─────────────────────────·
+    ┌─┐┌─┐┌─┐┌┬┐┬ ┬┌┬┐┌─┐┌┬┐
+    └─┐├─┘│ │ │ └┬┘││││ │ ││
+    └─┘┴  └─┘ ┴  ┴ ┴ ┴└─┘─┴┘
+    ·─────────────────────────·
+```
+
+# spotymod — modulation-first firmware for the Spotykach
 
 Alternative firmware for the [Spotykach](https://synthux.academy/store/spotykach)
 hardware, built around a single idea: **modulation is the instrument**. Two
 symmetric parts, each driven by a performable modulation engine, feeding a
 selectable sound source.
 
-This is a fork of [Synthux-Academy/Spotykach](https://github.com/Synthux-Academy/Spotykach)
+**spotymod** is a fork of [Synthux-Academy/Spotykach](https://github.com/Synthux-Academy/Spotykach)
 (the official firmware). It reuses the original hardware drivers, clocking and
 bootloader, and replaces the instrument core with a new modulation-first design.
 
@@ -44,7 +52,7 @@ One portable engine core, two hosts. No hardware type ever crosses into
 the Daisy.
 
 ```
-Spotykach/
+spotymod/
 ├── engine/            portable instrument core — no libDaisy, no heap
 │   ├── mod/           SuperModulator + the five modulation lanes
 │   ├── parts/         Part, engine interface, sound engines
