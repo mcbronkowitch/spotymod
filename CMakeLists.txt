@@ -54,6 +54,8 @@ add_executable(spky_tests
     tests/test_part.cpp
     engine/instrument.cpp
     tests/test_instrument.cpp
+    engine/center/center.cpp
+    tests/test_center.cpp
     tests/test_capture.cpp
     tests/test_wav.cpp
     host/render/scenario.cpp
@@ -88,6 +90,7 @@ add_executable(render
     engine/mod/super_modulator.cpp
     engine/parts/part.cpp
     engine/instrument.cpp
+    engine/center/center.cpp
     engine/fx/grit.cpp
     engine/fx/flux.cpp
     engine/fx/reverb.cpp
