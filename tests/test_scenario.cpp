@@ -142,3 +142,21 @@ TEST_CASE("scenario: M2 synth actions reach the instrument") {
     inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(l == l);                           // not NaN
 }
+
+TEST_CASE("scenario: center actions dispatch to the instrument") {
+    Instrument inst; inst.init(48000.f);
+
+    Event ec; ec.action = "set_couple"; ec.value = 0.7f;
+    apply_event(inst, ec);
+    CHECK(inst.couple() == doctest::Approx(0.7f));     // couple is not smoothed
+
+    Event ed; ed.action = "set_drift"; ed.value = 0.4f;
+    apply_event(inst, ed);
+    std::vector<float> l(1), r(1);
+    for (int i = 0; i < 48000; ++i) inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+    CHECK(inst.drift() == doctest::Approx(0.4f).epsilon(0.05));   // smoothed toward target
+
+    Event es; es.action = "spot";   apply_event(inst, es);   // must not crash
+    Event et; et.action = "settle"; apply_event(inst, et);
+    CHECK(true);
+}
