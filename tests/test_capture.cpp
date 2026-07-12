@@ -53,3 +53,66 @@ TEST_CASE("CaptureLoop: freezing captures the current window, incl. stale slots 
 TEST_CASE("CaptureLoop: kSlots is 192") {
     CHECK(CaptureLoop::kSlots == 192);
 }
+
+// Configure a STEP PITCH-style lane with a capture loop attached.
+static void configure_step_capture(ModLane& l, CaptureLoop& loop,
+                                   int steps = 8, float prob = 1.f) {
+    loop.reset();
+    l.init(48000.f, 4242);
+    l.set_capture_loop(&loop);
+    l.set_range(1.f);
+    l.set_shape(0.75f);         // pulse boundary: distinct step values, f=0 => zero S&H weight
+    l.set_smooth(0.f);
+    l.set_step(true, steps);
+    l.set_probability(prob);
+    l.set_rate_hz(1.f);         // 1 cycle/sec = 48000 samples/cycle
+}
+
+TEST_CASE("ModLane record: fired slots line up with STEP boundaries") {
+    ModLane l; CaptureLoop loop;
+    configure_step_capture(l, loop, 8, 1.f);
+    for (int i = 0; i < 48000 + 500; ++i) l.process();  // > one full cycle
+    loop.capture_now();
+    // 8 steps over 192 slots => a boundary fires roughly every 24 slots.
+    int fired_slots = 0;
+    for (int s = 0; s < CaptureLoop::kSlots; ++s) if (loop.fired(s)) ++fired_slots;
+    CHECK(fired_slots >= 6);   // ~8, tolerant of phase drift at the seam
+    CHECK(fired_slots <= 10);
+}
+
+TEST_CASE("ModLane record: recorded value equals the lane target at that slot") {
+    ModLane l; CaptureLoop loop;
+    configure_step_capture(l, loop, 4, 1.f);
+    // run to a known phase inside step 1 (phase ~0.30 => slot ~57), read target
+    for (int i = 0; i < 48000; ++i) l.process();   // align to cycle start-ish
+    for (int i = 0; i < 14400; ++i) l.process();   // +0.30 cycle
+    float tgt = l.target();
+    int   slot = static_cast<int>(l.phase() * CaptureLoop::kSlots);
+    loop.capture_now();
+    CHECK(loop.value(slot) == doctest::Approx(tgt));
+}
+
+TEST_CASE("ModLane record: deterministic loop is identical one cycle apart") {
+    ModLane l; CaptureLoop loop;
+    configure_step_capture(l, loop, 8, 1.f);   // prob 1, evolve 0 => metronomic
+    for (int i = 0; i < 48000 * 3; ++i) l.process();   // settle
+    loop.capture_now();
+    float a[CaptureLoop::kSlots];
+    for (int s = 0; s < CaptureLoop::kSlots; ++s) a[s] = loop.value(s);
+    for (int i = 0; i < 48000; ++i) l.process();       // one more full cycle
+    loop.capture_now();
+    for (int s = 0; s < CaptureLoop::kSlots; ++s)
+        CHECK(loop.value(s) == doctest::Approx(a[s]));
+}
+
+TEST_CASE("ModLane record: a lane with no capture loop is unaffected") {
+    ModLane a; a.init(48000.f, 99);
+    a.set_step(true, 8); a.set_shape(0.9f); a.set_rate_hz(1.f);
+    ModLane b; b.init(48000.f, 99);
+    b.set_step(true, 8); b.set_shape(0.9f); b.set_rate_hz(1.f);
+    CaptureLoop loop; loop.reset();
+    b.set_capture_loop(&loop);
+    // recording must not consume RNG => identical output streams
+    for (int i = 0; i < 48000 * 2; ++i)
+        CHECK(a.process() == doctest::Approx(b.process()));
+}

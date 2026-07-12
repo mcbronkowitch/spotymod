@@ -5,6 +5,8 @@
 
 namespace spky {
 
+class CaptureLoop;   // engine/mod/capture.h — wired to the PITCH lane only
+
 // One modulation lane: wavetable core -> probability -> step/flow -> smooth
 // -> range. Bipolar output in [-1,1]. Deterministic given its seed.
 class ModLane {
@@ -29,10 +31,15 @@ public:
 
     void reset(float phase = 0.f);
 
+    // M3 capture: wired once at init on the PITCH lane only (nullptr elsewhere).
+    void set_capture_loop(CaptureLoop* loop) { _capture_loop = loop; }
+
 private:
     void  _update_slew();
     void  _on_boundary();
     float _compute_raw() const;
+    int   _phase_slot() const;      // floor(phase * kSlots), clamped
+    void  _record_slot();           // roll _target + fired into the ring
 
     Rng     _rng;
     OnePole _slew;
@@ -59,6 +66,11 @@ private:
     float _ev_phase = 0.f;   // EVOLVE random-walk offsets: shape / phase / rate (Task 7)
     float _ev_shape = 0.f;
     float _ev_rate  = 0.f;
+
+    // M3 capture (recording state; replay state added in Task 3)
+    CaptureLoop* _capture_loop = nullptr;
+    int          _rec_slot = -1;    // last ring slot written this pass
+    bool         _rec_fired = false;// a boundary has fired since entering _rec_slot
 };
 
 } // namespace spky

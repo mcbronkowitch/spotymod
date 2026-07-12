@@ -1,6 +1,7 @@
 #include "mod/lane.h"
 #include "mod/waveforms.h"
 #include "mod/range.h"
+#include "mod/capture.h"
 #include "util/math.h"
 #include <cmath>
 
@@ -18,6 +19,8 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _ev_phase = 0.f;
     _ev_shape = 0.f;
     _ev_rate  = 0.f;
+    _rec_slot = -1;
+    _rec_fired = false;
     _update_slew();
     _slew.reset(0.f);
 }
@@ -72,6 +75,18 @@ void ModLane::_on_boundary() {
     // if !fire: hold the previous _target (frozen)
 }
 
+int ModLane::_phase_slot() const {
+    int s = static_cast<int>(_phase * CaptureLoop::kSlots);
+    return s >= CaptureLoop::kSlots ? CaptureLoop::kSlots - 1 : s;
+}
+
+void ModLane::_record_slot() {
+    int slot = _phase_slot();
+    if (slot != _rec_slot) { _rec_fired = false; _rec_slot = slot; } // new slot: clear
+    if (_fired) _rec_fired = true;                                   // latch a fire
+    _capture_loop->record(slot, _target, _rec_fired);
+}
+
 float ModLane::process() {
     _fired = false;
 
@@ -99,6 +114,8 @@ float ModLane::process() {
         if (wrapped) _on_boundary();
         if (!_frozen) _target = _compute_raw();        // continuous in FLOW
     }
+
+    if (_capture_loop) _record_slot();                 // roll into the ring
 
     float smoothed = _slew.process(_target);
     return apply_range(smoothed, _range);
