@@ -39,8 +39,10 @@ would just move everything in unison — a tremolo, not an instrument.)
 
 Each lane can run as a smooth LFO (**FLOW**), a stepped sequence (**STEP**), or
 grow, loop, or erode over time (**ENTROPY**). A center section — **MORPH / COUPLE /
-DRIFT / SPOT** — makes the interaction between the two parts playable, and CV +
-gate outputs extend the modulation to the rest of the rack.
+DRIFT / SPOT / SETTLE** — makes the interaction between the two parts playable, a
+shared **Oliverb**-based ambient reverb turns the room into an instrument (Doppler
+SIZE, a DECAY that blooms past 100 %), and CV + gate outputs extend the modulation
+to the rest of the rack.
 
 The full design intent lives in the residency's design spec; this README is a
 self-contained summary of it.

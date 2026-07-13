@@ -6,9 +6,11 @@ is actually built today, and what is still design-only.
 
 - **Design intent:** the residency design spec
   (`2026-07-10-spotykach-modulation-first-synth-design.md`), the scale spec
-  (`2026-07-11-spotykach-scales-design.md`) and the FX spec
-  (`2026-07-11-spotykach-fx-design.md`).
-- **Last updated:** 2026-07-11.
+  (`2026-07-11-spotykach-scales-design.md`), the FX spec
+  (`2026-07-11-spotykach-fx-design.md`), the center-section spec
+  (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
+  spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
+- **Last updated:** 2026-07-13.
 
 > **Reminder:** nothing here has run on real hardware yet. Everything below is
 > verified only against the desktop offline renderer (unit tests + WAV/CSV
@@ -24,7 +26,8 @@ is actually built today, and what is still design-only.
 | **M2** | Polyphonic synth voice (replaces the M1 test tone) | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M3** | Capture sequencer (freeze the PITCH lane into a loop) | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **+ Entropy** | Looping S&H melody buffer; bipolar ENTROPY (erode / loop / grow) replaces EVOLVE | ✅ **done** (engine + host; switch mapping in M6) |
-| **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT / SETTLE | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, TONE, DEPTH; shimmer + DaisySP-LGPL removed | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
