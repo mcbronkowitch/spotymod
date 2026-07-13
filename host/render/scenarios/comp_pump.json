@@ -73,8 +73,12 @@
     {"t":36.0,"action":"set_comp","part":0,"value":1.0,"_comment":"full pump - the room breathes"},
     {"t":36.0,"action":"set_comp","part":1,"value":1.0},
     {"t":48.0,"action":"set_master_drive","value":0.6,"_comment":"drive moment - loudness wall"},
-    {"t":56.0,"action":"set_master_drive","value":0.0,"_comment":"outro: back to glue"},
-    {"t":56.0,"action":"set_comp","part":0,"value":0.4},
-    {"t":56.0,"action":"set_comp","part":1,"value":0.4}
+    {"t":54.0,"action":"set_master_drive","value":0.35,"_comment":"outro in three steps - no cliff"},
+    {"t":55.5,"action":"set_master_drive","value":0.15},
+    {"t":55.5,"action":"set_comp","part":0,"value":0.7},
+    {"t":55.5,"action":"set_comp","part":1,"value":0.7},
+    {"t":57.0,"action":"set_master_drive","value":0.0},
+    {"t":57.0,"action":"set_comp","part":0,"value":0.4},
+    {"t":57.0,"action":"set_comp","part":1,"value":0.4}
   ]
 }

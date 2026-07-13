@@ -141,3 +141,22 @@ TEST_CASE("comp: turning the knob back to 0 re-arms the bit-exact bypass") {
         CHECK(r == s);
     }
 }
+
+TEST_CASE("comp: makeup cannot push the envelope past the post-comp ceiling") {
+    // Steady hot-ish material at dense settings: without a cap the +16 dB
+    // auto-makeup lifts the post-comp envelope past full scale and the
+    // master limiter downstream grinds audibly (M4.6 by-ear finding: the
+    // 0:26 clip in comp_pump). The gain computer must never command a
+    // gain that lifts its own envelope above the post-comp ceiling.
+    Comp c;
+    c.init(48000.f);
+    c.set_amount(0.7f);
+    float peak_out = 0.f;
+    for (int i = 0; i < 96000; ++i) {
+        float s = 0.5f * std::sin(6.2831853f * 220.f * i / 48000.f);
+        float l = s, r = s;
+        c.process(l, r);
+        if (i >= 48000) peak_out = std::max(peak_out, std::fabs(l));
+    }
+    CHECK(peak_out <= 0.5f);
+}

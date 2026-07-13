@@ -37,12 +37,13 @@ private:
     float _makeup_db = 0.f;
     // detector (stereo-linked linear peak envelope)
     float _env      = 0.f;
-    float _att_coef = 0.f;                    // fixed ~5 ms
+    float _att_coef = 0.f;                    // 5 ms at amount 0 .. 2 ms at 1
     float _rel_coef = 0.f;                    // from the knob
     // gain
     float _gain        = 1.f;                 // per-sample smoothed linear gain
     float _gain_target = 1.f;
-    float _gain_coef   = 0.f;                 // ~2 ms
+    float _gain_coef   = 0.f;                 // ~2 ms (upward recovery)
+    float _gain_down_coef = 0.f;              // ~0.5 ms (downward, enforces the ceiling)
     int   _ctr         = 0;                   // decimation counter
 };
 
