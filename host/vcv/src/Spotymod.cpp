@@ -9,11 +9,12 @@
 
 using namespace spkyvcv;
 
-// Part A params occupy [0..STRIDE), part B the next STRIDE. The generator lays
-// both part blocks out identically, so id_B == id_A + STRIDE. Guarded below.
-static constexpr int PART_STRIDE = SYNC_A - RATE_A + 8;  // 16 knobs + 8 switches
+// Part A params occupy [0..PART_STRIDE), part B the next PART_STRIDE. The
+// generator lays both part blocks out identically (same order, mirrored x) and
+// emits PART_STRIDE; these guards catch any drift.
 static_assert(RATE_B == RATE_A + PART_STRIDE, "part-block stride drifted from generator");
 static_assert(TUNE_B == TUNE_A + PART_STRIDE, "part-block stride drifted from generator");
+static_assert(TRIGGER_B == TRIGGER_A + PART_STRIDE, "part-block stride drifted from generator");
 
 struct Spotymod : Module {
     spky::Instrument inst;
@@ -44,8 +45,9 @@ struct Spotymod : Module {
         for (const auto& c : kParamCtls) {
             const std::string lbl = c.label;
             switch (c.kind) {
-                case WK_KNOB:  configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl); break;
-                case WK_KNOBC: configParam(c.id, -1.f, 1.f, 0.f, lbl); break;
+                case WK_BIGKNOB:
+                case WK_SMKNOB: configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl); break;
+                case WK_KNOBC:  configParam(c.id, -1.f, 1.f, 0.f, lbl); break;
                 case WK_KNOBI:
                     if (c.id == SCALE)
                         configParam(c.id, 0.f, (float)(spky::SCALE_LIST_COUNT - 1), 0.f, "Scale");
@@ -56,14 +58,15 @@ struct Spotymod : Module {
                 case WK_SW3:
                     configSwitch(c.id, 0.f, 2.f, 0.f, "Sync", {"Free", "Sync", "Triplet"});
                     break;
-                case WK_SW2:
+                case WK_LATCH:
                     if (c.id == ENGINE_A || c.id == ENGINE_B)
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Engine", {"Synth", "Test tone"});
-                    else  // GRITMODE
+                    else if (c.id == GRITMODE_A || c.id == GRITMODE_B)
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Grit mode", {"Drive", "Reduce"});
+                    else  // STEP / REPLAY
+                        configSwitch(c.id, 0.f, 1.f, 0.f, lbl, {"Off", "On"});
                     break;
-                case WK_TOG:  configSwitch(c.id, 0.f, 1.f, 0.f, lbl, {"Off", "On"}); break;
-                case WK_BTN:  configButton(c.id, lbl); break;
+                case WK_SMBTN: configButton(c.id, lbl); break;
                 default: break;
             }
         }
@@ -196,13 +199,15 @@ struct SpotymodWidget : ModuleWidget {
         for (const auto& c : kParamCtls) {
             Vec pos = mm2px(Vec(c.mm.x, c.mm.y));
             switch (c.kind) {
-                case WK_KNOB: case WK_KNOBC: case WK_KNOBI:
+                case WK_BIGKNOB: case WK_KNOBC:
                     addParam(createParamCentered<RoundBlackKnob>(pos, module, c.id)); break;
+                case WK_SMKNOB: case WK_KNOBI:
+                    addParam(createParamCentered<Trimpot>(pos, module, c.id)); break;
                 case WK_SW3:
                     addParam(createParamCentered<CKSSThree>(pos, module, c.id)); break;
-                case WK_SW2: case WK_TOG:
-                    addParam(createParamCentered<CKSS>(pos, module, c.id)); break;
-                case WK_BTN:
+                case WK_LATCH:
+                    addParam(createParamCentered<VCVLatch>(pos, module, c.id)); break;
+                case WK_SMBTN:
                     addParam(createParamCentered<VCVButton>(pos, module, c.id)); break;
                 default: break;
             }
