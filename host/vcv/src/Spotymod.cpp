@@ -281,11 +281,71 @@ struct SpkyRing : Widget {
     }
 };
 
+// --- panel text ---------------------------------------------------------------
+// Rack's SVG loader (NanoSVG) ignores <text>, so the faceplate ships with none
+// of its lettering visible. Every label already lives in the generated control
+// table (kParamCtls[].label, ...); we draw it here at runtime with nvgText, plus
+// the section titles/brand. Positions mirror res/gen_panel.py exactly (label
+// baseline = control centre + glyph radius + 2.5 mm), so this matches the SVG
+// preview one-to-one. Font is a stock Rack asset, present in every v2 install.
+struct PanelText : Widget {
+    // glyph radius per kind -- mirror of GLYPH_R in res/gen_panel.py
+    static float glyphR(int kind) {
+        switch (kind) {
+            case WK_BIGKNOB: case WK_KNOBC: case WK_IN: case WK_OUT: return 4.2f;
+            case WK_SMKNOB:  case WK_KNOBI: return 3.0f;
+            case WK_SW3:     return 2.2f;
+            case WK_LATCH:   case WK_SMBTN: return 2.7f;
+            default:         return 1.7f;
+        }
+    }
+
+    void draw(const DrawArgs& args) override {
+        std::shared_ptr<Font> font =
+            APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
+        if (!font) return;
+        nvgFontFaceId(args.vg, font->handle);
+        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
+
+        const NVGcolor lbl   = nvgRGB(0xc9, 0xcc, 0xd8);   // control captions
+        const NVGcolor mint  = nvgRGB(0x6d, 0xe0, 0xc8);   // titles + brand
+        const NVGcolor mintD = nvgRGB(0x3a, 0x5d, 0x55);   // dim A/B under the rings
+
+        auto text = [&](float xmm, float ymm, float szmm, NVGcolor col, const char* s) {
+            nvgFontSize(args.vg, mm2px(szmm));
+            nvgFillColor(args.vg, col);
+            Vec p = mm2px(Vec(xmm, ymm));
+            nvgText(args.vg, p.x, p.y, s, NULL);
+        };
+        auto captions = [&](const PanelCtl* t, size_t n) {
+            for (size_t i = 0; i < n; ++i)
+                if (t[i].label[0])
+                    text(t[i].mm.x, t[i].mm.y + glyphR(t[i].kind) + 2.5f, 2.0f, lbl, t[i].label);
+        };
+        captions(kParamCtls,  sizeof(kParamCtls)  / sizeof(kParamCtls[0]));
+        captions(kInputCtls,  sizeof(kInputCtls)  / sizeof(kInputCtls[0]));
+        captions(kOutputCtls, sizeof(kOutputCtls) / sizeof(kOutputCtls[0]));
+
+        // section titles + brand (mirror res/gen_panel.py svg())
+        const float CX = 106.680f, Hh = 128.5f;
+        text(kLightCtls[0].mm.x, kLightCtls[0].mm.y + 1.f, 5.0f, mintD, "A");
+        text(kLightCtls[1].mm.x, kLightCtls[1].mm.y + 1.f, 5.0f, mintD, "B");
+        text(CX, 57.0f, 2.4f, mint, "ROOM");
+        text(CX, 85.0f, 2.4f, mint, "CLOCK / MIX");
+        text(CX, Hh - 2.5f, 4.5f, mint, "spotymod");
+    }
+};
+
 // --- widget -------------------------------------------------------------------
 struct SpotymodWidget : ModuleWidget {
     SpotymodWidget(Spotymod* module) {
         setModule(module);
         setPanel(createPanel(asset::plugin(pluginInstance, "res/Spotymod.svg")));
+
+        // panel lettering (NanoSVG can't render the SVG's <text>; see PanelText)
+        auto* labels = new PanelText;
+        labels->box.size = box.size;
+        addChild(labels);
 
         for (const auto& c : kParamCtls) {
             Vec pos = mm2px(Vec(c.mm.x, c.mm.y));
