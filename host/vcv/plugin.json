@@ -1,0 +1,20 @@
+{
+  "slug": "Spotymod",
+  "name": "spotymod",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "Synthux Academy",
+  "author": "Synthux Academy",
+  "authorEmail": "",
+  "authorUrl": "https://synthux.academy",
+  "sourceUrl": "https://github.com/mcbronkowitch/spotymod",
+  "description": "Modulation-first instrument: the spotymod engine as a VCV Rack module.",
+  "modules": [
+    {
+      "slug": "Spotymod",
+      "name": "Spotymod",
+      "description": "Two SuperModulators (five lanes each), center section, ambient reverb, master drive.",
+      "tags": ["Function generator", "LFO", "Random", "Synth voice", "Effect", "Polyphonic"]
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="213.360mm" height="128.500mm" viewBox="0 0 213.360 128.500">
+<rect x="0" y="0" width="213.360" height="128.500" fill="#12131a"/>
+<circle cx="5.080" cy="3.000" r="1.6" fill="#2a2c38"/>
+<circle cx="5.080" cy="125.500" r="1.6" fill="#2a2c38"/>
+<circle cx="208.280" cy="3.000" r="1.6" fill="#2a2c38"/>
+<circle cx="208.280" cy="125.500" r="1.6" fill="#2a2c38"/>
+<rect x="7.000" y="13.000" width="50.000" height="96.000" rx="2" fill="none" stroke="#3a3d4d" stroke-width="0.3"/>
+<text x="9.000" y="17.000" fill="#6de0c8" font-family="sans-serif" font-size="3.2">PART A</text>
+<rect x="59.000" y="13.000" width="50.000" height="96.000" rx="2" fill="none" stroke="#3a3d4d" stroke-width="0.3"/>
+<text x="61.000" y="17.000" fill="#6de0c8" font-family="sans-serif" font-size="3.2">PART B</text>
+<rect x="112.000" y="13.000" width="30.000" height="96.000" rx="2" fill="none" stroke="#3a3d4d" stroke-width="0.3"/>
+<text x="114.000" y="17.000" fill="#6de0c8" font-family="sans-serif" font-size="3.2">SHARED</text>
+<rect x="145.000" y="13.000" width="24.000" height="96.000" rx="2" fill="none" stroke="#3a3d4d" stroke-width="0.3"/>
+<text x="147.000" y="17.000" fill="#6de0c8" font-family="sans-serif" font-size="3.2">I / O</text>
+<text x="8.000" y="124.500" fill="#6de0c8" font-family="monospace" font-size="4.5" font-weight="bold">spotymod</text>
+<text x="173.360" y="124.500" fill="#4a4d5d" font-family="sans-serif" font-size="3">modulation-first</text>
+<circle cx="12.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="12.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="12.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RATE</text>
+<circle cx="25.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="25.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="25.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SHAPE</text>
+<circle cx="38.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="38.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="38.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">PROB</text>
+<circle cx="51.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="51.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="51.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SMOOTH</text>
+<circle cx="12.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="12.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="12.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RANGE</text>
+<circle cx="25.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="25.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="25.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">ENTR</text>
+<circle cx="38.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="38.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="38.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DEPTH</text>
+<circle cx="51.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="51.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="51.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">TUNE</text>
+<circle cx="12.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="12.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="12.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">ATK</text>
+<circle cx="25.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="25.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="25.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DEC</text>
+<circle cx="38.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="38.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="38.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RES</text>
+<circle cx="51.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="51.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="51.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SUB</text>
+<circle cx="12.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="12.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="12.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DTUN</text>
+<circle cx="25.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="25.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="25.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">FLUX</text>
+<circle cx="38.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="38.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="38.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">GRIT</text>
+<circle cx="51.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="51.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="51.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">COMP</text>
+<rect x="10.600" y="79.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="12.000" y="86.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SYNC</text>
+<rect x="23.600" y="79.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="25.000" y="86.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">ENG</text>
+<rect x="36.600" y="79.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="38.000" y="86.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">STEP</text>
+<circle cx="51.000" cy="82.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="51.000" cy="78.900" r="0.5" fill="#6de0c8"/>
+<text x="51.000" y="88.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">STPS</text>
+<rect x="10.600" y="91.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="12.000" y="98.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">G.MD</text>
+<rect x="23.600" y="91.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="25.000" y="98.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RPLY</text>
+<circle cx="38.000" cy="94.000" r="2.600" fill="#20222c" stroke="#5a5d6d" stroke-width="0.4"/>
+<text x="38.000" y="99.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">CAP</text>
+<circle cx="51.000" cy="94.000" r="2.600" fill="#20222c" stroke="#5a5d6d" stroke-width="0.4"/>
+<text x="51.000" y="99.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">TRIG</text>
+<circle cx="64.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="64.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="64.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RATE</text>
+<circle cx="77.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="77.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="77.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SHAPE</text>
+<circle cx="90.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="90.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="90.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">PROB</text>
+<circle cx="103.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="103.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="103.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SMOOTH</text>
+<circle cx="64.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="64.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="64.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RANGE</text>
+<circle cx="77.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="77.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="77.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">ENTR</text>
+<circle cx="90.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="90.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="90.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DEPTH</text>
+<circle cx="103.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="103.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="103.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">TUNE</text>
+<circle cx="64.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="64.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="64.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">ATK</text>
+<circle cx="77.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="77.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="77.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DEC</text>
+<circle cx="90.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="90.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="90.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RES</text>
+<circle cx="103.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="103.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="103.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SUB</text>
+<circle cx="64.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="64.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="64.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DTUN</text>
+<circle cx="77.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="77.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="77.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">FLUX</text>
+<circle cx="90.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="90.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="90.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">GRIT</text>
+<circle cx="103.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="103.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="103.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">COMP</text>
+<rect x="62.600" y="79.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="64.000" y="86.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SYNC</text>
+<rect x="75.600" y="79.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="77.000" y="86.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">ENG</text>
+<rect x="88.600" y="79.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="90.000" y="86.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">STEP</text>
+<circle cx="103.000" cy="82.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="103.000" cy="78.900" r="0.5" fill="#6de0c8"/>
+<text x="103.000" y="88.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">STPS</text>
+<rect x="62.600" y="91.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="64.000" y="98.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">G.MD</text>
+<rect x="75.600" y="91.600" width="2.8" height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>
+<text x="77.000" y="98.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RPLY</text>
+<circle cx="90.000" cy="94.000" r="2.600" fill="#20222c" stroke="#5a5d6d" stroke-width="0.4"/>
+<text x="90.000" y="99.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">CAP</text>
+<circle cx="103.000" cy="94.000" r="2.600" fill="#20222c" stroke="#5a5d6d" stroke-width="0.4"/>
+<text x="103.000" y="99.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">TRIG</text>
+<circle cx="116.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="116.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="116.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">MORPH</text>
+<circle cx="131.000" cy="20.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="131.000" cy="16.900" r="0.5" fill="#6de0c8"/>
+<text x="131.000" y="26.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">COUPL</text>
+<circle cx="116.000" cy="35.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="116.000" cy="31.900" r="0.5" fill="#6de0c8"/>
+<text x="116.000" y="41.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DRIFT</text>
+<circle cx="131.000" cy="35.000" r="2.600" fill="#20222c" stroke="#5a5d6d" stroke-width="0.4"/>
+<text x="131.000" y="40.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SPOT</text>
+<circle cx="116.000" cy="50.000" r="2.600" fill="#20222c" stroke="#5a5d6d" stroke-width="0.4"/>
+<text x="116.000" y="55.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SETL</text>
+<circle cx="131.000" cy="50.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="131.000" cy="46.900" r="0.5" fill="#6de0c8"/>
+<text x="131.000" y="56.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SIZE</text>
+<circle cx="116.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="116.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="116.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DECAY</text>
+<circle cx="131.000" cy="65.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="131.000" cy="61.900" r="0.5" fill="#6de0c8"/>
+<text x="131.000" y="71.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">TONE</text>
+<circle cx="116.000" cy="80.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="116.000" cy="76.900" r="0.5" fill="#6de0c8"/>
+<text x="116.000" y="86.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DEPTH</text>
+<circle cx="131.000" cy="80.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="131.000" cy="76.900" r="0.5" fill="#6de0c8"/>
+<text x="131.000" y="86.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">DRIVE</text>
+<circle cx="116.000" cy="95.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="116.000" cy="91.900" r="0.5" fill="#6de0c8"/>
+<text x="116.000" y="101.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">SCALE</text>
+<circle cx="131.000" cy="95.000" r="4.000" fill="#1b1d26" stroke="#6de0c8" stroke-width="0.35"/>
+<circle cx="131.000" cy="91.900" r="0.5" fill="#6de0c8"/>
+<text x="131.000" y="101.600" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">TEMPO</text>
+<circle cx="150.000" cy="20.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="150.000" cy="20.000" r="1.3" fill="#2a2c38"/>
+<text x="150.000" y="26.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">IN L</text>
+<circle cx="162.000" cy="20.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="162.000" cy="20.000" r="1.3" fill="#2a2c38"/>
+<text x="162.000" y="26.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">IN R</text>
+<circle cx="150.000" cy="34.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="150.000" cy="34.000" r="1.3" fill="#2a2c38"/>
+<text x="150.000" y="40.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">CLK</text>
+<circle cx="162.000" cy="34.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="162.000" cy="34.000" r="1.3" fill="#2a2c38"/>
+<text x="162.000" y="40.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">RST</text>
+<circle cx="150.000" cy="108.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="150.000" cy="108.000" r="1.3" fill="#2a2c38"/>
+<text x="150.000" y="114.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">OUT L</text>
+<circle cx="162.000" cy="108.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="162.000" cy="108.000" r="1.3" fill="#2a2c38"/>
+<text x="162.000" y="114.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">OUT R</text>
+<circle cx="150.000" cy="60.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="150.000" cy="60.000" r="1.3" fill="#2a2c38"/>
+<text x="150.000" y="66.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">PIT A</text>
+<circle cx="162.000" cy="60.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="162.000" cy="60.000" r="1.3" fill="#2a2c38"/>
+<text x="162.000" y="66.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">GAT A</text>
+<circle cx="150.000" cy="74.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="150.000" cy="74.000" r="1.3" fill="#2a2c38"/>
+<text x="150.000" y="80.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">PIT B</text>
+<circle cx="162.000" cy="74.000" r="4.200" fill="#0a0a0f" stroke="#5a5d6d" stroke-width="0.4"/>
+<circle cx="162.000" cy="74.000" r="1.3" fill="#2a2c38"/>
+<text x="162.000" y="80.800" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.1">GAT B</text>
+<circle cx="150.000" cy="52.000" r="1.600" fill="#301010"/>
+<circle cx="162.000" cy="52.000" r="1.600" fill="#301010"/>
+</svg>

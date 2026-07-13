@@ -1,0 +1,11 @@
+build/
+dist/
+*.o
+*.d
+*.bin
+*.so
+*.dylib
+*.dll
+plugin.so
+plugin.dylib
+plugin.dll
