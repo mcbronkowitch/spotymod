@@ -245,11 +245,19 @@ MASTER DRIVE (pre-gain 1–4×). The comp knob is a loudness knob first:
 threshold/ratio/release/auto-makeup ride one macro (glue ~2:1 at a third,
 dense ~5:1 at two thirds, 10:1 + 350 ms pumping at the top). API:
 `set_comp(part, n)` / `set_master_drive(n)`, boot defaults 0/0. Delivers
-the M6 shell spec's "Engine delta 3" (master soft-clip) early. Showcase:
-`comp_pump.json`. Spec + plan in the residency repo
-(`2026-07-13-spotykach-dynamics-*.md`). M6 knob-map suggestions: GRIT
-layer SMOOTH → COMP (per side), FLUX-layer TUNE (ex-shimmer) → MASTER
-DRIVE.
+the M6 shell spec's "Engine delta 3" (master soft-clip) early.
+
+The by-ear pass reshaped the gain computer (spec amendment in the
+residency repo): a **post-comp envelope ceiling** (−8 dBFS) stops the
+auto-makeup from grinding program peaks into the master limiter,
+downward gain moves act in ~0.5 ms, and the attack tightens with the
+knob (5 ms → 2 ms) — quiet material still gets the full makeup, so the
+loudness intent survives. Showcases: `comp_pump.json` (verification arc)
+and `m7_bloom.json` (dev-diary render — one strummed Am7 into a long
+room, the comp knob resurrects the dying tail). Spec + plan in the
+residency repo (`2026-07-13-spotykach-dynamics-*.md`). M6 knob-map
+suggestions: GRIT layer SMOOTH → COMP (per side), FLUX-layer TUNE
+(ex-shimmer) → MASTER DRIVE.
 
 ## Planned
 
