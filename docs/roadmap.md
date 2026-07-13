@@ -28,6 +28,7 @@ is actually built today, and what is still design-only.
 | **+ Entropy** | Looping S&H melody buffer; bipolar ENTROPY (erode / loop / grow) replaces EVOLVE | ✅ **done** (engine + host; switch mapping in M6) |
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT / SETTLE | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, TONE, DEPTH; shimmer + DaisySP-LGPL removed | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **M4.6** | Dynamics — one-knob comp per part (glue → dense → pump, auto-makeup) + stereo-linked master limiter with MASTER DRIVE (delivers M6 engine delta 3 early) | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -232,6 +233,23 @@ warp), DECAY crosses 100 % at ~0.9 of its travel into a soft-limited bloom
 `PitchShifter` drops the DaisySP-LGPL dependency — the build is MIT-clean.
 Facade, injection point (`FxMem`), and wet-only routing unchanged; the M6
 shell places the ~130 KB object in SDRAM as before.
+
+### M4.6 — Dynamics ✅
+
+One-knob compressor per part (`engine/fx/comp.*`, end of the PartFx chain
+BEFORE the reverb send tap — dry and send are compressed and auto-gained
+together, so full-wet patches profit fully) plus a stereo-linked master
+limiter (`engine/fx/limiter.h`, stmlib gain-riding recipe, exact
+bit-transparency below the −1 dBFS knee) at the Instrument mix stage with
+MASTER DRIVE (pre-gain 1–4×). The comp knob is a loudness knob first:
+threshold/ratio/release/auto-makeup ride one macro (glue ~2:1 at a third,
+dense ~5:1 at two thirds, 10:1 + 350 ms pumping at the top). API:
+`set_comp(part, n)` / `set_master_drive(n)`, boot defaults 0/0. Delivers
+the M6 shell spec's "Engine delta 3" (master soft-clip) early. Showcase:
+`comp_pump.json`. Spec + plan in the residency repo
+(`2026-07-13-spotykach-dynamics-*.md`). M6 knob-map suggestions: GRIT
+layer SMOOTH → COMP (per side), FLUX-layer TUNE (ex-shimmer) → MASTER
+DRIVE.
 
 ## Planned
 

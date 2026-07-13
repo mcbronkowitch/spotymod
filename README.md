@@ -115,6 +115,7 @@ identically, then grows or erodes as ENTROPY is dialled off center.
 | **M3** | Capture sequencer (freeze the PITCH lane into a loop) | **done** (engine + host) |
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT / SETTLE | **done** (engine + host) |
 | **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, DEPTH; shimmer & LGPL removed | **done** (engine + host) |
+| **M4.6** | Dynamics — one-knob comp per part + master limiter w/ MASTER DRIVE | **done** (engine + host) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | planned |
 

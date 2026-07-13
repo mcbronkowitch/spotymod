@@ -35,6 +35,11 @@ Located under `third_party/`.
   each listed in a comment block under the original MIT notice in the
   respective file (float32 buffer, 48 kHz constants, pitch shifter removed,
   per-sample processing, deterministic injected RNG).
+- **stmlib Limiter recipe** — `engine/fx/limiter.h` reimplements the
+  gain-riding recipe of stmlib's `Limiter` (© Emilie Gillet, MIT) with a
+  stereo-linked peak follower, an exactly-transparent sub-knee path, and a
+  built-in master drive. No stmlib code is copied verbatim; the recipe
+  credit is retained here out of courtesy.
 
 ## Dependencies (referenced as git submodules — source NOT included here)
 
