@@ -21,7 +21,10 @@ FLAGS += -I$(REPO)/lib/DaisySP/Source \
          -I$(REPO)/lib/DaisySP/Source/Effects \
          -I$(REPO)/lib/DaisySP/Source/Filters
 CFLAGS +=
-CXXFLAGS +=
+# The shared engine is C++17 (std::clamp in fx_util.h/limiter.h, ...), but the
+# Rack SDK defaults CXXFLAGS to -std=c++11. EXTRA_CXXFLAGS is appended by the SDK
+# *after* its own -std flag (see compile.mk), so this reliably wins.
+EXTRA_CXXFLAGS += -std=c++17
 
 # plugin glue
 SOURCES += $(wildcard src/*.cpp)
