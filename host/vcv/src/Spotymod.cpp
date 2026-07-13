@@ -50,22 +50,25 @@ struct Spotymod : Module {
                 case WK_SMKNOB: configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl); break;
                 case WK_KNOBC:  configParam(c.id, -1.f, 1.f, 0.f, lbl); break;
                 case WK_KNOBI:
-                    if (c.id == SCALE)
-                        configParam(c.id, 0.f, (float)(spky::SCALE_LIST_COUNT - 1), 0.f, "Scale");
+                    if (c.id == SCALE)  // init patch is Dorian (holds every min9 tone)
+                        configParam(c.id, 0.f, (float)(spky::SCALE_LIST_COUNT - 1),
+                                    (float)spky::SCALE_DORIAN, "Scale");
                     else  // STEPS_A / STEPS_B
-                        configParam(c.id, 2.f, 16.f, 8.f, "Steps");
+                        configParam(c.id, 2.f, 16.f, c.id == STEPS_A ? 6.f : 8.f, "Steps");
                     getParamQuantity(c.id)->snapEnabled = true;
                     break;
-                case WK_SW3:
-                    configSwitch(c.id, 0.f, 2.f, 0.f, "Sync", {"Free", "Sync", "Triplet"});
+                case WK_SW3:  // init patch runs both parts tempo-Synced
+                    configSwitch(c.id, 0.f, 2.f, 1.f, "Sync", {"Free", "Sync", "Triplet"});
                     break;
                 case WK_LATCH:
                     if (c.id == ENGINE_A || c.id == ENGINE_B)
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Engine", {"Synth", "Test tone"});
                     else if (c.id == GRITMODE_A || c.id == GRITMODE_B)
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Grit mode", {"Drive", "Reduce"});
-                    else  // STEP / REPLAY
-                        configSwitch(c.id, 0.f, 1.f, 0.f, lbl, {"Off", "On"});
+                    else  // STEP (on for the init patch's stepped sequences) / REPLAY
+                        configSwitch(c.id, 0.f, 1.f,
+                                     (c.id == STEP_A || c.id == STEP_B) ? 1.f : 0.f,
+                                     lbl, {"Off", "On"});
                     break;
                 case WK_SMBTN: configButton(c.id, lbl); break;
                 default: break;
@@ -75,9 +78,44 @@ struct Spotymod : Module {
         for (const auto& c : kOutputCtls) configOutput(c.id, c.label);
     }
 
+    // Init "patch" (Rack Initialize / fresh instance): part A = a sustained
+    // minor-9 drone, part B = a low bass melody, both in Dorian (all min9 tones:
+    // A C E G B). Values were tuned by rendering the equivalent scenario through
+    // the desktop host and reading back pitch/voice content (see
+    // res/../scenarios). Only knob params (WK_BIGKNOB/WK_SMKNOB) come through
+    // here; STEP/SYNC/STEPS/SCALE defaults live in configControls().
     static float defaultFor(int id) {
-        if (id == TEMPO)  return 0.4f;   // ~120 BPM on the 40..240 map
-        if (id == DEPTH_A || id == DEPTH_B) return 0.6f;
+        switch (id) {                       // global knobs
+            case MORPH:        return 0.50f;   // center neutral
+            case COUPLE:       return 0.00f;
+            case DRIFT:        return 0.00f;
+            case MASTER_DRIVE: return 0.50f;
+            case REV_SIZE:     return 0.70f;   // long, roomy tail under the drone
+            case REV_DECAY:    return 0.80f;
+            case REV_TONE:     return 0.55f;
+            case REV_DEPTH:    return 0.25f;
+            case TEMPO:        return 0.35f;   // ~110 BPM on the 40..240 map
+            default: break;
+        }
+        const int part = id / PART_STRIDE;  // 0 = A (drone), 1 = B (bass)
+        switch (id % PART_STRIDE) {         // fold part B onto the *_A enum
+            case RATE_A:   return part ? 0.20f : 0.10f;
+            case SHAPE_A:  return part ? 0.70f : 0.40f;
+            case PROB_A:   return 0.90f;
+            case SMOOTH_A: return part ? 0.20f : 0.50f;
+            case RANGE_A:  return part ? 0.30f : 0.45f;
+            case DEPTH_A:  return part ? 0.60f : 0.50f;
+            case TUNE_A:   return part ? 0.00f : 0.50f;   // B down an octave-ish
+            case ATTACK_A: return part ? 0.05f : 0.20f;
+            case DECAY_A:  return part ? 0.16f : 0.90f;   // A rings/stacks; B plucks
+            case RES_A:    return part ? 0.25f : 0.20f;
+            case SUB_A:    return part ? 0.50f : 0.30f;   // weight under the bass
+            case DETUNE_A: return part ? 0.10f : 0.20f;
+            case FLUX_A:   return 0.00f;
+            case GRIT_A:   return 0.00f;
+            case COMP_A:   return part ? 0.20f : 0.30f;
+            default: break;
+        }
         return 0.5f;
     }
 
