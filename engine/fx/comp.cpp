@@ -37,12 +37,13 @@ void Comp::update_curve(float a) {
     _thr_db = -32.f * a;
     const float ratio = 1.f + 9.f * a * a;          // 2:1 at 1/3, 5:1 at 2/3, 10:1 at 1
     _inv_ratio = 1.f / ratio;
-    const float release_s = 0.06f + 0.29f * a * a;  // ~90 ms .. 350 ms (pump up top)
+    const float release_s = 0.06f + 0.29f * a * a;  // 60 ms at 0 .. 350 ms at 1 (~92 ms at glue)
     _rel_coef = coef_for(release_s, _sr);
     _makeup_db = -_thr_db * (1.f - _inv_ratio) * kMakeupComp;
 }
 
 void Comp::compute_gain() {
+    if (_env < 1e-9f) _env = 0.f;   // denormal floor (long engaged silence)
     update_curve(_amount.value());
     const float env_db = 20.f * std::log10(std::max(_env, 1e-6f));
     const float over = env_db - _thr_db;

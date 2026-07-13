@@ -25,6 +25,7 @@ public:
         const float peak = std::max(std::fabs(pl), std::fabs(pr));   // stereo link
         const float e = peak - _peak;
         _peak += (e > 0.f ? 0.05f : 0.00002f) * e;                   // stmlib slopes
+        if (_peak < 1e-9f) _peak = 0.f;             // denormal floor (long silence)
         if (_pre == 1.f && _peak <= 1.f && peak <= kKnee)
             return;                                   // transparent: out == in, bit-exact
         const float gain = _peak > 1.f ? 1.f / _peak : 1.f;
