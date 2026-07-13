@@ -7,7 +7,7 @@ using namespace spky;
 namespace {
 constexpr float kKneeDb     = 6.f;    // soft knee width
 // THE by-ear loudness handle (spec: when in doubt, err toward loud).
-constexpr float kMakeupComp = 0.7f;
+constexpr float kMakeupComp = 0.9f;
 
 inline float coef_for(float time_s, float sr) {
     return 1.f - std::exp(-1.f / (time_s * sr));

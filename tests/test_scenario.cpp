@@ -160,3 +160,19 @@ TEST_CASE("scenario: center actions dispatch to the instrument") {
     Event et; et.action = "settle"; apply_event(inst, et);
     CHECK(true);
 }
+
+TEST_CASE("scenario: set_comp and set_master_drive dispatch without throwing") {
+    Instrument inst;
+    inst.init(48000.f);
+    Event e;
+    e.action = "set_comp";
+    e.part = 1;
+    e.value = 0.8f;
+    apply_event(inst, e);
+    e.action = "set_master_drive";
+    e.value = 0.5f;
+    apply_event(inst, e);
+    // No getters exist by design (matches set_reverb_*); reaching here alive
+    // plus the Task 3/4 integration tests covers the wiring.
+    CHECK(true);
+}
