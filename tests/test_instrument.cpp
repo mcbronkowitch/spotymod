@@ -258,3 +258,44 @@ TEST_CASE("instrument: set_comp forwards to the part chain") {
     };
     CHECK(render_rms(1.f) > render_rms(0.f));
 }
+
+TEST_CASE("instrument: master output never exceeds 1.0 even driven hard") {
+    Instrument inst;
+    inst.init(48000.f);
+    inst.set_master_drive(1.f);                    // 4x into the ceiling
+    inst.set_comp(0, 1.f);
+    inst.set_comp(1, 1.f);
+    inst.trigger_manual(0);
+    inst.trigger_manual(1);
+    float l[96], r[96];
+    const float inL[96] = {0}, inR[96] = {0};
+    for (int b = 0; b < 1000; ++b) {
+        inst.process(inL, inR, l, r, 96);
+        if (b % 100 == 0) { inst.trigger_manual(0); inst.trigger_manual(1); }
+        for (int i = 0; i < 96; ++i) {
+            CHECK(std::fabs(l[i]) <= 1.f);
+            CHECK(std::fabs(r[i]) <= 1.f);
+            CHECK(std::isfinite(l[i]));
+        }
+    }
+}
+
+TEST_CASE("instrument: dynamics chain is deterministic end to end") {
+    auto run = [] {
+        Instrument inst;
+        inst.init(48000.f);
+        inst.set_master_drive(0.7f);
+        inst.set_comp(0, 0.9f);
+        inst.trigger_manual(0);
+        std::vector<float> out;
+        float l[96], r[96];
+        const float inL[96] = {0}, inR[96] = {0};
+        for (int b = 0; b < 500; ++b) {
+            inst.process(inL, inR, l, r, 96);
+            for (int i = 0; i < 96; ++i) out.push_back(l[i]);
+        }
+        return out;
+    };
+    auto a = run(), b = run();
+    for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]);
+}

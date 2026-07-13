@@ -4,6 +4,7 @@
 #include "parts/part.h"
 #include "mod/lane_id.h"
 #include "fx/reverb.h"
+#include "fx/limiter.h"
 #include "center/center.h"
 
 namespace spky {
@@ -60,6 +61,7 @@ public:
     void set_reverb_decay(float n) { if (_reverb) _reverb->set_decay(n); }
     void set_reverb_tone(float n)  { if (_reverb) _reverb->set_tone(n); }
     void set_reverb_depth(float n) { if (_reverb) _reverb->set_depth(n); }
+    void set_master_drive(float n) { _limiter.set_drive(n); }
     float fx_target_value(int p, int i) const { return _parts[p].fx_target_value(i); }
 
     // --- M2 synth voice API (spec "Instrument API") ---
@@ -103,6 +105,7 @@ public:
 private:
     std::array<Part, PART_COUNT> _parts;
     AmbientReverb* _reverb = nullptr;
+    Limiter _limiter;
     Center _center;
     int    _ctrl_ctr = 0;    // counts down to the next control-rate Center::update
     float _sr = 48000.f;

@@ -12,6 +12,7 @@ void Instrument::init(float sample_rate, const FxMem& mem) {
     _parts[PART_B].init(sample_rate, 0x9e3779b9u,
                         mem.echo[PART_B][0], mem.echo[PART_B][1]);
     if (_reverb) _reverb->init(sample_rate);
+    _limiter.init();
     _center.init(sample_rate, 0x5ce47e12u);
     _ctrl_ctr = 0;
     set_tempo_bpm(_bpm);
@@ -50,6 +51,7 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
             l += wl;
             r += wr;
         }
+        _limiter.process(l, r);   // master ceiling (M6 engine delta 3, delivered early)
         outL[i] = l;
         outR[i] = r;
     }
