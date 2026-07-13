@@ -1,11 +1,11 @@
 {
   "sample_rate": 48000,
   "bpm": 60,
-  "duration_s": 48,
+  "duration_s": 60,
   "init": [
     {"action":"set_engine","part":0,"value":"test_tone"},
     {"action":"set_engine","part":1,"value":"test_tone"},
-    {"_comment":"Dorian melody over a breathing shared room. Lane 3 (x3/4) breathes REVERB SEND; shimmer glitters +12 st. A touch of slow tape echo underneath."},
+    {"_comment":"Reverb v2 showcase. Act 1 (0-20s): Dorian melody over a breathing room. Act 2 (20-30s): DECAY rides past 100% - the room blooms and self-sustains, then falls back. Act 3 (36-46s): SIZE dives and swells - the tail Doppler-warps. Outro: settle."},
     {"action":"set_sync_mode","part":0,"value":"sync"},
     {"action":"set_rate","part":0,"value":0.12},
     {"action":"set_step","part":0,"flag":true,"ivalue":8},
@@ -18,9 +18,10 @@
     {"action":"set_target_active","part":0,"slot":4,"flag":true},
     {"action":"set_target_base","part":0,"slot":4,"value":0.65},
 
-    {"action":"set_reverb_size","value":0.7},
-    {"action":"set_reverb_tone","value":0.55},
-    {"action":"set_reverb_shimmer","value":0.45},
+    {"action":"set_reverb_size","value":0.55},
+    {"action":"set_reverb_tone","value":0.5},
+    {"action":"set_reverb_decay","value":0.7},
+    {"action":"set_reverb_depth","value":0.35},
     {"action":"set_fx_target_active","part":0,"slot":3,"flag":true},
     {"action":"set_fx_target_base","part":0,"slot":3,"value":0.28},
     {"action":"set_fx_target_depth","part":0,"slot":3,"value":0.6},
@@ -30,7 +31,7 @@
     {"action":"set_fx_target_base","part":0,"slot":1,"value":0.55},
     {"action":"set_fx_target_base","part":0,"slot":4,"value":0.4},
 
-    {"_comment":"PART B - low slow pad, also breathing into the room on its own lane 3."},
+    {"_comment":"PART B - low slow pad, breathing into the room on its own lane 3."},
     {"action":"set_sync_mode","part":1,"value":"free"},
     {"action":"set_rate","part":1,"value":0.05},
     {"action":"set_smooth","part":1,"value":0.7},
@@ -45,7 +46,13 @@
     {"action":"set_fx_target_depth","part":1,"slot":3,"value":0.5}
   ],
   "events": [
-    {"t":32.0,"action":"set_reverb_shimmer","value":0.6},
-    {"_comment":"32s: more glitter as the wash peaks."}
+    {"t":20.0,"action":"set_reverb_decay","value":0.95,"_comment":"past 100% - the room blooms and carries itself"},
+    {"t":30.0,"action":"set_reverb_decay","value":0.7,"_comment":"back below - the bloom decays out"},
+    {"t":36.0,"action":"set_reverb_size","value":0.35,"_comment":"SIZE dive - the tail pitches UP (Doppler)"},
+    {"t":38.5,"action":"set_reverb_size","value":0.15},
+    {"t":41.0,"action":"set_reverb_size","value":0.5,"_comment":"SIZE swell - the tail pitches DOWN"},
+    {"t":43.5,"action":"set_reverb_size","value":0.85},
+    {"t":46.0,"action":"set_reverb_size","value":0.55},
+    {"t":50.0,"action":"set_reverb_decay","value":0.5,"_comment":"settle for the outro"}
   ]
 }
