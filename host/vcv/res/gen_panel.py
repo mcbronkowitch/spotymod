@@ -134,21 +134,40 @@ LIGHTS = [
 # =============================================================================
 def mm(v): return f"{v:.3f}"
 
-def ring_svg(cx):
-    P = [f'<circle cx="{mm(cx)}" cy="{mm(RING_CY)}" r="{mm(RING_R+2.2)}" '
-         f'fill="#0d0e14" stroke="#2a2c38" stroke-width="0.4"/>']
+def ring_svg(cx, lit):
+    """One LED ring. `lit` is a set of dot indices drawn glowing mint."""
+    P = [f'<circle cx="{mm(cx)}" cy="{mm(RING_CY)}" r="{mm(RING_R+2.4)}" '
+         f'fill="#0a0b10" stroke="#22252f" stroke-width="0.4"/>']
     for i in range(32):
         a = math.radians(360.0 * i / 32.0)
         x = cx + RING_R * math.sin(a)
         y = RING_CY - RING_R * math.cos(a)
-        P.append(f'<circle cx="{mm(x)}" cy="{mm(y)}" r="0.75" fill="#173a34"/>')
+        if i in lit:  # accent = LED mint, unlit = dim track (#1C4A43 family)
+            P.append(f'<circle cx="{mm(x)}" cy="{mm(y)}" r="0.95" fill="#6de0c8" '
+                     f'filter="url(#ledGlow)"/>')
+        else:
+            P.append(f'<circle cx="{mm(x)}" cy="{mm(y)}" r="0.7" fill="#1c4a43"/>')
     return "\n".join(P)
 
 def svg():
     P = []
     P.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{mm(W)}mm" '
              f'height="{mm(Hh)}mm" viewBox="0 0 {mm(W)} {mm(Hh)}">')
-    P.append(f'<rect x="0" y="0" width="{mm(W)}" height="{mm(Hh)}" fill="#101119"/>')
+    # design tokens realised as reusable defs (knob metal, LED glow, plate)
+    P.append(
+        '<defs>'
+        '<radialGradient id="knobMetal" cx="38%" cy="32%" r="75%">'
+        '<stop offset="0%" stop-color="#2b2e3a"/>'
+        '<stop offset="55%" stop-color="#1b1d26"/>'
+        '<stop offset="100%" stop-color="#0f1017"/></radialGradient>'
+        '<radialGradient id="plate" cx="50%" cy="-5%" r="120%">'
+        '<stop offset="0%" stop-color="#15161f"/>'
+        '<stop offset="100%" stop-color="#0d0e15"/></radialGradient>'
+        '<filter id="ledGlow" x="-140%" y="-140%" width="380%" height="380%">'
+        '<feGaussianBlur stdDeviation="0.6" result="b"/>'
+        '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>'
+        '</filter></defs>')
+    P.append(f'<rect x="0" y="0" width="{mm(W)}" height="{mm(Hh)}" rx="2.5" fill="url(#plate)"/>')
     # subtle vertical seams framing the center strip
     for sx in (CX - 22.5, CX + 22.5):
         P.append(f'<line x1="{mm(sx)}" y1="6" x2="{mm(sx)}" y2="{mm(Hh-6)}" '
@@ -157,9 +176,9 @@ def svg():
     for hx in (MM_PER_HP, W - MM_PER_HP):
         for hy in (3.0, Hh-3.0):
             P.append(f'<circle cx="{mm(hx)}" cy="{mm(hy)}" r="1.6" fill="#2a2c38"/>')
-    # two rings
-    P.append(ring_svg(RING_CX_A))
-    P.append(ring_svg(W - RING_CX_A))
+    # two rings (a suggestive lit pattern per side; runtime widget animates them)
+    P.append(ring_svg(RING_CX_A,     {0, 3, 4, 9, 14, 15, 22, 27}))
+    P.append(ring_svg(W - RING_CX_A, {0, 5, 10, 11, 18, 23, 24, 29}))
     # pad-row backplates
     for (x0, x1) in ((8.0, 84.0), (W-84.0, W-8.0)):
         P.append(f'<rect x="{mm(x0)}" y="94.0" width="{mm(x1-x0)}" height="11.0" '
@@ -187,8 +206,9 @@ def svg():
             P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(r)}" '
                      f'fill="#08080d" stroke="#5a5d6d" stroke-width="0.4"/>')
             P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="1.3" fill="#2a2c38"/>')
-        elif c.kind == LIGHT:
-            P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(r)}" fill="#153a33"/>')
+        elif c.kind == LIGHT:  # gate glow at ring centre -- warm signal hue
+            P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(r)}" '
+                     f'fill="#ffb454" opacity="0.85" filter="url(#ledGlow)"/>')
         elif c.kind == SW3:
             P.append(f'<rect x="{mm(c.x-1.4)}" y="{mm(c.y-2.4)}" width="2.8" '
                      f'height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>')
@@ -196,11 +216,16 @@ def svg():
             P.append(f'<rect x="{mm(c.x-r)}" y="{mm(c.y-r)}" width="{mm(2*r)}" '
                      f'height="{mm(2*r)}" rx="1.0" fill="#1a1c24" '
                      f'stroke="#6de0c8" stroke-width="0.3"/>')
-        else:  # knobs
-            outer = "#6de0c8" if c.kind in (BIGKNOB, KNOBC) else "#4a8d80"
+        else:  # knobs -- metal cap + accent collar + indicator tick
+            big = c.kind in (BIGKNOB, KNOBC)
+            outer = "#6de0c8" if big else "#4a8d80"
+            tick  = "#6de0c8" if big else "#8fbfb6"
             P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(r)}" '
-                     f'fill="#1b1d26" stroke="{outer}" stroke-width="0.35"/>')
-            P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y-r+0.9)}" r="0.5" fill="{outer}"/>')
+                     f'fill="url(#knobMetal)" stroke="{outer}" '
+                     f'stroke-width="{0.42 if big else 0.34}"/>')
+            P.append(f'<line x1="{mm(c.x)}" y1="{mm(c.y)}" x2="{mm(c.x)}" '
+                     f'y2="{mm(c.y-r+0.7)}" stroke="{tick}" stroke-width="0.5" '
+                     f'stroke-linecap="round"/>')
         if c.label:
             P.append(f'<text x="{mm(c.x)}" y="{mm(c.y+r+2.5)}" fill="#c9ccd8" '
                      f'text-anchor="middle" font-family="sans-serif" font-size="2.0">{c.label}</text>')

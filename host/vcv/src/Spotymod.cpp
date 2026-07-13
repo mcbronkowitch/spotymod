@@ -216,8 +216,8 @@ struct SpotymodWidget : ModuleWidget {
             addInput(createInputCentered<PJ301MPort>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
         for (const auto& c : kOutputCtls)
             addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
-        for (const auto& c : kLightCtls)
-            addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
+        for (const auto& c : kLightCtls)  // warm signal hue for the gate glow
+            addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
 
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
