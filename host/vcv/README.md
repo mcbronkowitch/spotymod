@@ -35,19 +35,44 @@ engine (mirroring `src/ui/led.ring.h`). The SVG only provides the dim housing.
 ## Build
 
 Requires the [VCV Rack SDK](https://vcvrack.com/manual/Building#Setting-up-the-Rack-SDK)
-(matching your Rack major version, v2).
+(v2), plus `make` and `jq`. The Makefile's default `RACK_DIR` is `../../../Rack-SDK`
+(i.e. unzip the SDK next to the repo), or pass `RACK_DIR=/path/to/Rack-SDK`.
+
+The shared engine is **C++17** (`std::clamp`, ...), but the SDK defaults to
+`-std=c++11`; the Makefile bumps it back up via `EXTRA_CXXFLAGS += -std=c++17`,
+so nothing extra is needed on your end.
 
 ```bash
 # from this directory:
-RACK_DIR=/path/to/Rack-SDK make
-RACK_DIR=/path/to/Rack-SDK make install   # copies the plugin into Rack's user dir
+make            # -> plugin.dll / .so / .dylib
+make install    # packages a .vcvplugin and copies it into Rack's user plugin dir
 ```
+
+`make install` drops `Spotymod-<version>-<arch>.vcvplugin` into Rack's user dir
+(`%LOCALAPPDATA%\Rack2\plugins-win-x64\` on Windows, `~/.local/share/Rack2/…` /
+`~/Library/Application Support/Rack2/…` elsewhere); Rack unpacks it on launch.
+Restart Rack and the module appears under the **Synthux Academy** brand
+("Spotymod" in the module browser). A self-built plugin is unsigned, so Rack may
+note it isn't from the library — it still loads.
 
 The DaisySP submodule must be present (the engine's FX depend on it):
 
 ```bash
 git submodule update --init lib/DaisySP    # run from the repo root
 ```
+
+### Windows toolchain note
+
+Rack plugins are native GCC/MinGW builds, so you need an **x86_64 MinGW-w64**
+compiler (e.g. [WinLibs](https://winlibs.com/), or MSYS2's
+`mingw-w64-x86_64-gcc`) — the MSVCRT variant matches Rack 2. Point `make` at it
+with `CC=gcc CXX=g++` on the MinGW `bin/` in `PATH`.
+
+Build from an **MSYS2 shell** (`pacman -S make jq`). This Makefile lists the
+shared engine via absolute `$(REPO)/…` paths so the `.o` files stay in `build/`;
+a *native* `make`/`mingw32-make` then trips over the `C:` drive colon
+("multiple target patterns"). An MSYS2 `make` sees the paths as `/c/…` and
+builds cleanly.
 
 ## Regenerating the panel
 
