@@ -49,9 +49,9 @@ self-contained summary of it.
 
 ## Architecture at a glance
 
-One portable engine core, two hosts. No hardware type ever crosses into
-`engine/`, so the exact same code runs in the desktop renderer and (later) on
-the Daisy.
+One portable engine core, three hosts. No hardware type ever crosses into
+`engine/`, so the exact same code runs in the desktop renderer, the VCV Rack
+module, and (later) on the Daisy.
 
 ```
 spotymod/
@@ -60,7 +60,8 @@ spotymod/
 │   ├── parts/         Part, engine interface, sound engines
 │   └── util/          math / DSP helpers
 ├── host/
-│   └── render/        desktop CLI: scenario JSON → WAV + CSV
+│   ├── render/        desktop CLI: scenario JSON → WAV + CSV
+│   └── vcv/           VCV Rack module (pre-alpha) — the engine, playable live
 ├── tests/             desktop unit tests for engine/ (doctest)
 ├── src/               original firmware (kept as reference for the M6 shell)
 └── lib/               libDaisy + DaisySP (git submodules)
@@ -104,6 +105,15 @@ This writes:
 
 `melody_then_drift` is a good starting point: a fixed 16-step melody that loops
 identically, then grows or erodes as ENTROPY is dialled off center.
+
+## A first interactive look — VCV Rack (pre-alpha)
+
+For a hands-on feel of the concept there's a **VCV Rack module** (`host/vcv/`)
+that runs the same engine as a live plugin — turn the knobs and hear the
+modulation engine long before the M6 firmware. It's an early **pre-alpha**: a
+first interactive glimpse, not a finished instrument. It builds with its own
+toolchain (a native MinGW/GCC compiler, not the desktop clang path); the build,
+install and I/O details live in [`host/vcv/README.md`](host/vcv/README.md).
 
 ## Roadmap
 
