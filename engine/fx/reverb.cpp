@@ -14,6 +14,13 @@ constexpr float kModRate = 0.5f;           // internal LFO speed; DEPTH scales a
 constexpr float kHpPin = 0.01f;
 constexpr float kDiffusion = 0.625f;       // Oliverb stock
 constexpr float kInputGain = 0.5f;         // L+R sum -> mono average into the room
+// The self-oscillating bloom (decay > 1.0) plateaus near digital full scale
+// at the core's output taps (they carry 2x the in-loop signal, plus Hermite
+// overshoot under depth modulation). Trim the wet-only room -8 dB so the
+// bloom leaves headroom at the master sum until the M6 master soft-clip
+// exists. Ear-tunable in [0.40, 0.50]; kept at the low end of that range to
+// hold the ambient_wash showcase's bloom under the hard clip ceiling.
+constexpr float kWetGain = 0.40f;
 }
 
 void AmbientReverb::init(float sample_rate) {
@@ -64,4 +71,6 @@ void AmbientReverb::process(float in_l, float in_r, float& out_l, float& out_r) 
     out_l = in_l;
     out_r = in_r;
     _verb.Process(&out_l, &out_r);
+    out_l *= kWetGain;
+    out_r *= kWetGain;
 }
