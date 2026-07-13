@@ -6,6 +6,7 @@ using namespace spky;
 void PartFx::init(float sample_rate, float* echo_l, float* echo_r) {
     _grit.init(sample_rate);
     _flux.init(sample_rate, echo_l, echo_r);
+    _comp.init(sample_rate);
     for (auto& s : _smooth) s.init(sample_rate, 0.002f);
     _grit_applied = -1.f;
     _primed = false;
@@ -39,6 +40,8 @@ void PartFx::process(float& l, float& r, float& send_l, float& send_r,
         l = dry_l + (l - dry_l) * m;
         r = dry_r + (r - dry_r) * m;
     }
+
+    _comp.process(l, r);   // one-knob comp — BEFORE the send tap (spec: full-wet must profit)
 
     const float g = std::sin(v[FXT_REV_SEND] * 1.5707963f);   // equal-power
     send_l = l * g;

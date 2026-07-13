@@ -1,4 +1,5 @@
 #pragma once
+#include "fx/comp.h"
 #include "fx/flux.h"
 #include "fx/grit.h"
 #include "util/onepole.h"
@@ -18,7 +19,9 @@ enum FxTargetId {
 
 enum class FxBlock { Flux, Grit };
 
-// Per-part chain: GRIT -> FLUX -> FX MIX, plus the post-FX reverb send tap.
+// Per-part chain: GRIT -> FLUX -> FX MIX -> COMP, plus the post-COMP reverb
+// send tap (M4.6: comp BEFORE the tap — dry and send are compressed and
+// auto-gained together, so full-wet profits fully).
 // FX MIX is a linear (equal-gain) dry/wet — dry and wet are correlated, and
 // bypass must be bit-exact (wet == dry => out == dry). The square-law XFade
 // stays inside Drive/Reduce where it belongs. When both blocks are off the
@@ -31,6 +34,9 @@ public:
     Flux& flux() { return _flux; }
     const Grit& grit() const { return _grit; }
     const Flux& flux() const { return _flux; }
+    Comp& comp() { return _comp; }
+    const Comp& comp() const { return _comp; }
+    void set_comp(float n) { _comp.set_amount(n); }
 
     void set_fx_on(FxBlock b, bool on, bool immediate = false);
     void set_grit_mode(GritMode m) { _grit.set_mode(m); }
@@ -44,6 +50,7 @@ public:
 private:
     Grit _grit;
     Flux _flux;
+    Comp _comp;
     OnePole _smooth[FXT_COUNT];
     float _grit_applied = -1.f;   // change guard: Overdrive::SetDrive costs
     bool _primed = false;         // first process() snaps the smoothers

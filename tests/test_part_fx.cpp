@@ -76,3 +76,35 @@ TEST_CASE("part_fx: send taps post-FX at the equal-power gain") {
         CHECK(sl == doctest::Approx(l));    // sin(pi/2) = 1: send == post-fx out
     }
 }
+
+TEST_CASE("part_fx: comp default 0 leaves chain and send bit-exact") {
+    PartFx fx;
+    fx.init(48000.f, s_pf_l, s_pf_r);
+    const float fxv[FXT_COUNT] = {0.f, 0.5f, 1.f, 0.5f, 0.f};
+    for (int i = 0; i < 4800; ++i) {
+        float s = 0.5f * std::sin(6.2831853f * 220.f * i / 48000.f);
+        float l = s, r = s, sl = 0.f, sr = 0.f;
+        fx.process(l, r, sl, sr, fxv);
+        CHECK(l == s);                                   // FX off + comp 0 = dry bits
+        CHECK(sl == doctest::Approx(s * std::sin(0.5f * 1.5707963f)));
+    }
+}
+
+TEST_CASE("part_fx: comp sits BEFORE the send tap — the send gets louder too") {
+    const float fxv[FXT_COUNT] = {0.f, 0.5f, 1.f, 0.8f, 0.f};
+    auto send_rms = [&](float amount) {
+        PartFx fx;
+        fx.init(48000.f, s_pf_l, s_pf_r);
+        fx.set_comp(amount);
+        double acc = 0.0;
+        int n = 0;
+        for (int i = 0; i < 96000; ++i) {
+            float s = 0.05f * std::sin(6.2831853f * 220.f * i / 48000.f);  // quiet!
+            float l = s, r = s, sl = 0.f, sr = 0.f;
+            fx.process(l, r, sl, sr, fxv);
+            if (i >= 24000) { acc += sl * sl; ++n; }
+        }
+        return std::sqrt((float)(acc / n));
+    };
+    CHECK(send_rms(1.f) > send_rms(0.f) * 1.5f);   // full-wet motivation, verified
+}

@@ -236,3 +236,25 @@ TEST_CASE("instrument M4: morph=1 injects no new reverb from part A (send isolat
     CHECK(late < early * 0.05f);
     CHECK(late < 1e-4f);
 }
+
+TEST_CASE("instrument: set_comp forwards to the part chain") {
+    // Two identically-seeded instruments, one with comp up: the comp'd one
+    // must be louder on the same deterministic synth content.
+    auto render_rms = [](float comp) {
+        Instrument inst;
+        inst.init(48000.f);                       // engine-only init: no FxMem needed
+        inst.set_comp(0, comp);
+        inst.trigger_manual(0);
+        double acc = 0.0;
+        float l[96], r[96];
+        const float inL[96] = {0}, inR[96] = {0};
+        int n = 0;
+        for (int b = 0; b < 500; ++b) {
+            inst.process(inL, inR, l, r, 96);
+            if (b == 250) inst.trigger_manual(0);
+            for (int i = 0; i < 96; ++i) { acc += l[i] * l[i]; ++n; }
+        }
+        return std::sqrt((float)(acc / n));
+    };
+    CHECK(render_rms(1.f) > render_rms(0.f));
+}
