@@ -70,6 +70,7 @@ add_executable(spky_tests
     tests/test_part_fx.cpp
     engine/fx/comp.cpp
     tests/test_comp.cpp
+    tests/test_limiter.cpp
     tests/test_fast_sin.cpp
     tests/test_morph_osc.cpp
     tests/test_env.cpp
