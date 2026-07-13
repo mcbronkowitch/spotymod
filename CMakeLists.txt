@@ -68,6 +68,8 @@ add_executable(spky_tests
     tests/test_oliverb.cpp
     engine/fx/part_fx.cpp
     tests/test_part_fx.cpp
+    engine/fx/comp.cpp
+    tests/test_comp.cpp
     tests/test_fast_sin.cpp
     tests/test_morph_osc.cpp
     tests/test_env.cpp
@@ -93,6 +95,7 @@ add_executable(render
     engine/fx/flux.cpp
     engine/fx/reverb.cpp
     engine/fx/part_fx.cpp
+    engine/fx/comp.cpp
     engine/synth/voice.cpp
     engine/synth/synth_engine.cpp
 )
