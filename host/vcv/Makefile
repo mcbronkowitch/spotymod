@@ -7,7 +7,10 @@
 # engine/*.cpp the desktop render host (CMakeLists.txt) uses, two levels up.
 
 RACK_DIR ?= ../../../Rack-SDK
-REPO     := ../..
+# Absolute repo root: keeps object files for the shared engine sources inside
+# host/vcv/build/ (a relative ../.. would make plugin.mk emit .o files outside
+# the plugin dir). Run make from this directory.
+REPO     := $(realpath ../..)
 
 FLAGS += -I$(REPO)/engine -I$(REPO)/third_party
 # DaisySP fans its private headers (dsp.h, ...) across these subdirs; the engine's
