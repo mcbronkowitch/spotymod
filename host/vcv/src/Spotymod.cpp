@@ -1,4 +1,5 @@
 #include <cmath>
+#include <algorithm>
 #include "plugin.hpp"
 #include "generated_panel.hpp"   // enums + control table (generated from res/gen_panel.py)
 
@@ -190,6 +191,58 @@ struct Spotymod : Module {
     void onReset() override { reinit(curSr > 0.f ? curSr : 48000.f); }
 };
 
+// --- live LED ring ------------------------------------------------------------
+// One per part. Draws 32 dots in the light layer (glows additively over Rack's
+// darkened room). Each of the five lanes lights a moving dot at its position;
+// a lane that just fired flashes. Idle -> dark (no fake motion).
+struct SpkyRing : Widget {
+    Spotymod* module = nullptr;
+    int part = 0;
+
+    SpkyRing(Spotymod* m, int p) : module(m), part(p) {
+        float d = mm2px(2.f * (kRingR + kRingDotR + 0.5f));
+        box.size = Vec(d, d);
+    }
+
+    void drawLayer(const DrawArgs& args, int layer) override {
+        if (layer != 1) return;
+        const float TWO_PI = 6.2831853f;
+        Vec c = box.size.div(2.f);
+        float R  = mm2px(kRingR);
+        float dr = mm2px(kRingDotR);
+
+        float bright[kRingDots] = {};
+        if (module) {
+            for (int s = 0; s < spky::LANE_COUNT; ++s) {
+                float v = clamp(module->inst.lane_output(part, s), -1.f, 1.f);
+                float posf = (v * 0.5f + 0.5f) * kRingDots;      // 0..32
+                int i0 = ((int)std::floor(posf)) % kRingDots;
+                if (i0 < 0) i0 += kRingDots;
+                int i1 = (i0 + 1) % kRingDots;
+                float frac = posf - std::floor(posf);
+                float boost = module->inst.lane_fired(part, s) ? 1.f : 0.6f;
+                bright[i0] = std::max(bright[i0], (1.f - frac) * boost);
+                bright[i1] = std::max(bright[i1], frac * boost);
+            }
+        }
+        for (int i = 0; i < kRingDots; ++i) {
+            float b = bright[i];
+            if (b <= 0.02f) continue;
+            float a = TWO_PI * i / kRingDots;
+            Vec p = c.plus(Vec(std::sin(a), -std::cos(a)).mult(R));
+            // soft glow + core, mint (#6DE0C8)
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, p.x, p.y, dr * 2.6f);
+            nvgFillColor(args.vg, nvgRGBAf(0.43f, 0.88f, 0.78f, 0.25f * b));
+            nvgFill(args.vg);
+            nvgBeginPath(args.vg);
+            nvgCircle(args.vg, p.x, p.y, dr);
+            nvgFillColor(args.vg, nvgRGBAf(0.43f, 0.88f, 0.78f, b));
+            nvgFill(args.vg);
+        }
+    }
+};
+
 // --- widget -------------------------------------------------------------------
 struct SpotymodWidget : ModuleWidget {
     SpotymodWidget(Spotymod* module) {
@@ -218,6 +271,14 @@ struct SpotymodWidget : ModuleWidget {
             addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
         for (const auto& c : kLightCtls)  // warm signal hue for the gate glow
             addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
+
+        // live LED rings, centred on each ring (same coords as the gate lights)
+        for (int p = 0; p < 2; ++p) {
+            auto* ring = new SpkyRing(module, p);
+            Vec ctr = mm2px(Vec(kLightCtls[p].mm.x, kLightCtls[p].mm.y));
+            ring->box.pos = ctr.minus(ring->box.size.div(2.f));
+            addChild(ring);
+        }
 
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));

@@ -134,19 +134,16 @@ LIGHTS = [
 # =============================================================================
 def mm(v): return f"{v:.3f}"
 
-def ring_svg(cx, lit):
-    """One LED ring. `lit` is a set of dot indices drawn glowing mint."""
+def ring_svg(cx):
+    """One LED ring: housing + 32 dim track dots (the 'off' bed). The live
+    SpkyRing widget draws mint glow on top of these at runtime."""
     P = [f'<circle cx="{mm(cx)}" cy="{mm(RING_CY)}" r="{mm(RING_R+2.4)}" '
          f'fill="#0a0b10" stroke="#22252f" stroke-width="0.4"/>']
     for i in range(32):
         a = math.radians(360.0 * i / 32.0)
         x = cx + RING_R * math.sin(a)
         y = RING_CY - RING_R * math.cos(a)
-        if i in lit:  # accent = LED mint, unlit = dim track (#1C4A43 family)
-            P.append(f'<circle cx="{mm(x)}" cy="{mm(y)}" r="0.95" fill="#6de0c8" '
-                     f'filter="url(#ledGlow)"/>')
-        else:
-            P.append(f'<circle cx="{mm(x)}" cy="{mm(y)}" r="0.7" fill="#1c4a43"/>')
+        P.append(f'<circle cx="{mm(x)}" cy="{mm(y)}" r="0.7" fill="#1c4a43"/>')
     return "\n".join(P)
 
 def svg():
@@ -176,9 +173,9 @@ def svg():
     for hx in (MM_PER_HP, W - MM_PER_HP):
         for hy in (3.0, Hh-3.0):
             P.append(f'<circle cx="{mm(hx)}" cy="{mm(hy)}" r="1.6" fill="#2a2c38"/>')
-    # two rings (a suggestive lit pattern per side; runtime widget animates them)
-    P.append(ring_svg(RING_CX_A,     {0, 3, 4, 9, 14, 15, 22, 27}))
-    P.append(ring_svg(W - RING_CX_A, {0, 5, 10, 11, 18, 23, 24, 29}))
+    # two rings (housing + dim track; the live SpkyRing widget lights them)
+    P.append(ring_svg(RING_CX_A))
+    P.append(ring_svg(W - RING_CX_A))
     # pad-row backplates
     for (x0, x1) in ((8.0, 84.0), (W-84.0, W-8.0)):
         P.append(f'<rect x="{mm(x0)}" y="94.0" width="{mm(x1-x0)}" height="11.0" '
@@ -206,9 +203,9 @@ def svg():
             P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(r)}" '
                      f'fill="#08080d" stroke="#5a5d6d" stroke-width="0.4"/>')
             P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="1.3" fill="#2a2c38"/>')
-        elif c.kind == LIGHT:  # gate glow at ring centre -- warm signal hue
+        elif c.kind == LIGHT:  # dark LED housing; live YellowLight glows amber on top
             P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(r)}" '
-                     f'fill="#ffb454" opacity="0.85" filter="url(#ledGlow)"/>')
+                     f'fill="#1a1206" stroke="#3a2c12" stroke-width="0.25"/>')
         elif c.kind == SW3:
             P.append(f'<rect x="{mm(c.x-1.4)}" y="{mm(c.y-2.4)}" width="2.8" '
                      f'height="4.8" rx="0.6" fill="#20222c" stroke="#5a5d6d" stroke-width="0.3"/>')
@@ -245,6 +242,9 @@ def header():
               "WK_SW3, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };")
     L2.append("struct PanelCtl { int id; WidgetKind kind; XY mm; const char* label; };")
     L2.append(f"static constexpr int PART_STRIDE = {PART_STRIDE};")
+    L2.append(f"static constexpr float kRingR = {RING_R:.3f}f;      // mm, LED-dot orbit")
+    L2.append(f"static constexpr float kRingDotR = 0.95f;   // mm, lit-dot radius")
+    L2.append("static constexpr int kRingDots = 32;")
 
     def emit_enum(name, items, terminator):
         L2.append(f"enum {name} {{")

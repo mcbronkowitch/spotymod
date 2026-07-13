@@ -26,8 +26,11 @@ VCV has no clean equivalent for pad gestures, so this host deliberately maps
 **every engine setter to its own dedicated knob/switch/button** — a wider panel
 than the hardware, but the full engine is playable today without waiting on M6.
 
-The visual language stays "Spotykach" (dark plate, mint accents); a faithful
-animated LED-ring widget (mirroring `src/ui/led.ring.h`) is a later polish step.
+The visual language stays "Spotykach" (dark plate, mint accents). Each part's
+32-LED ring is a **live** custom widget (`SpkyRing` in `src/Spotymod.cpp`): it
+draws in the light layer and lights a moving dot per modulation lane from
+`Instrument::lane_output()` / `lane_fired()`, so the rings animate with the
+engine (mirroring `src/ui/led.ring.h`). The SVG only provides the dim housing.
 
 ## Build
 

@@ -5,6 +5,9 @@ struct XY { float x, y; };
 enum WidgetKind { WK_BIGKNOB, WK_KNOBC, WK_SMKNOB, WK_KNOBI, WK_SW3, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };
 struct PanelCtl { int id; WidgetKind kind; XY mm; const char* label; };
 static constexpr int PART_STRIDE = 24;
+static constexpr float kRingR = 16.000f;      // mm, LED-dot orbit
+static constexpr float kRingDotR = 0.95f;   // mm, lit-dot radius
+static constexpr int kRingDots = 32;
 enum ParamId {
     RATE_A,
     SHAPE_A,
