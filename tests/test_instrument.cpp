@@ -118,7 +118,7 @@ TEST_CASE("instrument: fx setters reach the parts and reverb setters are null-sa
     inst.set_reverb_size(0.9f);         // must not crash without a reverb
     inst.set_reverb_tone(0.2f);
     inst.set_reverb_decay(0.7f);
-    inst.set_reverb_depth(0.5f);
+    inst.set_reverb_diffusion(0.5f);
     inst.set_reverb_mix(0.7f);
     float l, r;
     inst.process(nullptr, nullptr, &l, &r, 1);

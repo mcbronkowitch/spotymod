@@ -185,7 +185,7 @@ struct Spotymod : Module {
         inst.set_reverb_size(params[REV_SIZE].getValue());
         inst.set_reverb_decay(params[REV_DECAY].getValue());
         inst.set_reverb_tone(params[REV_TONE].getValue());
-        inst.set_reverb_depth(params[REV_DEPTH].getValue());
+        inst.set_reverb_diffusion(params[REV_DEPTH].getValue());
         inst.set_reverb_mix(params[REV_MIX].getValue());
         inst.set_master_drive(params[MASTER_DRIVE].getValue());
         inst.set_scale((int)std::round(params[SCALE].getValue()));
