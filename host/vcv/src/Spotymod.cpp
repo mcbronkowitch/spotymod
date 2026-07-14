@@ -276,19 +276,23 @@ struct SpkyRing : Widget {
                 bright[i1] = std::max(bright[i1], frac * boost);
             }
         }
+        // per-part glow colour from the generator (A solder green, B copper)
+        const unsigned gc = kColGlow[part];
+        const float cr = ((gc >> 16) & 0xFF) / 255.f;
+        const float cg = ((gc >> 8)  & 0xFF) / 255.f;
+        const float cb = ( gc        & 0xFF) / 255.f;
         for (int i = 0; i < kRingDots; ++i) {
             float b = bright[i];
             if (b <= 0.02f) continue;
             float a = TWO_PI * i / kRingDots;
             Vec p = c.plus(Vec(std::sin(a), -std::cos(a)).mult(R));
-            // soft glow + core, mint (#6DE0C8)
             nvgBeginPath(args.vg);
             nvgCircle(args.vg, p.x, p.y, dr * 2.6f);
-            nvgFillColor(args.vg, nvgRGBAf(0.43f, 0.88f, 0.78f, 0.25f * b));
+            nvgFillColor(args.vg, nvgRGBAf(cr, cg, cb, 0.25f * b));
             nvgFill(args.vg);
             nvgBeginPath(args.vg);
             nvgCircle(args.vg, p.x, p.y, dr);
-            nvgFillColor(args.vg, nvgRGBAf(0.43f, 0.88f, 0.78f, b));
+            nvgFillColor(args.vg, nvgRGBAf(cr, cg, cb, b));
             nvgFill(args.vg);
         }
     }
@@ -320,32 +324,32 @@ struct PanelText : Widget {
         nvgFontFaceId(args.vg, font->handle);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
 
-        const NVGcolor lbl   = nvgRGB(0xc9, 0xcc, 0xd8);   // control captions
-        const NVGcolor mint  = nvgRGB(0x6d, 0xe0, 0xc8);   // titles + brand
-        const NVGcolor mintD = nvgRGB(0x3a, 0x5d, 0x55);   // dim A/B under the rings
-
-        auto text = [&](float xmm, float ymm, float szmm, NVGcolor col, const char* s) {
+        auto col = [](unsigned rgb) {
+            return nvgRGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        };
+        auto text = [&](float xmm, float ymm, float szmm, NVGcolor c, const char* s) {
             nvgFontSize(args.vg, mm2px(szmm));
-            nvgFillColor(args.vg, col);
+            nvgFillColor(args.vg, c);
             Vec p = mm2px(Vec(xmm, ymm));
             nvgText(args.vg, p.x, p.y, s, NULL);
         };
         auto captions = [&](const PanelCtl* t, size_t n) {
             for (size_t i = 0; i < n; ++i)
                 if (t[i].label[0])
-                    text(t[i].mm.x, t[i].mm.y + glyphR(t[i].kind) + 2.5f, 2.0f, lbl, t[i].label);
+                    text(t[i].mm.x, t[i].mm.y + glyphR(t[i].kind) + 2.5f, 2.0f,
+                         col(kColLabel), t[i].label);
         };
         captions(kParamCtls,  sizeof(kParamCtls)  / sizeof(kParamCtls[0]));
         captions(kInputCtls,  sizeof(kInputCtls)  / sizeof(kInputCtls[0]));
         captions(kOutputCtls, sizeof(kOutputCtls) / sizeof(kOutputCtls[0]));
 
-        // section titles + brand (mirror res/gen_panel.py svg())
-        const float CX = 106.680f, Hh = 128.5f;
-        text(kLightCtls[0].mm.x, kLightCtls[0].mm.y + 1.f, 5.0f, mintD, "A");
-        text(kLightCtls[1].mm.x, kLightCtls[1].mm.y + 1.f, 5.0f, mintD, "B");
-        text(CX, 57.0f, 2.4f, mint, "ROOM");
-        text(CX, 85.0f, 2.4f, mint, "CLOCK / MIX");
-        text(CX, Hh - 2.5f, 4.5f, mint, "spotymod");
+        // section titles + brand -- the shared TEXTS table from the generator,
+        // so runtime lettering matches the SVG preview one-to-one
+        for (const auto& t : kPanelTexts) {
+            nvgTextLetterSpacing(args.vg, mm2px(t.spacing));
+            text(t.mm.x, t.mm.y, t.size, col(t.rgb), t.str);
+        }
+        nvgTextLetterSpacing(args.vg, 0.f);
     }
 };
 
