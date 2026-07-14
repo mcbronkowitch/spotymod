@@ -118,38 +118,47 @@ TEST_CASE("generate_phrase: Hierarchical tiles a cell inside each motif") {
     CHECK(p[1] == doctest::Approx(p[5]));
 }
 
-TEST_CASE("regenerate_unit: siblings stay identical, other units untouched") {
+TEST_CASE("regenerate_unit: regenerates its unit, keeps siblings identical, other units untouched") {
     Rng r; r.seed(0x1234);
     float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
     generate_phrase(Principle::TwoMotif, r, 32, p, g, m, L); // A A B A, units {0,1}
-    float b_id1[8]; for (int i = 0; i < 8; ++i) b_id1[i] = p[16 + i]; // motif B before
+    float u0_before[8]; for (int i = 0; i < 8; ++i) u0_before[i] = p[i];     // unit 0 (motif A)
+    float b_id1[8];     for (int i = 0; i < 8; ++i) b_id1[i] = p[16 + i];    // unit 1 (motif B)
     Rng r2; r2.seed(0x55);
     regenerate_unit(Principle::TwoMotif, r2, L, m, /*unit=*/0, p, g);
-    // all id-0 instances (0-7, 8-15, 24-31) still identical to each other
-    for (int i = 0; i < 8; ++i) {
+    bool u0_changed = false;                                  // regeneration actually ran
+    for (int i = 0; i < 8; ++i) if (std::fabs(p[i] - u0_before[i]) > 1e-6f) u0_changed = true;
+    CHECK(u0_changed);
+    for (int i = 0; i < 8; ++i) {                             // all id-0 siblings still identical
         CHECK(p[i] == doctest::Approx(p[8 + i]));
         CHECK(p[i] == doctest::Approx(p[24 + i]));
     }
-    // unit 1 (motif B) unchanged
-    for (int i = 0; i < 8; ++i) CHECK(p[16 + i] == doctest::Approx(b_id1[i]));
+    for (int i = 0; i < 8; ++i) CHECK(p[16 + i] == doctest::Approx(b_id1[i])); // unit 1 untouched
 }
 
 TEST_CASE("regenerate_unit: CallResponse pair regenerates, answer still resolves") {
     Rng r; r.seed(0x99);
     float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
-    generate_phrase(Principle::CallResponse, r, 16, p, g, m, L); // 1 unit (pair)
+    generate_phrase(Principle::CallResponse, r, 16, p, g, m, L); // 1 unit (Q&A pair)
+    float before[16]; for (int i = 0; i < 16; ++i) before[i] = p[i];
     Rng r2; r2.seed(0x2);
     regenerate_unit(Principle::CallResponse, r2, L, m, 0, p, g);
-    CHECK(p[15] == doctest::Approx(0.0f)); // answer resolves after regen
+    bool changed = false;                                       // pair body actually changed
+    for (int i = 0; i < 15; ++i) if (std::fabs(p[i] - before[i]) > 1e-6f) changed = true;
+    CHECK(changed);
+    CHECK(p[15] == doctest::Approx(0.0f));                      // answer still resolves to root
 }
 
 TEST_CASE("regenerate_unit gates match generate_phrase at the same slots") {
     Rng r; r.seed(0x321);
     float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
     generate_phrase(Principle::TwoMotif, r, 32, p, g, m, L);
+    float u1_before[8]; for (int i = 0; i < 8; ++i) u1_before[i] = p[16 + i];
+    bool  gbefore[8];   for (int i = 0; i < 8; ++i) gbefore[i] = g[16 + i];
     Rng r2; r2.seed(0x321 ^ 0xABC);
-    bool before[8]; for (int i = 0; i < 8; ++i) before[i] = g[16 + i];
-    regenerate_unit(Principle::TwoMotif, r2, L, m, 1, p, g); // motif B
-    // gate pattern of a regenerated motif follows the same metric rule => unchanged
-    for (int i = 0; i < 8; ++i) CHECK(g[16 + i] == before[i]);
+    regenerate_unit(Principle::TwoMotif, r2, L, m, 1, p, g);    // motif B (unit 1)
+    bool changed = false;                                       // regeneration actually ran
+    for (int i = 0; i < 8; ++i) if (std::fabs(p[16 + i] - u1_before[i]) > 1e-6f) changed = true;
+    CHECK(changed);
+    for (int i = 0; i < 8; ++i) CHECK(g[16 + i] == gbefore[i]); // gate pattern still position-stable
 }
