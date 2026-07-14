@@ -111,6 +111,7 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_reverb_tone")      inst.set_reverb_tone(e.value);
     else if (a == "set_reverb_decay")     inst.set_reverb_decay(e.value);
     else if (a == "set_reverb_depth")     inst.set_reverb_depth(e.value);
+    else if (a == "set_reverb_mix")       inst.set_reverb_mix(e.value);
     else if (a == "set_engine")          inst.set_engine(e.part, parse_engine(e.svalue));
     else if (a == "set_voice_attack")    inst.set_voice_attack(e.part, e.value);
     else if (a == "set_voice_decay")     inst.set_voice_decay(e.part, e.value);
