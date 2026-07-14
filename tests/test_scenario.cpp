@@ -101,6 +101,11 @@ TEST_CASE("scenario: fx actions reach the instrument") {
     mix.value = 0.3f;
     apply_event(inst, mix);
 
+    Event dif;     // global reverb action: no part, null-safe
+    dif.action = "set_reverb_diffusion";
+    dif.value = 0.7f;
+    apply_event(inst, dif);
+
     float l = 0.f, r = 0.f;
     inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(l == l);
