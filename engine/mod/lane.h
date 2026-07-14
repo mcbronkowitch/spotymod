@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "util/onepole.h"
 #include "mod/rng.h"
+#include "mod/phrase_gen.h"
 
 namespace spky {
 
@@ -19,6 +20,9 @@ public:
     void set_smooth(float s);         // 0..1
     void set_range(float r);          // 0..1
     void set_entropy(float e);        // -1..+1: erode / loop (0) / grow
+
+    void set_melodic(bool m) { _melodic = m; }
+    void set_principle(Principle p) { _principle = p; }
 
     float process();                  // advance one sample, return post-range value
 
@@ -40,6 +44,7 @@ private:
     float _compute_raw() const;
     int   _sh_slot() const;         // which _seq slot the S&H end reads now
     void  _mutate_slot(int slot);   // entropy dice + walk/erode on a fired step
+    void  _fill_walk();             // deterministic contour-walk prefill (non-melodic lanes)
 
     Rng     _rng;
     OnePole _slew;
@@ -60,6 +65,13 @@ private:
     int   _cur_step = -1;
     static constexpr int kSeqSlots = 32;
     float _seq[kSeqSlots] = {};  // looping S&H step buffer — the melody (spec: entropy sequencer)
+    bool      _gate[kSeqSlots]      = {};
+    uint8_t   _motif_id[kSeqSlots]  = {};
+    PhraseLayout _layout;
+    Principle _principle = Principle::TwoMotif;
+    bool      _melodic   = false;
+    float     _density   = 1.f;
+    bool      _regen_pending = false;
     float _target = 0.f;     // pre-smooth held value
     bool  _fired = false;
     bool  _frozen = false;

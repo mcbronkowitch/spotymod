@@ -16,7 +16,14 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _rng.seed(seed);
     _phase = 0.f;
     _cur_step = -1;
-    for (float& v : _seq) v = _rng.next_bipolar();   // a melody exists from cycle one
+    if (_melodic) {
+        generate_phrase(_principle, _rng, _steps, _seq, _gate, _motif_id, _layout);
+    } else {
+        _fill_walk();
+        for (int i = 0; i < kSeqSlots; ++i) { _gate[i] = true; _motif_id[i] = 0; }
+    }
+    _regen_pending = false;
+    _density = 1.f;
     _target = 0.f;
     _fired = false;
     _frozen = false;
@@ -117,6 +124,10 @@ void ModLane::_mutate_slot(int slot) {
         if (std::fabs(v) < kRootSnap) v = 0.f;
     }
     _seq[slot] = v;
+}
+
+void ModLane::_fill_walk() {
+    pg_contour_walk(_rng, _seq, kSeqSlots, 0.f, 0.6f, 0.12f);
 }
 
 float ModLane::process() {

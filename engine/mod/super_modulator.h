@@ -22,6 +22,7 @@ public:
     void set_entropy(float a);
     void set_step(bool on, int steps);
     void set_fixed_slew(bool on);
+    void set_principle(Principle p) { _lanes[LANE_PITCH].set_principle(p); }
 
     void process();                // advance all lanes one sample
 

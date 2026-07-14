@@ -25,6 +25,7 @@ float sync_hz(float norm, float bpm, bool triplet) {
 void SuperModulator::init(float sample_rate, uint32_t seed_base) {
     _sr = sample_rate;
     for (int i = 0; i < LANE_COUNT; ++i) {
+        _lanes[i].set_melodic(i == LANE_PITCH);
         _lanes[i].init(sample_rate, seed_base + static_cast<uint32_t>(i) * 2654435761u);
         _out[i] = 0.f;
     }
