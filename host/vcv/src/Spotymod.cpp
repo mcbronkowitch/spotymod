@@ -96,7 +96,7 @@ struct Spotymod : Module {
             case REV_DECAY:    return 0.80f;
             case REV_TONE:     return 0.55f;
             case REV_DEPTH:    return 0.25f;
-            case REV_MIX:      return 0.25f;   // ~= the pre-M4.8 fixed balance
+            case REV_MIX:      return 0.25f;   // by-ear default (0.5 ~= old balance)
             case TEMPO:        return 0.35f;   // ~110 BPM on the 40..240 map
             default: break;
         }
