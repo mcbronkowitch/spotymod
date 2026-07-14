@@ -49,7 +49,6 @@ void SuperModulator::_apply_rate() {
 }
 
 void SuperModulator::set_shape(float s)       { for (auto& l : _lanes) l.set_shape(s); }
-void SuperModulator::set_probability(float p) { for (auto& l : _lanes) l.set_probability(p); }
 void SuperModulator::set_smooth(float s)      { for (auto& l : _lanes) l.set_smooth(s); }
 void SuperModulator::set_range(float r)       { for (auto& l : _lanes) l.set_range(r); }
 void SuperModulator::set_entropy(float a)     { for (auto& l : _lanes) l.set_entropy(a); }

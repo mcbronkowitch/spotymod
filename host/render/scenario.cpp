@@ -82,7 +82,7 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_rate")          inst.set_rate(e.part, e.value);
     else if (a == "set_sync_mode")     inst.set_sync_mode(e.part, parse_sync(e.svalue));
     else if (a == "set_shape")         inst.set_shape(e.part, e.value);
-    else if (a == "set_probability")   inst.set_probability(e.part, e.value);
+    else if (a == "set_density")       inst.set_density(e.part, e.value);
     else if (a == "set_smooth")        inst.set_smooth(e.part, e.value);
     else if (a == "set_range")         inst.set_range(e.part, e.value);
     else if (a == "set_entropy")       inst.set_entropy(e.part, e.value);

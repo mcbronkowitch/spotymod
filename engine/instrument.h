@@ -30,7 +30,7 @@ public:
     void set_rate(int p, float n)            { _parts[p].mod().set_rate(n); }
     void set_sync_mode(int p, SyncMode m)    { _parts[p].mod().set_sync_mode(m); }
     void set_shape(int p, float n)           { _parts[p].mod().set_shape(n); }
-    void set_probability(int p, float n)     { _parts[p].mod().set_probability(n); }
+    void set_density(int p, float d)         { _parts[p].mod().set_density(d); }
     void set_smooth(int p, float n)          { _parts[p].mod().set_smooth(n); }
     void set_range(int p, float n)           { _parts[p].mod().set_range(n); }
     void set_entropy(int p, float n)         { _parts[p].mod().set_entropy(n); }  // -1..+1

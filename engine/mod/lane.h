@@ -6,15 +6,15 @@
 
 namespace spky {
 
-// One modulation lane: wavetable core -> probability -> step/flow -> smooth
-// -> range. Bipolar output in [-1,1]. Deterministic given its seed.
+// One modulation lane: wavetable core -> gate (note/rest x density) -> step/flow
+// -> smooth -> range. Bipolar output in [-1,1]. Deterministic given its seed.
 class ModLane {
 public:
     void init(float sample_rate, uint32_t seed);
 
     void set_rate_hz(float hz);
     void set_shape(float s);          // 0..1
-    void set_probability(float p);    // 0..1
+    void set_density(float d) { _density = pg_clampf(d, 0.f, 1.f); }  // 0..1
     void set_step(bool on, int steps_per_cycle);
     void set_fixed_slew(bool on);     // panel switch 3 middle position
     void set_smooth(float s);         // 0..1
@@ -45,6 +45,8 @@ private:
     int   _sh_slot() const;         // which _seq slot the S&H end reads now
     void  _mutate_slot(int slot);   // entropy dice + walk/erode on a fired step
     void  _fill_walk();             // deterministic contour-walk prefill (non-melodic lanes)
+    bool  _effective_gate(int slot) const;  // note/rest gate AND density mask
+    bool  _density_pass(int slot) const;    // metric-weight threshold from DENSITY
 
     Rng     _rng;
     OnePole _slew;
@@ -53,7 +55,6 @@ private:
     float _phase = 0.f;
     float _phase_inc = 0.f;
     float _shape = 0.f;
-    float _prob = 1.f;
     float _range = 1.f;
     float _smooth = 0.f;
     float _entropy = 0.f;

@@ -16,7 +16,7 @@ public:
     void set_rate(float norm)      { _rate_norm = norm; _update_rate(); }
     void set_sync_mode(SyncMode m) { _mode = m; _update_rate(); }
     void set_shape(float s);
-    void set_probability(float p);
+    void set_density(float d) { _lanes[LANE_PITCH].set_density(d); }
     void set_smooth(float s);
     void set_range(float r);
     void set_entropy(float a);

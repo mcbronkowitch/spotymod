@@ -41,7 +41,6 @@ void ModLane::init(float sample_rate, uint32_t seed) {
 
 void ModLane::set_rate_hz(float hz)   { _phase_inc = (hz > 0.f ? hz : 0.f) / _sr; }
 void ModLane::set_shape(float s)      { _shape = clampf(s, 0.f, 1.f); }
-void ModLane::set_probability(float p){ _prob = clampf(p, 0.f, 1.f); }
 void ModLane::set_range(float r)      { _range = clampf(r, 0.f, 1.f); }
 void ModLane::set_entropy(float e)    { _entropy = clampf(e, -1.f, 1.f); }
 
@@ -95,15 +94,27 @@ int ModLane::_sh_slot() const {
     return s % kSeqSlots;
 }
 
+bool ModLane::_density_pass(int slot) const {
+    // density 1 -> threshold 0 (all pass); density 0 -> threshold 1 (only slot 0).
+    return pg_metric_weight(slot) >= (1.f - _density);
+}
+
+bool ModLane::_effective_gate(int slot) const {
+    return _gate[slot] && _density_pass(slot);
+}
+
 void ModLane::_on_boundary() {
-    bool fire = _rng.next_unipolar() < _prob;
-    _frozen = !fire;
-    if (fire) {
+    int slot = _sh_slot();
+    // STEP consults the effective gate (note/rest + density mask); FLOW has no
+    // per-step gate so it always fires (no freeze source after PROBABILITY).
+    bool gated = _step_mode ? _effective_gate(slot) : true;
+    _frozen = !gated;
+    if (gated) {
         _fired = true;
-        if (_entropy != 0.f) _mutate_slot(_sh_slot());  // fired steps only: held
-        _target = _compute_raw();   // latch the value at this boundary
+        if (_entropy > 0.f) _mutate_slot(slot);  // GROW pitch; renamed in Task 7
+        _target = _compute_raw();
     }
-    // if !fire: hold the previous _target (frozen) — and the buffer slot with it
+    // if !gated: hold the previous _target (frozen) — and the buffer slot with it
 }
 
 void ModLane::_mutate_slot(int slot) {
