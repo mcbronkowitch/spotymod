@@ -6,6 +6,7 @@
 #include "fx/reverb.h"
 #include "fx/limiter.h"
 #include "center/center.h"
+#include "util/onepole.h"
 
 namespace spky {
 
@@ -63,6 +64,7 @@ public:
     void set_reverb_decay(float n) { if (_reverb) _reverb->set_decay(n); }
     void set_reverb_tone(float n)  { if (_reverb) _reverb->set_tone(n); }
     void set_reverb_depth(float n) { if (_reverb) _reverb->set_depth(n); }
+    void set_reverb_mix(float n);   // 0..1 equal-power dry/wet at the master join
     void set_master_drive(float n) { _limiter.set_drive(n); }
     float fx_target_value(int p, int i) const { return _parts[p].fx_target_value(i); }
 
@@ -102,6 +104,10 @@ public:
 private:
     std::array<Part, PART_COUNT> _parts;
     AmbientReverb* _reverb = nullptr;
+    float   _rev_dry_target = 1.f;  // equal-power gain targets (exact endpoints)
+    float   _rev_wet_target = 0.f;
+    OnePole _rev_dry, _rev_wet;     // 10 ms glide at the master join
+    bool    _rev_primed = false;    // first process() snaps the mix gains
     Limiter _limiter;
     Center _center;
     int    _ctrl_ctr = 0;    // counts down to the next control-rate Center::update

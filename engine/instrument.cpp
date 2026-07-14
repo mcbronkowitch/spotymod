@@ -1,6 +1,16 @@
 #include "instrument.h"
+#include "util/math.h"
+#include <cmath>
 
 using namespace spky;
+
+namespace {
+constexpr float kHalfPi = 1.57079632679489661923f;
+// ~= the pre-M4.8 fixed balance: cos/sin(0.25*pi/2) = dry 0.92 / wet 0.38
+// against the old dry 1.0 / wet 0.40 (dry -0.7 dB; same ratio within a hair)
+constexpr float kDefaultReverbMix = 0.25f;
+constexpr float kMixSmoothS = 0.010f;    // dry/wet gain glide; ear-tunable
+}
 
 void Instrument::init(float sample_rate) { init(sample_rate, FxMem{}); }
 
@@ -12,10 +22,24 @@ void Instrument::init(float sample_rate, const FxMem& mem) {
     _parts[PART_B].init(sample_rate, 0x9e3779b9u,
                         mem.echo[PART_B][0], mem.echo[PART_B][1]);
     if (_reverb) _reverb->init(sample_rate);
+    _rev_dry.init(sample_rate, kMixSmoothS);
+    _rev_wet.init(sample_rate, kMixSmoothS);
+    _rev_primed = false;
+    set_reverb_mix(kDefaultReverbMix);
     _limiter.init();
     _center.init(sample_rate, 0x5ce47e12u);
     _ctrl_ctr = 0;
     set_tempo_bpm(_bpm);
+}
+
+void Instrument::set_reverb_mix(float n) {
+    n = clampf(n, 0.f, 1.f);
+    if (n <= 0.f)      { _rev_dry_target = 1.f; _rev_wet_target = 0.f; }
+    else if (n >= 1.f) { _rev_dry_target = 0.f; _rev_wet_target = 1.f; }
+    else {
+        _rev_dry_target = std::cos(n * kHalfPi);   // equal-power crossfade
+        _rev_wet_target = std::sin(n * kHalfPi);
+    }
 }
 
 void Instrument::set_tempo_bpm(float bpm) {
@@ -43,13 +67,20 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         float l = al * ga + bl * gb;          // MORPH: equal-power A<->B blend
         float r = ar * ga + br * gb;
         if (_reverb) {
+            if (!_rev_primed) {              // snap a mix set before the first block
+                _rev_dry.reset(_rev_dry_target);
+                _rev_wet.reset(_rev_wet_target);
+                _rev_primed = true;
+            }
+            const float dg = _rev_dry.process(_rev_dry_target);
+            const float wg = _rev_wet.process(_rev_wet_target);
             // MORPH fades dry AND send together (M4 supersedes the M1.6
             // pre-morph-send rule): a fully morphed-away part injects no new
             // reverb; only its already-committed tail rings out.
             float wl, wr;
             _reverb->process(asl * ga + bsl * gb, asr * ga + bsr * gb, wl, wr);
-            l += wl;
-            r += wr;
+            l = l * dg + wl * wg;
+            r = r * dg + wr * wg;
         }
         _limiter.process(l, r);   // master ceiling (M6 engine delta 3, delivered early)
         outL[i] = l;
