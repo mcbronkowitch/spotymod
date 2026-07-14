@@ -30,6 +30,7 @@ is actually built today, and what is still design-only.
 | **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, TONE, DEPTH; shimmer + DaisySP-LGPL removed | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.6** | Dynamics — one-knob comp per part (glue → dense → pump, auto-makeup) + stereo-linked master limiter with MASTER DRIVE (delivers M6 engine delta 3 early) | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.8** | Reverb dry/wet — equal-power MIX at the master join + clear-on-sleep CPU bypass | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **M4.9** | Reverb DIFFUSION knob (replaces DEPTH) — room density 0–0.9, weak line-mod coupling, full-wash first pass | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -276,6 +277,19 @@ suggestions: GRIT layer SMOOTH → COMP (per side), FLUX-layer TUNE
   (`reverb_asleep()` exposes the gate for the M6 UI).
 - Hosts: VCV `REV_MIX` knob (shared center strip, default 0.25), render
   action `set_reverb_mix`.
+
+### M4.9 — Reverb DIFFUSION knob ✅
+
+- `set_reverb_diffusion` (0..1) replaces `set_reverb_depth`: AP coefficient
+  `0.90·n` (0 = discrete slap echoes, boot 0.7 → 0.63 ≈ the old stock 0.625
+  room, 1.0 = dense wash that melts attacks), line modulation weakly coupled
+  (`(0.05 + 0.20·n)·450` samples — motion rides the knob, never dominant).
+  DEPTH is gone ersatzlos, like shimmer in M4.5.
+- Motivation: at full MIX/DECAY/SIZE the Oliverb feeds the freshly diffused
+  input straight to the output taps, so attacks punched through the wash;
+  more diffusion smears the first pass (A/B verified by ear, 2026-07-14).
+- Hosts: VCV `REV_DIFF` "DIFF" knob (same panel slot/param id as DEPTH),
+  render action `set_reverb_diffusion`; `ambient_wash` migrated.
 
 ## Planned
 
