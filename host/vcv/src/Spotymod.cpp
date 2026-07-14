@@ -151,6 +151,12 @@ struct Spotymod : Module {
 
             inst.set_flux_mix(p, pp(FLUX_A, p));
             inst.set_grit_mix(p, pp(GRIT_A, p));
+            // The FX blocks are gated by an explicit on/off (a pad on hardware,
+            // a scenario action on the desktop). VCV has no such pad, so the mix
+            // knob doubles as the on switch: knob up == engaged. At 0 the block
+            // stays idle and the whole chain is skipped (bit-exact bypass).
+            inst.set_fx_on(p, spky::FxBlock::Flux, pp(FLUX_A, p) > 1e-4f);
+            inst.set_fx_on(p, spky::FxBlock::Grit, pp(GRIT_A, p) > 1e-4f);
             inst.set_comp(p, pp(COMP_A, p));
 
             // 3-pos switch: 0=Free, 1=Sync, 2=Triplet.
