@@ -211,6 +211,49 @@ TEST_CASE("part: manual trigger fires at the current pitch and raises the gate")
     CHECK(p.active_voices() == 1);
 }
 
+// Restores the coverage lost when PROBABILITY was removed (the old test used
+// set_probability(0) to freeze all natural firing, isolating a manual trigger
+// so a full decay tail could be measured over several seconds of silence).
+// DENSITY can no longer freeze the downbeat slot (it is unmaskable by design,
+// see test_gate_density.cpp), so instead of waiting for silence this measures
+// the decay tail WITHIN the first cycle, before any second trigger can occur:
+//   - DENSITY 0 leaves only the downbeat slot able to fire, so after the
+//     guaranteed first-sample fire (STEP entry: step -1 -> 0) the NEXT
+//     natural fire cannot happen before a full master cycle elapses.
+//   - The fixed 50 ms measurement offset is well inside both cycles under
+//     test (144 ms @ rate 0.8, ~622 ms @ rate 0.6), so no second trigger can
+//     land before voice_env(0) is sampled, in either case.
+// voice_env(0) is read (not active_voices()/silence) because SynthEngine's
+// decay is 1.5x the cycle length (by spec) - a full cycle is NOT long enough
+// for the tail to reach idle, so envelope LEVEL at a shared time offset is
+// the observable that distinguishes a fast decay from a slow one.
+//
+// This only passes if Part is actually forwarding mod().set_rate/set_cycle
+// to the engine: if that wiring broke, both engines would keep the default
+// 1.0 s cycle (1.5 s decay) regardless of rate_norm, so voice_env(0) would be
+// (near) IDENTICAL at the fixed offset instead of clearly separated.
+TEST_CASE("part: decay length follows the master cycle (set_cycle forwarding)") {
+    auto env_at_offset = [](float rate_norm, int offset_samples) {
+        Part p;
+        p.init(48000.f, 5);
+        p.set_step(true, 8);          // cancels the boot FLOW auto-trigger
+        p.mod().set_density(0.f);     // only the unmaskable downbeat slot fires
+        p.mod().set_sync_mode(SyncMode::Free);
+        p.mod().set_rate(rate_norm);
+        float l, r;
+        p.process(l, r);              // downbeat fires here (step -1 -> 0)
+        REQUIRE(p.lane_fired(LANE_PITCH));
+        REQUIRE(p.active_voices() == 1);   // exactly one voice: the downbeat
+        for (int i = 0; i < offset_samples; ++i) p.process(l, r);
+        return p.voice_env(0);
+    };
+    const int offset = 2400;   // 50 ms @ 48 kHz
+    float fast = env_at_offset(0.8f, offset);   // ~6.9 Hz -> cycle ~0.144 s
+    float slow = env_at_offset(0.6f, offset);   // ~1.6 Hz -> cycle ~0.622 s
+    CHECK(slow > fast);
+    CHECK(slow - fast > 0.3f);   // clearly separated, not just noise
+}
+
 TEST_CASE("part: engine switch test tone <-> synth is click-free") {
     Part p;
     p.init(48000.f, 5);
