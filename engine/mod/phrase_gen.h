@@ -207,4 +207,42 @@ inline void generate_phrase(Principle p, Rng& rng, int steps,
     out.motif_count = static_cast<uint8_t>(unit_count);
 }
 
+// Regenerate renewal unit `unit` in place across ALL its slots (every sibling
+// instance of its motif id(s); for CallResponse both the Q and A of the pair).
+// Arrangement is deterministic and re-derived here, so motif_id[]/layout stay
+// authoritative and untouched. RNG consumed in ascending motif-id order.
+inline void regenerate_unit(Principle p, Rng& rng, const PhraseLayout& layout,
+                            const uint8_t* /*motif_id*/, int unit,
+                            float* pitch, bool* gate) {
+    int k = layout.inst_count;
+    int L = layout.motif_len;
+    if (k < 1 || L < 1) return;
+
+    uint8_t moti[32], uniti[32];
+    int mc, uc;
+    pg_build_arrangement(p, k, moti, uniti, mc, uc);
+
+    // Which motif ids belong to this unit?
+    bool idsel[32] = {};
+    int maxid = 0;
+    for (int j = 0; j < k; ++j) {
+        if (uniti[j] == unit) idsel[moti[j]] = true;
+        if (moti[j] > maxid) maxid = moti[j];
+    }
+    // Regenerate each selected id once (ascending), scatter to its instances.
+    for (int id = 0; id <= maxid; ++id) {
+        if (!idsel[id]) continue;
+        float cp[32]; bool cg[32];
+        pg_gen_motif(p, rng, id, L, cp, cg);
+        for (int j = 0; j < k; ++j) {
+            if (moti[j] != id) continue;
+            for (int i = 0; i < L; ++i) {
+                int slot = j * L + i;
+                pitch[slot] = cp[i];
+                gate[slot]  = cg[i];
+            }
+        }
+    }
+}
+
 } // namespace spky

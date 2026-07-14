@@ -117,3 +117,39 @@ TEST_CASE("generate_phrase: Hierarchical tiles a cell inside each motif") {
     CHECK(p[0] == doctest::Approx(p[4]));  // cell repeats within instance 0
     CHECK(p[1] == doctest::Approx(p[5]));
 }
+
+TEST_CASE("regenerate_unit: siblings stay identical, other units untouched") {
+    Rng r; r.seed(0x1234);
+    float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
+    generate_phrase(Principle::TwoMotif, r, 32, p, g, m, L); // A A B A, units {0,1}
+    float b_id1[8]; for (int i = 0; i < 8; ++i) b_id1[i] = p[16 + i]; // motif B before
+    Rng r2; r2.seed(0x55);
+    regenerate_unit(Principle::TwoMotif, r2, L, m, /*unit=*/0, p, g);
+    // all id-0 instances (0-7, 8-15, 24-31) still identical to each other
+    for (int i = 0; i < 8; ++i) {
+        CHECK(p[i] == doctest::Approx(p[8 + i]));
+        CHECK(p[i] == doctest::Approx(p[24 + i]));
+    }
+    // unit 1 (motif B) unchanged
+    for (int i = 0; i < 8; ++i) CHECK(p[16 + i] == doctest::Approx(b_id1[i]));
+}
+
+TEST_CASE("regenerate_unit: CallResponse pair regenerates, answer still resolves") {
+    Rng r; r.seed(0x99);
+    float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
+    generate_phrase(Principle::CallResponse, r, 16, p, g, m, L); // 1 unit (pair)
+    Rng r2; r2.seed(0x2);
+    regenerate_unit(Principle::CallResponse, r2, L, m, 0, p, g);
+    CHECK(p[15] == doctest::Approx(0.0f)); // answer resolves after regen
+}
+
+TEST_CASE("regenerate_unit gates match generate_phrase at the same slots") {
+    Rng r; r.seed(0x321);
+    float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
+    generate_phrase(Principle::TwoMotif, r, 32, p, g, m, L);
+    Rng r2; r2.seed(0x321 ^ 0xABC);
+    bool before[8]; for (int i = 0; i < 8; ++i) before[i] = g[16 + i];
+    regenerate_unit(Principle::TwoMotif, r2, L, m, 1, p, g); // motif B
+    // gate pattern of a regenerated motif follows the same metric rule => unchanged
+    for (int i = 0; i < 8; ++i) CHECK(g[16 + i] == before[i]);
+}
