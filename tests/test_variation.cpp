@@ -99,3 +99,28 @@ TEST_CASE("RENEW at -1 replaces units every cycle; still coherent") {
     for (size_t i = 0; i < m; ++i) if (std::fabs(cy[1][i] - cy[2][i]) > 0.01f) changed = true;
     CHECK(changed); // a new phrase per cycle at sustained -1
 }
+
+TEST_CASE("determinism: identical drive -> identical output across GROW/RENEW/density") {
+    auto run = [](uint32_t seed) {
+        ModLane l;
+        l.set_melodic(true);
+        l.set_principle(Principle::TwoMotif);
+        l.init(48000.f, seed);
+        l.set_shape(1.0f);
+        l.set_step(true, 16);
+        l.set_rate_hz(8.0f);
+        std::vector<float> out;
+        for (int n = 0; n < 60000; ++n) {
+            if (n == 5000)  l.set_variation(0.7f);
+            if (n == 15000) l.set_density(0.3f);
+            if (n == 25000) l.set_variation(-0.8f);
+            if (n == 35000) { l.set_principle(Principle::CallResponse); l.new_phrase(); }
+            if (n == 45000) l.set_density(1.0f);
+            out.push_back(l.process());
+        }
+        return out;
+    };
+    auto a = run(0xDECAF); auto b = run(0xDECAF);
+    REQUIRE(a.size() == b.size());
+    for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]); // bit-identical
+}
