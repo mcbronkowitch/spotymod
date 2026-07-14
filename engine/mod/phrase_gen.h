@@ -119,4 +119,92 @@ inline void pg_build_arrangement(Principle p, int k,
     }
 }
 
+// Generate one motif's content (pitch + gate), length L. Gate uses motif-RELATIVE
+// metric weight so sibling instances copy byte-identically; for aligned L this
+// equals the absolute-slot weight (§spec). CallResponse role is by id parity.
+inline void pg_gen_motif(Principle p, Rng& rng, int motif_id, int L,
+                         float* pitch, bool* gate) {
+    switch (p) {
+    case Principle::Ostinato: {
+        pg_contour_walk(rng, pitch, L, 0.0f, 0.05f, 0.30f); // near-static
+        for (int i = 0; i < L; ++i) gate[i] = pg_metric_weight(i) >= 0.30f;
+        break;
+    }
+    case Principle::Hierarchical: {
+        int cl = (L >= 6) ? 4 : 2;              // cell length 2 or 4
+        if (cl > L) cl = L;
+        float cell[4]; bool cellg[4];
+        pg_contour_walk(rng, cell, cl, 0.0f, 0.6f, 0.10f);
+        for (int i = 0; i < cl; ++i) cellg[i] = pg_metric_weight(i) >= 0.25f;
+        for (int i = 0; i < L; ++i) { pitch[i] = cell[i % cl]; gate[i] = cellg[i % cl]; }
+        break;
+    }
+    case Principle::CallResponse: {
+        bool answer = (motif_id & 1) != 0;
+        pg_contour_walk(rng, pitch, L, answer ? 0.5f : 0.0f, 0.6f, answer ? 0.25f : 0.05f);
+        if (L > 0) {
+            if (answer) pitch[L - 1] = 0.0f;                              // resolve
+            else if (std::fabs(pitch[L - 1]) < 0.3f) pitch[L - 1] = 0.5f; // stay open
+        }
+        for (int i = 0; i < L; ++i) gate[i] = pg_metric_weight(i) >= 0.25f;
+        break;
+    }
+    case Principle::TwoMotif:
+    case Principle::OneMotif:
+    default: {
+        pg_contour_walk(rng, pitch, L, 0.0f, 0.6f, 0.12f);
+        for (int i = 0; i < L; ++i) gate[i] = pg_metric_weight(i) >= 0.25f;
+        break;
+    }
+    }
+}
+
+// Fill pitch/gate/motif_id[0..n) for n = min(steps,32); write the layout.
+// Deterministic per rng. RNG is consumed in ascending motif-id order, then tail.
+inline void generate_phrase(Principle p, Rng& rng, int steps,
+                            float* pitch, bool* gate, uint8_t* motif_id,
+                            PhraseLayout& out) {
+    int n = steps; if (n > 32) n = 32; if (n < 1) n = 1;
+    int k, L, r;
+    pg_derive_sizing(p, n, k, L, r);
+
+    uint8_t moti[32], uniti[32];
+    int motif_count, unit_count;
+    pg_build_arrangement(p, k, moti, uniti, motif_count, unit_count);
+
+    int n_ids = 1;
+    for (int j = 0; j < k; ++j) if (moti[j] + 1 > n_ids) n_ids = moti[j] + 1;
+
+    // Generate distinct content once per id (ascending), then scatter to instances.
+    float cpitch[32]; bool cgate[32];              // n_ids*L <= n <= 32
+    for (int id = 0; id < n_ids; ++id)
+        pg_gen_motif(p, rng, id, L, cpitch + id * L, cgate + id * L);
+
+    for (int j = 0; j < k; ++j) {
+        int id = moti[j];
+        for (int i = 0; i < L; ++i) {
+            int slot = j * L + i;
+            pitch[slot]    = cpitch[id * L + i];
+            gate[slot]     = cgate[id * L + i];
+            motif_id[slot] = static_cast<uint8_t>(id);
+        }
+    }
+
+    if (r > 0) {                                    // tail motif, its own id
+        float tp[32]; bool tg[32];
+        pg_gen_motif(p, rng, n_ids, r, tp, tg);
+        for (int i = 0; i < r; ++i) {
+            int slot = k * L + i;
+            pitch[slot]    = tp[i];
+            gate[slot]     = tg[i];
+            motif_id[slot] = static_cast<uint8_t>(n_ids);
+        }
+    }
+
+    out.motif_len   = static_cast<uint8_t>(L);
+    out.tail_len    = static_cast<uint8_t>(r);
+    out.inst_count  = static_cast<uint8_t>(k);
+    out.motif_count = static_cast<uint8_t>(unit_count);
+}
+
 } // namespace spky

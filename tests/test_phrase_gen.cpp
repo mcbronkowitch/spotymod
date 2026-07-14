@@ -3,6 +3,7 @@
 #include "mod/rng.h"
 #include <cmath>
 #include <initializer_list>
+#include <algorithm>
 
 using namespace spky;
 
@@ -55,4 +56,64 @@ TEST_CASE("arrangement: TwoMotif repeats a motif; OneMotif is one motif") {
     pg_build_arrangement(Principle::OneMotif, 4, moti, uniti, mc, uc);
     for (int j = 0; j < 4; ++j) CHECK(moti[j] == 0);
     CHECK(mc == 1);
+}
+
+TEST_CASE("generate_phrase: TwoMotif shows motivic repetition, deterministic") {
+    Rng a; a.seed(0xBEEF);
+    Rng b; b.seed(0xBEEF);
+    float pa[32], pb[32]; bool ga[32], gb[32]; uint8_t ma[32], mb[32];
+    PhraseLayout la, lb;
+    generate_phrase(Principle::TwoMotif, a, 32, pa, ga, ma, la);
+    generate_phrase(Principle::TwoMotif, b, 32, pb, gb, mb, lb);
+    CHECK(la.inst_count == 4);
+    CHECK(la.motif_len == 8);
+    // A A B A: slots 0-7 == 8-7 == 24-31 (id 0), 16-23 differ (id 1)
+    for (int i = 0; i < 8; ++i) {
+        CHECK(pa[i] == doctest::Approx(pa[8 + i]));
+        CHECK(pa[i] == doctest::Approx(pa[24 + i]));
+    }
+    bool any_diff = false;
+    for (int i = 0; i < 8; ++i) if (pa[i] != pa[16 + i]) any_diff = true;
+    CHECK(any_diff);
+    for (int i = 0; i < 32; ++i) CHECK(pa[i] == doctest::Approx(pb[i])); // determinism
+    // has at least one rest somewhere (gate layer active)
+    bool any_rest = false; for (int i = 0; i < 32; ++i) any_rest |= !ga[i];
+    CHECK(any_rest);
+}
+
+TEST_CASE("generate_phrase: OneMotif repeats one identical motif") {
+    Rng r; r.seed(7);
+    float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
+    generate_phrase(Principle::OneMotif, r, 32, p, g, m, L);
+    for (int i = 0; i < 8; ++i) {
+        CHECK(p[i] == doctest::Approx(p[8 + i]));
+        CHECK(p[i] == doctest::Approx(p[16 + i]));
+        CHECK(p[i] == doctest::Approx(p[24 + i]));
+    }
+}
+
+TEST_CASE("generate_phrase: Ostinato is near-static pitch, dense gate") {
+    Rng r; r.seed(11);
+    float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
+    generate_phrase(Principle::Ostinato, r, 32, p, g, m, L);
+    float mn = 2.f, mx = -2.f;
+    int on = 0;
+    for (int i = 0; i < 32; ++i) { mn = std::min(mn, p[i]); mx = std::max(mx, p[i]); on += g[i]; }
+    CHECK((mx - mn) < 0.35f);   // near-static
+    CHECK(on >= 16);            // dense, at least half on
+}
+
+TEST_CASE("generate_phrase: CallResponse answer resolves to root") {
+    Rng r; r.seed(13);
+    float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
+    generate_phrase(Principle::CallResponse, r, 16, p, g, m, L); // k=2, L=8
+    CHECK(p[15] == doctest::Approx(0.0f)); // answer's last slot lands on root
+}
+
+TEST_CASE("generate_phrase: Hierarchical tiles a cell inside each motif") {
+    Rng r; r.seed(17);
+    float p[32]; bool g[32]; uint8_t m[32]; PhraseLayout L;
+    generate_phrase(Principle::Hierarchical, r, 16, p, g, m, L); // k=2, L=8, cell=4
+    CHECK(p[0] == doctest::Approx(p[4]));  // cell repeats within instance 0
+    CHECK(p[1] == doctest::Approx(p[5]));
 }
