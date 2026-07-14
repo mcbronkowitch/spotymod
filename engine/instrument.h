@@ -83,6 +83,7 @@ public:
     bool  lane_fired(int p, int s)   const { return _parts[p].lane_fired(s); }
     bool  gate(int p)  const { return _parts[p].gate(); }
     float pitch_cv(int p) const { return _parts[p].pitch_cv(); }
+    bool  pitch_gate(int p) const { return _parts[p].mod().pitch_gate(); }
 
     // --- M4 center section ---
     void set_morph(float m)  { _center.set_morph(m); }

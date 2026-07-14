@@ -29,6 +29,7 @@ public:
 
     bool  fired()  const { return _fired; }   // true on the sample a boundary fired
     bool  frozen() const { return _frozen; }  // last dice failed -> holding
+    bool  gate_state() const { return _step_mode ? _effective_gate(_sh_slot()) : true; }
     float phase()  const { return _phase; }
     float target() const { return _target; }  // pre-smooth, pre-range held value
 
