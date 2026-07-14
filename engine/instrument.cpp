@@ -6,8 +6,10 @@ using namespace spky;
 
 namespace {
 constexpr float kHalfPi = 1.57079632679489661923f;
-// ~= the pre-M4.8 fixed balance: cos/sin(0.25*pi/2) = dry 0.92 / wet 0.38
-// against the old dry 1.0 / wet 0.40 (dry -0.7 dB; same ratio within a hair)
+// Keeps the dry level (cos = 0.92, -0.7 dB) with a leaner room than the
+// pre-M4.8 fixed mix (wet rides ON TOP of the reverb's internal trim, so
+// 0.25 puts it -8.3 dB against the old join; the old balance sits at 0.5,
+// -3 dB overall). Chosen by ear, 2026-07-14.
 constexpr float kDefaultReverbMix = 0.25f;
 constexpr float kMixSmoothS = 0.010f;    // dry/wet gain glide; ear-tunable
 }

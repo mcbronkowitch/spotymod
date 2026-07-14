@@ -264,7 +264,9 @@ suggestions: GRIT layer SMOOTH → COMP (per side), FLUX-layer TUNE
 
 - `set_reverb_mix` (0..1): equal-power dry/wet crossfade at the master join —
   dry = cos(m·π/2), wet = sin(m·π/2) with exact endpoints, 10 ms one-pole
-  glide. Default 0.25 ≈ the old fixed balance (dry 1.0 / wet 0.40). The wet
+  glide. Default 0.25, chosen by ear: keeps the dry level with a leaner room
+  than the old fixed mix (wet −8.3 dB; the old balance sits at MIX 0.5,
+  −3 dB overall — MIX multiplies on top of the internal wet trim). The wet
   path keeps its internal −8 dB bloom-headroom trim; the send input is
   untouched by MIX, so the tail character never changes while turning.
 - MIX 0 is a true bypass: the wet gain fades out, the room is cleared once
