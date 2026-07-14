@@ -68,6 +68,7 @@ enum ParamId {
     REV_DECAY,
     REV_TONE,
     REV_DEPTH,
+    REV_MIX,
     TEMPO,
     NUM_PARAMS
 };
@@ -152,6 +153,7 @@ static const PanelCtl kParamCtls[] = {
     {REV_DECAY, WK_SMKNOB, {117.180f, 60.000f}, "DECAY"},
     {REV_TONE, WK_SMKNOB, {96.180f, 72.000f}, "TONE"},
     {REV_DEPTH, WK_SMKNOB, {117.180f, 72.000f}, "DEPTH"},
+    {REV_MIX, WK_SMKNOB, {106.680f, 78.000f}, "MIX"},
     {TEMPO, WK_SMKNOB, {106.680f, 66.000f}, "TEMPO"},
 };
 static const PanelCtl kInputCtls[] = {

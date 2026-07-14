@@ -102,6 +102,7 @@ SHARED = [
     Ctl("REV_DECAY", SMKNOB, R,  60.0, "DECAY"),
     Ctl("REV_TONE",  SMKNOB, L,  72.0, "TONE"),
     Ctl("REV_DEPTH", SMKNOB, R,  72.0, "DEPTH"),
+    Ctl("REV_MIX",   SMKNOB, CX, 78.0, "MIX"),
     Ctl("TEMPO",  SMKNOB, CX,  66.0, "TEMPO"),
 ]
 

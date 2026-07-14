@@ -242,6 +242,9 @@
 <circle cx="117.180" cy="72.000" r="3.000" fill="url(#knobMetal)" stroke="#4a8d80" stroke-width="0.34"/>
 <line x1="117.180" y1="72.000" x2="117.180" y2="69.700" stroke="#8fbfb6" stroke-width="0.5" stroke-linecap="round"/>
 <text x="117.180" y="77.500" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">DEPTH</text>
+<circle cx="106.680" cy="78.000" r="3.000" fill="url(#knobMetal)" stroke="#4a8d80" stroke-width="0.34"/>
+<line x1="106.680" y1="78.000" x2="106.680" y2="75.700" stroke="#8fbfb6" stroke-width="0.5" stroke-linecap="round"/>
+<text x="106.680" y="83.500" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">MIX</text>
 <circle cx="106.680" cy="66.000" r="3.000" fill="url(#knobMetal)" stroke="#4a8d80" stroke-width="0.34"/>
 <line x1="106.680" y1="66.000" x2="106.680" y2="63.700" stroke="#8fbfb6" stroke-width="0.5" stroke-linecap="round"/>
 <text x="106.680" y="71.500" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">TEMPO</text>
