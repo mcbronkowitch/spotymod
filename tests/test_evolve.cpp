@@ -11,7 +11,7 @@ static std::vector<float> run_lane(float entropy, uint32_t seed, int n) {
     l.set_range(1.f);
     l.set_shape(0.25f);       // triangle: shape-sensitive, S&H unused
     l.set_smooth(0.f);
-    l.set_entropy(entropy);
+    l.set_variation(entropy);
     l.set_rate_hz(1.f);       // ~48000 samples per cycle
     std::vector<float> out;
     out.reserve(n);
@@ -50,7 +50,7 @@ TEST_CASE("lane ENTROPY: cycle length wanders (rate wander)") {
     ModLane l;
     l.init(48000.f, 2024);
     l.set_range(1.f); l.set_shape(0.25f); l.set_smooth(0.f);
-    l.set_entropy(1.f); l.set_rate_hz(1.f);
+    l.set_variation(1.f); l.set_rate_hz(1.f);
     int last_fire = -1;
     std::vector<int> gaps;
     for (int i = 0; i < 48000 * 30; ++i) {
@@ -70,9 +70,9 @@ TEST_CASE("lane ENTROPY < 0: the EVOLVE walk settles back toward neutral") {
     l.init(48000.f, 2024);
     l.set_range(1.f); l.set_shape(0.25f); l.set_smooth(0.f);
     l.set_rate_hz(1.f);
-    l.set_entropy(1.f);
+    l.set_variation(1.f);
     for (int i = 0; i < 48000 * 10; ++i) l.process();   // wander away
-    l.set_entropy(-1.f);
+    l.set_variation(-1.f);
     for (int i = 0; i < 48000 * 40; ++i) l.process();   // settle
     int last = -1;
     std::vector<int> gaps;

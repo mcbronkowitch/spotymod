@@ -6,8 +6,6 @@
 using namespace spky;
 
 // Build a melodic (PITCH-style) STEP lane at pure S&H (shape 1.0).
-// NOTE: `set_variation` is added in Task 7; until then this helper calls
-// `set_entropy(0.f)`. Switch the one call to `set_variation` in Task 7.
 static ModLane make_melodic_step_lane(uint32_t seed, int steps) {
     ModLane l;
     l.set_melodic(true);
@@ -16,7 +14,7 @@ static ModLane make_melodic_step_lane(uint32_t seed, int steps) {
     l.set_shape(1.0f);
     l.set_step(true, steps);
     l.set_rate_hz(8.0f);
-    l.set_entropy(0.f);        // -> set_variation(0.f) in Task 7
+    l.set_variation(0.f);
     return l;
 }
 
@@ -58,4 +56,46 @@ TEST_CASE("distinct seeds give distinct melodies") {
     bool differ = false;
     for (size_t i = 0; i < oa.size(); ++i) if (oa[i] != ob[i]) differ = true;
     CHECK(differ);
+}
+
+// variation-parameterised builder layered on the file's base helper.
+static ModLane melodic_var(uint32_t seed, int steps, float variation) {
+    ModLane l = make_melodic_step_lane(seed, steps);
+    l.set_variation(variation);
+    return l;
+}
+
+TEST_CASE("variation 0: consecutive cycles identical (LOOP), pitch and rhythm") {
+    ModLane l = melodic_var(0x100, 16, 0.f);
+    auto cy = collect_cycles(l, 4);
+    REQUIRE(cy.size() >= 4);
+    // compare two mid cycles (avoid the init edge); identical at LOOP.
+    REQUIRE(cy[1].size() == cy[2].size());
+    for (size_t i = 0; i < cy[1].size(); ++i) CHECK(cy[1][i] == doctest::Approx(cy[2][i]));
+}
+
+TEST_CASE("GROW varies pitch within a cycle but keeps the same gate rhythm") {
+    ModLane loop = melodic_var(0x200, 16, 0.0f);
+    ModLane grow = melodic_var(0x200, 16, 0.8f);
+    auto cl = collect_cycles(loop, 2);
+    auto cg = collect_cycles(grow, 2);
+    // First full cycle (index 1): ev_rate is still ~0 so timing is identical =>
+    // same number of notes fire (gates untouched by GROW).
+    REQUIRE(cl.size() >= 2); REQUIRE(cg.size() >= 2);
+    CHECK(cl[1].size() == cg[1].size());
+    bool pitch_changed = false;
+    for (size_t i = 0; i < cl[1].size(); ++i)
+        if (std::fabs(cl[1][i] - cg[1][i]) > 0.01f) pitch_changed = true;
+    CHECK(pitch_changed); // pitch drifted where GROW mutated fired slots
+}
+
+TEST_CASE("RENEW at -1 replaces units every cycle; still coherent") {
+    ModLane l = melodic_var(0x300, 16, -1.0f);
+    auto cy = collect_cycles(l, 4);
+    REQUIRE(cy.size() >= 4);
+    REQUIRE(cy[1].size() >= 4); REQUIRE(cy[2].size() >= 4);
+    bool changed = false;
+    size_t m = std::min(cy[1].size(), cy[2].size());
+    for (size_t i = 0; i < m; ++i) if (std::fabs(cy[1][i] - cy[2][i]) > 0.01f) changed = true;
+    CHECK(changed); // a new phrase per cycle at sustained -1
 }

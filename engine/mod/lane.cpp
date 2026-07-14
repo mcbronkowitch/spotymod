@@ -8,8 +8,6 @@ using namespace spky;
 
 // Mutation character — tuned by ear; the spec fixes behavior, not constants.
 static constexpr float kGravity  = 0.10f;  // GROW: mild pull toward 0 (the root)
-static constexpr float kErode    = 0.60f;  // ERODE: fraction kept per mutation
-static constexpr float kRootSnap = 0.02f;  // ERODE: below this, land exactly on 0
 
 void ModLane::init(float sample_rate, uint32_t seed) {
     _sr = sample_rate;
@@ -42,7 +40,7 @@ void ModLane::init(float sample_rate, uint32_t seed) {
 void ModLane::set_rate_hz(float hz)   { _phase_inc = (hz > 0.f ? hz : 0.f) / _sr; }
 void ModLane::set_shape(float s)      { _shape = clampf(s, 0.f, 1.f); }
 void ModLane::set_range(float r)      { _range = clampf(r, 0.f, 1.f); }
-void ModLane::set_entropy(float e)    { _entropy = clampf(e, -1.f, 1.f); }
+void ModLane::set_variation(float v)  { _variation = clampf(v, -1.f, 1.f); }
 
 void ModLane::set_step(bool on, int steps) {
     _step_mode = on;
@@ -111,33 +109,37 @@ void ModLane::_on_boundary() {
     _frozen = !gated;
     if (gated) {
         _fired = true;
-        if (_entropy > 0.f) _mutate_slot(slot);  // GROW pitch; renamed in Task 7
+        if (_variation > 0.f) _mutate_slot(slot);  // GROW pitch
         _target = _compute_raw();
     }
     // if !gated: hold the previous _target (frozen) — and the buffer slot with it
 }
 
 void ModLane::_mutate_slot(int slot) {
-    // Dice: mutation chance grows with |entropy|; squared for fine control near LOOP.
-    if (_rng.next_unipolar() >= _entropy * _entropy) return;
+    // GROW only: dice ∝ variation^2 (squared for fine control near LOOP).
+    if (_rng.next_unipolar() >= _variation * _variation) return; // dice ∝ variation²
     float v = _seq[slot];
-    if (_entropy > 0.f) {
-        // GROW: random walk from the old value. The cubed draw makes small
-        // intervals common and leaps rare; width opens with entropy; the
-        // (1 - kGravity) factor is the tonic gravity keeping lines anchored.
-        float r = _rng.next_bipolar();
-        float delta = r * r * r * lerpf(0.5f, 2.f, _entropy);
-        v = clampf((v + delta) * (1.f - kGravity), -1.f, 1.f);
-    } else {
-        // ERODE: pull the note toward 0 (root / base value); snap when close
-        // so sustained erosion lands exactly on a single repeated root note.
-        v *= kErode;
-        if (std::fabs(v) < kRootSnap) v = 0.f;
-    }
+    // Random walk from the old value. The cubed draw makes small intervals
+    // common and leaps rare; width opens with variation; the (1 - kGravity)
+    // factor is the tonic gravity keeping lines anchored.
+    float r = _rng.next_bipolar();
+    float delta = r * r * r * lerpf(0.5f, 2.f, _variation); // cubed: small common
+    v = clampf((v + delta) * (1.f - kGravity), -1.f, 1.f);  // mild tonic gravity
     _seq[slot] = v;
 }
 
 void ModLane::_fill_walk() {
+    pg_contour_walk(_rng, _seq, kSeqSlots, 0.f, 0.6f, 0.12f);
+}
+
+void ModLane::_renew_units() {
+    int units = _layout.motif_count;                 // number of renewal units
+    for (int u = 0; u < units; ++u) {
+        if (_rng.next_unipolar() < _variation * _variation)  // per-unit dice
+            regenerate_unit(_principle, _rng, _layout, _motif_id, u, _seq, _gate);
+    }
+}
+void ModLane::_renew_walk() {
     pg_contour_walk(_rng, _seq, kSeqSlots, 0.f, 0.6f, 0.12f);
 }
 
@@ -156,16 +158,18 @@ float ModLane::process() {
     while (_phase >= 1.f) { _phase -= 1.f; wrapped = true; }
 
     if (wrapped) {
-        if (_entropy > 0.f) {                       // GROW: EVOLVE random walk (live only)
-            _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _entropy, -0.5f, 0.5f);
-            _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _entropy, -0.25f, 0.25f);
-            _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _entropy, -0.2f, 0.2f);
-        } else if (_entropy < 0.f) {                // ERODE: walk settles toward neutral
-            float decay = 1.f + 0.2f * _entropy;    // entropy -1 -> x0.8 per cycle
-            _ev_phase *= decay;
-            _ev_shape *= decay;
-            _ev_rate  *= decay;
-        }                                           // entropy 0 (LOOP): walk frozen
+        if (_variation > 0.f) {                 // GROW: EVOLVE contour walk (live)
+            _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _variation, -0.5f, 0.5f);
+            _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _variation, -0.25f, 0.25f);
+            _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _variation, -0.2f, 0.2f);
+        } else if (_variation < 0.f) {          // RENEW: per-unit regen + walk decay
+            if (_melodic && _step_mode) _renew_units();
+            else if (!_melodic) {
+                if (_rng.next_unipolar() < _variation * _variation) _renew_walk();
+            }
+            float decay = 1.f + 0.2f * _variation;  // variation -1 -> x0.8/cycle
+            _ev_phase *= decay; _ev_shape *= decay; _ev_rate *= decay;
+        }                                       // variation 0 (LOOP): walk frozen
     }
 
     if (_step_mode) {

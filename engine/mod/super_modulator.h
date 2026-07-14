@@ -19,7 +19,7 @@ public:
     void set_density(float d) { _lanes[LANE_PITCH].set_density(d); }
     void set_smooth(float s);
     void set_range(float r);
-    void set_entropy(float a);
+    void set_variation(float v);
     void set_step(bool on, int steps);
     void set_fixed_slew(bool on);
     void set_principle(Principle p) { _lanes[LANE_PITCH].set_principle(p); }

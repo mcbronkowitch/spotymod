@@ -33,7 +33,7 @@ public:
     void set_density(int p, float d)         { _parts[p].mod().set_density(d); }
     void set_smooth(int p, float n)          { _parts[p].mod().set_smooth(n); }
     void set_range(int p, float n)           { _parts[p].mod().set_range(n); }
-    void set_entropy(int p, float n)         { _parts[p].mod().set_entropy(n); }  // -1..+1
+    void set_variation(int p, float n)       { _parts[p].mod().set_variation(n); }  // -1..+1
     void set_principle(int p, int pr)        { _parts[p].mod().set_principle(static_cast<Principle>(pr)); }
     void set_step(int p, bool on, int steps) { _parts[p].set_step(on, steps); }
     void set_fixed_slew(int p, bool on)      { _parts[p].mod().set_fixed_slew(on); }

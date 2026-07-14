@@ -19,7 +19,7 @@ public:
     void set_fixed_slew(bool on);     // panel switch 3 middle position
     void set_smooth(float s);         // 0..1
     void set_range(float r);          // 0..1
-    void set_entropy(float e);        // -1..+1: erode / loop (0) / grow
+    void set_variation(float v);      // -1..+1: renew / loop (0) / grow
 
     void set_melodic(bool m) { _melodic = m; }
     void set_principle(Principle p) { _principle = p; }
@@ -43,10 +43,12 @@ private:
     void  _on_boundary();
     float _compute_raw() const;
     int   _sh_slot() const;         // which _seq slot the S&H end reads now
-    void  _mutate_slot(int slot);   // entropy dice + walk/erode on a fired step
+    void  _mutate_slot(int slot);   // GROW: variation dice + pitch walk on a fired step
     void  _fill_walk();             // deterministic contour-walk prefill (non-melodic lanes)
     bool  _effective_gate(int slot) const;  // note/rest gate AND density mask
     bool  _density_pass(int slot) const;    // metric-weight threshold from DENSITY
+    void  _renew_units();           // RENEW (melodic/STEP): per-unit dice regeneration
+    void  _renew_walk();            // RENEW (non-melodic): dice-gated whole-walk regen
 
     Rng     _rng;
     OnePole _slew;
@@ -57,7 +59,7 @@ private:
     float _shape = 0.f;
     float _range = 1.f;
     float _smooth = 0.f;
-    float _entropy = 0.f;
+    float _variation = 0.f;
 
     bool  _step_mode = false;
     int   _steps = 8;
