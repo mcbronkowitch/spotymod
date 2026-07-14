@@ -29,6 +29,7 @@ is actually built today, and what is still design-only.
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT / SETTLE | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, TONE, DEPTH; shimmer + DaisySP-LGPL removed | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.6** | Dynamics — one-knob comp per part (glue → dense → pump, auto-makeup) + stereo-linked master limiter with MASTER DRIVE (delivers M6 engine delta 3 early) | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **M4.8** | Reverb dry/wet — equal-power MIX at the master join + clear-on-sleep CPU bypass | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -258,6 +259,21 @@ room, the comp knob resurrects the dying tail). Spec + plan in the
 residency repo (`2026-07-13-spotykach-dynamics-*.md`). M6 knob-map
 suggestions: GRIT layer SMOOTH → COMP (per side), FLUX-layer TUNE
 (ex-shimmer) → MASTER DRIVE.
+
+### M4.8 — Reverb dry/wet mix ✅
+
+- `set_reverb_mix` (0..1): equal-power dry/wet crossfade at the master join —
+  dry = cos(m·π/2), wet = sin(m·π/2) with exact endpoints, 10 ms one-pole
+  glide. Default 0.25 ≈ the old fixed balance (dry 1.0 / wet 0.40). The wet
+  path keeps its internal −8 dB bloom-headroom trim; the send input is
+  untouched by MIX, so the tail character never changes while turning.
+- MIX 0 is a true bypass: the wet gain fades out, the room is cleared once
+  (`AmbientReverb::clear()` — buffer + loop filter state, params survive) and
+  `process()` is skipped. Oliverb CPU drops to zero; a self-oscillating bloom
+  is genuinely killed. Any MIX > 0 wakes into a clean, empty room
+  (`reverb_asleep()` exposes the gate for the M6 UI).
+- Hosts: VCV `REV_MIX` knob (shared center strip, default 0.25), render
+  action `set_reverb_mix`.
 
 ## Planned
 
