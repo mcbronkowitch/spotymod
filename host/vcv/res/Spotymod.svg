@@ -89,7 +89,7 @@
 <text x="60.738" y="24.962" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">SHAPE</text>
 <circle cx="68.500" cy="37.000" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
 <line x1="68.500" y1="37.000" x2="68.500" y2="33.500" stroke="#6de0c8" stroke-width="0.5" stroke-linecap="round"/>
-<text x="68.500" y="43.700" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">PROB</text>
+<text x="68.500" y="43.700" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">DENS</text>
 <circle cx="60.738" cy="55.738" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
 <line x1="60.738" y1="55.738" x2="60.738" y2="52.238" stroke="#6de0c8" stroke-width="0.5" stroke-linecap="round"/>
 <text x="60.738" y="62.438" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">SMTH</text>
@@ -98,7 +98,7 @@
 <text x="42.000" y="70.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">RANGE</text>
 <circle cx="23.262" cy="55.738" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
 <line x1="23.262" y1="55.738" x2="23.262" y2="52.238" stroke="#6de0c8" stroke-width="0.5" stroke-linecap="round"/>
-<text x="23.262" y="62.438" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">ENTR</text>
+<text x="23.262" y="62.438" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">MELO</text>
 <circle cx="15.500" cy="37.000" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
 <line x1="15.500" y1="37.000" x2="15.500" y2="33.500" stroke="#6de0c8" stroke-width="0.5" stroke-linecap="round"/>
 <text x="15.500" y="43.700" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">DEPTH</text>
@@ -141,9 +141,9 @@
 <rect x="41.800" y="96.300" width="5.400" height="5.400" rx="1.0" fill="#1a1c24" stroke="#6de0c8" stroke-width="0.3"/>
 <text x="44.500" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">STEP</text>
 <rect x="52.300" y="96.300" width="5.400" height="5.400" rx="1.0" fill="#1a1c24" stroke="#6de0c8" stroke-width="0.3"/>
-<text x="55.000" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">RPLY</text>
+<text x="55.000" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">PRIN</text>
 <rect x="62.800" y="96.300" width="5.400" height="5.400" rx="1.0" fill="#1a1c24" stroke="#6de0c8" stroke-width="0.3"/>
-<text x="65.500" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">CAP</text>
+<text x="65.500" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">NEW</text>
 <rect x="73.300" y="96.300" width="5.400" height="5.400" rx="1.0" fill="#1a1c24" stroke="#6de0c8" stroke-width="0.3"/>
 <text x="76.000" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">TRIG</text>
 <circle cx="171.360" cy="10.500" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
@@ -154,7 +154,7 @@
 <text x="152.622" y="24.962" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">SHAPE</text>
 <circle cx="144.860" cy="37.000" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
 <line x1="144.860" y1="37.000" x2="144.860" y2="33.500" stroke="#6de0c8" stroke-width="0.5" stroke-linecap="round"/>
-<text x="144.860" y="43.700" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">PROB</text>
+<text x="144.860" y="43.700" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">DENS</text>
 <circle cx="152.622" cy="55.738" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
 <line x1="152.622" y1="55.738" x2="152.622" y2="52.238" stroke="#6de0c8" stroke-width="0.5" stroke-linecap="round"/>
 <text x="152.622" y="62.438" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">SMTH</text>
@@ -163,7 +163,7 @@
 <text x="171.360" y="70.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">RANGE</text>
 <circle cx="190.098" cy="55.738" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
 <line x1="190.098" y1="55.738" x2="190.098" y2="52.238" stroke="#6de0c8" stroke-width="0.5" stroke-linecap="round"/>
-<text x="190.098" y="62.438" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">ENTR</text>
+<text x="190.098" y="62.438" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">MELO</text>
 <circle cx="197.860" cy="37.000" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>
 <line x1="197.860" y1="37.000" x2="197.860" y2="33.500" stroke="#6de0c8" stroke-width="0.5" stroke-linecap="round"/>
 <text x="197.860" y="43.700" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">DEPTH</text>
@@ -206,9 +206,9 @@
 <rect x="166.160" y="96.300" width="5.400" height="5.400" rx="1.0" fill="#1a1c24" stroke="#6de0c8" stroke-width="0.3"/>
 <text x="168.860" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">STEP</text>
 <rect x="155.660" y="96.300" width="5.400" height="5.400" rx="1.0" fill="#1a1c24" stroke="#6de0c8" stroke-width="0.3"/>
-<text x="158.360" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">RPLY</text>
+<text x="158.360" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">PRIN</text>
 <rect x="145.160" y="96.300" width="5.400" height="5.400" rx="1.0" fill="#1a1c24" stroke="#6de0c8" stroke-width="0.3"/>
-<text x="147.860" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">CAP</text>
+<text x="147.860" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">NEW</text>
 <rect x="134.660" y="96.300" width="5.400" height="5.400" rx="1.0" fill="#1a1c24" stroke="#6de0c8" stroke-width="0.3"/>
 <text x="137.360" y="104.200" fill="#c9ccd8" text-anchor="middle" font-family="sans-serif" font-size="2.0">TRIG</text>
 <circle cx="106.680" cy="16.000" r="4.200" fill="url(#knobMetal)" stroke="#6de0c8" stroke-width="0.42"/>

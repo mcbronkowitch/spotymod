@@ -23,7 +23,7 @@ Hh = 128.5                   # standard Eurorack height
 
 # --- control kinds ------------------------------------------------------------
 BIGKNOB = "BIGKNOB"   # macro pot (0..1)
-KNOBC   = "KNOBC"     # bipolar macro (-1..1)  (ENTROPY)
+KNOBC   = "KNOBC"     # bipolar macro (-1..1)  (MELODY)
 SMKNOB  = "SMKNOB"    # small secondary pot (0..1)
 KNOBI   = "KNOBI"     # small integer pot (snap)
 SW3     = "SW3"       # 3-pos switch (SYNC)
@@ -59,11 +59,11 @@ def part_controls():
     cx = RING_CX_A
     out = []
     # 8 macro knobs encircling the ring
-    macros = [("RATE","RATE"),("SHAPE","SHAPE"),("PROB","PROB"),("SMOOTH","SMTH"),
-              ("RANGE","RANGE"),("ENTROPY","ENTR"),("DEPTH","DEPTH"),("TUNE","TUNE")]
+    macros = [("RATE","RATE"),("SHAPE","SHAPE"),("DENSITY","DENS"),("SMOOTH","SMTH"),
+              ("RANGE","RANGE"),("MELODY","MELO"),("DEPTH","DEPTH"),("TUNE","TUNE")]
     for i,(enum,lbl) in enumerate(macros):
         x,y = orbit(cx, RING_CY, KNOB_R, i, 8, start_deg=0.0)
-        out.append(Ctl(enum, KNOBC if enum=="ENTROPY" else BIGKNOB, x, y, lbl))
+        out.append(Ctl(enum, KNOBC if enum=="MELODY" else BIGKNOB, x, y, lbl))
     # voice row (small)
     for i,(enum,lbl) in enumerate([("ATTACK","ATK"),("DECAY","DEC"),("RES","RES"),
                                    ("SUB","SUB"),("DETUNE","DTUN")]):
@@ -74,8 +74,8 @@ def part_controls():
     out.append(Ctl("STEPS", KNOBI, 61.0, 86.0, "STPS"))
     # pad row: secondary functions as small buttons (mirror of hardware pads)
     pads = [("SYNC",SW3,"SYNC"),("ENGINE",LATCH,"ENG"),("GRITMODE",LATCH,"GRIT"),
-            ("STEP",LATCH,"STEP"),("REPLAY",LATCH,"RPLY"),
-            ("CAPTURE",SMBTN,"CAP"),("TRIGGER",SMBTN,"TRIG")]
+            ("STEP",LATCH,"STEP"),("PRINCIPLE",SMBTN,"PRIN"),
+            ("NEWPHRASE",SMBTN,"NEW"),("TRIGGER",SMBTN,"TRIG")]
     for i,(enum,kind,lbl) in enumerate(pads):
         out.append(Ctl(enum, kind, 13.0 + i*10.5, 99.0, lbl))
     return out

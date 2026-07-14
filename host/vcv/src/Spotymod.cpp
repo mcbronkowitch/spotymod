@@ -29,7 +29,9 @@ struct Spotymod : Module {
     float curSr = 0.f;
     dsp::ClockDivider ctrlDiv;              // throttle param push to control rate
     dsp::SchmittTrigger clockTrig;
-    dsp::BooleanTrigger captureTrig[2], triggerTrig[2], spotTrig, settleTrig;
+    dsp::BooleanTrigger triggerTrig[2], spotTrig, settleTrig;
+    dsp::BooleanTrigger principleTrig[2], newPhraseTrig[2];
+    int principleIdx[2] = {0, 0};   // current principle per part (0=TwoMotif)
     float clkSamples = 0.f;                 // samples since last external clock edge
     float gateFilt[2] = {0.f, 0.f};
 
@@ -65,7 +67,7 @@ struct Spotymod : Module {
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Engine", {"Synth", "Test tone"});
                     else if (c.id == GRITMODE_A || c.id == GRITMODE_B)
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Grit mode", {"Drive", "Reduce"});
-                    else  // STEP (on for the init patch's stepped sequences) / REPLAY
+                    else  // STEP (on for the init patch's stepped sequences) / PRINCIPLE / NEWPHRASE
                         configSwitch(c.id, 0.f, 1.f,
                                      (c.id == STEP_A || c.id == STEP_B) ? 1.f : 0.f,
                                      lbl, {"Off", "On"});
@@ -101,7 +103,7 @@ struct Spotymod : Module {
         switch (id % PART_STRIDE) {         // fold part B onto the *_A enum
             case RATE_A:   return part ? 0.20f : 0.10f;
             case SHAPE_A:  return part ? 0.70f : 0.40f;
-            case PROB_A:   return 0.90f;
+            case DENSITY_A: return 1.0f;
             case SMOOTH_A: return part ? 0.20f : 0.50f;
             case RANGE_A:  return part ? 0.30f : 0.45f;
             case DEPTH_A:  return part ? 0.60f : 0.50f;
@@ -134,10 +136,10 @@ struct Spotymod : Module {
         for (int p = 0; p < 2; ++p) {
             inst.set_rate(p, pp(RATE_A, p));
             inst.set_shape(p, pp(SHAPE_A, p));
-            inst.set_probability(p, pp(PROB_A, p));
+            inst.set_density(p, pp(DENSITY_A, p));
             inst.set_smooth(p, pp(SMOOTH_A, p));
             inst.set_range(p, pp(RANGE_A, p));
-            inst.set_entropy(p, pp(ENTROPY_A, p));            // -1..+1
+            inst.set_variation(p, pp(MELODY_A, p));          // -1..+1 RENEW<-LOOP->GROW
             inst.set_depth(p, pp(DEPTH_A, p));
             inst.set_tune(p, pp(TUNE_A, p));
 
@@ -161,9 +163,12 @@ struct Spotymod : Module {
             inst.set_grit_mode(p, ppb(GRITMODE_A, p) ? spky::GritMode::Reduce
                                                      : spky::GritMode::Drive);
             inst.set_step(p, ppb(STEP_A, p), (int)std::round(pp(STEPS_A, p)));
-            inst.set_replay(p, ppb(REPLAY_A, p));
 
-            if (captureTrig[p].process(ppb(CAPTURE_A, p))) inst.capture_now(p);
+            if (principleTrig[p].process(ppb(PRINCIPLE_A, p))) {
+                principleIdx[p] = (principleIdx[p] + 1) % 5;   // cycle the 5 principles
+                inst.set_principle(p, principleIdx[p]);
+            }
+            if (newPhraseTrig[p].process(ppb(NEWPHRASE_A, p))) inst.new_phrase(p);
             if (triggerTrig[p].process(ppb(TRIGGER_A, p))) inst.trigger_manual(p);
         }
 
