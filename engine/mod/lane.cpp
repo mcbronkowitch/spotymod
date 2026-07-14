@@ -49,7 +49,6 @@ void ModLane::set_step(bool on, int steps) {
         int old_n = _steps > kSeqSlots ? kSeqSlots : _steps;
         int new_n = new_steps > kSeqSlots ? kSeqSlots : new_steps;
         if (new_n != old_n) _regen_pending = true; // only when effective length changes
-        new_steps = new_n;  // melodic: step count never exceeds the seq buffer (kSeqSlots)
     }
     _steps = new_steps;
 }

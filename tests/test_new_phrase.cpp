@@ -59,12 +59,29 @@ TEST_CASE("set_step with unchanged effective length does not regen") {
     for (size_t i = 0; i < c1[1].size(); ++i) CHECK(c1[1][i] == doctest::Approx(c2[1][i]));
 }
 
-TEST_CASE("moves within steps>=32 do not regen (n stays 32)") {
-    ModLane l = melodic(0x600, 33);
-    auto c1 = cycles(l, 2);
-    l.set_step(true, 40);                // 33 -> 40, effective n stays 32 -> no regen
-    auto c2 = cycles(l, 2);
-    REQUIRE(c1.size() >= 2); REQUIRE(c2.size() >= 2);
-    REQUIRE(c1[1].size() == c2[1].size());
-    for (size_t i = 0; i < c1[1].size(); ++i) CHECK(c1[1][i] == doctest::Approx(c2[1][i]));
+TEST_CASE("moves within steps>=32 do not regenerate the phrase (buffer survives)") {
+    // A round-trip 33 -> 40 -> 33 keeps effective n=32 the whole time, so no
+    // regen ever fires; the 33-step phrase must equal a lane that stayed at 33.
+    ModLane ref = melodic(0x600, 33);
+    ModLane l   = melodic(0x600, 33);
+    auto cref = cycles(ref, 3);
+    l.set_step(true, 40);        // n stays 32 -> no regen
+    (void)cycles(l, 1);          // let a wrap pass
+    l.set_step(true, 33);        // still n=32 -> no regen
+    auto cl = cycles(l, 3);
+    REQUIRE(cref.size() >= 3); REQUIRE(cl.size() >= 3);
+    REQUIRE(cref[2].size() == cl[2].size());
+    for (size_t i = 0; i < cref[2].size(); ++i) CHECK(cref[2][i] == doctest::Approx(cl[2][i]));
+}
+
+TEST_CASE("melodic step count above 32 wraps into the buffer, not clamped") {
+    // Same seed => same 32-slot buffer, but 40 step positions replay slots 0..7,
+    // producing MORE onsets per cycle than 32 steps. If _steps were clamped to 32,
+    // the two would be identical.
+    ModLane a = melodic(0x700, 32);
+    ModLane b = melodic(0x700, 40);
+    auto ca = cycles(a, 2);
+    auto cb = cycles(b, 2);
+    REQUIRE(ca.size() >= 2); REQUIRE(cb.size() >= 2);
+    CHECK(cb[1].size() > ca[1].size());  // 40 steps => extra onsets from wrapped slots 0..7
 }
