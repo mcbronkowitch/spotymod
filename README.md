@@ -94,17 +94,18 @@ Render a scenario to audio + a modulation trace. A scenario is a JSON timeline
 of parameter changes (see `host/render/scenarios/`):
 
 ```bash
-./build/render.exe host/render/scenarios/melody_then_drift.json out.wav mods.csv
+./build/render.exe host/render/scenarios/demo_step_melody.json out.wav mods.csv
 ```
 
 This writes:
 
 - **`out.wav`** — the rendered audio.
 - **`mods.csv`** — every lane's output plus pitch CV / gate per part, decimated
-  for plotting. Ideal for *seeing* what FLOW / STEP / ENTROPY actually do.
+  for plotting. Ideal for *seeing* what FLOW / STEP / MELODY actually do.
 
-`melody_then_drift` is a good starting point: a fixed 16-step melody that loops
-identically, then grows or erodes as ENTROPY is dialled off center.
+`demo_step_melody` is a good starting point: a fixed 16-step melody that loops
+identically, then varies (GROW) or regenerates into new motivic phrases (RENEW)
+as MELODY is dialled off center — and cycles the phrase principle.
 
 ## A first interactive look — VCV Rack (pre-alpha)
 

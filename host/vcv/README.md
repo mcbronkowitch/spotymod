@@ -109,5 +109,5 @@ For an A/B sound check, render a known scenario with the desktop host and
 compare by ear against the module at identical parameter settings:
 
 ```bash
-./build/render host/render/scenarios/melody_then_drift.json out.wav mods.csv
+./build/render host/render/scenarios/demo_step_melody.json out.wav mods.csv
 ```
