@@ -25,6 +25,7 @@ void Instrument::init(float sample_rate, const FxMem& mem) {
     _rev_dry.init(sample_rate, kMixSmoothS);
     _rev_wet.init(sample_rate, kMixSmoothS);
     _rev_primed = false;
+    _rev_asleep = false;
     set_reverb_mix(kDefaultReverbMix);
     _limiter.init();
     _center.init(sample_rate, 0x5ce47e12u);
@@ -40,6 +41,7 @@ void Instrument::set_reverb_mix(float n) {
         _rev_dry_target = std::cos(n * kHalfPi);   // equal-power crossfade
         _rev_wet_target = std::sin(n * kHalfPi);
     }
+    if (_rev_wet_target > 0.f) _rev_asleep = false;   // wake into the cleared room
 }
 
 void Instrument::set_tempo_bpm(float bpm) {
@@ -70,17 +72,25 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
             if (!_rev_primed) {              // snap a mix set before the first block
                 _rev_dry.reset(_rev_dry_target);
                 _rev_wet.reset(_rev_wet_target);
+                if (_rev_wet_target == 0.f) { _reverb->clear(); _rev_asleep = true; }
                 _rev_primed = true;
             }
             const float dg = _rev_dry.process(_rev_dry_target);
             const float wg = _rev_wet.process(_rev_wet_target);
-            // MORPH fades dry AND send together (M4 supersedes the M1.6
-            // pre-morph-send rule): a fully morphed-away part injects no new
-            // reverb; only its already-committed tail rings out.
-            float wl, wr;
-            _reverb->process(asl * ga + bsl * gb, asr * ga + bsr * gb, wl, wr);
-            l = l * dg + wl * wg;
-            r = r * dg + wr * wg;
+            if (!_rev_asleep) {
+                // MORPH fades dry AND send together (M4 supersedes the M1.6
+                // pre-morph-send rule): a fully morphed-away part injects no new
+                // reverb; only its already-committed tail rings out.
+                float wl, wr;
+                _reverb->process(asl * ga + bsl * gb, asr * ga + bsr * gb, wl, wr);
+                l = l * dg + wl * wg;
+                r = r * dg + wr * wg;
+                if (wg == 0.f && dg == 1.f && _rev_wet_target == 0.f) {
+                    _reverb->clear();        // clear-on-sleep: waking starts empty
+                    _rev_asleep = true;      // Oliverb CPU is off until MIX reopens
+                }
+            }
+            // asleep: dry passes bit-exact (dg has snapped to 1), sends discarded
         }
         _limiter.process(l, r);   // master ceiling (M6 engine delta 3, delivered early)
         outL[i] = l;

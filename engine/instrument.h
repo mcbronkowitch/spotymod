@@ -98,6 +98,7 @@ public:
     float drift()     const { return _center.drift(); }
     float weather()   const { return _center.weather(); }
     float phase_err() const { return _center.phase_err(); }
+    bool reverb_asleep() const { return _rev_asleep; }
 
     void process(const float* inL, const float* inR, float* outL, float* outR, size_t n);
 
@@ -108,6 +109,7 @@ private:
     float   _rev_wet_target = 0.f;
     OnePole _rev_dry, _rev_wet;     // 10 ms glide at the master join
     bool    _rev_primed = false;    // first process() snaps the mix gains
+    bool    _rev_asleep = false;    // MIX 0 gate: room cleared, process() skipped
     Limiter _limiter;
     Center _center;
     int    _ctrl_ctr = 0;    // counts down to the next control-rate Center::update

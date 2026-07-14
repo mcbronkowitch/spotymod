@@ -322,6 +322,7 @@ TEST_CASE("instrument M4.8: mix 0 is bit-identical to the engine-only build") {
         CHECK(fl == pl);
         CHECK(fr == pr);
     }
+    CHECK(fx.reverb_asleep());
 }
 
 TEST_CASE("instrument M4.8: mix 1 with muted sends is exact silence (dry fully gone)") {
@@ -398,4 +399,82 @@ TEST_CASE("instrument M4.8: hard MIX jumps are smoothed (no zipper)") {
     // an unsmoothed 0->1 gain jump would spike the per-sample delta far above
     // the drone's own; the 10 ms glide keeps it in the same ballpark
     CHECK(stepped < 2.f * steady + 0.01f);
+}
+
+TEST_CASE("instrument M4.8: MIX 0 sleeps the room, any MIX > 0 wakes it") {
+    Instrument fx;
+    fx.init(48000.f, test_fx_mem());
+    float l, r;
+    fx.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(!fx.reverb_asleep());            // boot mix 0.25: awake
+    fx.set_reverb_mix(0.f);                // runtime fade-out -> sleep
+    for (int i = 0; i < 9600; ++i) fx.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(fx.reverb_asleep());             // 0.2 s >> the 10 ms glide + snap
+    fx.set_reverb_mix(0.4f);
+    CHECK(!fx.reverb_asleep());            // waking is immediate
+}
+
+TEST_CASE("instrument M4.8: waking from sleep starts with an empty room (no ghost tail)") {
+    static float echoGX[PART_COUNT][2][Flux::kMaxSamples];
+    static float echoGY[PART_COUNT][2][Flux::kMaxSamples];
+    static AmbientReverb rvGX, rvGY;
+    FxMem mx, my;
+    for (int p = 0; p < PART_COUNT; ++p)
+        for (int c = 0; c < 2; ++c) { mx.echo[p][c] = echoGX[p][c]; my.echo[p][c] = echoGY[p][c]; }
+    mx.reverb = &rvGX; my.reverb = &rvGY;
+    Instrument x; x.init(48000.f, mx);
+    Instrument y; y.init(48000.f, my);
+    x.set_reverb_decay(0.85f); y.set_reverb_decay(0.85f);  // a surviving ghost would ring loud
+    // Y is the reference: sends muted from boot, MIX 0.5 from boot
+    y.set_reverb_mix(0.5f);
+    for (int p = 0; p < PART_COUNT; ++p) y.set_fx_target_base(p, FXT_REV_SEND, 0.f);
+    float xl, xr, yl, yr;
+    // phase 1 (1 s): X rings up a loud tail on the default sends
+    for (int i = 0; i < 48000; ++i) { x.process(nullptr, nullptr, &xl, &xr, 1);
+                                      y.process(nullptr, nullptr, &yl, &yr, 1); }
+    // phase 2 (0.5 s): X mutes its sends and goes to sleep at MIX 0
+    for (int p = 0; p < PART_COUNT; ++p) x.set_fx_target_base(p, FXT_REV_SEND, 0.f);
+    x.set_reverb_mix(0.f);
+    for (int i = 0; i < 24000; ++i) { x.process(nullptr, nullptr, &xl, &xr, 1);
+                                      y.process(nullptr, nullptr, &yl, &yr, 1); }
+    CHECK(x.reverb_asleep());
+    // phase 3 (0.5 s settle): X wakes at MIX 0.5; gains glide and snap
+    x.set_reverb_mix(0.5f);
+    for (int i = 0; i < 24000; ++i) { x.process(nullptr, nullptr, &xl, &xr, 1);
+                                      y.process(nullptr, nullptr, &yl, &yr, 1); }
+    // both rooms are now empty and unfed, the part streams are identical:
+    // any difference left would be X's pre-sleep tail — it must be GONE
+    float maxd = 0.f;
+    for (int i = 0; i < 24000; ++i) {
+        x.process(nullptr, nullptr, &xl, &xr, 1);
+        y.process(nullptr, nullptr, &yl, &yr, 1);
+        float d = std::fabs(xl - yl); if (d > maxd) maxd = d;
+    }
+    CHECK(maxd == 0.f);
+}
+
+TEST_CASE("instrument M4.8: mix automation incl. sleep is deterministic end to end") {
+    auto run = [] {
+        static float echoD[PART_COUNT][2][Flux::kMaxSamples];
+        static AmbientReverb rvD;
+        FxMem m;
+        for (int p = 0; p < PART_COUNT; ++p)
+            for (int c = 0; c < 2; ++c) m.echo[p][c] = echoD[p][c];
+        m.reverb = &rvD;
+        Instrument inst;
+        inst.init(48000.f, m);            // init() re-clears the shared statics
+        std::vector<float> out;
+        float l[96], r[96];
+        for (int b = 0; b < 500; ++b) {
+            if (b == 100) inst.set_reverb_mix(0.8f);
+            if (b == 250) inst.set_reverb_mix(0.f);   // sleeps mid-run
+            if (b == 400) inst.set_reverb_mix(0.5f);  // wakes again
+            inst.process(nullptr, nullptr, l, r, 96);
+            for (int i = 0; i < 96; ++i) out.push_back(l[i]);
+        }
+        return out;
+    };
+    auto a = run(), b = run();
+    REQUIRE(a.size() == b.size());
+    for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]);
 }
