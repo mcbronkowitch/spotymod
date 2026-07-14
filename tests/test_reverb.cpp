@@ -163,3 +163,31 @@ TEST_CASE("reverb: bit-deterministic across instances") {
     }
     CHECK(identical);
 }
+
+TEST_CASE("reverb: clear() empties the room but keeps the parameter state") {
+    static AmbientReverb rv;             // BIG object: never stack-allocate
+    rv.init(48000.f);
+    rv.set_decay(0.8f);
+    float l, r;
+    // ring up a tail: periodic impulses for 0.25 s
+    for (int i = 0; i < 12000; ++i) {
+        float in = (i % 4800 == 0) ? 0.9f : 0.f;
+        rv.process(in, in, l, r);
+    }
+    float energy = 0.f;                  // the room is audibly ringing
+    for (int i = 0; i < 4800; ++i) { rv.process(0.f, 0.f, l, r); energy += l * l + r * r; }
+    CHECK(energy > 1e-6f);
+
+    rv.clear();
+    // silence in -> exact silence out: buffer AND loop filter state are zeroed
+    for (int i = 0; i < 4800; ++i) {
+        rv.process(0.f, 0.f, l, r);
+        CHECK(l == 0.f);
+        CHECK(r == 0.f);
+    }
+    // parameters survived the clear: a fresh impulse still rings the same room
+    rv.process(0.9f, 0.9f, l, r);
+    float energy2 = 0.f;
+    for (int i = 0; i < 9600; ++i) { rv.process(0.f, 0.f, l, r); energy2 += l * l + r * r; }
+    CHECK(energy2 > 1e-6f);
+}

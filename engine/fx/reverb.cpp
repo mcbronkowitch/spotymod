@@ -17,9 +17,9 @@ constexpr float kInputGain = 0.5f;         // L+R sum -> mono average into the r
 // The self-oscillating bloom (decay > 1.0) plateaus near digital full scale
 // at the core's output taps (they carry 2x the in-loop signal, plus Hermite
 // overshoot under depth modulation). Trim the wet-only room -8 dB so the
-// bloom leaves headroom at the master sum until the M6 master soft-clip
-// exists. Ear-tunable in [0.40, 0.50]; kept at the low end of that range to
-// hold the ambient_wash showcase's bloom under the hard clip ceiling.
+// bloom leaves headroom at the master sum — the M4.6 limiter is a ceiling,
+// not a mixer; don't lean on it. Ear-tunable in [0.40, 0.50]; kept at the
+// low end to hold the ambient_wash showcase's bloom clear of the ceiling.
 constexpr float kWetGain = 0.40f;
 }
 
@@ -36,6 +36,11 @@ void AmbientReverb::init(float sample_rate) {
     set_tone(0.5f);
     set_depth(0.25f);
     _verb.Prepare();
+}
+
+void AmbientReverb::clear() {
+    _verb.Clear();
+    _ctrl = 0;   // refresh the LFO slopes on the next process()
 }
 
 void AmbientReverb::set_size(float norm) {

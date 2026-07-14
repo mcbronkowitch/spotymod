@@ -20,6 +20,7 @@ namespace spky {
 class AmbientReverb {
 public:
     void init(float sample_rate);
+    void clear();                 // empty the room (buffer + loop filter state); params survive
     void set_size(float norm);    // room size; smoothed inside -> Doppler ride
     void set_decay(float norm);   // loop gain; crosses 1.0 at ~0.9 (bloom above)
     void set_tone(float norm);    // loop LP damping 500 Hz .. 16 kHz, exp

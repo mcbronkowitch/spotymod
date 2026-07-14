@@ -38,6 +38,8 @@
 //  - size smoothing coefficient 0.0002 (upstream 0.01 at 32 kHz): stepped
 //    control input (scenario events / M6 knob ticks) glides over ~100 ms,
 //    which is what makes the Doppler warp audible as a ride, not a blip
+//  - Clear() added: empties buffer + loop filter state, params survive
+//    (backs the engine's M4.8 dry/wet clear-on-sleep bypass)
 #ifndef CLOUDS_DSP_FX_OLIVERB_H_
 #define CLOUDS_DSP_FX_OLIVERB_H_
 
@@ -82,6 +84,15 @@ class Oliverb {
     slope *= slope * slope;
     slope /= 300.0f;   // upstream /200 at 32 kHz; x1.5 more ticks per second
     for (int i = 0; i < 9; ++i) lfo_[i].set_slope(slope);
+  }
+
+  // Spotykach port addition: empty the room without touching parameters —
+  // zeroes the delay buffer and the loop damping filter state. Used by the
+  // engine's dry/wet clear-on-sleep bypass (M4.8).
+  void Clear() {
+    engine_.Clear();
+    lp_decay_1_ = lp_decay_2_ = 0.0f;
+    hp_decay_1_ = hp_decay_2_ = 0.0f;
   }
 
   void Process(float* left, float* right) {
