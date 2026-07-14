@@ -8,7 +8,7 @@ using namespace spky;
 namespace {
 constexpr int kCtrlInterval = 96;          // engine control-rate raster
 constexpr uint32_t kRngSeed = 0x0BE21D5u;  // fixed: bit-deterministic renders
-constexpr float kModRate = 0.5f;           // internal LFO speed; DEPTH scales amount only
+constexpr float kModRate = 0.5f;           // internal LFO speed; DIFFUSION weakly couples the amount
 // ~80 Hz one-pole low-cut inside the loop: keeps the >100% bloom from
 // accumulating DC / low-mid mud (parasites' anti-DC offset, same value).
 constexpr float kHpPin = 0.01f;
@@ -62,6 +62,7 @@ void AmbientReverb::set_tone(float norm) {
 
 void AmbientReverb::set_diffusion(float norm) {
     norm = clampf(norm, 0.f, 1.f);
+    // applied instantly like decay/tone (only SIZE smooths, for the Doppler)
     _verb.set_diffusion(0.90f * norm);
     // weak coupling: more smear = slightly more line motion (0.05..0.25 of
     // the old DEPTH range; the knob owns density, motion just rides along)
