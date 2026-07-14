@@ -95,7 +95,7 @@ struct Spotymod : Module {
             case REV_SIZE:     return 0.70f;   // long, roomy tail under the drone
             case REV_DECAY:    return 0.80f;
             case REV_TONE:     return 0.55f;
-            case REV_DEPTH:    return 0.25f;
+            case REV_DIFF:     return 0.70f;   // coeff 0.63 ~= the old stock room
             case REV_MIX:      return 0.25f;   // by-ear default (0.5 ~= old balance)
             case TEMPO:        return 0.35f;   // ~110 BPM on the 40..240 map
             default: break;
@@ -185,7 +185,7 @@ struct Spotymod : Module {
         inst.set_reverb_size(params[REV_SIZE].getValue());
         inst.set_reverb_decay(params[REV_DECAY].getValue());
         inst.set_reverb_tone(params[REV_TONE].getValue());
-        inst.set_reverb_diffusion(params[REV_DEPTH].getValue());
+        inst.set_reverb_diffusion(params[REV_DIFF].getValue());
         inst.set_reverb_mix(params[REV_MIX].getValue());
         inst.set_master_drive(params[MASTER_DRIVE].getValue());
         inst.set_scale((int)std::round(params[SCALE].getValue()));
