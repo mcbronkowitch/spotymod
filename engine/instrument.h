@@ -36,6 +36,7 @@ public:
     void set_variation(int p, float n)       { _parts[p].mod().set_variation(n); }  // -1..+1
     void set_principle(int p, int pr)        { _parts[p].mod().set_principle(static_cast<Principle>(pr)); }
     void set_step(int p, bool on, int steps) { _parts[p].set_step(on, steps); }
+    void new_phrase(int p)                   { _parts[p].mod().new_phrase(); }
     void set_fixed_slew(int p, bool on)      { _parts[p].mod().set_fixed_slew(on); }
     void set_depth(int p, float n)           { _parts[p].set_depth(n); }
     void set_tune(int p, float n)            { _parts[p].set_tune(n); }

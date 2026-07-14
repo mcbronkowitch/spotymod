@@ -23,6 +23,7 @@ public:
 
     void set_melodic(bool m) { _melodic = m; }
     void set_principle(Principle p) { _principle = p; }
+    void new_phrase();                 // audition a fresh phrase at the next STEP-mode wrap
 
     float process();                  // advance one sample, return post-range value
 

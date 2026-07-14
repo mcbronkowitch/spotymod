@@ -44,8 +44,17 @@ void ModLane::set_variation(float v)  { _variation = clampf(v, -1.f, 1.f); }
 
 void ModLane::set_step(bool on, int steps) {
     _step_mode = on;
-    _steps = steps < 1 ? 1 : steps;
+    int new_steps = steps < 1 ? 1 : steps;
+    if (_melodic) {
+        int old_n = _steps > kSeqSlots ? kSeqSlots : _steps;
+        int new_n = new_steps > kSeqSlots ? kSeqSlots : new_steps;
+        if (new_n != old_n) _regen_pending = true; // only when effective length changes
+        new_steps = new_n;  // melodic: step count never exceeds the seq buffer (kSeqSlots)
+    }
+    _steps = new_steps;
 }
+
+void ModLane::new_phrase() { if (_melodic) _regen_pending = true; }
 
 void ModLane::set_smooth(float s) {
     _smooth = clampf(s, 0.f, 1.f);
@@ -158,6 +167,11 @@ float ModLane::process() {
     while (_phase >= 1.f) { _phase -= 1.f; wrapped = true; }
 
     if (wrapped) {
+        if (_regen_pending && _melodic && _step_mode) {
+            generate_phrase(_principle, _rng, _steps, _seq, _gate, _motif_id, _layout);
+            _regen_pending = false;
+            _ev_phase = _ev_shape = _ev_rate = 0.f; // present fresh phrase un-warped
+        }
         if (_variation > 0.f) {                 // GROW: EVOLVE contour walk (live)
             _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _variation, -0.5f, 0.5f);
             _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _variation, -0.25f, 0.25f);

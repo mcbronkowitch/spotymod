@@ -46,6 +46,7 @@ add_executable(spky_tests
     tests/test_step.cpp
     tests/test_evolve.cpp
     tests/test_variation.cpp
+    tests/test_new_phrase.cpp
     engine/mod/super_modulator.cpp
     tests/test_super_modulator.cpp
     engine/parts/part.cpp

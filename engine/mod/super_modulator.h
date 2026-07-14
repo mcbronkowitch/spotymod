@@ -23,6 +23,7 @@ public:
     void set_step(bool on, int steps);
     void set_fixed_slew(bool on);
     void set_principle(Principle p) { _lanes[LANE_PITCH].set_principle(p); }
+    void new_phrase() { _lanes[LANE_PITCH].new_phrase(); }
 
     void process();                // advance all lanes one sample
 
