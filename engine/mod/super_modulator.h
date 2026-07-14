@@ -3,7 +3,6 @@
 #include <cstdint>
 #include "mod/lane.h"
 #include "mod/lane_id.h"
-#include "mod/capture.h"
 
 namespace spky {
 
@@ -36,16 +35,10 @@ public:
     // --- M4 center hooks ---
     void set_rate_scale(float s)  { _rate_scale = s; _apply_rate(); }  // COUPLE * DRIFT rate
     void set_shape_offset(float o){ for (auto& l : _lanes) l.set_shape_offset(o); }
-    void spot(Rng& rng);          // per-lane SPOT kicks (skips the replaying PITCH lane)
+    void spot(Rng& rng);          // per-lane SPOT kicks (skips the PITCH lane)
     void settle()                { for (auto& l : _lanes) l.settle(); }
     float    base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
     SyncMode sync_mode() const { return _mode; }
-
-    // --- M3 capture sequencer (PITCH lane only) ---
-    void capture_now()       { _capture.capture_now(); }
-    void set_replay(bool on) { _lanes[LANE_PITCH].set_replay(on); }
-    bool replaying()   const { return _lanes[LANE_PITCH].replaying(); }
-    bool loop_valid()  const { return _capture.valid(); }
 
 private:
     void _update_rate();
@@ -53,7 +46,6 @@ private:
 
     std::array<ModLane, LANE_COUNT> _lanes;
     std::array<float, LANE_COUNT>   _out {};
-    CaptureLoop                     _capture;   // one loop, PITCH lane only
 
     float    _sr = 48000.f;
     float    _bpm = 120.f;

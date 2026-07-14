@@ -1,7 +1,6 @@
 #include <doctest/doctest.h>
 #include <cmath>
 #include "mod/lane.h"
-#include "mod/capture.h"
 using namespace spky;
 
 static void configure_flow(ModLane& l, float hz, float prob = 1.f) {
@@ -69,20 +68,6 @@ TEST_CASE("lane kick: phase jump is permanent, no decay") {
     CHECK(lane.phase() == doctest::Approx(0.25f));
     for (int i = 0; i < 1000; ++i) lane.process();
     CHECK(lane.phase() == doctest::Approx(0.25f));   // permanent
-}
-
-TEST_CASE("lane kick: no-op while replaying (captured loop is immune)") {
-    CaptureLoop loop; loop.reset();
-    ModLane lane; lane.init(48000.f, 4u);
-    lane.set_capture_loop(&loop);
-    lane.set_rate_hz(2.f);
-    for (int i = 0; i < 48000; ++i) lane.process();  // record a full cycle
-    loop.capture_now();                              // freeze -> valid
-    lane.set_replay(true);
-    lane.process();                                  // enter replay
-    float p = lane.phase();
-    lane.kick(0.4f, 0.4f);                           // must be ignored
-    CHECK(lane.phase() == doctest::Approx(p));
 }
 
 TEST_CASE("lane shape_offset: shifts the effective shape; offset 0 is bit-identical") {

@@ -28,8 +28,6 @@ void SuperModulator::init(float sample_rate, uint32_t seed_base) {
         _lanes[i].init(sample_rate, seed_base + static_cast<uint32_t>(i) * 2654435761u);
         _out[i] = 0.f;
     }
-    _capture.reset();
-    _lanes[LANE_PITCH].set_capture_loop(&_capture);   // capture is PITCH-only
     _rate_scale = 1.f;
     _update_rate();
 }
@@ -65,9 +63,8 @@ void SuperModulator::process() {
 void SuperModulator::spot(Rng& rng) {
     // SPOT stumbles every lane EXCEPT the PITCH master lane: the melody is the
     // anchor everything else stumbles around, so pitch is never a target of the
-    // stumble (extends the replaying PITCH loop's immunity to the live lane too).
-    // Draw a kick for every lane so the RNG stream stays independent of which
-    // lanes are skipped.
+    // stumble. Draw a kick for every lane so the RNG stream stays independent
+    // of which lanes are skipped.
     for (int i = 0; i < LANE_COUNT; ++i) {
         float dphase = rng.next_bipolar() * 0.5f;    // uniform +/- 1/2 cycle
         float dshape = rng.next_bipolar() * 0.35f;   // uniform +/- 0.35

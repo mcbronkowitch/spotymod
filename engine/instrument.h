@@ -82,12 +82,6 @@ public:
     bool  gate(int p)  const { return _parts[p].gate(); }
     float pitch_cv(int p) const { return _parts[p].pitch_cv(); }
 
-    // --- M3 capture sequencer (per part) ---
-    void capture_now(int p)         { _parts[p].mod().capture_now(); }
-    void set_replay(int p, bool on) { _parts[p].mod().set_replay(on); }
-    bool replaying(int p) const     { return _parts[p].mod().replaying(); }
-    bool loop_valid(int p) const    { return _parts[p].mod().loop_valid(); }
-
     // --- M4 center section ---
     void set_morph(float m)  { _center.set_morph(m); }
     void set_couple(float c) { _center.set_couple(c); }

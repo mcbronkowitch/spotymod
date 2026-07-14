@@ -5,8 +5,6 @@
 
 namespace spky {
 
-class CaptureLoop;   // engine/mod/capture.h — wired to the PITCH lane only
-
 // One modulation lane: wavetable core -> probability -> step/flow -> smooth
 // -> range. Bipolar output in [-1,1]. Deterministic given its seed.
 class ModLane {
@@ -31,11 +29,6 @@ public:
 
     void reset(float phase = 0.f);
 
-    // M3 capture: wired once at init on the PITCH lane only (nullptr elsewhere).
-    void set_capture_loop(CaptureLoop* loop) { _capture_loop = loop; }
-    void set_replay(bool on) { _replay = on; if (on) _play_slot = -1; }
-    bool replaying() const { return _replaying(); }
-
     // --- M4 center hooks ---
     void set_shape_offset(float o) { _shape_offset = o; }  // DRIFT bank-wide shape tap
     void kick(float dphase, float dshape);                 // SPOT: phase jump + decaying shape
@@ -47,10 +40,6 @@ private:
     float _compute_raw() const;
     int   _sh_slot() const;         // which _seq slot the S&H end reads now
     void  _mutate_slot(int slot);   // entropy dice + walk/erode on a fired step
-    int   _phase_slot() const;      // floor(phase * kSlots), clamped
-    void  _record_slot();           // roll _target + fired into the ring
-    bool  _replaying() const;       // replay requested AND loop valid
-    void  _replay_step();           // loop is the source this sample
 
     Rng     _rng;
     OnePole _slew;
@@ -85,13 +74,6 @@ private:
     float _kick_coef    = 1.f;   // per-sample decay for _kick_shape (tau ~ 1.5 s)
     int   _settle_ctr   = 0;     // >0: gliding EVOLVE walks + kick to 0
     float _settle_coef  = 1.f;   // per-sample settle glide (tau ~ 0.3 s)
-
-    // M3 capture (recording state; replay state added in Task 3)
-    CaptureLoop* _capture_loop = nullptr;
-    int          _rec_slot = -1;    // last ring slot written this pass
-    bool         _rec_fired = false;// a boundary has fired since entering _rec_slot
-    bool         _replay = false;   // replay requested (effective only if loop valid)
-    int          _play_slot = -1;   // last slot evaluated while replaying
 };
 
 } // namespace spky

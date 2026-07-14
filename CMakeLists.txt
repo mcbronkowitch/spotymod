@@ -53,7 +53,6 @@ add_executable(spky_tests
     tests/test_instrument.cpp
     engine/center/center.cpp
     tests/test_center.cpp
-    tests/test_capture.cpp
     tests/test_wav.cpp
     host/render/scenario.cpp
     tests/test_scenario.cpp

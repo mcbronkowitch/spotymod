@@ -116,8 +116,6 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_voice_sub")       inst.set_voice_sub(e.part, e.value);
     else if (a == "set_voice_detune")    inst.set_voice_detune(e.part, e.value);
     else if (a == "trigger_manual")      inst.trigger_manual(e.part);
-    else if (a == "capture_now")         inst.capture_now(e.part);
-    else if (a == "set_replay")          inst.set_replay(e.part, e.flag);
     else if (a == "set_morph")           inst.set_morph(e.value);
     else if (a == "set_couple")          inst.set_couple(e.value);
     else if (a == "set_drift")           inst.set_drift(e.value);

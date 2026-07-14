@@ -1,7 +1,6 @@
 #include "mod/lane.h"
 #include "mod/waveforms.h"
 #include "mod/range.h"
-#include "mod/capture.h"
 #include "util/math.h"
 #include <cmath>
 
@@ -29,10 +28,6 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _kick_coef    = std::exp(-1.f / (1.5f * _sr));   // SPOT shape decay tau = 1.5 s
     _settle_coef  = std::exp(-1.f / (0.3f * _sr));   // SETTLE glide tau = 0.3 s
     _settle_ctr   = 0;
-    _rec_slot = -1;
-    _rec_fired = false;
-    _replay = false;
-    _play_slot = -1;
     _update_slew();
     _slew.reset(0.f);
 }
@@ -65,7 +60,6 @@ void ModLane::_update_slew() {
 }
 
 void ModLane::kick(float dphase, float dshape) {
-    if (_replaying()) return;              // captured loop never mutates (M3/M4 guard)
     _phase += dphase;
     _phase -= std::floor(_phase);          // permanent wrap into [0,1)
     _kick_shape += dshape;                 // decays back to 0 over ~1.5 s
@@ -125,35 +119,6 @@ void ModLane::_mutate_slot(int slot) {
     _seq[slot] = v;
 }
 
-int ModLane::_phase_slot() const {
-    int s = static_cast<int>(_phase * CaptureLoop::kSlots);
-    return s >= CaptureLoop::kSlots ? CaptureLoop::kSlots - 1 : s;
-}
-
-void ModLane::_record_slot() {
-    int slot = _phase_slot();
-    if (slot != _rec_slot) { _rec_fired = false; _rec_slot = slot; } // new slot: clear
-    if (_fired) _rec_fired = true;                                   // latch a fire
-    _capture_loop->record(slot, _target, _rec_fired);
-}
-
-bool ModLane::_replaying() const {
-    return _replay && _capture_loop && _capture_loop->valid();
-}
-
-void ModLane::_replay_step() {
-    int slot = _phase_slot();
-    if (slot != _play_slot) {
-        _play_slot = slot;
-        if (_capture_loop->fired(slot)) {
-            bool fire = _rng.next_unipolar() < _prob;  // live PROBABILITY dice
-            _frozen = !fire;
-            if (fire) _fired = true;                   // trigger; freeze lifts
-        }
-    }
-    if (!_frozen) _target = _capture_loop->value(slot); // curve, or held step
-}
-
 float ModLane::process() {
     _fired = false;
     _kick_shape *= _kick_coef;                 // SPOT shape offset fades toward 0
@@ -164,41 +129,33 @@ float ModLane::process() {
         _ev_rate    *= _settle_coef;
         _kick_shape *= _settle_coef;
     }
-    const bool replay = _replaying();
-
-    _phase += _phase_inc * (replay ? 1.f : (1.f + _ev_rate));  // no EVOLVE rate on replay
+    _phase += _phase_inc * (1.f + _ev_rate);
     bool wrapped = false;
     while (_phase >= 1.f) { _phase -= 1.f; wrapped = true; }
 
-    if (replay) {
-        _replay_step();                                 // the loop is the source
+    if (wrapped) {
+        if (_entropy > 0.f) {                       // GROW: EVOLVE random walk (live only)
+            _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _entropy, -0.5f, 0.5f);
+            _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _entropy, -0.25f, 0.25f);
+            _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _entropy, -0.2f, 0.2f);
+        } else if (_entropy < 0.f) {                // ERODE: walk settles toward neutral
+            float decay = 1.f + 0.2f * _entropy;    // entropy -1 -> x0.8 per cycle
+            _ev_phase *= decay;
+            _ev_shape *= decay;
+            _ev_rate  *= decay;
+        }                                           // entropy 0 (LOOP): walk frozen
+    }
+
+    if (_step_mode) {
+        int step = static_cast<int>(_phase * _steps);
+        if (step >= _steps) step = _steps - 1;
+        if (step != _cur_step) {
+            _cur_step = step;
+            _on_boundary();
+        }
     } else {
-        if (wrapped) {
-            if (_entropy > 0.f) {                       // GROW: EVOLVE random walk (live only)
-                _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _entropy, -0.5f, 0.5f);
-                _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _entropy, -0.25f, 0.25f);
-                _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _entropy, -0.2f, 0.2f);
-            } else if (_entropy < 0.f) {                // ERODE: walk settles toward neutral
-                float decay = 1.f + 0.2f * _entropy;    // entropy -1 -> x0.8 per cycle
-                _ev_phase *= decay;
-                _ev_shape *= decay;
-                _ev_rate  *= decay;
-            }                                           // entropy 0 (LOOP): walk frozen
-        }
-
-        if (_step_mode) {
-            int step = static_cast<int>(_phase * _steps);
-            if (step >= _steps) step = _steps - 1;
-            if (step != _cur_step) {
-                _cur_step = step;
-                _on_boundary();
-            }
-        } else {
-            if (wrapped) _on_boundary();
-            if (!_frozen) _target = _compute_raw();     // continuous in FLOW
-        }
-
-        if (_capture_loop) _record_slot();              // roll into the ring
+        if (wrapped) _on_boundary();
+        if (!_frozen) _target = _compute_raw();     // continuous in FLOW
     }
 
     float smoothed = _slew.process(_target);
