@@ -123,6 +123,21 @@ TEST_CASE("center couple: couple 1 locks two free banks and converges their rate
     CHECK(r.a.master_hz() == doctest::Approx(r.b.master_hz()).epsilon(0.03));
 }
 
+TEST_CASE("center couple: couple 1 locks two FREE banks that are several octaves apart") {
+    // free_hz maps the rate knob exponentially over 0.02..30 Hz, so 0.3 vs 0.7
+    // is already an ~18:1 frequency ratio. Convergence to the geometric mean
+    // needs each bank to scale by ~4.3x — which the old +/-1 octave rate clamp
+    // truncated, leaving the pair drifting forever. Regression for the "COUPLE
+    // full CW, FREE banks still drift apart" report.
+    Rig r; r.init(3u);
+    r.a.set_sync_mode(SyncMode::Free); r.b.set_sync_mode(SyncMode::Free);
+    r.a.set_rate(0.3f); r.b.set_rate(0.7f);
+    r.c.set_couple(1.f); r.c.set_drift(0.f);
+    run_coupled(r, 48000 * 20);
+    CHECK(std::fabs(r.c.phase_err()) < 0.05f);
+    CHECK(r.a.master_hz() == doctest::Approx(r.b.master_hz()).epsilon(0.03));
+}
+
 TEST_CASE("center couple: couple 1 holds the AUDIBLE phase locked while EVOLVE wanders a bank") {
     // Both SYNC to the same grid division, full couple, no drift, but bank A runs
     // EVOLVE (GROW) hard. The COUPLE PLL must keep the *audible* pitch phase

@@ -18,8 +18,15 @@ constexpr float kShapeMax  = 0.15f;               // up to +/- 0.15 shape
 constexpr float kTuneCents = 25.f;                // up to +/- 25 cents
 
 constexpr float kK           = 0.15f;   // Kuramoto phase-pull gain (tune by ear)
-constexpr float kRateClampLo = 0.5f;
-constexpr float kRateClampHi = 2.0f;
+// COUPLE convergence pulls a FREE bank toward the geometric mean of the two
+// base rates (always <= the faster bank, so it can never run away to audio
+// rate). The clamp is only a transient safety net, so it must be wide enough
+// that full COUPLE can actually reach the mean across the musical rate range;
+// the old +/-1 octave (0.5..2.0) truncated convergence and left banks that were
+// more than a ~4:1 ratio apart perpetually drifting. +/-5 octaves covers the
+// whole practical FREE span (0.02..30 Hz needs up to ~39x; this reaches ~32x).
+constexpr float kRateClampLo = 0.03125f;   // 1/32  (-5 octaves)
+constexpr float kRateClampHi = 32.0f;      //        (+5 octaves)
 }
 
 void Center::init(float sample_rate, uint32_t seed) {
