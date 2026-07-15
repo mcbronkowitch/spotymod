@@ -1,0 +1,31 @@
+{
+  "sample_rate": 48000,
+  "bpm": 110,
+  "duration_s": 18,
+  "init": [
+    {"_comment":"A/B base patch: sparse plucks into the shared room. DIFFUSION is the ONLY knob that differs between reverb_delay (0.0 -> discrete slap echoes) and reverb_wash (1.0 -> smeared wash). Everything else identical."},
+    {"action":"set_sync_mode","part":0,"value":"sync"},
+    {"action":"set_rate","part":0,"value":0.2},
+    {"action":"set_step","part":0,"flag":true,"ivalue":6},
+    {"action":"set_shape","part":0,"value":1.0},
+    {"action":"set_range","part":0,"value":0.4},
+    {"action":"set_density","part":0,"value":0.55},
+    {"action":"set_target_active","part":0,"slot":2,"flag":true},
+    {"action":"set_target_base","part":0,"slot":2,"value":0.3},
+    {"action":"set_target_active","part":0,"slot":4,"flag":true},
+    {"action":"set_target_base","part":0,"slot":4,"value":0.9},
+    {"action":"set_voice_attack","part":0,"value":0.0},
+    {"action":"set_voice_decay","part":0,"value":0.1},
+    {"action":"set_target_active","part":1,"slot":4,"flag":false},
+    {"action":"set_target_base","part":1,"slot":4,"value":0.0},
+    {"action":"set_fx_target_active","part":0,"slot":3,"flag":true},
+    {"action":"set_fx_target_base","part":0,"slot":3,"value":0.85},
+
+    {"action":"set_reverb_mix","value":0.5},
+    {"action":"set_reverb_size","value":0.8},
+    {"action":"set_reverb_decay","value":0.58},
+    {"action":"set_reverb_tone","value":0.5},
+    {"action":"set_reverb_diffusion","value":0.0}
+  ],
+  "events": []
+}
