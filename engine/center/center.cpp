@@ -64,7 +64,10 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     pb.set_detune_cents(kTuneCents * kTuneTap[1] * w);
 
     // --- COUPLE (Kuramoto PLL: convergence toward the geometric mean + phase pull) ---
-    float dphi = a.pitch_phase() - b.pitch_phase();
+    // Lock the *audible* phase (carrier + EVOLVE offset), not the bare carrier:
+    // EVOLVE walks each bank's pitch phase independently, and that wander is what
+    // you hear drift apart. Pulling on the raw carrier alone leaves it uncorrected.
+    float dphi = a.pitch_phase_eff() - b.pitch_phase_eff();
     dphi -= std::floor(dphi + 0.5f);            // wrap to [-0.5, 0.5)
     _phase_err = dphi;
 
@@ -74,8 +77,12 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     const bool mixed  = a_free != b_free;
 
     // convergence: FREE banks slide toward the geometric mean; SYNC banks anchor.
-    const float conv_a = a_free ? std::pow(fb / fa, _couple * 0.5f) : 1.f;
-    const float conv_b = b_free ? std::pow(fa / fb, _couple * 0.5f) : 1.f;
+    // In a MIXED pair the lone FREE bank aims fully at the anchor (exponent
+    // _couple), not halfway to a geometric mean it could never reach — so the
+    // pair actually locks. Two FREE banks still meet in the middle (x0.5).
+    const float conv_e = mixed ? _couple : _couple * 0.5f;
+    const float conv_a = a_free ? std::pow(fb / fa, conv_e) : 1.f;
+    const float conv_b = b_free ? std::pow(fa / fb, conv_e) : 1.f;
 
     // phase pull: opposite sign on the two banks; a SYNC bank in a MIXED pair
     // stays the pure anchor (no pull); when both SYNC only the phase pull acts.

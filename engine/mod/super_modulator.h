@@ -33,6 +33,7 @@ public:
     bool  lane_frozen(int i) const { return _lanes[i].frozen(); }
     float lane_phase(int i)  const { return _lanes[i].phase(); }
     float pitch_phase()      const { return _lanes[LANE_PITCH].phase(); }
+    float pitch_phase_eff()  const { return _lanes[LANE_PITCH].phase_eff(); }  // audible pitch phase
     float master_hz()        const { return _master_hz; }
 
     // --- M4 center hooks ---

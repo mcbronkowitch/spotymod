@@ -123,6 +123,28 @@ TEST_CASE("center couple: couple 1 locks two free banks and converges their rate
     CHECK(r.a.master_hz() == doctest::Approx(r.b.master_hz()).epsilon(0.03));
 }
 
+TEST_CASE("center couple: couple 1 holds the AUDIBLE phase locked while EVOLVE wanders a bank") {
+    // Both SYNC to the same grid division, full couple, no drift, but bank A runs
+    // EVOLVE (GROW) hard. The COUPLE PLL must keep the *audible* pitch phase
+    // (carrier + EVOLVE offset) locked — not just the raw carrier. Regression for
+    // the "turn COUPLE full CW, banks still drift apart after a while" report:
+    // EVOLVE's per-bank _ev_phase walk was invisible to the coupling.
+    Rig r; r.init(3u);
+    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
+    r.a.set_sync_mode(SyncMode::Sync); r.b.set_sync_mode(SyncMode::Sync);
+    r.a.set_rate(0.5f); r.b.set_rate(0.5f);       // identical grid division
+    r.a.set_variation(0.9f);                      // EVOLVE (GROW) hard on A
+    r.c.set_couple(1.f); r.c.set_drift(0.f);
+    float worst = 0.f;
+    for (int blk = 0; blk < 180; ++blk) {         // 3 minutes
+        run_coupled(r, 48000);
+        float d = r.a.pitch_phase_eff() - r.b.pitch_phase_eff();
+        d -= std::floor(d + 0.5f);                // wrap to [-0.5, 0.5)
+        if (std::fabs(d) > worst) worst = std::fabs(d);
+    }
+    CHECK(worst < 0.05f);
+}
+
 TEST_CASE("center couple: couple 0 leaves both rate hooks at unity") {
     Rig r; r.init(3u);
     r.a.set_rate(0.4f); r.b.set_rate(0.7f);
@@ -131,6 +153,23 @@ TEST_CASE("center couple: couple 0 leaves both rate hooks at unity") {
     run_coupled(r, 48000);
     CHECK(r.a.master_hz() == doctest::Approx(ba));
     CHECK(r.b.master_hz() == doctest::Approx(bb));
+}
+
+TEST_CASE("center couple: in a MIXED pair the FREE bank locks to the SYNC anchor's rate") {
+    // Anchor A = SYNC 2 Hz; B = FREE with a base within an octave of the anchor.
+    // At full couple the FREE bank must converge to the *anchor* rate (not the
+    // geometric mean of the two), so the pair actually locks. Regression for the
+    // mixed-mode "turn COUPLE up, they still drift" bug.
+    Rig r; r.init(3u);
+    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
+    r.a.set_sync_mode(SyncMode::Sync); r.a.set_rate(0.625f);   // anchor: 2 Hz
+    r.b.set_sync_mode(SyncMode::Free);  r.b.set_rate(0.58f);   // ~1.38 Hz, within an octave
+    float anchor = r.a.base_hz();
+    r.c.set_couple(1.f); r.c.set_drift(0.f);
+    run_coupled(r, 48000 * 20);
+    CHECK(r.a.master_hz() == doctest::Approx(anchor));                 // anchor unmoved
+    CHECK(r.b.master_hz() == doctest::Approx(anchor).epsilon(0.03));   // free bank pulled to it
+    CHECK(std::fabs(r.c.phase_err()) < 0.05f);                         // and phase locked
 }
 
 TEST_CASE("center couple: a SYNC bank anchors, its rate is not scaled") {

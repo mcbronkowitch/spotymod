@@ -37,6 +37,8 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _slew.reset(0.f);
 }
 
+float ModLane::phase_eff() const { float p = _phase + _ev_phase; return p - std::floor(p); }
+
 void ModLane::set_rate_hz(float hz)   { _phase_inc = (hz > 0.f ? hz : 0.f) / _sr; }
 void ModLane::set_shape(float s)      { _shape = clampf(s, 0.f, 1.f); }
 void ModLane::set_range(float r)      { _range = clampf(r, 0.f, 1.f); }

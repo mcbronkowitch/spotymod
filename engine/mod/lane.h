@@ -31,6 +31,7 @@ public:
     bool  frozen() const { return _frozen; }  // last dice failed -> holding
     bool  gate_state() const { return _step_mode ? _effective_gate(_sh_slot()) : true; }
     float phase()  const { return _phase; }
+    float phase_eff() const;                  // audible phase = (_phase + EVOLVE offset), wrapped
     float target() const { return _target; }  // pre-smooth, pre-range held value
 
     void reset(float phase = 0.f);
