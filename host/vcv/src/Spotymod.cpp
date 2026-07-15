@@ -92,8 +92,8 @@ struct Spotymod : Module {
     static float defaultFor(int id) {
         switch (id) {                       // global knobs (init.vcvm snapshot 2026-07-15)
             case MORPH:        return 0.00f;   // hard left = fully part A (only deck A active)
-            case COUPLE:       return 0.00f;
-            case DRIFT:        return 0.00f;
+            case COUPLE:       return 1.00f;   // full = hard loop lock
+            case DRIFT:        return 1.00f;
             case MASTER_DRIVE: return 0.419f;
             case REV_SIZE:     return 1.00f;   // full room
             case REV_DECAY:    return 0.887f;
