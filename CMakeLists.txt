@@ -42,9 +42,11 @@ add_executable(spky_tests
     tests/test_range.cpp
     engine/mod/lane.cpp
     tests/test_lane.cpp
+    tests/test_gate_density.cpp
     tests/test_step.cpp
     tests/test_evolve.cpp
-    tests/test_entropy_seq.cpp
+    tests/test_variation.cpp
+    tests/test_new_phrase.cpp
     engine/mod/super_modulator.cpp
     tests/test_super_modulator.cpp
     engine/parts/part.cpp
@@ -53,7 +55,6 @@ add_executable(spky_tests
     tests/test_instrument.cpp
     engine/center/center.cpp
     tests/test_center.cpp
-    tests/test_capture.cpp
     tests/test_wav.cpp
     host/render/scenario.cpp
     tests/test_scenario.cpp
@@ -78,6 +79,7 @@ add_executable(spky_tests
     tests/test_voice.cpp
     engine/synth/synth_engine.cpp
     tests/test_synth_engine.cpp
+    tests/test_phrase_gen.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)

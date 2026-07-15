@@ -21,7 +21,7 @@
     {"action":"set_reverb_size","value":0.55},
     {"action":"set_reverb_tone","value":0.5},
     {"action":"set_reverb_decay","value":0.7},
-    {"action":"set_reverb_depth","value":0.348},
+    {"action":"set_reverb_diffusion","value":0.7},
     {"action":"set_fx_target_active","part":0,"slot":3,"flag":true},
     {"action":"set_fx_target_base","part":0,"slot":3,"value":0.2},
     {"action":"set_fx_target_depth","part":0,"slot":3,"value":0.6},

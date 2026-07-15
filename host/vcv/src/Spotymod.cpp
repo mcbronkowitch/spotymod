@@ -29,7 +29,9 @@ struct Spotymod : Module {
     float curSr = 0.f;
     dsp::ClockDivider ctrlDiv;              // throttle param push to control rate
     dsp::SchmittTrigger clockTrig;
-    dsp::BooleanTrigger captureTrig[2], triggerTrig[2], spotTrig, settleTrig;
+    dsp::BooleanTrigger triggerTrig[2], spotTrig, settleTrig;
+    dsp::BooleanTrigger principleTrig[2], newPhraseTrig[2];
+    int principleIdx[2] = {0, 0};   // current principle per part (0=TwoMotif)
     float clkSamples = 0.f;                 // samples since last external clock edge
     float gateFilt[2] = {0.f, 0.f};
 
@@ -48,13 +50,14 @@ struct Spotymod : Module {
             switch (c.kind) {
                 case WK_BIGKNOB:
                 case WK_SMKNOB: configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl); break;
-                case WK_KNOBC:  configParam(c.id, -1.f, 1.f, 0.f, lbl); break;
+                case WK_KNOBC:  // MELO (bipolar): part A leans toward GROW, B centred
+                    configParam(c.id, -1.f, 1.f, c.id == MELODY_A ? 0.32f : 0.f, lbl); break;
                 case WK_KNOBI:
                     if (c.id == SCALE)  // init patch is Dorian (holds every min9 tone)
                         configParam(c.id, 0.f, (float)(spky::SCALE_LIST_COUNT - 1),
                                     (float)spky::SCALE_DORIAN, "Scale");
                     else  // STEPS_A / STEPS_B
-                        configParam(c.id, 2.f, 16.f, c.id == STEPS_A ? 6.f : 8.f, "Steps");
+                        configParam(c.id, 2.f, 16.f, 8.f, "Steps");
                     getParamQuantity(c.id)->snapEnabled = true;
                     break;
                 case WK_SW3:  // init patch runs both parts tempo-Synced
@@ -65,7 +68,7 @@ struct Spotymod : Module {
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Engine", {"Synth", "Test tone"});
                     else if (c.id == GRITMODE_A || c.id == GRITMODE_B)
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Grit mode", {"Drive", "Reduce"});
-                    else  // STEP (on for the init patch's stepped sequences) / REPLAY
+                    else  // STEP (on for the init patch's stepped sequences) / PRINCIPLE / NEWPHRASE
                         configSwitch(c.id, 0.f, 1.f,
                                      (c.id == STEP_A || c.id == STEP_B) ? 1.f : 0.f,
                                      lbl, {"Off", "On"});
@@ -80,40 +83,42 @@ struct Spotymod : Module {
 
     // Init "patch" (Rack Initialize / fresh instance): part A = a sustained
     // minor-9 drone, part B = a low bass melody, both in Dorian (all min9 tones:
-    // A C E G B). Values were tuned by rendering the equivalent scenario through
-    // the desktop host and reading back pitch/voice content (see
-    // res/../scenarios). Only knob params (WK_BIGKNOB/WK_SMKNOB) come through
-    // here; STEP/SYNC/STEPS/SCALE defaults live in configControls().
+    // A C E G B). Knob values are a snapshot of a hand-dialled panel state
+    // (2026-07-15): MORPH sits hard toward A, COUPLE/DRIFT high, the room forward
+    // (SIZE/DECAY long, MIX 0.65), and part B runs its echo (FLUX) with light
+    // grit while part A stays FX-clean. Only knob params (WK_BIGKNOB/WK_SMKNOB)
+    // come through here; STEP/SYNC/STEPS/SCALE defaults live in configControls().
     static float defaultFor(int id) {
-        switch (id) {                       // global knobs
-            case MORPH:        return 0.50f;   // center neutral
-            case COUPLE:       return 0.00f;
+        switch (id) {                       // global knobs (panel snapshot 2026-07-15)
+            case MORPH:        return 0.05f;   // hard toward part A (the drone voice)
+            case COUPLE:       return 1.00f;   // full A<->B coupling
             case DRIFT:        return 0.00f;
             case MASTER_DRIVE: return 0.50f;
-            case REV_SIZE:     return 0.70f;   // long, roomy tail under the drone
-            case REV_DECAY:    return 0.80f;
-            case REV_TONE:     return 0.55f;
-            case REV_DEPTH:    return 0.25f;
+            case REV_SIZE:     return 0.88f;   // big room
+            case REV_DECAY:    return 0.85f;
+            case REV_TONE:     return 0.56f;
+            case REV_DIFF:     return 0.50f;
+            case REV_MIX:      return 0.60f;   // reverb sits well forward
             case TEMPO:        return 0.35f;   // ~110 BPM on the 40..240 map
             default: break;
         }
         const int part = id / PART_STRIDE;  // 0 = A (drone), 1 = B (bass)
-        switch (id % PART_STRIDE) {         // fold part B onto the *_A enum
-            case RATE_A:   return part ? 0.20f : 0.10f;
-            case SHAPE_A:  return part ? 0.70f : 0.40f;
-            case PROB_A:   return 0.90f;
-            case SMOOTH_A: return part ? 0.20f : 0.50f;
-            case RANGE_A:  return part ? 0.30f : 0.45f;
-            case DEPTH_A:  return part ? 0.60f : 0.50f;
-            case TUNE_A:   return part ? 0.00f : 0.50f;   // B down an octave-ish
-            case ATTACK_A: return part ? 0.05f : 0.20f;
-            case DECAY_A:  return part ? 0.16f : 0.90f;   // A rings/stacks; B plucks
-            case RES_A:    return part ? 0.25f : 0.20f;
-            case SUB_A:    return part ? 0.50f : 0.30f;   // weight under the bass
+        switch (id % PART_STRIDE) {         // fold part B onto the *_A enum; part ? B : A
+            case RATE_A:   return part ? 0.50f : 0.50f;
+            case SHAPE_A:  return part ? 0.60f : 0.40f;
+            case DENSITY_A: return part ? 0.60f : 0.67f;
+            case SMOOTH_A: return part ? 0.30f : 0.10f;
+            case RANGE_A:  return part ? 0.38f : 0.60f;
+            case DEPTH_A:  return part ? 0.38f : 0.78f;
+            case TUNE_A:   return part ? 0.08f : 0.55f;   // B down an octave-ish
+            case ATTACK_A: return part ? 0.13f : 0.35f;
+            case DECAY_A:  return part ? 0.20f : 0.85f;   // A rings/stacks; B plucks
+            case RES_A:    return part ? 0.28f : 0.18f;
+            case SUB_A:    return part ? 0.62f : 0.35f;   // weight under the bass
             case DETUNE_A: return part ? 0.10f : 0.20f;
-            case FLUX_A:   return 0.00f;
-            case GRIT_A:   return 0.00f;
-            case COMP_A:   return part ? 0.20f : 0.30f;
+            case FLUX_A:   return part ? 0.88f : 0.00f;   // B echo engaged; A off
+            case GRIT_A:   return part ? 0.20f : 0.00f;   // B light grit; A off
+            case COMP_A:   return part ? 0.28f : 0.45f;
             default: break;
         }
         return 0.5f;
@@ -134,10 +139,10 @@ struct Spotymod : Module {
         for (int p = 0; p < 2; ++p) {
             inst.set_rate(p, pp(RATE_A, p));
             inst.set_shape(p, pp(SHAPE_A, p));
-            inst.set_probability(p, pp(PROB_A, p));
+            inst.set_density(p, pp(DENSITY_A, p));
             inst.set_smooth(p, pp(SMOOTH_A, p));
             inst.set_range(p, pp(RANGE_A, p));
-            inst.set_entropy(p, pp(ENTROPY_A, p));            // -1..+1
+            inst.set_variation(p, pp(MELODY_A, p));          // -1..+1 RENEW<-LOOP->GROW
             inst.set_depth(p, pp(DEPTH_A, p));
             inst.set_tune(p, pp(TUNE_A, p));
 
@@ -149,6 +154,12 @@ struct Spotymod : Module {
 
             inst.set_flux_mix(p, pp(FLUX_A, p));
             inst.set_grit_mix(p, pp(GRIT_A, p));
+            // The FX blocks are gated by an explicit on/off (a pad on hardware,
+            // a scenario action on the desktop). VCV has no such pad, so the mix
+            // knob doubles as the on switch: knob up == engaged. At 0 the block
+            // stays idle and the whole chain is skipped (bit-exact bypass).
+            inst.set_fx_on(p, spky::FxBlock::Flux, pp(FLUX_A, p) > 1e-4f);
+            inst.set_fx_on(p, spky::FxBlock::Grit, pp(GRIT_A, p) > 1e-4f);
             inst.set_comp(p, pp(COMP_A, p));
 
             // 3-pos switch: 0=Free, 1=Sync, 2=Triplet.
@@ -161,9 +172,12 @@ struct Spotymod : Module {
             inst.set_grit_mode(p, ppb(GRITMODE_A, p) ? spky::GritMode::Reduce
                                                      : spky::GritMode::Drive);
             inst.set_step(p, ppb(STEP_A, p), (int)std::round(pp(STEPS_A, p)));
-            inst.set_replay(p, ppb(REPLAY_A, p));
 
-            if (captureTrig[p].process(ppb(CAPTURE_A, p))) inst.capture_now(p);
+            if (principleTrig[p].process(ppb(PRINCIPLE_A, p))) {
+                principleIdx[p] = (principleIdx[p] + 1) % 5;   // cycle the 5 principles
+                inst.set_principle(p, principleIdx[p]);
+            }
+            if (newPhraseTrig[p].process(ppb(NEWPHRASE_A, p))) inst.new_phrase(p);
             if (triggerTrig[p].process(ppb(TRIGGER_A, p))) inst.trigger_manual(p);
         }
 
@@ -173,7 +187,8 @@ struct Spotymod : Module {
         inst.set_reverb_size(params[REV_SIZE].getValue());
         inst.set_reverb_decay(params[REV_DECAY].getValue());
         inst.set_reverb_tone(params[REV_TONE].getValue());
-        inst.set_reverb_depth(params[REV_DEPTH].getValue());
+        inst.set_reverb_diffusion(params[REV_DIFF].getValue());
+        inst.set_reverb_mix(params[REV_MIX].getValue());
         inst.set_master_drive(params[MASTER_DRIVE].getValue());
         inst.set_scale((int)std::round(params[SCALE].getValue()));
 
@@ -263,19 +278,23 @@ struct SpkyRing : Widget {
                 bright[i1] = std::max(bright[i1], frac * boost);
             }
         }
+        // per-part glow colour from the generator (A solder green, B copper)
+        const unsigned gc = kColGlow[part];
+        const float cr = ((gc >> 16) & 0xFF) / 255.f;
+        const float cg = ((gc >> 8)  & 0xFF) / 255.f;
+        const float cb = ( gc        & 0xFF) / 255.f;
         for (int i = 0; i < kRingDots; ++i) {
             float b = bright[i];
             if (b <= 0.02f) continue;
             float a = TWO_PI * i / kRingDots;
             Vec p = c.plus(Vec(std::sin(a), -std::cos(a)).mult(R));
-            // soft glow + core, mint (#6DE0C8)
             nvgBeginPath(args.vg);
             nvgCircle(args.vg, p.x, p.y, dr * 2.6f);
-            nvgFillColor(args.vg, nvgRGBAf(0.43f, 0.88f, 0.78f, 0.25f * b));
+            nvgFillColor(args.vg, nvgRGBAf(cr, cg, cb, 0.25f * b));
             nvgFill(args.vg);
             nvgBeginPath(args.vg);
             nvgCircle(args.vg, p.x, p.y, dr);
-            nvgFillColor(args.vg, nvgRGBAf(0.43f, 0.88f, 0.78f, b));
+            nvgFillColor(args.vg, nvgRGBAf(cr, cg, cb, b));
             nvgFill(args.vg);
         }
     }
@@ -307,32 +326,32 @@ struct PanelText : Widget {
         nvgFontFaceId(args.vg, font->handle);
         nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
 
-        const NVGcolor lbl   = nvgRGB(0xc9, 0xcc, 0xd8);   // control captions
-        const NVGcolor mint  = nvgRGB(0x6d, 0xe0, 0xc8);   // titles + brand
-        const NVGcolor mintD = nvgRGB(0x3a, 0x5d, 0x55);   // dim A/B under the rings
-
-        auto text = [&](float xmm, float ymm, float szmm, NVGcolor col, const char* s) {
+        auto col = [](unsigned rgb) {
+            return nvgRGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        };
+        auto text = [&](float xmm, float ymm, float szmm, NVGcolor c, const char* s) {
             nvgFontSize(args.vg, mm2px(szmm));
-            nvgFillColor(args.vg, col);
+            nvgFillColor(args.vg, c);
             Vec p = mm2px(Vec(xmm, ymm));
             nvgText(args.vg, p.x, p.y, s, NULL);
         };
         auto captions = [&](const PanelCtl* t, size_t n) {
             for (size_t i = 0; i < n; ++i)
                 if (t[i].label[0])
-                    text(t[i].mm.x, t[i].mm.y + glyphR(t[i].kind) + 2.5f, 2.0f, lbl, t[i].label);
+                    text(t[i].mm.x, t[i].mm.y + glyphR(t[i].kind) + 2.5f, 2.0f,
+                         col(kColLabel), t[i].label);
         };
         captions(kParamCtls,  sizeof(kParamCtls)  / sizeof(kParamCtls[0]));
         captions(kInputCtls,  sizeof(kInputCtls)  / sizeof(kInputCtls[0]));
         captions(kOutputCtls, sizeof(kOutputCtls) / sizeof(kOutputCtls[0]));
 
-        // section titles + brand (mirror res/gen_panel.py svg())
-        const float CX = 106.680f, Hh = 128.5f;
-        text(kLightCtls[0].mm.x, kLightCtls[0].mm.y + 1.f, 5.0f, mintD, "A");
-        text(kLightCtls[1].mm.x, kLightCtls[1].mm.y + 1.f, 5.0f, mintD, "B");
-        text(CX, 57.0f, 2.4f, mint, "ROOM");
-        text(CX, 85.0f, 2.4f, mint, "CLOCK / MIX");
-        text(CX, Hh - 2.5f, 4.5f, mint, "spotymod");
+        // section titles + brand -- the shared TEXTS table from the generator,
+        // so runtime lettering matches the SVG preview one-to-one
+        for (const auto& t : kPanelTexts) {
+            nvgTextLetterSpacing(args.vg, mm2px(t.spacing));
+            text(t.mm.x, t.mm.y, t.size, col(t.rgb), t.str);
+        }
+        nvgTextLetterSpacing(args.vg, 0.f);
     }
 };
 

@@ -72,7 +72,6 @@ TEST_CASE("part: a PITCH fire raises the gate") {
     p.set_target_active(LANE_PITCH, true);
     p.mod().set_sync_mode(SyncMode::Free);
     p.mod().set_rate(0.7f);
-    p.mod().set_probability(1.f);
     bool saw_gate = false;
     float l, r;
     for (int i = 0; i < 48000; ++i) {
@@ -191,39 +190,20 @@ TEST_CASE("part: boots on the synth engine and hums in FLOW (drone promise)") {
     CHECK(energy > 1e-3f);
 }
 
-TEST_CASE("part: FLOW at probability 0 never goes silent; STEP decays to silence") {
-    Part p;
-    p.init(48000.f, 5);
-    p.mod().set_probability(0.f);
-    float l, r;
-    for (int i = 0; i < 48000 * 4; ++i) p.process(l, r);
-    float energy = 0.f;
-    for (int i = 0; i < 48000; ++i) {
-        p.process(l, r);
-        energy += l * l;
-    }
-    CHECK(energy > 1e-4f);                  // the drone holds at probability 0
-
-    Part q;
-    q.init(48000.f, 5);
-    q.mod().set_probability(0.f);
-    q.set_step(true, 8);                    // STEP: the boot drone is released
-    for (int i = 0; i < 48000 * 10; ++i) q.process(l, r);
-    float tail = 0.f;
-    for (int i = 0; i < 48000; ++i) {
-        q.process(l, r);
-        tail += l * l;
-    }
-    CHECK(tail == 0.f);                     // decays to EXACT silence and stays
-}
-
+// PROBABILITY used to force a permanent freeze (dice pinned to never fire),
+// which let these tests isolate a manual trigger from all natural firing.
+// After PROBABILITY's removal the downbeat gate slot is unmaskable by design
+// (DENSITY never drops it — see test_gate_density.cpp), so entering STEP mode
+// still fires once on the very first process() call (step -1 -> 0). Settle
+// past that single natural note's decay (but short of the next gated step)
+// before checking silence, so the manual trigger is the only voice left.
 TEST_CASE("part: manual trigger fires at the current pitch and raises the gate") {
     Part p;
     p.init(48000.f, 5);
+    p.set_voice_decay(0.f);   // shortest decay ratio: settle window stays short
     p.set_step(true, 8);
-    p.mod().set_probability(0.f);
     float l, r;
-    for (int i = 0; i < 48000 * 8; ++i) p.process(l, r);
+    for (int i = 0; i < 10000; ++i) p.process(l, r);   // past the boot note's decay
     CHECK(p.active_voices() == 0);          // silent before the tap
     p.trigger_manual();
     CHECK(p.gate());
@@ -231,29 +211,47 @@ TEST_CASE("part: manual trigger fires at the current pitch and raises the gate")
     CHECK(p.active_voices() == 1);
 }
 
+// Restores the coverage lost when PROBABILITY was removed (the old test used
+// set_probability(0) to freeze all natural firing, isolating a manual trigger
+// so a full decay tail could be measured over several seconds of silence).
+// DENSITY can no longer freeze the downbeat slot (it is unmaskable by design,
+// see test_gate_density.cpp), so instead of waiting for silence this measures
+// the decay tail WITHIN the first cycle, before any second trigger can occur:
+//   - DENSITY 0 leaves only the downbeat slot able to fire, so after the
+//     guaranteed first-sample fire (STEP entry: step -1 -> 0) the NEXT
+//     natural fire cannot happen before a full master cycle elapses.
+//   - The fixed 50 ms measurement offset is well inside both cycles under
+//     test (144 ms @ rate 0.8, ~622 ms @ rate 0.6), so no second trigger can
+//     land before voice_env(0) is sampled, in either case.
+// voice_env(0) is read (not active_voices()/silence) because SynthEngine's
+// decay is 1.5x the cycle length (by spec) - a full cycle is NOT long enough
+// for the tail to reach idle, so envelope LEVEL at a shared time offset is
+// the observable that distinguishes a fast decay from a slow one.
+//
+// This only passes if Part is actually forwarding mod().set_rate/set_cycle
+// to the engine: if that wiring broke, both engines would keep the default
+// 1.0 s cycle (1.5 s decay) regardless of rate_norm, so voice_env(0) would be
+// (near) IDENTICAL at the fixed offset instead of clearly separated.
 TEST_CASE("part: decay length follows the master cycle (set_cycle forwarding)") {
-    auto tail_samples = [](float rate_norm) {
+    auto env_at_offset = [](float rate_norm, int offset_samples) {
         Part p;
         p.init(48000.f, 5);
-        p.set_step(true, 8);
-        p.mod().set_probability(0.f);
+        p.set_step(true, 8);          // cancels the boot FLOW auto-trigger
+        p.mod().set_density(0.f);     // only the unmaskable downbeat slot fires
         p.mod().set_sync_mode(SyncMode::Free);
         p.mod().set_rate(rate_norm);
         float l, r;
-        // settle (no boot drone here: set_step ran before the first process()
-        // call, which cancels the pending FLOW auto-trigger)
-        for (int i = 0; i < 48000 * 3; ++i) p.process(l, r);
-        p.trigger_manual();
-        int n = 0;
-        while (p.active_voices() > 0 && n < 48000 * 10) {
-            p.process(l, r);
-            ++n;
-        }
-        return n;
+        p.process(l, r);              // downbeat fires here (step -1 -> 0)
+        REQUIRE(p.lane_fired(LANE_PITCH));
+        REQUIRE(p.active_voices() == 1);   // exactly one voice: the downbeat
+        for (int i = 0; i < offset_samples; ++i) p.process(l, r);
+        return p.voice_env(0);
     };
-    int slow = tail_samples(0.6f);   // ~1.61 Hz -> cycle 0.62 s -> decay ~0.93 s
-    int fast = tail_samples(0.8f);   // ~6.9 Hz  -> cycle 0.14 s -> decay ~0.22 s
-    CHECK(slow > fast * 2);          // longer cycle => audibly longer notes
+    const int offset = 2400;   // 50 ms @ 48 kHz
+    float fast = env_at_offset(0.8f, offset);   // ~6.9 Hz -> cycle ~0.144 s
+    float slow = env_at_offset(0.6f, offset);   // ~1.6 Hz -> cycle ~0.622 s
+    CHECK(slow > fast);
+    CHECK(slow - fast > 0.3f);   // clearly separated, not just noise
 }
 
 TEST_CASE("part: engine switch test tone <-> synth is click-free") {

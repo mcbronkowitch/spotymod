@@ -48,7 +48,6 @@ TEST_CASE("reverb: mono impulse produces a persistent stereo tail") {
 TEST_CASE("reverb: below 100% the impulse energy decays monotonically") {
     s_rev.init(48000.f);
     s_rev.set_decay(0.4f);
-    s_rev.set_depth(0.f);
     auto ir = impulse_response(s_rev, 48000, true);
     float w[4] = { 0.f, 0.f, 0.f, 0.f };
     for (int k = 0; k < 4; ++k)
@@ -117,30 +116,68 @@ TEST_CASE("reverb: tone closed removes high-frequency tail energy") {
     };
     s_rev.init(48000.f);
     s_rev.set_decay(0.7f);
-    s_rev.set_depth(0.f);
     s_rev.set_tone(0.9f);
     auto bright = impulse_response(s_rev, 48000, true);
     s_rev.init(48000.f);
     s_rev.set_decay(0.7f);
-    s_rev.set_depth(0.f);
     s_rev.set_tone(0.1f);
     auto dark = impulse_response(s_rev, 48000, true);
     CHECK(hf_ratio(bright) > hf_ratio(dark) * 1.5f);
 }
 
-TEST_CASE("reverb: depth animates the tail") {
+TEST_CASE("reverb: diffusion reshapes the room (sparse vs dense)") {
     s_rev.init(48000.f);
     s_rev.set_decay(0.8f);
-    s_rev.set_depth(0.f);
-    auto still = impulse_response(s_rev, 48000, true);
+    s_rev.set_diffusion(0.f);            // discrete slap-echo cluster
+    auto sparse = impulse_response(s_rev, 48000, true);
     s_rev.init(48000.f);
     s_rev.set_decay(0.8f);
-    s_rev.set_depth(0.9f);
-    auto moving = impulse_response(s_rev, 48000, true);
+    s_rev.set_diffusion(0.9f);           // dense wash
+    auto dense = impulse_response(s_rev, 48000, true);
     int diff = 0;
     for (int i = 4800; i < 48000; ++i)
-        if (std::fabs(still[i] - moving[i]) > 1e-6f) ++diff;
+        if (std::fabs(sparse[i] - dense[i]) > 1e-6f) ++diff;
     CHECK(diff > 1000);
+    // early-window crest: a sparse room concentrates energy in discrete
+    // events; a diffused one spreads it -> lower peak-to-RMS
+    auto crest = [](const std::vector<float>& x, int a, int b) {
+        float pk = 0.f;
+        double acc = 0.0;
+        for (int i = a; i < b; ++i) {
+            pk = std::max(pk, std::fabs(x[i]));
+            acc += x[i] * x[i];
+        }
+        float rms = std::sqrt((float)(acc / (b - a))) + 1e-12f;
+        return pk / rms;
+    };
+    CHECK(crest(sparse, 0, 9600) > crest(dense, 0, 9600));
+}
+
+TEST_CASE("reverb: diffusion ride stays bounded without clicks") {
+    s_rev.init(48000.f);
+    s_rev.set_decay(0.9f);
+    // ring the room first
+    for (int i = 0; i < 24000; ++i) {
+        float in = (i == 0) ? 1.f : 0.2f * std::sin(6.2831853f * 330.f * i / 48000.f);
+        float wl, wr;
+        s_rev.process(in, in, wl, wr);
+    }
+    float prev = 0.f, max_step = 0.f;
+    bool finite = true;
+    for (int i = 0; i < 96000; ++i) {
+        if (i % 480 == 0) {   // sweep 0 -> 1 -> 0 over 2 s in 200 steps
+            float t = i / 96000.f;
+            float n = t < 0.5f ? 2.f * t : 2.f * (1.f - t);
+            s_rev.set_diffusion(n);
+        }
+        float wl, wr;
+        s_rev.process(0.f, 0.f, wl, wr);
+        if (!std::isfinite(wl)) { finite = false; break; }
+        max_step = std::max(max_step, std::fabs(wl - prev));
+        prev = wl;
+    }
+    CHECK(finite);
+    CHECK(max_step < 1.f);   // density morph yes, discontinuities no
 }
 
 TEST_CASE("reverb: bit-deterministic across instances") {
@@ -151,7 +188,7 @@ TEST_CASE("reverb: bit-deterministic across instances") {
         rv->set_size(0.65f);
         rv->set_decay(0.85f);
         rv->set_tone(0.6f);
-        rv->set_depth(0.6f);
+        rv->set_diffusion(0.6f);
     }
     bool identical = true;
     for (int i = 0; i < 48000; ++i) {
@@ -162,4 +199,32 @@ TEST_CASE("reverb: bit-deterministic across instances") {
         if (la != lb || ra != rb) { identical = false; break; }
     }
     CHECK(identical);
+}
+
+TEST_CASE("reverb: clear() empties the room but keeps the parameter state") {
+    static AmbientReverb rv;             // BIG object: never stack-allocate
+    rv.init(48000.f);
+    rv.set_decay(0.8f);
+    float l, r;
+    // ring up a tail: periodic impulses for 0.25 s
+    for (int i = 0; i < 12000; ++i) {
+        float in = (i % 4800 == 0) ? 0.9f : 0.f;
+        rv.process(in, in, l, r);
+    }
+    float energy = 0.f;                  // the room is audibly ringing
+    for (int i = 0; i < 4800; ++i) { rv.process(0.f, 0.f, l, r); energy += l * l + r * r; }
+    CHECK(energy > 1e-6f);
+
+    rv.clear();
+    // silence in -> exact silence out: buffer AND loop filter state are zeroed
+    for (int i = 0; i < 4800; ++i) {
+        rv.process(0.f, 0.f, l, r);
+        CHECK(l == 0.f);
+        CHECK(r == 0.f);
+    }
+    // parameters survived the clear: a fresh impulse still rings the same room
+    rv.process(0.9f, 0.9f, l, r);
+    float energy2 = 0.f;
+    for (int i = 0; i < 9600; ++i) { rv.process(0.f, 0.f, l, r); energy2 += l * l + r * r; }
+    CHECK(energy2 > 1e-6f);
 }

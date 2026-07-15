@@ -3,7 +3,6 @@
 #include <cstdint>
 #include "mod/lane.h"
 #include "mod/lane_id.h"
-#include "mod/capture.h"
 
 namespace spky {
 
@@ -17,12 +16,15 @@ public:
     void set_rate(float norm)      { _rate_norm = norm; _update_rate(); }
     void set_sync_mode(SyncMode m) { _mode = m; _update_rate(); }
     void set_shape(float s);
-    void set_probability(float p);
+    void set_density(float d) { _lanes[LANE_PITCH].set_density(d); }
     void set_smooth(float s);
     void set_range(float r);
-    void set_entropy(float a);
+    void set_variation(float v);
     void set_step(bool on, int steps);
     void set_fixed_slew(bool on);
+    void set_principle(Principle p) { _lanes[LANE_PITCH].set_principle(p); }
+    void new_phrase() { _lanes[LANE_PITCH].new_phrase(); }
+    bool pitch_gate() const { return _lanes[LANE_PITCH].gate_state(); }
 
     void process();                // advance all lanes one sample
 
@@ -36,16 +38,10 @@ public:
     // --- M4 center hooks ---
     void set_rate_scale(float s)  { _rate_scale = s; _apply_rate(); }  // COUPLE * DRIFT rate
     void set_shape_offset(float o){ for (auto& l : _lanes) l.set_shape_offset(o); }
-    void spot(Rng& rng);          // per-lane SPOT kicks (skips the replaying PITCH lane)
+    void spot(Rng& rng);          // per-lane SPOT kicks (skips the PITCH lane)
     void settle()                { for (auto& l : _lanes) l.settle(); }
     float    base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
     SyncMode sync_mode() const { return _mode; }
-
-    // --- M3 capture sequencer (PITCH lane only) ---
-    void capture_now()       { _capture.capture_now(); }
-    void set_replay(bool on) { _lanes[LANE_PITCH].set_replay(on); }
-    bool replaying()   const { return _lanes[LANE_PITCH].replaying(); }
-    bool loop_valid()  const { return _capture.valid(); }
 
 private:
     void _update_rate();
@@ -53,7 +49,6 @@ private:
 
     std::array<ModLane, LANE_COUNT> _lanes;
     std::array<float, LANE_COUNT>   _out {};
-    CaptureLoop                     _capture;   // one loop, PITCH lane only
 
     float    _sr = 48000.f;
     float    _bpm = 120.f;

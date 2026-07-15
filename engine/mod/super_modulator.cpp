@@ -25,11 +25,10 @@ float sync_hz(float norm, float bpm, bool triplet) {
 void SuperModulator::init(float sample_rate, uint32_t seed_base) {
     _sr = sample_rate;
     for (int i = 0; i < LANE_COUNT; ++i) {
+        _lanes[i].set_melodic(i == LANE_PITCH);
         _lanes[i].init(sample_rate, seed_base + static_cast<uint32_t>(i) * 2654435761u);
         _out[i] = 0.f;
     }
-    _capture.reset();
-    _lanes[LANE_PITCH].set_capture_loop(&_capture);   // capture is PITCH-only
     _rate_scale = 1.f;
     _update_rate();
 }
@@ -50,10 +49,9 @@ void SuperModulator::_apply_rate() {
 }
 
 void SuperModulator::set_shape(float s)       { for (auto& l : _lanes) l.set_shape(s); }
-void SuperModulator::set_probability(float p) { for (auto& l : _lanes) l.set_probability(p); }
 void SuperModulator::set_smooth(float s)      { for (auto& l : _lanes) l.set_smooth(s); }
 void SuperModulator::set_range(float r)       { for (auto& l : _lanes) l.set_range(r); }
-void SuperModulator::set_entropy(float a)     { for (auto& l : _lanes) l.set_entropy(a); }
+void SuperModulator::set_variation(float v)   { for (auto& l : _lanes) l.set_variation(v); }
 void SuperModulator::set_step(bool on, int n) { for (auto& l : _lanes) l.set_step(on, n); }
 void SuperModulator::set_fixed_slew(bool on)  { for (auto& l : _lanes) l.set_fixed_slew(on); }
 
@@ -65,9 +63,8 @@ void SuperModulator::process() {
 void SuperModulator::spot(Rng& rng) {
     // SPOT stumbles every lane EXCEPT the PITCH master lane: the melody is the
     // anchor everything else stumbles around, so pitch is never a target of the
-    // stumble (extends the replaying PITCH loop's immunity to the live lane too).
-    // Draw a kick for every lane so the RNG stream stays independent of which
-    // lanes are skipped.
+    // stumble. Draw a kick for every lane so the RNG stream stays independent
+    // of which lanes are skipped.
     for (int i = 0; i < LANE_COUNT; ++i) {
         float dphase = rng.next_bipolar() * 0.5f;    // uniform +/- 1/2 cycle
         float dshape = rng.next_bipolar() * 0.35f;   // uniform +/- 0.35

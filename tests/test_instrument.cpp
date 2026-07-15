@@ -80,6 +80,7 @@ TEST_CASE("instrument: all FX off + send 0 is bit-identical to the no-FX build")
     fx.init(48000.f, test_fx_mem());
     for (int p = 0; p < PART_COUNT; ++p)
         fx.set_fx_target_base(p, FXT_REV_SEND, 0.f);   // before any process()
+    fx.set_reverb_mix(0.f);                        // MIX 0: dry passes untouched
     float pl, pr, fl, fr;
     for (int i = 0; i < 48000; ++i) {
         plain.process(nullptr, nullptr, &pl, &pr, 1);
@@ -117,7 +118,8 @@ TEST_CASE("instrument: fx setters reach the parts and reverb setters are null-sa
     inst.set_reverb_size(0.9f);         // must not crash without a reverb
     inst.set_reverb_tone(0.2f);
     inst.set_reverb_decay(0.7f);
-    inst.set_reverb_depth(0.5f);
+    inst.set_reverb_diffusion(0.5f);
+    inst.set_reverb_mix(0.7f);
     float l, r;
     inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(inst.fx_target_value(PART_A, FXT_GRIT_INT) >= 0.f);
@@ -139,14 +141,20 @@ TEST_CASE("instrument: boots both parts on the synth engine with an audible dron
     CHECK(energy > 1e-3f);
 }
 
+// PROBABILITY used to force a permanent freeze so this test could settle for a
+// while and still find the part silent before the manual tap. After its
+// removal the downbeat gate slot is unmaskable (DENSITY never drops it), so
+// entering STEP mode still fires once on the very first process() call (step
+// -1 -> 0). Settle past that single natural note's decay (but short of the
+// next gated step) before checking silence, so the manual trigger is the
+// only voice left.
 TEST_CASE("instrument: voice setters and manual trigger reach the part") {
     Instrument inst;
     inst.init(48000.f);
     inst.set_voice_decay(PART_A, 0.f);      // shortest decay ratio (0.1x cycle)
     inst.set_step(PART_A, true, 8);
-    inst.set_probability(PART_A, 0.f);
     float l, r;
-    for (int i = 0; i < 48000 * 3; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+    for (int i = 0; i < 10000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(inst.active_voices(PART_A) == 0);
     inst.trigger_manual(PART_A);
     inst.process(nullptr, nullptr, &l, &r, 1);
@@ -297,5 +305,176 @@ TEST_CASE("instrument: dynamics chain is deterministic end to end") {
         return out;
     };
     auto a = run(), b = run();
+    for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]);
+}
+
+TEST_CASE("instrument M4.8: mix 0 is bit-identical to the engine-only build") {
+    Instrument plain;
+    plain.init(48000.f);
+    Instrument fx;
+    fx.init(48000.f, test_fx_mem());
+    fx.set_reverb_mix(0.f);            // before the first process(): snaps
+    // NOTE: the default sends stay live — the wet return is simply discarded
+    float pl, pr, fl, fr;
+    for (int i = 0; i < 48000; ++i) {
+        plain.process(nullptr, nullptr, &pl, &pr, 1);
+        fx.process(nullptr, nullptr, &fl, &fr, 1);
+        CHECK(fl == pl);
+        CHECK(fr == pr);
+    }
+    CHECK(fx.reverb_asleep());
+}
+
+TEST_CASE("instrument M4.8: mix 1 with muted sends is exact silence (dry fully gone)") {
+    Instrument fx;
+    fx.init(48000.f, test_fx_mem());
+    fx.set_reverb_mix(1.f);
+    for (int p = 0; p < PART_COUNT; ++p)
+        fx.set_fx_target_base(p, FXT_REV_SEND, 0.f);   // empty room: wet is silence
+    float l, r;
+    for (int i = 0; i < 48000; ++i) {
+        fx.process(nullptr, nullptr, &l, &r, 1);
+        CHECK(l == 0.f);               // dry gain is EXACTLY 0 at the endpoint
+        CHECK(r == 0.f);
+    }
+}
+
+TEST_CASE("instrument M4.8: mix 0.5 sits at equal power (both gains cos(pi/4))") {
+    // Three identically-seeded fx instruments at MIX 0 / 0.5 / 1, default
+    // sends live. Their dry and wet streams are bit-identical, so:
+    //   out0   = dry            out1   = wet
+    //   out05  = 0.7071*dry + 0.7071*wet
+    // => rms(out05 - 0.7071*out0) / rms(out1) == 0.7071  (wet gain)
+    //    rms(out05 - 0.7071*out1) / rms(out0) == 0.7071  (dry gain)
+    static float echoEP[3][PART_COUNT][2][Flux::kMaxSamples];
+    static AmbientReverb rvEP[3];
+    Instrument inst[3];
+    const float mixes[3] = { 0.f, 0.5f, 1.f };
+    for (int k = 0; k < 3; ++k) {
+        FxMem m;
+        for (int p = 0; p < PART_COUNT; ++p)
+            for (int c = 0; c < 2; ++c) m.echo[p][c] = echoEP[k][p][c];
+        m.reverb = &rvEP[k];
+        inst[k].init(48000.f, m);
+        inst[k].set_reverb_mix(mixes[k]);
+    }
+    float l[3], r[3];
+    for (int i = 0; i < 48000; ++i)                     // settle: gains + room fill
+        for (int k = 0; k < 3; ++k) inst[k].process(nullptr, nullptr, &l[k], &r[k], 1);
+    const float g = 0.70710678f;
+    double accW = 0.0, acc1 = 0.0, accD = 0.0, acc0 = 0.0;
+    for (int i = 0; i < 96000; ++i) {
+        for (int k = 0; k < 3; ++k) inst[k].process(nullptr, nullptr, &l[k], &r[k], 1);
+        float wet_half = l[1] - g * l[0];
+        float dry_half = l[1] - g * l[2];
+        accW += wet_half * wet_half;  acc1 += l[2] * l[2];
+        accD += dry_half * dry_half;  acc0 += l[0] * l[0];
+    }
+    CHECK(std::sqrt(accW / acc1) == doctest::Approx(g).epsilon(0.02));
+    CHECK(std::sqrt(accD / acc0) == doctest::Approx(g).epsilon(0.02));
+}
+
+TEST_CASE("instrument M4.8: hard MIX jumps are smoothed (no zipper)") {
+    static float echoZ[PART_COUNT][2][Flux::kMaxSamples];
+    static AmbientReverb rvZ;
+    auto run_maxd = [&](bool stepped) {
+        FxMem m;
+        for (int p = 0; p < PART_COUNT; ++p)
+            for (int c = 0; c < 2; ++c) m.echo[p][c] = echoZ[p][c];
+        m.reverb = &rvZ;
+        Instrument inst;
+        inst.init(48000.f, m);                 // init() re-clears the shared statics
+        float l = 0.f, r = 0.f, prev = 0.f, maxd = 0.f;
+        for (int i = 0; i < 96000; ++i) {
+            if (stepped && i == 48000) inst.set_reverb_mix(1.f);
+            if (stepped && i == 72000) inst.set_reverb_mix(0.f);
+            inst.process(nullptr, nullptr, &l, &r, 1);
+            if (i > 0) { float d = std::fabs(l - prev); if (d > maxd) maxd = d; }
+            prev = l;
+        }
+        return maxd;
+    };
+    float steady = run_maxd(false);
+    float stepped = run_maxd(true);
+    // an unsmoothed 0->1 gain jump would spike the per-sample delta far above
+    // the drone's own; the 10 ms glide keeps it in the same ballpark
+    CHECK(stepped < 2.f * steady + 0.01f);
+}
+
+TEST_CASE("instrument M4.8: MIX 0 sleeps the room, any MIX > 0 wakes it") {
+    Instrument fx;
+    fx.init(48000.f, test_fx_mem());
+    float l, r;
+    fx.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(!fx.reverb_asleep());            // boot mix 0.25: awake
+    fx.set_reverb_mix(0.f);                // runtime fade-out -> sleep
+    for (int i = 0; i < 9600; ++i) fx.process(nullptr, nullptr, &l, &r, 1);
+    CHECK(fx.reverb_asleep());             // 0.2 s >> the 10 ms glide + snap
+    fx.set_reverb_mix(0.4f);
+    CHECK(!fx.reverb_asleep());            // waking is immediate
+}
+
+TEST_CASE("instrument M4.8: waking from sleep starts with an empty room (no ghost tail)") {
+    static float echoGX[PART_COUNT][2][Flux::kMaxSamples];
+    static float echoGY[PART_COUNT][2][Flux::kMaxSamples];
+    static AmbientReverb rvGX, rvGY;
+    FxMem mx, my;
+    for (int p = 0; p < PART_COUNT; ++p)
+        for (int c = 0; c < 2; ++c) { mx.echo[p][c] = echoGX[p][c]; my.echo[p][c] = echoGY[p][c]; }
+    mx.reverb = &rvGX; my.reverb = &rvGY;
+    Instrument x; x.init(48000.f, mx);
+    Instrument y; y.init(48000.f, my);
+    x.set_reverb_decay(0.85f); y.set_reverb_decay(0.85f);  // a surviving ghost would ring loud
+    // Y is the reference: sends muted from boot, MIX 0.5 from boot
+    y.set_reverb_mix(0.5f);
+    for (int p = 0; p < PART_COUNT; ++p) y.set_fx_target_base(p, FXT_REV_SEND, 0.f);
+    float xl, xr, yl, yr;
+    // phase 1 (1 s): X rings up a loud tail on the default sends
+    for (int i = 0; i < 48000; ++i) { x.process(nullptr, nullptr, &xl, &xr, 1);
+                                      y.process(nullptr, nullptr, &yl, &yr, 1); }
+    // phase 2 (0.5 s): X mutes its sends and goes to sleep at MIX 0
+    for (int p = 0; p < PART_COUNT; ++p) x.set_fx_target_base(p, FXT_REV_SEND, 0.f);
+    x.set_reverb_mix(0.f);
+    for (int i = 0; i < 24000; ++i) { x.process(nullptr, nullptr, &xl, &xr, 1);
+                                      y.process(nullptr, nullptr, &yl, &yr, 1); }
+    CHECK(x.reverb_asleep());
+    // phase 3 (0.5 s settle): X wakes at MIX 0.5; gains glide and snap
+    x.set_reverb_mix(0.5f);
+    for (int i = 0; i < 24000; ++i) { x.process(nullptr, nullptr, &xl, &xr, 1);
+                                      y.process(nullptr, nullptr, &yl, &yr, 1); }
+    // both rooms are now empty and unfed, the part streams are identical:
+    // any difference left would be X's pre-sleep tail — it must be GONE
+    float maxd = 0.f;
+    for (int i = 0; i < 24000; ++i) {
+        x.process(nullptr, nullptr, &xl, &xr, 1);
+        y.process(nullptr, nullptr, &yl, &yr, 1);
+        float d = std::fabs(xl - yl); if (d > maxd) maxd = d;
+    }
+    CHECK(maxd == 0.f);
+}
+
+TEST_CASE("instrument M4.8: mix automation incl. sleep is deterministic end to end") {
+    auto run = [] {
+        static float echoD[PART_COUNT][2][Flux::kMaxSamples];
+        static AmbientReverb rvD;
+        FxMem m;
+        for (int p = 0; p < PART_COUNT; ++p)
+            for (int c = 0; c < 2; ++c) m.echo[p][c] = echoD[p][c];
+        m.reverb = &rvD;
+        Instrument inst;
+        inst.init(48000.f, m);            // init() re-clears the shared statics
+        std::vector<float> out;
+        float l[96], r[96];
+        for (int b = 0; b < 500; ++b) {
+            if (b == 100) inst.set_reverb_mix(0.8f);
+            if (b == 250) inst.set_reverb_mix(0.f);   // sleeps mid-run
+            if (b == 400) inst.set_reverb_mix(0.5f);  // wakes again
+            inst.process(nullptr, nullptr, l, r, 96);
+            for (int i = 0; i < 96; ++i) out.push_back(l[i]);
+        }
+        return out;
+    };
+    auto a = run(), b = run();
+    REQUIRE(a.size() == b.size());
     for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]);
 }

@@ -1,15 +1,13 @@
 #include <doctest/doctest.h>
 #include <cmath>
 #include "mod/lane.h"
-#include "mod/capture.h"
 using namespace spky;
 
-static void configure_flow(ModLane& l, float hz, float prob = 1.f) {
+static void configure_flow(ModLane& l, float hz) {
     l.init(48000.f, 1234);
     l.set_range(1.f);
     l.set_shape(0.5f);        // ramp
     l.set_smooth(0.f);
-    l.set_probability(prob);
     l.set_rate_hz(hz);
 }
 
@@ -33,19 +31,12 @@ TEST_CASE("lane FLOW: output stays in range") {
     }
 }
 
-TEST_CASE("lane FLOW: probability 0 freezes after the first cycle") {
-    ModLane l; configure_flow(l, 4.f, 0.f);
-    for (int i = 0; i < 48000; ++i) l.process();   // >= one full cycle
-    CHECK(l.frozen());
-}
-
 TEST_CASE("lane: SMOOTH turns a step into a glide") {
     ModLane l;
     l.init(48000.f, 55);
     l.set_range(1.f);
     l.set_shape(0.5f);        // ramp: consecutive step values differ
     l.set_step(true, 2);      // 2 steps/cycle; boundary at phase 0.5
-    l.set_probability(1.f);
     l.set_smooth(0.5f);       // glide ~3 ms: settles well within a step, still gliding ~1 ms past a boundary
     l.set_rate_hz(1.f);       // 48000 samples/cycle -> step is 24000 samples
 
@@ -69,20 +60,6 @@ TEST_CASE("lane kick: phase jump is permanent, no decay") {
     CHECK(lane.phase() == doctest::Approx(0.25f));
     for (int i = 0; i < 1000; ++i) lane.process();
     CHECK(lane.phase() == doctest::Approx(0.25f));   // permanent
-}
-
-TEST_CASE("lane kick: no-op while replaying (captured loop is immune)") {
-    CaptureLoop loop; loop.reset();
-    ModLane lane; lane.init(48000.f, 4u);
-    lane.set_capture_loop(&loop);
-    lane.set_rate_hz(2.f);
-    for (int i = 0; i < 48000; ++i) lane.process();  // record a full cycle
-    loop.capture_now();                              // freeze -> valid
-    lane.set_replay(true);
-    lane.process();                                  // enter replay
-    float p = lane.phase();
-    lane.kick(0.4f, 0.4f);                           // must be ignored
-    CHECK(lane.phase() == doctest::Approx(p));
 }
 
 TEST_CASE("lane shape_offset: shifts the effective shape; offset 0 is bit-identical") {

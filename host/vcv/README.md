@@ -26,7 +26,10 @@ VCV has no clean equivalent for pad gestures, so this host deliberately maps
 **every engine setter to its own dedicated knob/switch/button** — a wider panel
 than the hardware, but the full engine is playable today without waiting on M6.
 
-The visual language stays "Spotykach" (dark plate, mint accents). Each part's
+The visual language follows the residency devlog ("workbench paper"): a warm
+paper plate with ink lettering, solder-green accents on part A (left) and
+copper-orange on part B (right); MORPH wears a split green/copper collar
+because it bridges the two parts. Each part's
 32-LED ring is a **live** custom widget (`SpkyRing` in `src/Spotymod.cpp`): it
 draws in the light layer and lights a moving dot per modulation lane from
 `Instrument::lane_output()` / `lane_fired()`, so the rings animate with the
@@ -109,5 +112,5 @@ For an A/B sound check, render a known scenario with the desktop host and
 compare by ear against the module at identical parameter settings:
 
 ```bash
-./build/render host/render/scenarios/melody_then_drift.json out.wav mods.csv
+./build/render host/render/scenarios/demo_step_melody.json out.wav mods.csv
 ```

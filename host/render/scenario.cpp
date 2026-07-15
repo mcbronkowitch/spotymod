@@ -82,13 +82,15 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_rate")          inst.set_rate(e.part, e.value);
     else if (a == "set_sync_mode")     inst.set_sync_mode(e.part, parse_sync(e.svalue));
     else if (a == "set_shape")         inst.set_shape(e.part, e.value);
-    else if (a == "set_probability")   inst.set_probability(e.part, e.value);
+    else if (a == "set_density")       inst.set_density(e.part, e.value);
     else if (a == "set_smooth")        inst.set_smooth(e.part, e.value);
     else if (a == "set_range")         inst.set_range(e.part, e.value);
-    else if (a == "set_entropy")       inst.set_entropy(e.part, e.value);
+    else if (a == "set_entropy" || a == "set_variation") inst.set_variation(e.part, e.value);
+    else if (a == "set_principle")     inst.set_principle(e.part, e.ivalue);
     else if (a == "set_depth")         inst.set_depth(e.part, e.value);
     else if (a == "set_tune")          inst.set_tune(e.part, e.value);
     else if (a == "set_step")          inst.set_step(e.part, e.flag, e.ivalue);
+    else if (a == "new_phrase")        inst.new_phrase(e.part);
     else if (a == "set_fixed_slew")    inst.set_fixed_slew(e.part, e.flag);
     else if (a == "set_target_active") inst.set_target_active(e.part, e.slot, e.flag);
     else if (a == "set_target_base")   inst.set_target_base(e.part, e.slot, e.value);
@@ -108,7 +110,8 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_reverb_size")      inst.set_reverb_size(e.value);
     else if (a == "set_reverb_tone")      inst.set_reverb_tone(e.value);
     else if (a == "set_reverb_decay")     inst.set_reverb_decay(e.value);
-    else if (a == "set_reverb_depth")     inst.set_reverb_depth(e.value);
+    else if (a == "set_reverb_diffusion") inst.set_reverb_diffusion(e.value);
+    else if (a == "set_reverb_mix")       inst.set_reverb_mix(e.value);
     else if (a == "set_engine")          inst.set_engine(e.part, parse_engine(e.svalue));
     else if (a == "set_voice_attack")    inst.set_voice_attack(e.part, e.value);
     else if (a == "set_voice_decay")     inst.set_voice_decay(e.part, e.value);
@@ -116,8 +119,6 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_voice_sub")       inst.set_voice_sub(e.part, e.value);
     else if (a == "set_voice_detune")    inst.set_voice_detune(e.part, e.value);
     else if (a == "trigger_manual")      inst.trigger_manual(e.part);
-    else if (a == "capture_now")         inst.capture_now(e.part);
-    else if (a == "set_replay")          inst.set_replay(e.part, e.flag);
     else if (a == "set_morph")           inst.set_morph(e.value);
     else if (a == "set_couple")          inst.set_couple(e.value);
     else if (a == "set_drift")           inst.set_drift(e.value);

@@ -61,6 +61,30 @@ TEST_CASE("limiter: stereo-linked — one gain for both channels") {
     }
 }
 
+TEST_CASE("limiter: DRIVE saturates warmly instead of hard-clipping") {
+    // The knee morphs with DRIVE. A 0.22-amp sine passes untouched at drive 0
+    // (0.22 < the -1 dBFS knee). At full drive the 4x pre-gain lifts it to 0.88
+    // -- ABOVE the lowered warm knee (0.45) but BELOW the old fixed knee (0.89),
+    // so the warm curve saturates it well under 0.88 while the old fixed-knee
+    // limiter would have passed it through near 0.88. Still loud => saturation,
+    // not brickwall crush.
+    auto peak_at = [](float drive, float amp) {
+        Limiter lim; lim.init(); lim.set_drive(drive);
+        float pk = 0.f;
+        for (int i = 0; i < 48000; ++i) {
+            float s = amp * std::sin(6.2831853f * 220.f * i / 48000.f);
+            float l = s, r = s;
+            lim.process(l, r);
+            if (i > 4800) pk = std::max(pk, std::fabs(l));
+        }
+        return pk;
+    };
+    CHECK(peak_at(0.f, 0.22f) == doctest::Approx(0.22f).epsilon(1e-3));  // clean at drive 0
+    const float driven = peak_at(1.f, 0.22f);
+    CHECK(driven < 0.83f);   // saturated below 0.88 (a fixed 0.89 knee left it ~0.88)
+    CHECK(driven > 0.55f);   // but still hits hard -- warmth, not a brickwall
+}
+
 TEST_CASE("limiter: deterministic") {
     auto run = [] {
         Limiter lim;

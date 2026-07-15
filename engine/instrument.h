@@ -6,6 +6,7 @@
 #include "fx/reverb.h"
 #include "fx/limiter.h"
 #include "center/center.h"
+#include "util/onepole.h"
 
 namespace spky {
 
@@ -30,11 +31,13 @@ public:
     void set_rate(int p, float n)            { _parts[p].mod().set_rate(n); }
     void set_sync_mode(int p, SyncMode m)    { _parts[p].mod().set_sync_mode(m); }
     void set_shape(int p, float n)           { _parts[p].mod().set_shape(n); }
-    void set_probability(int p, float n)     { _parts[p].mod().set_probability(n); }
+    void set_density(int p, float d)         { _parts[p].mod().set_density(d); }
     void set_smooth(int p, float n)          { _parts[p].mod().set_smooth(n); }
     void set_range(int p, float n)           { _parts[p].mod().set_range(n); }
-    void set_entropy(int p, float n)         { _parts[p].mod().set_entropy(n); }  // -1..+1
+    void set_variation(int p, float n)       { _parts[p].mod().set_variation(n); }  // -1..+1
+    void set_principle(int p, int pr)        { _parts[p].mod().set_principle(static_cast<Principle>(pr)); }
     void set_step(int p, bool on, int steps) { _parts[p].set_step(on, steps); }
+    void new_phrase(int p)                   { _parts[p].mod().new_phrase(); }
     void set_fixed_slew(int p, bool on)      { _parts[p].mod().set_fixed_slew(on); }
     void set_depth(int p, float n)           { _parts[p].set_depth(n); }
     void set_tune(int p, float n)            { _parts[p].set_tune(n); }
@@ -60,7 +63,8 @@ public:
     void set_reverb_size(float n)  { if (_reverb) _reverb->set_size(n); }
     void set_reverb_decay(float n) { if (_reverb) _reverb->set_decay(n); }
     void set_reverb_tone(float n)  { if (_reverb) _reverb->set_tone(n); }
-    void set_reverb_depth(float n) { if (_reverb) _reverb->set_depth(n); }
+    void set_reverb_diffusion(float n) { if (_reverb) _reverb->set_diffusion(n); }
+    void set_reverb_mix(float n);   // 0..1 equal-power dry/wet at the master join
     void set_master_drive(float n) { _limiter.set_drive(n); }
     float fx_target_value(int p, int i) const { return _parts[p].fx_target_value(i); }
 
@@ -81,12 +85,7 @@ public:
     bool  lane_fired(int p, int s)   const { return _parts[p].lane_fired(s); }
     bool  gate(int p)  const { return _parts[p].gate(); }
     float pitch_cv(int p) const { return _parts[p].pitch_cv(); }
-
-    // --- M3 capture sequencer (per part) ---
-    void capture_now(int p)         { _parts[p].mod().capture_now(); }
-    void set_replay(int p, bool on) { _parts[p].mod().set_replay(on); }
-    bool replaying(int p) const     { return _parts[p].mod().replaying(); }
-    bool loop_valid(int p) const    { return _parts[p].mod().loop_valid(); }
+    bool  pitch_gate(int p) const { return _parts[p].mod().pitch_gate(); }
 
     // --- M4 center section ---
     void set_morph(float m)  { _center.set_morph(m); }
@@ -99,12 +98,18 @@ public:
     float drift()     const { return _center.drift(); }
     float weather()   const { return _center.weather(); }
     float phase_err() const { return _center.phase_err(); }
+    bool reverb_asleep() const { return _rev_asleep; }
 
     void process(const float* inL, const float* inR, float* outL, float* outR, size_t n);
 
 private:
     std::array<Part, PART_COUNT> _parts;
     AmbientReverb* _reverb = nullptr;
+    float   _rev_dry_target = 1.f;  // equal-power gain targets (exact endpoints)
+    float   _rev_wet_target = 0.f;
+    OnePole _rev_dry, _rev_wet;     // 10 ms glide at the master join
+    bool    _rev_primed = false;    // first process() snaps the mix gains
+    bool    _rev_asleep = false;    // MIX 0 gate: room cleared, process() skipped
     Limiter _limiter;
     Center _center;
     int    _ctrl_ctr = 0;    // counts down to the next control-rate Center::update

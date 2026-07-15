@@ -40,7 +40,6 @@ TEST_CASE("super: lanes are decorrelated (independent random streams)") {
     m.set_sync_mode(SyncMode::Free);
     m.set_rate(0.5f);
     m.set_shape(1.f);                    // S&H exercises each lane's own rng
-    m.set_probability(1.f);
     m.set_range(1.f);
     bool differ = false;
     for (int i = 0; i < 48000; ++i) {

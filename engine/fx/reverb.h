@@ -10,9 +10,10 @@ namespace spky {
 // M4.5: the core is a vendored Oliverb (Clouds Parasite, MIT) — Erbe-Verb-
 // style playable room. SIZE really rescales the delay reads (turning it
 // Doppler-warps the tail), DECAY crosses 1.0 near the top of its travel
-// into a soft-limited self-sustaining bloom, DEPTH chorus-modulates the
-// lines. Shimmer is gone (so is the separately-licensed DaisySP dependency
-// it relied on).
+// into a soft-limited self-sustaining bloom, DIFFUSION morphs the room from
+// discrete slap echoes to a dense wash and drags a little line modulation
+// along with it (the old DEPTH knob is gone). Shimmer is gone (so is the
+// separately-licensed DaisySP dependency it relied on).
 //
 // BIG object (~130 KB — the float delay buffer is an inline member). Never
 // stack-allocate: the desktop host owns it as a static; the M6 firmware
@@ -20,10 +21,11 @@ namespace spky {
 class AmbientReverb {
 public:
     void init(float sample_rate);
+    void clear();                 // empty the room (buffer + loop filter state); params survive
     void set_size(float norm);    // room size; smoothed inside -> Doppler ride
     void set_decay(float norm);   // loop gain; crosses 1.0 at ~0.9 (bloom above)
     void set_tone(float norm);    // loop LP damping 500 Hz .. 16 kHz, exp
-    void set_depth(float norm);   // delay-line mod amount (lush chorus)
+    void set_diffusion(float norm);  // room density: AP coeff 0..0.9 + weak line-mod coupling
     void process(float in_l, float in_r, float& out_l, float& out_r);
 
 private:

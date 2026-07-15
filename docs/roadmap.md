@@ -29,6 +29,8 @@ is actually built today, and what is still design-only.
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT / SETTLE | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, TONE, DEPTH; shimmer + DaisySP-LGPL removed | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.6** | Dynamics — one-knob comp per part (glue → dense → pump, auto-makeup) + stereo-linked master limiter with MASTER DRIVE (delivers M6 engine delta 3 early) | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **M4.8** | Reverb dry/wet — equal-power MIX at the master join + clear-on-sleep CPU bypass | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **M4.9** | Reverb DIFFUSION knob (replaces DEPTH) — room density 0–0.9, weak line-mod coupling, full-wash first pass | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -258,6 +260,36 @@ room, the comp knob resurrects the dying tail). Spec + plan in the
 residency repo (`2026-07-13-spotykach-dynamics-*.md`). M6 knob-map
 suggestions: GRIT layer SMOOTH → COMP (per side), FLUX-layer TUNE
 (ex-shimmer) → MASTER DRIVE.
+
+### M4.8 — Reverb dry/wet mix ✅
+
+- `set_reverb_mix` (0..1): equal-power dry/wet crossfade at the master join —
+  dry = cos(m·π/2), wet = sin(m·π/2) with exact endpoints, 10 ms one-pole
+  glide. Default 0.25, chosen by ear: keeps the dry level with a leaner room
+  than the old fixed mix (wet −8.3 dB; the old balance sits at MIX 0.5,
+  −3 dB overall — MIX multiplies on top of the internal wet trim). The wet
+  path keeps its internal −8 dB bloom-headroom trim; the send input is
+  untouched by MIX, so the tail character never changes while turning.
+- MIX 0 is a true bypass: the wet gain fades out, the room is cleared once
+  (`AmbientReverb::clear()` — buffer + loop filter state, params survive) and
+  `process()` is skipped. Oliverb CPU drops to zero; a self-oscillating bloom
+  is genuinely killed. Any MIX > 0 wakes into a clean, empty room
+  (`reverb_asleep()` exposes the gate for the M6 UI).
+- Hosts: VCV `REV_MIX` knob (shared center strip, default 0.25), render
+  action `set_reverb_mix`.
+
+### M4.9 — Reverb DIFFUSION knob ✅
+
+- `set_reverb_diffusion` (0..1) replaces `set_reverb_depth`: AP coefficient
+  `0.90·n` (0 = discrete slap echoes, boot 0.7 → 0.63 ≈ the old stock 0.625
+  room, 1.0 = dense wash that melts attacks), line modulation weakly coupled
+  (`(0.05 + 0.20·n)·450` samples — motion rides the knob, never dominant).
+  DEPTH is gone ersatzlos, like shimmer in M4.5.
+- Motivation: at full MIX/DECAY/SIZE the Oliverb feeds the freshly diffused
+  input straight to the output taps, so attacks punched through the wash;
+  more diffusion smears the first pass (A/B verified by ear, 2026-07-14).
+- Hosts: VCV `REV_DIFF` "DIFF" knob (same panel slot/param id as DEPTH),
+  render action `set_reverb_diffusion`; `ambient_wash` migrated.
 
 ## Planned
 
