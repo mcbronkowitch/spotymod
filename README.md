@@ -1,10 +1,7 @@
-```text
-╭────────────────────────────╮
-│  ┌─┐┌─┐┌─┐┌┬┐┬ ┬┌┬┐┌─┐┌┬┐  │
-│  └─┐├─┘│ │ │ └┬┘││││ │ ││  │
-│  └─┘┴  └─┘ ┴  ┴ ┴ ┴└─┘─┴┘  │
-╰────────────────────────────╯
-```
+<p align="center">
+  <img src="docs/img/spotymod-panel.png" width="820"
+       alt="The Spotymod front panel: two mirrored modulation banks — green A on the left, copper B on the right — framing a shared center ROOM section (MORPH, COUPLE, DRIFT, SPOT, SETTLE and the reverb controls), with the SPOTYMOD wordmark along the bottom.">
+</p>
 
 # spotymod — modulation-first firmware for the Spotykach
 
@@ -51,21 +48,12 @@ self-contained summary of it.
 
 One portable engine core, three hosts. No hardware type ever crosses into
 `engine/`, so the exact same code runs in the desktop renderer, the VCV Rack
-module, and (later) on the Daisy.
+module, and (later) on the Spotykach itself.
 
-```
-spotymod/
-├── engine/            portable instrument core — no libDaisy, no heap
-│   ├── mod/           SuperModulator + the five modulation lanes
-│   ├── parts/         Part, engine interface, sound engines
-│   └── util/          math / DSP helpers
-├── host/
-│   ├── render/        desktop CLI: scenario JSON → WAV + CSV
-│   └── vcv/           VCV Rack module (beta) — the engine, playable live
-├── tests/             desktop unit tests for engine/ (doctest)
-├── src/               original firmware (kept as reference for the M6 shell)
-└── lib/               libDaisy + DaisySP (git submodules)
-```
+<p align="center">
+  <img src="docs/img/architecture.png" width="900"
+       alt="Architecture diagram: one portable engine/ core (mod, parts, synth, pitch, fx, util behind a single engine/instrument.h API) feeds three hosts — host/render (desktop CLI → WAV + mods.csv, built), host/vcv (VCV Rack module, beta) and the Spotykach hardware (host/daisy firmware shell, M6, planned). No hardware type crosses into engine/; tests/ runs 200 deterministic doctest checks over the core.">
+</p>
 
 `Instrument` (`engine/instrument.h`) is the complete public API: `init(sample_rate)`,
 normalized `0..1` parameter setters, and `process(in, out, size)`.

@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560" font-family="Consolas, 'IBM Plex Mono', ui-monospace, monospace">
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#faf8f2"/>
+      <stop offset="100%" stop-color="#f0ebdd"/>
+    </linearGradient>
+    <marker id="arrGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#1d6f5f"/>
+    </marker>
+    <marker id="arrCopper" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b96532"/>
+    </marker>
+    <marker id="arrMuted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8f8676"/>
+    </marker>
+  </defs>
+
+  <!-- plate + panel edge bars (green left, copper right) -->
+  <rect x="0" y="0" width="1000" height="560" fill="url(#plate)"/>
+  <rect x="0" y="0" width="6" height="560" fill="#1d6f5f"/>
+  <rect x="994" y="0" width="6" height="560" fill="#b96532"/>
+
+  <!-- title -->
+  <text x="40" y="52" fill="#171713" font-size="22" font-weight="700" letter-spacing="1.5">spotymod &#8212; one core, three hosts</text>
+  <text x="40" y="78" fill="#656056" font-size="13.5" letter-spacing="0.5">No hardware type ever crosses into <tspan fill="#171713" font-weight="700">engine/</tspan> &#8212; the exact same code runs in all three.</text>
+
+  <!-- ENGINE CORE card -->
+  <rect x="40" y="120" width="330" height="360" rx="8" fill="#ede5d6" stroke="#d7cdbb" stroke-width="1.5"/>
+  <rect x="40" y="120" width="330" height="6" rx="3" fill="#1d6f5f"/>
+  <text x="62" y="162" fill="#171713" font-size="21" font-weight="700">engine/</text>
+  <text x="62" y="185" fill="#656056" font-size="12.5">portable instrument core</text>
+  <text x="62" y="203" fill="#656056" font-size="12.5">no libDaisy &#183; no heap</text>
+
+  <!-- core subdirs -->
+  <g font-size="13.5" fill="#171713">
+    <circle cx="68" cy="238" r="3" fill="#1d6f5f"/><text x="82" y="243" font-weight="700">mod/</text><text x="150" y="243" fill="#656056" font-size="12">SuperModulator + 5 lanes</text>
+    <circle cx="68" cy="268" r="3" fill="#1d6f5f"/><text x="82" y="273" font-weight="700">parts/</text><text x="150" y="273" fill="#656056" font-size="12">Part, engine iface, engines</text>
+    <circle cx="68" cy="298" r="3" fill="#1d6f5f"/><text x="82" y="303" font-weight="700">synth/</text><text x="150" y="303" fill="#656056" font-size="12">4-voice polyphonic voice</text>
+    <circle cx="68" cy="328" r="3" fill="#1d6f5f"/><text x="82" y="333" font-weight="700">pitch/</text><text x="150" y="333" fill="#656056" font-size="12">scale quantizer</text>
+    <circle cx="68" cy="358" r="3" fill="#1d6f5f"/><text x="82" y="363" font-weight="700">fx/</text><text x="150" y="363" fill="#656056" font-size="12">flux &#183; grit &#183; reverb &#183; comp</text>
+    <circle cx="68" cy="388" r="3" fill="#1d6f5f"/><text x="82" y="393" font-weight="700">util/</text><text x="150" y="393" fill="#656056" font-size="12">math / DSP helpers</text>
+  </g>
+  <!-- public API pill -->
+  <rect x="62" y="418" width="286" height="42" rx="6" fill="#faf8f2" stroke="#1d6f5f" stroke-width="1.3"/>
+  <text x="205" y="437" fill="#171713" font-size="12.5" font-weight="700" text-anchor="middle">engine/instrument.h</text>
+  <text x="205" y="453" fill="#656056" font-size="11" text-anchor="middle">one API: init &#183; 0..1 setters &#183; process()</text>
+
+  <!-- connector arrows from core to each host -->
+  <path d="M376 200 C 470 200, 470 150, 616 150" fill="none" stroke="#1d6f5f" stroke-width="2.2" marker-end="url(#arrGreen)"/>
+  <path d="M376 300 C 480 300, 500 300, 616 300" fill="none" stroke="#b96532" stroke-width="2.2" marker-end="url(#arrCopper)"/>
+  <path d="M376 400 C 470 400, 470 450, 616 450" fill="none" stroke="#8f8676" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#arrMuted)"/>
+
+  <!-- HOST: render CLI (green, built) -->
+  <rect x="620" y="112" width="340" height="76" rx="8" fill="#ede5d6" stroke="#d7cdbb" stroke-width="1.5"/>
+  <rect x="620" y="112" width="6" height="76" rx="3" fill="#1d6f5f"/>
+  <text x="642" y="140" fill="#171713" font-size="17" font-weight="700">host/render/</text>
+  <text x="642" y="162" fill="#656056" font-size="12.5">desktop CLI &#183; scenario JSON</text>
+  <text x="642" y="179" fill="#656056" font-size="12.5">&#8594; WAV + mods.csv &#183; unit tests</text>
+  <text x="944" y="129" fill="#1d6f5f" font-size="10.5" font-weight="700" text-anchor="end">BUILT</text>
+
+  <!-- HOST: VCV Rack (copper, beta) -->
+  <rect x="620" y="262" width="340" height="76" rx="8" fill="#ede5d6" stroke="#d7cdbb" stroke-width="1.5"/>
+  <rect x="620" y="262" width="6" height="76" rx="3" fill="#b96532"/>
+  <text x="642" y="290" fill="#171713" font-size="17" font-weight="700">host/vcv/</text>
+  <text x="642" y="312" fill="#656056" font-size="12.5">VCV Rack module &#183; the engine,</text>
+  <text x="642" y="329" fill="#656056" font-size="12.5">playable live in the rack</text>
+  <text x="944" y="279" fill="#b96532" font-size="10.5" font-weight="700" text-anchor="end">BETA</text>
+
+  <!-- HOST: Daisy firmware (muted, planned) -->
+  <rect x="620" y="412" width="340" height="76" rx="8" fill="#efe9dc" stroke="#d7cdbb" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <rect x="620" y="412" width="6" height="76" rx="3" fill="#8f8676"/>
+  <text x="642" y="440" fill="#3f3b33" font-size="17" font-weight="700">Spotykach hardware</text>
+  <text x="642" y="462" fill="#8f8676" font-size="12.5"><tspan font-weight="700">host/daisy/</tspan> firmware shell &#183; pads,</text>
+  <text x="642" y="479" fill="#8f8676" font-size="12.5">LEDs, CV/gate &#183; on the real device</text>
+  <text x="944" y="429" fill="#8f8676" font-size="10.5" font-weight="700" text-anchor="end">M6 &#183; PLANNED</text>
+
+  <!-- footer note: tests + submodules -->
+  <text x="40" y="520" fill="#656056" font-size="12"><tspan fill="#171713" font-weight="700">tests/</tspan> doctest &#8212; 200 deterministic tests over engine/<tspan dx="18" fill="#171713" font-weight="700">lib/</tspan> libDaisy + DaisySP (submodules, host-side)</text>
+</svg>
