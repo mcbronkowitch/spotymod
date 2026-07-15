@@ -27,6 +27,22 @@ constexpr float kK           = 0.15f;   // Kuramoto phase-pull gain (tune by ear
 // whole practical FREE span (0.02..30 Hz needs up to ~39x; this reaches ~32x).
 constexpr float kRateClampLo = 0.03125f;   // 1/32  (-5 octaves)
 constexpr float kRateClampHi = 32.0f;      //        (+5 octaves)
+
+// COUPLE fully clockwise (knob == 1) is a HARD lock, not the soft Kuramoto nudge.
+// Two things are essential and were both wrong before:
+//  1. Lock the RAW pitch phase (the sawtooth that clocks the sequencer / loop), NOT
+//     phase_eff. phase_eff adds the EVOLVE offset _ev_phase, which a melody change
+//     (MELO != 0) zeroes at the phrase wrap — a step the servo then chased by shoving
+//     the raw clock around, i.e. the "drifts when the melody changes" report. The raw
+//     phase is continuous through a regen, so a melody change no longer disturbs it.
+//  2. Push hard enough to overcome EVOLVE's rate wander. MELO drives _ev_rate, which
+//     modulates the raw phase increment by up to +/-20% (lane.cpp: _phase_inc*(1+_ev_rate)).
+//     The gentle kK=0.15 nudge can't outrun that, so the loops slip. At full COUPLE we
+//     use kKHard with a per-tick slew cap: the cap keeps engage/large errors click-free
+//     and the servo stable, while kKHard > the disturbance drives the residual to ~0.
+constexpr float kFullCouple = 0.999f;   // knob effectively fully CW -> hard lock
+constexpr float kKHard      = 2.0f;     // hard-lock phase-pull gain (>> the _ev_rate wander)
+constexpr float kLockCap    = 0.35f;    // max rate correction per tick (> _ev_rate's 0.2)
 }
 
 void Center::init(float sample_rate, uint32_t seed) {
@@ -71,10 +87,12 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     pb.set_detune_cents(kTuneCents * kTuneTap[1] * w);
 
     // --- COUPLE (Kuramoto PLL: convergence toward the geometric mean + phase pull) ---
-    // Lock the *audible* phase (carrier + EVOLVE offset), not the bare carrier:
-    // EVOLVE walks each bank's pitch phase independently, and that wander is what
-    // you hear drift apart. Pulling on the raw carrier alone leaves it uncorrected.
-    float dphi = a.pitch_phase_eff() - b.pitch_phase_eff();
+    // Lock the RAW pitch phase — the sawtooth that clocks the loop/sequencer. NOT
+    // phase_eff: that adds the per-bank EVOLVE offset _ev_phase, which a melody change
+    // (MELO) zeroes at the phrase wrap. Locking phase_eff made every melody change
+    // shove the raw clock to compensate — the "drifts when the melody changes" report.
+    // The raw phase is continuous through a regen, so melody changes no longer disturb it.
+    float dphi = a.pitch_phase() - b.pitch_phase();
     dphi -= std::floor(dphi + 0.5f);            // wrap to [-0.5, 0.5)
     _phase_err = dphi;
 
@@ -91,11 +109,18 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     const float conv_a = a_free ? std::pow(fb / fa, conv_e) : 1.f;
     const float conv_b = b_free ? std::pow(fa / fb, conv_e) : 1.f;
 
-    // phase pull: opposite sign on the two banks; a SYNC bank in a MIXED pair
-    // stays the pure anchor (no pull); when both SYNC only the phase pull acts.
+    // phase pull: opposite sign on the two banks; a SYNC bank in a MIXED pair stays the
+    // pure anchor (no pull). At full COUPLE this becomes a HARD lock — a much stronger
+    // gain (kKHard) with a per-tick slew cap (kLockCap): the cap keeps engage click-free
+    // and the loop stable, while the strong gain outruns EVOLVE's raw-rate wander so the
+    // residual phase error collapses to ~0. Below full COUPLE the gentle kK nudge acts
+    // as before (an approximate lock that lets the banks breathe).
+    const bool hard = _couple >= kFullCouple;
     const float s = std::sin(TWO_PI * dphi);
-    const float pull_a = (!a_free && mixed) ? 1.f : (1.f - _couple * kK * s);
-    const float pull_b = (!b_free && mixed) ? 1.f : (1.f + _couple * kK * s);
+    float corr = _couple * (hard ? kKHard : kK) * s;
+    if (hard) corr = clampf(corr, -kLockCap, kLockCap);
+    const float pull_a = (!a_free && mixed) ? 1.f : (1.f - corr);
+    const float pull_b = (!b_free && mixed) ? 1.f : (1.f + corr);
 
     const float mult_a = clampf(conv_a * pull_a, kRateClampLo, kRateClampHi);
     const float mult_b = clampf(conv_b * pull_b, kRateClampLo, kRateClampHi);

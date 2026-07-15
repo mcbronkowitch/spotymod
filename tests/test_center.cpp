@@ -138,12 +138,11 @@ TEST_CASE("center couple: couple 1 locks two FREE banks that are several octaves
     CHECK(r.a.master_hz() == doctest::Approx(r.b.master_hz()).epsilon(0.03));
 }
 
-TEST_CASE("center couple: couple 1 holds the AUDIBLE phase locked while EVOLVE wanders a bank") {
-    // Both SYNC to the same grid division, full couple, no drift, but bank A runs
-    // EVOLVE (GROW) hard. The COUPLE PLL must keep the *audible* pitch phase
-    // (carrier + EVOLVE offset) locked — not just the raw carrier. Regression for
-    // the "turn COUPLE full CW, banks still drift apart after a while" report:
-    // EVOLVE's per-bank _ev_phase walk was invisible to the coupling.
+TEST_CASE("center couple: couple 1 holds the LOOP locked while EVOLVE wanders a bank") {
+    // Both SYNC to the same grid division, full couple, no drift, bank A runs EVOLVE
+    // (GROW) hard. The hard lock keeps the RAW pitch phase (the loop clock) pinned
+    // despite EVOLVE's _ev_rate wander; the audible EVOLVE colour is free to move
+    // within the cycle (that's what MELO is for) — we lock the loop, not the wander.
     Rig r; r.init(3u);
     r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
     r.a.set_sync_mode(SyncMode::Sync); r.b.set_sync_mode(SyncMode::Sync);
@@ -153,11 +152,37 @@ TEST_CASE("center couple: couple 1 holds the AUDIBLE phase locked while EVOLVE w
     float worst = 0.f;
     for (int blk = 0; blk < 180; ++blk) {         // 3 minutes
         run_coupled(r, 48000);
-        float d = r.a.pitch_phase_eff() - r.b.pitch_phase_eff();
+        float d = r.a.pitch_phase() - r.b.pitch_phase();   // RAW loop clock
         d -= std::floor(d + 0.5f);                // wrap to [-0.5, 0.5)
         if (std::fabs(d) > worst) worst = std::fabs(d);
     }
-    CHECK(worst < 0.05f);
+    CHECK(worst < 0.02f);
+}
+
+TEST_CASE("center couple: couple full HARD-locks the loop through MELO / melody changes") {
+    // Reported symptom: "drifts, especially when the melody changes; MELO 0 on both
+    // sides syncs." MELO is VARIATION (EVOLVE): it walks _ev_rate, which modulates the
+    // RAW phase increment by up to +/-20% (lane.cpp: _phase_inc*(1+_ev_rate)), so the
+    // loops slip; and a phrase regen zeroes _ev_phase, kicking any eff-based lock. The
+    // hard lock must hold the RAW pitch phase (the loop/sequencer clock) regardless of
+    // MELO. We sample at the END of each 1 s window (after that window's regen) so this
+    // asserts a sustained lock, not a transient.
+    Rig r; r.init(3u);
+    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
+    r.a.set_sync_mode(SyncMode::Sync); r.b.set_sync_mode(SyncMode::Sync);
+    r.a.set_rate(0.5f); r.b.set_rate(0.5f);       // identical grid division (~1 Hz)
+    r.a.set_step(true, 8); r.b.set_step(true, 8);
+    r.a.set_variation(0.9f);                      // MELO hard on A (the default is 0.32)
+    r.c.set_couple(1.f); r.c.set_drift(0.f);
+    float worst = 0.f;
+    for (int win = 0; win < 180; ++win) {         // 3 minutes, a fresh phrase each window
+        r.a.new_phrase();                         // the melody changes
+        run_coupled(r, 48000);                    // ~1 s
+        float d = r.a.pitch_phase() - r.b.pitch_phase();   // RAW loop clock, not phase_eff
+        d -= std::floor(d + 0.5f);                // wrap to [-0.5, 0.5)
+        if (std::fabs(d) > worst) worst = std::fabs(d);
+    }
+    CHECK(worst < 0.02f);                         // hard lock: loops stay put under MELO
 }
 
 TEST_CASE("center couple: couple 0 leaves both rate hooks at unity") {
