@@ -32,7 +32,9 @@ void AmbientReverb::init(float sample_rate) {
     set_size(0.6f);     // boot defaults (spec: audible, nothing screams,
     set_decay(0.55f);   // nothing self-oscillates)
     set_tone(0.5f);
-    set_diffusion(0.7f);   // coeff 0.63 ~= the old stock 0.625 room
+    set_diffusion(0.7f);          // coeff 0.63 ~= the old stock 0.625 room
+    set_diffuser_mod_depth(0.5f); // wash smear default (~56)
+    set_mod_depth(0.2f);          // gentle tail wobble default (~the calm 22.5)
     _verb.Prepare();
 }
 
@@ -62,11 +64,23 @@ void AmbientReverb::set_tone(float norm) {
 
 void AmbientReverb::set_diffusion(float norm) {
     norm = clampf(norm, 0.f, 1.f);
+    // Pure density now: the allpass coefficient only. The two LFO paths that
+    // used to ride along with DIFFUSION are on their own knobs
+    // (set_diffuser_mod_depth, set_mod_depth) so each can be tested alone.
     // applied instantly like decay/tone (only SIZE smooths, for the Doppler)
     _verb.set_diffusion(0.90f * norm);
-    // weak coupling: more smear = slightly more line motion (0.05..0.25 of
-    // the old DEPTH range; the knob owns density, motion just rides along)
-    _verb.set_mod_amount((0.05f + 0.20f * norm) * 450.f);
+}
+
+void AmbientReverb::set_diffuser_mod_depth(float norm) {
+    // SMEAR knob: the input-diffuser LFO (ap1..ap4). This is what melts
+    // discrete slap-echoes into a dense wet wash. 0 = static diffusers.
+    _verb.set_diffuser_mod_amount(clampf(norm, 0.f, 1.f) * 0.25f * 450.f);
+}
+
+void AmbientReverb::set_mod_depth(float norm) {
+    // MOD knob: the tail-delay LFO wobble (del1/del2 + loop APs). 0 = a still
+    // tail (no pitch-vibrato); 1 = the old maximum. Ear-tuned in Rack.
+    _verb.set_mod_amount(clampf(norm, 0.f, 1.f) * 0.25f * 450.f);
 }
 
 void AmbientReverb::process(float in_l, float in_r, float& out_l, float& out_r) {

@@ -66,6 +66,7 @@ class Oliverb {
     size_ = 0.5f;
     smooth_size_ = size_;
     mod_amount_ = 0.0f;
+    diffuser_mod_amount_ = 0.0f;
     mod_rate_ = 0.0f;
     input_gain_ = 0.5f;
     decay_ = 0.5f;
@@ -133,10 +134,10 @@ class Oliverb {
     // Smooth size to avoid delay glitches; slow on purpose (Doppler ride).
     ONE_POLE(smooth_size_, size_, 0.0002f);
 
-#define OLIVERB_INTERPOLATE_LFO(del, lfo, gain)              \
+#define OLIVERB_INTERPOLATE_LFO(del, lfo, gain, amt)         \
     {                                                        \
       float offset = (del.length - 1) * smooth_size_;        \
-      offset += lfo.Next() * mod_amount_;                    \
+      offset += lfo.Next() * (amt);                          \
       CONSTRAIN(offset, 1.0f, del.length - 1);               \
       c.InterpolateHermite(del, offset, gain);               \
     }
@@ -154,24 +155,24 @@ class Oliverb {
 
     c.Read(*left + *right, input_gain_);
     // Diffuse through 4 allpasses.
-    OLIVERB_INTERPOLATE_LFO(ap1, lfo_[1], kap);
+    OLIVERB_INTERPOLATE_LFO(ap1, lfo_[1], kap, diffuser_mod_amount_);
     c.WriteAllPass(ap1, -kap);
-    OLIVERB_INTERPOLATE_LFO(ap2, lfo_[2], kap);
+    OLIVERB_INTERPOLATE_LFO(ap2, lfo_[2], kap, diffuser_mod_amount_);
     c.WriteAllPass(ap2, -kap);
-    OLIVERB_INTERPOLATE_LFO(ap3, lfo_[3], kap);
+    OLIVERB_INTERPOLATE_LFO(ap3, lfo_[3], kap, diffuser_mod_amount_);
     c.WriteAllPass(ap3, -kap);
-    OLIVERB_INTERPOLATE_LFO(ap4, lfo_[4], kap);
+    OLIVERB_INTERPOLATE_LFO(ap4, lfo_[4], kap, diffuser_mod_amount_);
     c.WriteAllPass(ap4, -kap);
 
     float apout;
     c.Write(apout);
 
     // Main reverb loop, branch 1.
-    OLIVERB_INTERPOLATE_LFO(del2, lfo_[5], decay_);
+    OLIVERB_INTERPOLATE_LFO(del2, lfo_[5], decay_, mod_amount_);
     c.Lp(lp_1, lp_);
     c.Hp(hp_1, hp_);
     c.SoftLimit();
-    OLIVERB_INTERPOLATE_LFO(dap1a, lfo_[6], -kap);
+    OLIVERB_INTERPOLATE_LFO(dap1a, lfo_[6], -kap, mod_amount_);
     c.WriteAllPass(dap1a, kap);
     OLIVERB_INTERPOLATE(dap1b, kap);
     c.WriteAllPass(dap1b, -kap);
@@ -181,11 +182,11 @@ class Oliverb {
     c.Load(apout);
 
     // Main reverb loop, branch 2.
-    OLIVERB_INTERPOLATE_LFO(del1, lfo_[7], decay_);
+    OLIVERB_INTERPOLATE_LFO(del1, lfo_[7], decay_, mod_amount_);
     c.Lp(lp_2, lp_);
     c.Hp(hp_2, hp_);
     c.SoftLimit();
-    OLIVERB_INTERPOLATE_LFO(dap2a, lfo_[8], kap);
+    OLIVERB_INTERPOLATE_LFO(dap2a, lfo_[8], kap, mod_amount_);
     c.WriteAllPass(dap2a, -kap);
     OLIVERB_INTERPOLATE(dap2b, -kap);
     c.WriteAllPass(dap2b, kap);
@@ -208,6 +209,10 @@ class Oliverb {
   inline void set_hp(float hp) { hp_ = hp; }
   inline void set_size(float size) { size_ = size; }
   inline void set_mod_amount(float mod_amount) { mod_amount_ = mod_amount; }
+  // Separate depth for the input diffusers (ap1..ap4): their smear is what
+  // melts slap-echoes into a dense wet wash, independent of the tail-delay
+  // wobble that set_mod_amount() controls.
+  inline void set_diffuser_mod_amount(float a) { diffuser_mod_amount_ = a; }
   inline void set_mod_rate(float mod_rate) { mod_rate_ = mod_rate; }
 
  private:
@@ -222,6 +227,7 @@ class Oliverb {
   float hp_;
   float size_, smooth_size_;
   float mod_amount_;
+  float diffuser_mod_amount_;
   float mod_rate_;
 
   float lp_decay_1_;

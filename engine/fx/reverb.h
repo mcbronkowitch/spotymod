@@ -25,7 +25,9 @@ public:
     void set_size(float norm);    // room size; smoothed inside -> Doppler ride
     void set_decay(float norm);   // loop gain; crosses 1.0 at ~0.9 (bloom above)
     void set_tone(float norm);    // loop LP damping 500 Hz .. 16 kHz, exp
-    void set_diffusion(float norm);  // room density: AP coeff 0..0.9 + weak line-mod coupling
+    void set_diffusion(float norm);       // room density: AP coeff 0..0.9 only
+    void set_diffuser_mod_depth(float norm); // ap1..ap4 LFO smear depth (wash), independent
+    void set_mod_depth(float norm);       // tail-delay LFO wobble depth, independent
     void process(float in_l, float in_r, float& out_l, float& out_r);
 
 private:

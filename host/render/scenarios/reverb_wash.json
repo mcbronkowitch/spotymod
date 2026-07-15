@@ -3,7 +3,7 @@
   "bpm": 110,
   "duration_s": 18,
   "init": [
-    {"_comment":"A/B base patch: sparse plucks into the shared room. DIFFUSION is the ONLY knob that differs between reverb_wash (1.0) and reverb_wash (1.0 -> smeared wash). Everything else identical."},
+    {"_comment":"Wash role of the shared room: same plucks as reverb_delay.json, but pushed to the ambient extreme — full wet (MIX 1.0), big room (SIZE 0.95), long tail (DECAY 0.8), max DIFFUSION. Every attack melts on entry; the plucks arrive as weather."},
     {"action":"set_sync_mode","part":0,"value":"sync"},
     {"action":"set_rate","part":0,"value":0.2},
     {"action":"set_step","part":0,"flag":true,"ivalue":6},
@@ -21,11 +21,14 @@
     {"action":"set_fx_target_active","part":0,"slot":3,"flag":true},
     {"action":"set_fx_target_base","part":0,"slot":3,"value":0.85},
 
-    {"action":"set_reverb_mix","value":0.5},
-    {"action":"set_reverb_size","value":0.8},
-    {"action":"set_reverb_decay","value":0.58},
+    {"action":"set_reverb_mix","value":1.0},
+    {"action":"set_reverb_size","value":0.95},
+    {"action":"set_reverb_decay","value":0.9},
     {"action":"set_reverb_tone","value":0.5},
-    {"action":"set_reverb_diffusion","value":1.0}
+    {"action":"set_reverb_diffusion","value":1.0},
+    {"_comment":"mod split (2026-07-15): DIFFUSION no longer couples the LFOs, so SMEAR/MOD are set explicitly. SMEAR 1.0 = full diffuser wash for the ambient extreme; MOD 0.237 = the calm tail wobble validated in VCV (init.vcvm)."},
+    {"action":"set_reverb_smear","value":1.0},
+    {"action":"set_reverb_mod","value":0.237}
   ],
   "events": []
 }

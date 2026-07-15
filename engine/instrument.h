@@ -64,6 +64,8 @@ public:
     void set_reverb_decay(float n) { if (_reverb) _reverb->set_decay(n); }
     void set_reverb_tone(float n)  { if (_reverb) _reverb->set_tone(n); }
     void set_reverb_diffusion(float n) { if (_reverb) _reverb->set_diffusion(n); }
+    void set_reverb_smear(float n) { if (_reverb) _reverb->set_diffuser_mod_depth(n); }
+    void set_reverb_mod(float n)   { if (_reverb) _reverb->set_mod_depth(n); }
     void set_reverb_mix(float n);   // 0..1 equal-power dry/wet at the master join
     void set_master_drive(float n) { _limiter.set_drive(n); }
     float fx_target_value(int p, int i) const { return _parts[p].fx_target_value(i); }
