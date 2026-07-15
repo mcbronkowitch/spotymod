@@ -7,11 +7,13 @@ name: build-plugin
 # resulting `.vcvplugin`. On a version tag (v*) the artifacts are also attached
 # to a GitHub Release for direct download.
 
+# Not on every push: this fans out to four runners (two of them macOS, billed
+# at 10x), so a docs or scenario commit shouldn't trigger a full plugin build.
+# Runs only on demand (Actions tab -> Run workflow) and on a version tag, which
+# is also what produces the downloadable Release.
 on:
   push:
-    branches: [ melody-engine-rework, main ]
     tags: [ 'v*' ]
-  pull_request:
   workflow_dispatch:
 
 env:
