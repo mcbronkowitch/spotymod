@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-13.
+- **Last updated:** 2026-07-15.
 
 > **Reminder:** nothing here has run on real hardware yet. Everything below is
 > verified only against the desktop offline renderer (unit tests + WAV/CSV

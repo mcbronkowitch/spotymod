@@ -61,7 +61,7 @@ spotymod/
 │   └── util/          math / DSP helpers
 ├── host/
 │   ├── render/        desktop CLI: scenario JSON → WAV + CSV
-│   └── vcv/           VCV Rack module (pre-alpha) — the engine, playable live
+│   └── vcv/           VCV Rack module (beta) — the engine, playable live
 ├── tests/             desktop unit tests for engine/ (doctest)
 ├── src/               original firmware (kept as reference for the M6 shell)
 └── lib/               libDaisy + DaisySP (git submodules)
@@ -107,14 +107,15 @@ This writes:
 identically, then varies (GROW) or regenerates into new motivic phrases (RENEW)
 as MELODY is dialled off center — and cycles the phrase principle.
 
-## A first interactive look — VCV Rack (pre-alpha)
+## Play it now — VCV Rack (beta)
 
 For a hands-on feel of the concept there's a **VCV Rack module** (`host/vcv/`)
 that runs the same engine as a live plugin — turn the knobs and hear the
-modulation engine long before the M6 firmware. It's an early **pre-alpha**: a
-first interactive glimpse, not a finished instrument. It builds with its own
-toolchain (a native MinGW/GCC compiler, not the desktop clang path); the build,
-install and I/O details live in [`host/vcv/README.md`](host/vcv/README.md).
+modulation engine long before the M6 firmware. It's now a **beta**: a real,
+playable Rack module and a permanent part of the workflow, not yet a finished
+instrument. It builds with its own toolchain (a native MinGW/GCC compiler, not
+the desktop clang path); the build, install and I/O details live in
+[`host/vcv/README.md`](host/vcv/README.md).
 
 ## Roadmap
 
@@ -125,8 +126,10 @@ install and I/O details live in [`host/vcv/README.md`](host/vcv/README.md).
 | **M2** | Polyphonic synth voice (replaces the M1 test tone) | **done** (engine + host) |
 | **M3** | Capture sequencer (freeze the PITCH lane into a loop) | **done** (engine + host) |
 | **M4** | Center section — MORPH / COUPLE / DRIFT / SPOT / SETTLE | **done** (engine + host) |
-| **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, DEPTH; shimmer & LGPL removed | **done** (engine + host) |
+| **M4.5** | Ambient reverb v2 — Oliverb port: Doppler SIZE, DECAY > 100 % bloom, TONE; shimmer & LGPL removed | **done** (engine + host) |
 | **M4.6** | Dynamics — one-knob comp per part + master limiter w/ MASTER DRIVE | **done** (engine + host) |
+| **M4.8** | Reverb dry/wet — equal-power MIX at the master join + clear-on-sleep CPU bypass | **done** (engine + host) |
+| **M4.9** | Reverb DIFFUSION knob (replaces DEPTH) — room density 0–0.9, weak line-mod coupling | **done** (engine + host) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | planned |
 
