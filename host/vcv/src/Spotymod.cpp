@@ -67,7 +67,8 @@ struct Spotymod : Module {
                     if (c.id == ENGINE_A || c.id == ENGINE_B)
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Engine", {"Synth", "Test tone"});
                     else if (c.id == GRITMODE_A || c.id == GRITMODE_B)
-                        configSwitch(c.id, 0.f, 1.f, 0.f, "Grit mode", {"Drive", "Reduce"});
+                        configSwitch(c.id, 0.f, 1.f, c.id == GRITMODE_A ? 1.f : 0.f,
+                                     "Grit mode", {"Drive", "Reduce"});   // init: A=Reduce
                     else  // STEP (on for the init patch's stepped sequences) / PRINCIPLE / NEWPHRASE
                         configSwitch(c.id, 0.f, 1.f,
                                      (c.id == STEP_A || c.id == STEP_B) ? 1.f : 0.f,
@@ -89,36 +90,38 @@ struct Spotymod : Module {
     // grit while part A stays FX-clean. Only knob params (WK_BIGKNOB/WK_SMKNOB)
     // come through here; STEP/SYNC/STEPS/SCALE defaults live in configControls().
     static float defaultFor(int id) {
-        switch (id) {                       // global knobs (panel snapshot 2026-07-15)
-            case MORPH:        return 0.05f;   // hard toward part A (the drone voice)
-            case COUPLE:       return 1.00f;   // full A<->B coupling
+        switch (id) {                       // global knobs (init.vcvm snapshot 2026-07-15)
+            case MORPH:        return 0.00f;   // hard left = fully part A (only deck A active)
+            case COUPLE:       return 0.00f;
             case DRIFT:        return 0.00f;
-            case MASTER_DRIVE: return 0.50f;
-            case REV_SIZE:     return 0.88f;   // big room
-            case REV_DECAY:    return 0.85f;
-            case REV_TONE:     return 0.56f;
-            case REV_DIFF:     return 0.50f;
-            case REV_MIX:      return 0.60f;   // reverb sits well forward
-            case TEMPO:        return 0.35f;   // ~110 BPM on the 40..240 map
+            case MASTER_DRIVE: return 0.419f;
+            case REV_SIZE:     return 1.00f;   // full room
+            case REV_DECAY:    return 0.887f;
+            case REV_TONE:     return 0.803f;
+            case REV_DIFF:     return 0.863f;
+            case REV_MIX:      return 0.691f;  // reverb sits well forward
+            case REV_SMEAR:    return 0.568f;  // diffuser LFO smear (wash)
+            case REV_MOD:      return 0.237f;  // tail LFO wobble
+            case TEMPO:        return 0.00f;   // as saved (40 BPM floor; parts run Synced)
             default: break;
         }
         const int part = id / PART_STRIDE;  // 0 = A (drone), 1 = B (bass)
         switch (id % PART_STRIDE) {         // fold part B onto the *_A enum; part ? B : A
-            case RATE_A:   return part ? 0.50f : 0.50f;
-            case SHAPE_A:  return part ? 0.60f : 0.40f;
+            case RATE_A:   return part ? 0.20f  : 0.10f;
+            case SHAPE_A:  return part ? 0.60f  : 0.40f;
             case DENSITY_A: return part ? 0.60f : 0.67f;
-            case SMOOTH_A: return part ? 0.30f : 0.10f;
-            case RANGE_A:  return part ? 0.38f : 0.60f;
-            case DEPTH_A:  return part ? 0.38f : 0.78f;
-            case TUNE_A:   return part ? 0.08f : 0.55f;   // B down an octave-ish
-            case ATTACK_A: return part ? 0.13f : 0.35f;
-            case DECAY_A:  return part ? 0.20f : 0.85f;   // A rings/stacks; B plucks
-            case RES_A:    return part ? 0.28f : 0.18f;
-            case SUB_A:    return part ? 0.62f : 0.35f;   // weight under the bass
-            case DETUNE_A: return part ? 0.10f : 0.20f;
-            case FLUX_A:   return part ? 0.88f : 0.00f;   // B echo engaged; A off
-            case GRIT_A:   return part ? 0.20f : 0.00f;   // B light grit; A off
-            case COMP_A:   return part ? 0.28f : 0.45f;
+            case SMOOTH_A: return part ? 0.30f  : 0.10f;
+            case RANGE_A:  return part ? 0.38f  : 0.60f;
+            case DEPTH_A:  return part ? 0.622f : 0.78f;
+            case TUNE_A:   return part ? 0.00f  : 0.55f;   // B down an octave-ish
+            case ATTACK_A: return part ? 0.686f : 0.657f;
+            case DECAY_A:  return part ? 0.721f : 0.902f;  // A rings/stacks; B plucks
+            case RES_A:    return part ? 0.347f : 0.411f;
+            case SUB_A:    return part ? 0.663f : 0.35f;   // weight under the bass
+            case DETUNE_A: return part ? 0.10f  : 0.20f;
+            case FLUX_A:   return part ? 0.88f  : 0.325f;  // both echo engaged
+            case GRIT_A:   return part ? 0.20f  : 0.00f;   // B light grit; A off
+            case COMP_A:   return part ? 0.28f  : 0.45f;
             default: break;
         }
         return 0.5f;
@@ -189,6 +192,8 @@ struct Spotymod : Module {
         inst.set_reverb_tone(params[REV_TONE].getValue());
         inst.set_reverb_diffusion(params[REV_DIFF].getValue());
         inst.set_reverb_mix(params[REV_MIX].getValue());
+        inst.set_reverb_smear(params[REV_SMEAR].getValue());
+        inst.set_reverb_mod(params[REV_MOD].getValue());
         inst.set_master_drive(params[MASTER_DRIVE].getValue());
         inst.set_scale((int)std::round(params[SCALE].getValue()));
 

@@ -115,40 +115,55 @@ PART_STRIDE = len(PART_A)
 # --- shared center strip ------------------------------------------------------
 CX = W / 2.0
 L, R = CX - 10.5, CX + 10.5
+# The center box now runs the full height (bottom-aligned with the A/B pad
+# boxes at y 110). Its lower rows line up horizontally with the part rows:
+ROW_VOICE = 76.8    # ATK/DEC/RES/SUB/DTUN
+ROW_FX    = 88.9    # FLUX/GRIT/COMP/STPS
+ROW_PAD   = 102.8   # SYNC/ENG/.../TRIG pads
 SHARED = [
-    Ctl("MORPH",  BIGKNOB, CX,  16.0, "MORPH"),
-    Ctl("COUPLE", SMKNOB,  L,   31.0, "COUPL"),
-    Ctl("SCALE",  KNOBI,   CX,  31.0, "SCALE"),
-    Ctl("DRIFT",  SMKNOB,  R,   31.0, "DRIFT"),
-    Ctl("SPOT",   SMBTN,   L,   43.5, "SPOT"),
-    Ctl("MASTER_DRIVE", SMKNOB, CX, 43.5, "DRIVE"),
-    Ctl("SETTLE", SMBTN,   R,   43.5, "SETL"),
-    # ROOM: a symmetric diamond -- MIX (the one you reach for) at its center
-    Ctl("REV_SIZE",  SMKNOB, L,  59.5, "SIZE"),
-    Ctl("REV_DECAY", SMKNOB, R,  59.5, "DECAY"),
-    Ctl("REV_TONE",  SMKNOB, L,  71.5, "TONE"),
-    Ctl("REV_DIFF",  SMKNOB, R,  71.5, "DIFF"),
-    Ctl("REV_MIX",   SMKNOB, CX, 65.5, "MIX"),
-    Ctl("TEMPO",  SMKNOB, CX,  78.5, "TEMPO"),
+    Ctl("MORPH",  BIGKNOB, CX,  22.0, "MORPH"),   # pushed down off the top edge
+    Ctl("COUPLE", SMKNOB,  L,   39.0, "COUPL"),
+    Ctl("SCALE",  KNOBI,   CX,  39.0, "SCALE"),
+    Ctl("DRIFT",  SMKNOB,  R,   39.0, "DRIFT"),
+    Ctl("SPOT",   SMBTN,   L,   54.0, "SPOT"),
+    Ctl("MASTER_DRIVE", SMKNOB, CX, 54.0, "DRIVE"),
+    Ctl("SETTLE", SMBTN,   R,   54.0, "SETL"),
+    # ROOM: a symmetric diamond, its rows aligned to the part-control rows.
+    Ctl("REV_SIZE",  SMKNOB, L,  ROW_VOICE, "SIZE"),
+    Ctl("REV_DECAY", SMKNOB, R,  ROW_VOICE, "DECAY"),
+    Ctl("REV_MIX",   SMKNOB, CX, (ROW_VOICE + ROW_FX) / 2.0, "MIX"),  # diamond center
+    Ctl("REV_TONE",  SMKNOB, L,  ROW_FX,    "TONE"),
+    Ctl("REV_DIFF",  SMKNOB, R,  ROW_FX,    "DIFF"),
+    # two independent reverb-LFO test knobs flanking TEMPO on the pad-row line:
+    Ctl("REV_SMEAR", SMKNOB, L,  ROW_PAD, "SMEAR"),  # diffuser LFO depth (wash)
+    Ctl("TEMPO",     SMKNOB, CX, ROW_PAD, "TEMPO"),
+    Ctl("REV_MOD",   SMKNOB, R,  ROW_PAD, "MOD"),    # tail LFO depth (wobble)
 ]
 
 PARAMS = PART_A + PART_B + SHARED
 
 # --- inputs / outputs / lights ------------------------------------------------
+# All ten jacks live on ONE line along the very bottom, outside the center box,
+# spanning the full width. Mirror-symmetric about center: the two part CV pairs
+# (PIT/GATE) bookend the row, the shared audio + clock I/O sits in the middle.
+#   PIT_A GATE_A | IN_L IN_R CLK RST OUT_L OUT_R | GATE_B PIT_B
+JACK_Y   = 118.0
+JACK_MRG = 16.0                                   # x of the outermost jacks
+JS = [JACK_MRG + i * (W - 2 * JACK_MRG) / 9.0 for i in range(10)]  # 10 even slots
 INPUTS = [
-    Ctl("IN_L",  IN, L,  89.0, "IN L"),
-    Ctl("IN_R",  IN, R,  89.0, "IN R"),
-    Ctl("CLOCK", IN, CX, 89.0, "CLK"),
-    Ctl("RESET", IN, CX, 101.5, "RST"),
+    Ctl("IN_L",  IN, JS[2], JACK_Y, "IN L"),
+    Ctl("IN_R",  IN, JS[3], JACK_Y, "IN R"),
+    Ctl("CLOCK", IN, JS[4], JACK_Y, "CLK"),
+    Ctl("RESET", IN, JS[5], JACK_Y, "RST"),
 ]
 OUTPUTS = [
-    Ctl("OUT_L", OUT, L, 101.5, "OUT L"),
-    Ctl("OUT_R", OUT, R, 101.5, "OUT R"),
-    # per-part modulation taps, bottom-outer on each side (mirrored)
-    Ctl("PITCH_A", OUT, 20.0,     117.0, "PIT"),
-    Ctl("GATE_A",  OUT, 33.0,     117.0, "GATE"),
-    Ctl("PITCH_B", OUT, W - 20.0, 117.0, "PIT"),
-    Ctl("GATE_B",  OUT, W - 33.0, 117.0, "GATE"),
+    Ctl("OUT_L", OUT, JS[6], JACK_Y, "OUT L"),
+    Ctl("OUT_R", OUT, JS[7], JACK_Y, "OUT R"),
+    # per-part modulation taps bookending the row (A outer-left, B outer-right)
+    Ctl("PITCH_A", OUT, JS[0], JACK_Y, "PIT"),
+    Ctl("GATE_A",  OUT, JS[1], JACK_Y, "GATE"),
+    Ctl("PITCH_B", OUT, JS[9], JACK_Y, "PIT"),
+    Ctl("GATE_B",  OUT, JS[8], JACK_Y, "GATE"),
 ]
 LIGHTS = [
     # glow at each ring center, driven by that part's gate
@@ -161,8 +176,8 @@ LIGHTS = [
 TEXTS = [
     (RING_CX_A,     RING_CY + 1.6, 5.0, 0.0, GREEN_DIM,  "A"),
     (W - RING_CX_A, RING_CY + 1.6, 5.0, 0.0, COPPER_DIM, "B"),
-    (CX,            54.2,          2.2, 0.5, MUTED,      "ROOM"),
-    (CX,            Hh - 2.6,      3.6, 0.9, INK,        "SPOTYMOD"),
+    (CX,            70.0,          2.2, 0.5, MUTED,      "ROOM"),
+    (CX,            7.0,           3.6, 0.9, INK,        "SPOTYMOD"),  # top brand
 ]
 
 # =============================================================================
@@ -237,7 +252,9 @@ def svg():
         for hy in (3.0, Hh-3.0):
             P.append(f'<circle cx="{mm(hx)}" cy="{mm(hy)}" r="1.6" '
                      f'fill="#d8d0bf" stroke="{LINE}" stroke-width="0.3"/>')
-    # center strip card (neutral zone between the two coloured halves)
+    # center strip card (neutral zone between the two coloured halves). Runs
+    # the full height, bottom edge (y 110) level with the A/B pad boxes; the
+    # jack strip lives below it on the bare bottom edge.
     P.append(f'<rect x="{mm(CX-21)}" y="10.0" width="42.0" height="100.0" rx="2" '
              f'fill="{PAPER_DEEP}" stroke="{LINE}" stroke-width="0.3"/>')
     # two rings (dark well + dim track; the live SpkyRing widget lights them)
@@ -251,11 +268,11 @@ def svg():
                  f'rx="1.5" fill="{PAPER_DEEP}" stroke="{LINE}" stroke-width="0.3"/>')
     # ROOM eyebrow rules (text itself comes from TEXTS)
     for (x0, x1) in ((CX-19.0, CX-8.0), (CX+8.0, CX+19.0)):
-        P.append(f'<line x1="{mm(x0)}" y1="53.4" x2="{mm(x1)}" y2="53.4" '
+        P.append(f'<line x1="{mm(x0)}" y1="69.2" x2="{mm(x1)}" y2="69.2" '
                  f'stroke="{LINE}" stroke-width="0.25"/>')
-    # brand flanking dots -- one per colour, like the devlog legend
-    P.append(f'<circle cx="{mm(CX-16)}" cy="{mm(Hh-3.8)}" r="0.9" fill="{GREEN}"/>')
-    P.append(f'<circle cx="{mm(CX+16)}" cy="{mm(Hh-3.8)}" r="0.9" fill="{COPPER}"/>')
+    # brand flanking dots -- one per colour, flanking the top SPOTYMOD logo
+    P.append(f'<circle cx="{mm(CX-15)}" cy="5.9" r="0.9" fill="{GREEN}"/>')
+    P.append(f'<circle cx="{mm(CX+15)}" cy="5.9" r="0.9" fill="{COPPER}"/>')
     # glyphs + labels
     for c in PARAMS + INPUTS + OUTPUTS + LIGHTS:
         c.r = GLYPH_R[c.kind]
