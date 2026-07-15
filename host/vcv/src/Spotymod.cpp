@@ -50,13 +50,14 @@ struct Spotymod : Module {
             switch (c.kind) {
                 case WK_BIGKNOB:
                 case WK_SMKNOB: configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl); break;
-                case WK_KNOBC:  configParam(c.id, -1.f, 1.f, 0.f, lbl); break;
+                case WK_KNOBC:  // MELO (bipolar): part A leans toward GROW, B centred
+                    configParam(c.id, -1.f, 1.f, c.id == MELODY_A ? 0.32f : 0.f, lbl); break;
                 case WK_KNOBI:
                     if (c.id == SCALE)  // init patch is Dorian (holds every min9 tone)
                         configParam(c.id, 0.f, (float)(spky::SCALE_LIST_COUNT - 1),
                                     (float)spky::SCALE_DORIAN, "Scale");
                     else  // STEPS_A / STEPS_B
-                        configParam(c.id, 2.f, 16.f, c.id == STEPS_A ? 6.f : 8.f, "Steps");
+                        configParam(c.id, 2.f, 16.f, 8.f, "Steps");
                     getParamQuantity(c.id)->snapEnabled = true;
                     break;
                 case WK_SW3:  // init patch runs both parts tempo-Synced
@@ -82,41 +83,42 @@ struct Spotymod : Module {
 
     // Init "patch" (Rack Initialize / fresh instance): part A = a sustained
     // minor-9 drone, part B = a low bass melody, both in Dorian (all min9 tones:
-    // A C E G B). Values were tuned by rendering the equivalent scenario through
-    // the desktop host and reading back pitch/voice content (see
-    // res/../scenarios). Only knob params (WK_BIGKNOB/WK_SMKNOB) come through
-    // here; STEP/SYNC/STEPS/SCALE defaults live in configControls().
+    // A C E G B). Knob values are a snapshot of a hand-dialled panel state
+    // (2026-07-15): MORPH sits hard toward A, COUPLE/DRIFT high, the room forward
+    // (SIZE/DECAY long, MIX 0.65), and part B runs its echo (FLUX) with light
+    // grit while part A stays FX-clean. Only knob params (WK_BIGKNOB/WK_SMKNOB)
+    // come through here; STEP/SYNC/STEPS/SCALE defaults live in configControls().
     static float defaultFor(int id) {
-        switch (id) {                       // global knobs
-            case MORPH:        return 0.50f;   // center neutral
-            case COUPLE:       return 0.00f;
+        switch (id) {                       // global knobs (panel snapshot 2026-07-15)
+            case MORPH:        return 0.05f;   // hard toward part A (the drone voice)
+            case COUPLE:       return 1.00f;   // full A<->B coupling
             case DRIFT:        return 0.00f;
             case MASTER_DRIVE: return 0.50f;
-            case REV_SIZE:     return 0.70f;   // long, roomy tail under the drone
-            case REV_DECAY:    return 0.80f;
-            case REV_TONE:     return 0.55f;
-            case REV_DIFF:     return 0.70f;   // coeff 0.63 ~= the old stock room
-            case REV_MIX:      return 0.25f;   // by-ear default (0.5 ~= old balance)
+            case REV_SIZE:     return 0.88f;   // big room
+            case REV_DECAY:    return 0.85f;
+            case REV_TONE:     return 0.56f;
+            case REV_DIFF:     return 0.50f;
+            case REV_MIX:      return 0.60f;   // reverb sits well forward
             case TEMPO:        return 0.35f;   // ~110 BPM on the 40..240 map
             default: break;
         }
         const int part = id / PART_STRIDE;  // 0 = A (drone), 1 = B (bass)
-        switch (id % PART_STRIDE) {         // fold part B onto the *_A enum
-            case RATE_A:   return part ? 0.20f : 0.10f;
-            case SHAPE_A:  return part ? 0.70f : 0.40f;
-            case DENSITY_A: return 1.0f;
-            case SMOOTH_A: return part ? 0.20f : 0.50f;
-            case RANGE_A:  return part ? 0.30f : 0.45f;
-            case DEPTH_A:  return part ? 0.60f : 0.50f;
-            case TUNE_A:   return part ? 0.00f : 0.50f;   // B down an octave-ish
-            case ATTACK_A: return part ? 0.05f : 0.20f;
-            case DECAY_A:  return part ? 0.16f : 0.90f;   // A rings/stacks; B plucks
-            case RES_A:    return part ? 0.25f : 0.20f;
-            case SUB_A:    return part ? 0.50f : 0.30f;   // weight under the bass
+        switch (id % PART_STRIDE) {         // fold part B onto the *_A enum; part ? B : A
+            case RATE_A:   return part ? 0.50f : 0.50f;
+            case SHAPE_A:  return part ? 0.60f : 0.40f;
+            case DENSITY_A: return part ? 0.60f : 0.67f;
+            case SMOOTH_A: return part ? 0.30f : 0.10f;
+            case RANGE_A:  return part ? 0.38f : 0.60f;
+            case DEPTH_A:  return part ? 0.38f : 0.78f;
+            case TUNE_A:   return part ? 0.08f : 0.55f;   // B down an octave-ish
+            case ATTACK_A: return part ? 0.13f : 0.35f;
+            case DECAY_A:  return part ? 0.20f : 0.85f;   // A rings/stacks; B plucks
+            case RES_A:    return part ? 0.28f : 0.18f;
+            case SUB_A:    return part ? 0.62f : 0.35f;   // weight under the bass
             case DETUNE_A: return part ? 0.10f : 0.20f;
-            case FLUX_A:   return 0.00f;
-            case GRIT_A:   return 0.00f;
-            case COMP_A:   return part ? 0.20f : 0.30f;
+            case FLUX_A:   return part ? 0.88f : 0.00f;   // B echo engaged; A off
+            case GRIT_A:   return part ? 0.20f : 0.00f;   // B light grit; A off
+            case COMP_A:   return part ? 0.28f : 0.45f;
             default: break;
         }
         return 0.5f;
