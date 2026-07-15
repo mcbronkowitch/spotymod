@@ -29,12 +29,13 @@ jobs:
         include:
           - sdk: mac-arm64
             runner: macos-14
-          - sdk: mac-x64
-            runner: macos-13
           - sdk: win-x64
             runner: windows-latest
           - sdk: lin-x64
             runner: ubuntu-latest
+          # mac-x64 (Intel) dropped: GitHub's macos-13 runner queue stalls builds
+          # for ages and Apple Silicon covers current Macs. Re-add a
+          # `{ sdk: mac-x64, runner: macos-13 }` entry here if Intel is needed.
     steps:
       - uses: actions/checkout@v4
         with:
