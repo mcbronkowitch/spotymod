@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "mod/lane.h"
+#include <set>
 
 using namespace spky;
 
@@ -10,34 +11,48 @@ static ModLane melodic_step(uint32_t seed, int steps) {
     l.init(48000.f, seed);           // variation defaults to 0 (LOOP)
     l.set_shape(1.0f);
     l.set_step(true, steps);
-    l.set_rate_hz(2.0f);
+    l.set_rate_hz(2.0f);             // one cycle = 24000 samples
     return l;
 }
 
-// Count fired notes over a fixed span (many cycles); at variation 0 the rate is
-// constant so full-vs-thin spans are directly comparable.
-static int count_fires(ModLane& l, int samples) {
-    int fires = 0;
-    for (int n = 0; n < samples; ++n) { l.process(); if (l.fired()) ++fires; }
-    return fires;
+// Which step indices fire over one full cycle. At rate 2 Hz / 16 steps a step
+// is 1500 samples; l.phase() just after a fire identifies the entered step.
+static std::set<int> fired_step_set(ModLane& l, int steps, int samples) {
+    std::set<int> out;
+    for (int n = 0; n < samples; ++n) {
+        l.process();
+        if (l.fired()) out.insert(static_cast<int>(l.phase() * steps) % steps);
+    }
+    return out;
 }
 
-TEST_CASE("DENSITY low drops weak-beat gates; downbeat survives") {
-    ModLane full = melodic_step(0x11, 16);
-    ModLane thin = melodic_step(0x11, 16);
-    thin.set_density(0.2f);
-    int f_full = count_fires(full, 24000);
-    int f_thin = count_fires(thin, 24000);
-    CHECK(f_thin < f_full);          // fewer notes fire when thinned
-    CHECK(f_thin >= 1);              // strong beats still fire
+TEST_CASE("DENSE is monotonic: raising density only adds notes to the groove") {
+    const float densities[] = {0.05f, 0.3f, 0.6f, 1.0f};
+    std::set<int> prev;
+    for (int d = 0; d < 4; ++d) {
+        ModLane l = melodic_step(0x11, 16);
+        l.set_density(densities[d]);
+        auto s = fired_step_set(l, 16, 24000);
+        for (int step : prev) CHECK(s.count(step) == 1);  // superset of the sparser set
+        CHECK(s.size() >= prev.size());
+        prev = s;
+    }
+    CHECK(prev.size() == 16);        // density 1 -> every step fires
 }
 
-TEST_CASE("DENSITY is reversible: density 1 == the full pattern") {
+TEST_CASE("DENSE 0 leaves exactly the cell anchors") {
+    ModLane l = melodic_step(0x11, 16);   // n=16 -> 2 instances of L=8
+    l.set_density(0.f);
+    auto s = fired_step_set(l, 16, 24000);
+    CHECK(s == std::set<int>{0, 8});      // slot 0 of each instance (rank 0)
+}
+
+TEST_CASE("DENSE is reversible: density 1 == the full pattern") {
     ModLane a = melodic_step(0x11, 16);
     ModLane b = melodic_step(0x11, 16);
     b.set_density(0.2f);             // thin...
-    b.set_density(1.0f);             // ...then restore (never edits _gate)
-    CHECK(count_fires(a, 24000) == count_fires(b, 24000));
+    b.set_density(1.0f);             // ...then restore (never edits the groove)
+    CHECK(fired_step_set(a, 16, 24000) == fired_step_set(b, 16, 24000));
 }
 
 TEST_CASE("FLOW never freezes after PROBABILITY removal") {

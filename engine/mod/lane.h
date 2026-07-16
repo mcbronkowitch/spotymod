@@ -14,7 +14,7 @@ public:
 
     void set_rate_hz(float hz);
     void set_shape(float s);          // 0..1
-    void set_density(float d) { _density = pg_clampf(d, 0.f, 1.f); }  // 0..1
+    void set_density(float d) { _density = pg_clampf(d, 0.f, 1.f); }  // 0..1 -> how deep into the groove ranking (k of L cell notes)
     void set_step(bool on, int steps_per_cycle);
     void set_fixed_slew(bool on);     // panel switch 3 middle position
     void set_smooth(float s);         // 0..1
@@ -49,7 +49,7 @@ private:
     void  _mutate_slot(int slot);   // GROW: variation dice + pitch walk on a fired step
     void  _fill_walk();             // deterministic contour-walk prefill (non-melodic lanes)
     bool  _effective_gate(int slot) const;  // note/rest gate AND density mask
-    bool  _density_pass(int slot) const;    // metric-weight threshold from DENSITY
+    int   _groove_k() const;              // DENSE -> how many ranked cell notes play
     void  _renew_units();           // RENEW (melodic/STEP): per-unit dice regeneration
     void  _renew_walk();            // RENEW (non-melodic): dice-gated whole-walk regen
 
@@ -74,6 +74,7 @@ private:
     bool      _gate[kSeqSlots]      = {};
     uint8_t   _motif_id[kSeqSlots]  = {};
     PhraseLayout _layout;
+    GrooveCell _groove;
     Principle _principle = Principle::TwoMotif;
     bool      _melodic   = false;
     float     _density   = 1.f;

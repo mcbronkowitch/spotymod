@@ -16,6 +16,7 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _cur_step = -1;
     if (_melodic) {
         generate_phrase(_principle, _rng, _steps, _seq, _gate, _motif_id, _layout);
+        pg_gen_groove(_rng, _layout.motif_len, _groove);
     } else {
         _fill_walk();
         for (int i = 0; i < kSeqSlots; ++i) { _gate[i] = true; _motif_id[i] = 0; }
@@ -102,13 +103,17 @@ int ModLane::_sh_slot() const {
     return s % kSeqSlots;
 }
 
-bool ModLane::_density_pass(int slot) const {
-    // density 1 -> threshold 0 (all pass); density 0 -> threshold 1 (only slot 0).
-    return pg_metric_weight(slot) >= (1.f - _density);
+int ModLane::_groove_k() const {
+    int L = _groove.len < 1 ? 1 : _groove.len;
+    int k = static_cast<int>(std::lround(_density * static_cast<float>(L)));
+    if (k < 1) k = 1;              // the anchor is unmaskable
+    if (k > L) k = L;
+    return k;
 }
 
 bool ModLane::_effective_gate(int slot) const {
-    return _gate[slot] && _density_pass(slot);
+    if (!_melodic) return _gate[slot];   // non-melodic lanes: all-true, DENSE unrouted
+    return _groove.rank_of_slot[slot % _groove.len] < _groove_k();
 }
 
 void ModLane::_on_boundary() {
@@ -170,6 +175,7 @@ float ModLane::process() {
     if (wrapped) {
         if (_regen_pending && _melodic && _step_mode) {
             generate_phrase(_principle, _rng, _steps, _seq, _gate, _motif_id, _layout);
+            pg_gen_groove(_rng, _layout.motif_len, _groove);
             _regen_pending = false;
             _ev_phase = _ev_shape = _ev_rate = 0.f; // present fresh phrase un-warped
         }
