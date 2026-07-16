@@ -2,6 +2,7 @@
 #include "mod/lane.h"
 #include <cmath>
 #include <vector>
+#include <set>
 
 using namespace spky;
 
@@ -123,4 +124,47 @@ TEST_CASE("determinism: identical drive -> identical output across GROW/RENEW/de
     auto a = run(0xDECAF); auto b = run(0xDECAF);
     REQUIRE(a.size() == b.size());
     for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]); // bit-identical
+}
+
+// Fired-step SET per cycle (rhythm identity), split on phase wrap.
+static std::vector<std::set<int>> fired_sets(ModLane& l, int steps, int cycles) {
+    std::vector<std::set<int>> out(1);
+    float prev = l.phase();
+    int wraps = 0;
+    for (int n = 0; n < 400000 && wraps <= cycles; ++n) {
+        l.process();
+        float ph = l.phase();
+        if (ph < prev) { out.emplace_back(); ++wraps; }
+        prev = ph;
+        if (l.fired()) out.back().insert(static_cast<int>(ph * steps) % steps);
+    }
+    return out;
+}
+
+TEST_CASE("groove zone 1: variation up to 0.25 never touches the rhythm") {
+    for (float v : {0.2f, -0.2f, 0.25f}) {
+        ModLane l = make_melodic_step_lane(0x77, 16);
+        l.set_density(0.6f);
+        l.set_variation(v);
+        auto cy = fired_sets(l, 16, 8);
+        REQUIRE(cy.size() >= 8);
+        for (size_t c = 2; c < 8; ++c) CHECK(cy[1] == cy[c]);   // pitch may move; rhythm must not
+    }
+}
+
+TEST_CASE("groove zone 2: at the stops the rhythm drifts") {
+    // Rank swaps/flips only change the fired SET when they cross the DENSE
+    // boundary; at seed 0x77 the GROW side (v=1.0) doesn't cross within 16
+    // cycles, so cycles is raised to 32 here (still <= the NOTE's cap).
+    // Zone 1 above stays at 8 cycles with the same seed 0x77 (still passes).
+    for (float v : {1.0f, -1.0f}) {
+        ModLane l = make_melodic_step_lane(0x77, 16);
+        l.set_density(0.6f);
+        l.set_variation(v);
+        auto cy = fired_sets(l, 16, 32);
+        REQUIRE(cy.size() >= 32);
+        bool changed = false;
+        for (size_t c = 2; c < 32; ++c) if (cy[c] != cy[1]) changed = true;
+        CHECK(changed);
+    }
 }

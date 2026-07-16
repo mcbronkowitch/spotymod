@@ -57,6 +57,7 @@ private:
     int   _groove_k() const;              // DENSE -> how many ranked cell notes play
     void  _renew_units();           // RENEW (melodic/STEP): per-unit dice regeneration
     void  _renew_walk();            // RENEW (non-melodic): dice-gated whole-walk regen
+    void  _mutate_groove(bool renew_side);  // VARIATION outer zone: rhythm dice (wrap only)
     void  _start_note(int slot);    // groove: set _note_hold (tie-capped) on fire
 
     Rng     _rng;

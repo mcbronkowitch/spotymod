@@ -8,6 +8,9 @@ using namespace spky;
 
 // Mutation character — tuned by ear; the spec fixes behavior, not constants.
 static constexpr float kGravity  = 0.10f;  // GROW: mild pull toward 0 (the root)
+static constexpr float kGrooveVarStart   = 0.25f;  // |variation| below: melody only
+static constexpr float kGrooveRerollGate = 0.9f;   // RENEW near the stop may re-roll all
+static constexpr float kGrooveRerollProb = 0.25f;  // ...with this chance, when the dice hits
 
 void ModLane::init(float sample_rate, uint32_t seed) {
     _sr = sample_rate;
@@ -179,6 +182,23 @@ void ModLane::_renew_walk() {
     pg_contour_walk(_rng, _seq, kSeqSlots, 0.f, 0.6f, 0.12f);
 }
 
+void ModLane::_mutate_groove(bool renew_side) {
+    if (!_melodic || !_step_mode) return;
+    float a = _variation < 0.f ? -_variation : _variation;
+    float r = (a - kGrooveVarStart) / (1.f - kGrooveVarStart);
+    if (r < 0.f) r = 0.f;
+    if (r > 1.f) r = 1.f;
+    // Dice always drawn while this side is active: fixed base draw count per
+    // wrap; in zone 1 (r == 0) it can never pass.
+    if (_rng.next_unipolar() >= r * r) return;
+    if (renew_side) {
+        bool reroll = a >= kGrooveRerollGate && _rng.next_unipolar() < kGrooveRerollProb;
+        pg_groove_mutate_renew(_rng, _groove, reroll);
+    } else {
+        pg_groove_mutate_grow(_rng, _groove);
+    }
+}
+
 float ModLane::process() {
     _fired = false;
     _kick_shape *= _kick_coef;                 // SPOT shape offset fades toward 0
@@ -204,6 +224,7 @@ float ModLane::process() {
             _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _variation, -0.5f, 0.5f);
             _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _variation, -0.25f, 0.25f);
             _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _variation, -0.2f, 0.2f);
+            _mutate_groove(false);              // outer zone: rhythm drifts too
         } else if (_variation < 0.f) {          // RENEW: per-unit regen + walk decay
             if (_melodic && _step_mode) _renew_units();
             else if (!_melodic) {
@@ -211,6 +232,7 @@ float ModLane::process() {
             }
             float decay = 1.f + 0.2f * _variation;  // variation -1 -> x0.8/cycle
             _ev_phase *= decay; _ev_shape *= decay; _ev_rate *= decay;
+            _mutate_groove(true);               // outer zone: re-decide pushes
         }                                       // variation 0 (LOOP): walk frozen
     }
 
