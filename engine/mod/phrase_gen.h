@@ -324,7 +324,7 @@ inline void pg_groove_nudge_len(Rng& rng, GrooveCell& g) {
 inline void pg_groove_mutate_grow(Rng& rng, GrooveCell& g) {
     const int L = g.len;
     if (rng.next_unipolar() < 0.5f) {
-        if (L < 4) return;                            // no swappable pair beside the anchor
+        if (L < 3) return;                            // need two non-anchor ranks to swap
         int j = 1 + static_cast<int>(rng.next_unipolar() * static_cast<float>(L - 2));
         if (j > L - 2) j = L - 2;                     // swap ranks j <-> j+1, j in 1..L-2
         int s1 = -1, s2 = -1;
@@ -347,7 +347,7 @@ inline void pg_groove_mutate_renew(Rng& rng, GrooveCell& g, bool reroll) {
     const int L = g.len;
     if (reroll) { pg_gen_groove(rng, L, g); return; }
     if (rng.next_unipolar() < 0.7f) {
-        int nc = (L - 2) / 2;                         // candidates s = 2, 4, ..., <= L-2
+        int nc = (L - 1) / 2;                         // candidates s = 2, 4, ..., <= L-1
         if (nc < 1) return;
         int c = static_cast<int>(rng.next_unipolar() * static_cast<float>(nc));
         if (c > nc - 1) c = nc - 1;

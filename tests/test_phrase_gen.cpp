@@ -253,7 +253,7 @@ static bool gv_is_perm_anchor0(const GrooveCell& g) {
 }
 
 TEST_CASE("groove mutators preserve permutation, anchor, and length bounds") {
-    for (int L : {1, 2, 7, 8}) {
+    for (int L : {1, 2, 3, 4, 5, 6, 7, 8}) {
         for (uint32_t seed = 1; seed <= 50; ++seed) {
             Rng r; r.seed(seed * 0x9E3779B9u + static_cast<uint32_t>(L));
             GrooveCell g;

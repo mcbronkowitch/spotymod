@@ -45,18 +45,18 @@ On dice success, 50/50 (one draw):
 - **Length nudge:** pick a slot uniform in `0..L−1`, `note_len ± 1` (direction by
   draw), clamped to `[1,4]`.
 
-`L < 4`: no valid swap positions → the swap branch is a no-op (dice and selector
+`L < 3`: no two non-anchor ranks to swap → the swap branch is a no-op (dice and selector
 draws still consumed as drawn).
 
 ### RENEW side (variation < 0) — re-decide
 
 On dice success, 70/30 (one draw):
 
-- **Push flip (70%):** pick an even candidate `s` uniform from `{2, 4, …} ∩ [2, L−2]`,
+- **Push flip (70%):** pick an even candidate `s` uniform from `{2, 4, …} ∩ [2, L−1]`,
   swap `rank_of_slot[s−1] ↔ rank_of_slot[s]`. This is the exact semantic toggle of
   the groove generator's push displacement: if the off-beat outranked its beat, the
   beat is back on the grid; if not, it becomes an anticipation. No score state
-  needed — the flip IS a rank swap. `L < 4`: no candidates → no-op.
+  needed — the flip IS a rank swap. `L < 4`: no even candidate ≥ 2 → no-op.
 - **Length nudge (30%):** as in GROW.
 - **Full re-roll (extreme only):** when `a ≥ 0.9`, before the flip/nudge selector,
   one extra draw: with probability `kGrooveRerollProb` (≈0.25, ear-tunable) the whole
