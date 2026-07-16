@@ -85,8 +85,10 @@ global sync flag. Triplets survive as ladder entries (below), not as a mode.
 Sorted by speed, dotted/straight/triplet interleaved — 17 detents:
 
 ```
-8bar 4bar 2bar 1bar 1/2. 1/2 1/2T 1/4. 1/4 1/4T 1/8. 1/8 1/8T 1/16. 1/16 1/16T 1/32
+8bar 4bar 2bar 1bar 1/2. 1/2 1/4. 1/2T 1/4 1/8. 1/4T 1/8 1/16. 1/8T 1/16 1/16T 1/32
 ```
+
+(Strictly speed-sorted so the knob is monotonic — 1/2T (0.75 cpb) is faster than 1/4. (0.667 cpb).)
 
 Per part — one part on 1/4 against the other on 1/8T replaces the old
 triplet-mode trick. The VCV tooltip shows the division name. SYNC off: the
