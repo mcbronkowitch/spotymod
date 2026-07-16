@@ -104,6 +104,8 @@ struct Spotymod : Module {
     // (SIZE/DECAY long, MIX 0.65), and part B runs its echo (FLUX) with light
     // grit while part A stays FX-clean. Only knob params (WK_BIGKNOB/WK_SMKNOB)
     // come through here; STEP/SYNC/STEPS/SCALE defaults live in configControls().
+    // RATE values are expressed on the 17-rung ladder introduced 2026-07-16
+    // (0.0625 = 4 bars, 0.125 = 2 bars — same musical rates as the snapshot).
     static float defaultFor(int id) {
         switch (id) {                       // global knobs (init.vcvm snapshot 2026-07-15)
             case MORPH:        return 0.00f;   // hard left = fully part A (only deck A active)
@@ -122,7 +124,7 @@ struct Spotymod : Module {
         }
         const int part = id / PART_STRIDE;  // 0 = A (drone), 1 = B (bass)
         switch (id % PART_STRIDE) {         // fold part B onto the *_A enum; part ? B : A
-            case RATE_A:   return part ? 0.20f  : 0.10f;
+            case RATE_A:   return part ? 0.125f : 0.0625f;
             case SHAPE_A:  return part ? 0.60f  : 0.40f;
             case DENSITY_A: return part ? 0.60f : 0.67f;
             case SMOOTH_A: return part ? 0.30f  : 0.10f;

@@ -93,8 +93,8 @@ Edit the control table in `res/gen_panel.py`, re-run, rebuild.
 | Port | Meaning |
 |------|---------|
 | IN L/R | audio in (feeds the per-part FX chain; optional) |
-| CLOCK | one pulse per beat → sets tempo (overrides the TEMPO knob) |
-| RESET | reserved |
+| CLOCK | one pulse per beat → sets tempo (overrides the TEMPO knob) and phase-aligns the transport on each pulse |
+| RESET | resets the transport downbeat (bar/beat phase) |
 | OUT L/R | main mix |
 | PIT A/B | per-part pitch modulation CV (±5 V, not strict V/Oct) |
 | GAT A/B | per-part gate (10 V) |

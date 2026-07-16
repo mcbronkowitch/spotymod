@@ -157,7 +157,7 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
             const float tgt = static_cast<float>(t - std::floor(t));
             float cme = tgt - a.pitch_phase();
             cme -= std::floor(cme + 0.5f);
-            const float cm = g * (hard ? clampf(kKHard * cme, -kLockCap, kLockCap)
+            const float cm = g * (hard ? clampf(kKHard * std::sin(TWO_PI * cme), -kLockCap, kLockCap)
                                        : kK * std::sin(TWO_PI * cme));
             pull_a *= (1.f + cm);
             pull_b *= (1.f + cm);

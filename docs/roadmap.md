@@ -200,10 +200,11 @@ rate (one 96-sample block) and wired through narrow `ModLane` /
   morphed-away part injects no new reverb, only its already-committed tail
   rings out); boot default 0.5, smoothed.
 - **COUPLE** — ALT + fader, a Kuramoto phase-locked loop between the two
-  parts' master rates: mutual phase pull (no phase jumps) with a ×0.5..×2
-  rate clamp, locking in 1–2 cycles at couple = 1 and staying quiet at low
-  couple; a `sync_mode` anchor part holds its rate fixed as the other locks
-  to it.
+  parts' master rates: mutual phase pull (no phase jumps) with a ±5-octave
+  ([1/32..32]) rate clamp, locking in 1–2 cycles at couple = 1 and staying
+  quiet at low couple. Superseded by the SYNC/COUPLE redesign below: the
+  per-part `sync_mode` anchor is gone, replaced by a single global SYNC
+  switch and zoned grid gravity / hard lock against the transport.
 - **DRIFT** — SPOT-hold + fader, one shared Ornstein-Uhlenbeck "weather"
   walk (τ ≈ 45 s, bounded) feeding six hardcoded taps (rate ± ½ octave,
   shape ± 0.15, detune ± 25 cents, per lane); `set_drift` is smoothed.

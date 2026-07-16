@@ -118,7 +118,7 @@ L, R = CX - 10.5, CX + 10.5
 # boxes at y 110). Its lower rows line up horizontally with the part rows:
 ROW_VOICE = 76.8    # ATK/DEC/RES/SUB/DTUN
 ROW_FX    = 88.9    # FLUX/GRIT/COMP/STPS
-ROW_PAD   = 102.8   # SYNC/ENG/.../TRIG pads
+ROW_PAD   = 102.8   # ENG/.../TRIG pads
 SHARED = [
     Ctl("MORPH",  BIGKNOB, CX,  22.0, "MORPH"),
     # TIME: the one clock story — the mode switch, its tempo, and how tightly

@@ -234,7 +234,7 @@ TEST_CASE("part: decay length follows the master cycle (set_cycle forwarding)") 
         p.init(48000.f, 5);
         p.set_step(true, 8);          // cancels the boot FLOW auto-trigger
         p.mod().set_density(0.f);     // only the unmaskable downbeat slot fires
-            p.mod().set_rate(rate_norm);
+    p.mod().set_rate(rate_norm);
         float l, r;
         p.process(l, r);              // downbeat fires here (step -1 -> 0)
         REQUIRE(p.lane_fired(LANE_PITCH));
