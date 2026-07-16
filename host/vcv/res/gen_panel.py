@@ -139,6 +139,10 @@ SHARED = [
     Ctl("REV_DIFF",  SMKNOB, R,  ROW_FX,    "DIFF"),
     Ctl("REV_SMEAR", SMKNOB, L,  ROW_PAD, "SMEAR"),
     Ctl("REV_MOD",   SMKNOB, R,  ROW_PAD, "MOD"),
+    # CHOKE: bipolar event-priority between the decks (spec 2026-07-16
+    # choke-priority). Fills the free centre slot between SCALE and DRIFT.
+    # Appended LAST on purpose: existing .vcv patches keep their param ids.
+    Ctl("CHOKE",  SMKNOB, CX,  51.0, "CHOKE"),
 ]
 
 PARAMS = PART_A + PART_B + SHARED

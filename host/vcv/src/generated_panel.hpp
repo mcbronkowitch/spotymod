@@ -74,6 +74,7 @@ enum ParamId {
     REV_DIFF,
     REV_SMEAR,
     REV_MOD,
+    CHOKE,
     NUM_PARAMS
 };
 enum InputId {
@@ -160,6 +161,7 @@ static const PanelCtl kParamCtls[] = {
     {REV_DIFF, WK_SMKNOB, {117.180f, 88.900f}, "DIFF"},
     {REV_SMEAR, WK_SMKNOB, {96.180f, 102.800f}, "SMEAR"},
     {REV_MOD, WK_SMKNOB, {117.180f, 102.800f}, "MOD"},
+    {CHOKE, WK_SMKNOB, {106.680f, 51.000f}, "CHOKE"},
 };
 static const PanelCtl kInputCtls[] = {
     {IN_L, WK_IN, {56.302f, 118.000f}, "IN L"},
