@@ -26,6 +26,8 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _target = 0.f;
     _fired = false;
     _frozen = false;
+    _note_age = 0;
+    _note_hold = 0;
     _ev_phase = 0.f;
     _ev_shape = 0.f;
     _ev_rate  = 0.f;
@@ -87,6 +89,8 @@ void ModLane::settle() {
 void ModLane::reset(float phase) {
     _phase = clampf(phase, 0.f, 0.999999f);
     _cur_step = -1;
+    _note_age = 0;
+    _note_hold = 0;
     _slew.reset(_target);
 }
 
@@ -118,16 +122,29 @@ bool ModLane::_effective_gate(int slot) const {
 
 void ModLane::_on_boundary() {
     int slot = _sh_slot();
-    // STEP consults the effective gate (note/rest + density mask); FLOW has no
+    // STEP consults the effective gate (groove rank vs DENSE); FLOW has no
     // per-step gate so it always fires (no freeze source after PROBABILITY).
     bool gated = _step_mode ? _effective_gate(slot) : true;
     _frozen = !gated;
     if (gated) {
         _fired = true;
+        if (_melodic && _step_mode) _start_note(slot);
         if (_variation > 0.f) _mutate_slot(slot);  // GROW pitch
         _target = _compute_raw();
+    } else {
+        ++_note_age;   // rest step: the running note ages toward its release
     }
     // if !gated: hold the previous _target (frozen) — and the buffer slot with it
+}
+
+void ModLane::_start_note(int slot) {
+    int n = _steps > kSeqSlots ? kSeqSlots : _steps;   // effective phrase length
+    if (n < 1) n = 1;
+    int dist = 1;                                       // steps to the next note
+    while (dist < n && !_effective_gate((slot + dist) % n)) ++dist;
+    int hold = static_cast<int>(_groove.note_len[slot % _groove.len]);
+    _note_hold = hold > dist ? dist : hold;             // reaching the next note = tie
+    _note_age = 0;
 }
 
 void ModLane::_mutate_slot(int slot) {

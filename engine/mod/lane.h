@@ -6,7 +6,7 @@
 
 namespace spky {
 
-// One modulation lane: wavetable core -> gate (note/rest x density) -> step/flow
+// One modulation lane: wavetable core -> gate (groove rank x DENSE) -> step/flow
 // -> smooth -> range. Bipolar output in [-1,1]. Deterministic given its seed.
 class ModLane {
 public:
@@ -29,7 +29,8 @@ public:
 
     bool  fired()  const { return _fired; }   // true on the sample a boundary fired
     bool  frozen() const { return _frozen; }  // last dice failed -> holding
-    bool  gate_state() const { return _step_mode ? _effective_gate(_sh_slot()) : true; }
+    // GATE: melodic STEP sustains the composed note (age < hold); else high.
+    bool  gate_state() const { return _step_mode ? (!_melodic || _note_age < _note_hold) : true; }
     float phase()  const { return _phase; }
     float phase_eff() const;                  // audible phase = (_phase + EVOLVE offset), wrapped
     float target() const { return _target; }  // pre-smooth, pre-range held value
@@ -48,10 +49,11 @@ private:
     int   _sh_slot() const;         // which _seq slot the S&H end reads now
     void  _mutate_slot(int slot);   // GROW: variation dice + pitch walk on a fired step
     void  _fill_walk();             // deterministic contour-walk prefill (non-melodic lanes)
-    bool  _effective_gate(int slot) const;  // note/rest gate AND density mask
+    bool  _effective_gate(int slot) const;  // melodic: groove rank < DENSE depth; else all-true
     int   _groove_k() const;              // DENSE -> how many ranked cell notes play
     void  _renew_units();           // RENEW (melodic/STEP): per-unit dice regeneration
     void  _renew_walk();            // RENEW (non-melodic): dice-gated whole-walk regen
+    void  _start_note(int slot);    // groove: set _note_hold (tie-capped) on fire
 
     Rng     _rng;
     OnePole _slew;
@@ -82,6 +84,8 @@ private:
     float _target = 0.f;     // pre-smooth held value
     bool  _fired = false;
     bool  _frozen = false;
+    int   _note_age  = 0;    // steps since the current note fired
+    int   _note_hold = 0;    // composed note length (capped at the next note)
 
     float _ev_phase = 0.f;   // EVOLVE random-walk offsets: shape / phase / rate (Task 7)
     float _ev_shape = 0.f;
