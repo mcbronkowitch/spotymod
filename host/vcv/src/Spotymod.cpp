@@ -62,8 +62,12 @@ struct Spotymod : Module {
                 case WK_SMKNOB:
                     if (c.id == RATE_A || c.id == RATE_B)
                         configParam<RateQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
-                    else if (c.id == CHOKE)   // bipolar event-priority; centre = off
-                        configParam(c.id, -1.f, 1.f, 0.f, lbl);
+                    else if (c.id == CHOKE) {  // event-priority, 5 snapped states
+                        configSwitch(c.id, -2.f, 2.f, 0.f, lbl,
+                                     {"A chokes B thru decay", "A chokes B (gate)",
+                                      "Off", "B chokes A (gate)", "B chokes A thru decay"});
+                        getParamQuantity(c.id)->snapEnabled = true;
+                    }
                     else
                         configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     break;
@@ -202,7 +206,7 @@ struct Spotymod : Module {
         inst.set_couple(params[COUPLE].getValue());
         inst.set_drift(params[DRIFT].getValue());
         inst.set_sync(params[SYNC].getValue() > 0.5f);
-        inst.set_choke(params[CHOKE].getValue());
+        inst.set_choke(params[CHOKE].getValue() * 0.5f);   // snap -2..+2 -> zones
         inst.set_reverb_size(params[REV_SIZE].getValue());
         inst.set_reverb_decay(params[REV_DECAY].getValue());
         inst.set_reverb_tone(params[REV_TONE].getValue());

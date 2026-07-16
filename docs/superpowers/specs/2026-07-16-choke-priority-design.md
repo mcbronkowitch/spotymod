@@ -1,7 +1,18 @@
 # CHOKE — Ereignis-Vorrang zwischen Deck A und B
 
 **Datum:** 2026-07-16
-**Status:** Design abgenommen, bereit für Implementierungsplan
+**Status:** Rev. 2 (nach Play-Test) implementiert
+
+> **Rev. 2 (2026-07-16, nach Play-Test):** Die kontinuierliche Kennlinie
+> (Zone 1 Wahrscheinlichkeit, Zone 2 wachsendes Fenster) spielte sich nicht —
+> „fühlt sich kaputt an". Ersetzt durch **5 diskrete Raststellungen**:
+> Mitte = aus; pro Seite zwei Stufen — **Choke** (Sperre nur solange das Gate
+> der Vorrang-Seite high ist) und **Choke inkl. Decay** (Sperre solange die
+> Vorrang-Seite hörbar ist, env > 1e-4). Kein Würfeln, kein wachsendes
+> Fenster; `_claim`/Rng entfallen. Engine-Mapping: |c| ∈ (0, 0.5] = Gate-Zone,
+> |c| > 0.5 = Decay-Zone; das VCV-Panel rastet auf −2…+2 (×0.5 zum Engine-Wert).
+> Die Abschnitte „Kennlinie"/Zonen unten beschreiben Rev. 1 und sind insoweit
+> überholt; Richtung, Skip-Semantik und Architektur gelten unverändert.
 
 ## Ziel
 

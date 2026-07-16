@@ -32,12 +32,6 @@ void Instrument::init(float sample_rate, const FxMem& mem) {
     _limiter.init();
     _center.init(sample_rate, 0x5ce47e12u);
     _ctrl_ctr = 0;
-    _choke_rng.seed(0xc0edbabeu);
-    // Boot: the FLOW auto-drone makes a part audible before its first pitch
-    // lane fire ever rolls a claim, so start claimed. Inert at choke 0 (the
-    // bypass path forces _claim = false) and in zone 1 (window is gate-only,
-    // and the gate-opening fire re-rolls the claim first).
-    _claim = true;
     set_tempo_bpm(_bpm);
 }
 
@@ -69,10 +63,10 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         --_ctrl_ctr;
 
         // CHOKE: event-priority between the decks (spec 2026-07-16
-        // choke-priority). Zone 1 (|c| <= 0.25): each priority-side fire
-        // claims with p = |c|/0.25 and blocks the other side while its gate
-        // is high. Zone 2: all fires claim and the window grows into the
-        // envelope decay (env threshold 1-w, floored so w=1 means "audible").
+        // choke-priority, rev. 2 after play-test: discrete zones, no dice).
+        // |c| in (0, 0.5]: the yielder is blocked while the priority side's
+        // gate is high. |c| > 0.5: also while its voice is still audible
+        // (full decay, 1e-4 floor). The panel snaps to -1/-0.5/0/+0.5/+1.
         const int pri = _choke > 0.f ? PART_B : PART_A;
         const int yld = 1 - pri;
         const float amt = _choke < 0.f ? -_choke : _choke;
@@ -82,18 +76,11 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         _parts[pri].set_inhibit(false);   // knob flips must never strand a part
         _parts[pri].process(pl[pri], prr[pri], psl[pri], psr[pri]);
         if (amt > 0.f) {
-            if (_parts[pri].lane_fired(LANE_PITCH)) {
-                const float p = amt >= 0.25f ? 1.f : amt * 4.f;
-                _claim = _choke_rng.next_unipolar() < p;
-            }
             bool window = _parts[pri].gate();
-            if (!window && amt > 0.25f) {
-                const float w = (amt - 0.25f) * (1.f / 0.75f);
-                window = _parts[pri].max_voice_env() > 1.f - w + 1e-4f;
-            }
-            _parts[yld].set_inhibit(_claim && window);
+            if (!window && amt > 0.5f)
+                window = _parts[pri].max_voice_env() > 1e-4f;
+            _parts[yld].set_inhibit(window);
         } else {
-            _claim = false;
             _parts[yld].set_inhibit(false);
         }
         _parts[yld].process(pl[yld], prr[yld], psl[yld], psr[yld]);

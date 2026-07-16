@@ -3,7 +3,6 @@
 #include <cstddef>
 #include "parts/part.h"
 #include "mod/lane_id.h"
-#include "mod/rng.h"
 #include "fx/reverb.h"
 #include "fx/limiter.h"
 #include "center/center.h"
@@ -97,8 +96,10 @@ public:
         _center.set_sync(on);
         for (auto& p : _parts) p.mod().set_synced(on);
     }
-    // CHOKE (spec 2026-07-16 choke-priority): -1 = A priority / B yields,
-    // 0 = off (bit-identical bypass), +1 mirrored.
+    // CHOKE (spec 2026-07-16 choke-priority, rev. 2): discrete zones.
+    // 0 = off (bit-identical bypass); negative = A priority / B yields,
+    // positive mirrored. |c| <= 0.5 blocks during the priority gate only,
+    // |c| > 0.5 through the full decay (while the voice is audible).
     void set_choke(float c) { _choke = clampf(c, -1.f, 1.f); }
     void clock_pulse()     { _center.clock_pulse(); }
     void reset_transport() { _center.reset_transport(); }
@@ -124,9 +125,7 @@ private:
     Limiter _limiter;
     Center _center;
     int    _ctrl_ctr = 0;    // counts down to the next control-rate Center::update
-    float _choke = 0.f;        // -1..+1 event-priority knob
-    Rng   _choke_rng;          // per-fire claim rolls (zone 1 probability)
-    bool  _claim = true;       // the priority side's last fire claimed the room
+    float _choke = 0.f;        // -1..+1 event-priority knob (discrete zones)
                                // (boots true: the FLOW drone predates any fire)
     float _sr = 48000.f;
     float _bpm = 120.f;

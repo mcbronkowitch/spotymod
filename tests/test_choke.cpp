@@ -141,37 +141,21 @@ TEST_CASE("choke +1 is the mirror: A yields to B") {
     CHECK(sawB);
 }
 
-TEST_CASE("choke -0.25 (zone boundary): every A gate blocks B onsets, decay does not") {
+TEST_CASE("choke -0.5 (gate zone): every A gate blocks B onsets, the decay does not") {
     Instrument inst;
     arm_both(inst);
-    inst.set_choke(-0.25f);                      // p = 1, window = gate only
+    inst.set_choke(-0.5f);                       // discrete zone: gate window only
     std::vector<float> l(1), r(1);
     bool prevB = false;
+    int onsets = 0, in_decay = 0;
     for (int i = 0; i < 480000; ++i) {
         inst.process(nullptr, nullptr, l.data(), r.data(), 1);
-        if (onset(inst, PART_B, prevB))
+        if (onset(inst, PART_B, prevB)) {
+            ++onsets;
             CHECK_FALSE(inst.gate(PART_A));      // never inside A's gate
-    }
-}
-
-TEST_CASE("choke zone 1 thins collisions statistically") {
-    // collisions := B onsets that land inside A's gate window
-    auto collisions = [](float choke) {
-        Instrument inst;
-        arm_both(inst);
-        inst.set_choke(choke);
-        std::vector<float> l(1), r(1);
-        bool prevB = false;
-        int n = 0;
-        for (int i = 0; i < 960000; ++i) {       // 20 s, deterministic seeds
-            inst.process(nullptr, nullptr, l.data(), r.data(), 1);
-            if (onset(inst, PART_B, prevB) && inst.gate(PART_A)) ++n;
+            if (window_open(inst, PART_A)) ++in_decay;
         }
-        return n;
-    };
-    const int free_run = collisions(0.f);
-    const int half     = collisions(-0.125f);    // p = 0.5
-    CHECK(free_run > 0);                          // overlap actually happens
-    CHECK(half < free_run);                       // p=0.5 removes some...
-    CHECK(half > 0);                              // ...but not all
+    }
+    CHECK(onsets > 0);                            // gate zone still lets B play...
+    CHECK(in_decay > 0);                          // ...including during A's decay
 }
