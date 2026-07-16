@@ -128,7 +128,7 @@ struct Spotymod : Module {
             case SHAPE_A:  return part ? 0.60f  : 0.40f;
             case DENSITY_A: return part ? 0.60f : 0.67f;
             case SMOOTH_A: return part ? 0.30f  : 0.10f;
-            case RANGE_A:  return part ? 0.38f  : 0.60f;
+            case RANGE_A:  return part ? 0.38f  : 1.00f;   // A full range (2026-07-16)
             case DEPTH_A:  return part ? 0.622f : 0.78f;
             case TUNE_A:   return part ? 0.00f  : 0.55f;   // B down an octave-ish
             case ATTACK_A: return part ? 0.686f : 0.657f;
