@@ -162,3 +162,59 @@ TEST_CASE("regenerate_unit gates match generate_phrase at the same slots") {
     CHECK(changed);
     for (int i = 0; i < 8; ++i) CHECK(g[16 + i] == gbefore[i]); // gate pattern still position-stable
 }
+
+TEST_CASE("groove: deterministic per seed, valid permutation, anchor rank 0") {
+    for (uint32_t seed : {1u, 0xBEEFu, 0xC0FFEEu}) {
+        Rng a; a.seed(seed);
+        Rng b; b.seed(seed);
+        GrooveCell ga, gb;
+        pg_gen_groove(a, 8, ga);
+        pg_gen_groove(b, 8, gb);
+        bool seen[8] = {};
+        for (int i = 0; i < 8; ++i) {
+            CHECK(ga.rank_of_slot[i] == gb.rank_of_slot[i]);   // determinism
+            CHECK(ga.note_len[i] == gb.note_len[i]);
+            REQUIRE(ga.rank_of_slot[i] < 8);
+            seen[ga.rank_of_slot[i]] = true;
+        }
+        for (int i = 0; i < 8; ++i) CHECK(seen[i]);            // permutation
+        CHECK(ga.rank_of_slot[0] == 0);                        // anchor is always first
+        CHECK(ga.len == 8);
+    }
+}
+
+TEST_CASE("groove: note lengths in [1,4], biased short") {
+    float sum = 0.f; int count = 0;
+    for (uint32_t seed = 1; seed <= 200; ++seed) {
+        Rng r; r.seed(seed * 2654435761u);
+        GrooveCell g;
+        pg_gen_groove(r, 8, g);
+        for (int i = 0; i < 8; ++i) {
+            REQUIRE(g.note_len[i] >= 1);
+            REQUIRE(g.note_len[i] <= 4);
+            sum += g.note_len[i]; ++count;
+        }
+    }
+    CHECK(sum / count < 2.2f);   // mean ~1.7: short notes common, sustains rare
+}
+
+TEST_CASE("groove: syncopation occurs — off-beats reach the top ranks") {
+    int synced = 0;
+    const int kSeeds = 400;
+    for (uint32_t seed = 1; seed <= kSeeds; ++seed) {
+        Rng r; r.seed(seed * 0x9E3779B9u);
+        GrooveCell g;
+        pg_gen_groove(r, 8, g);
+        for (int i = 1; i < 8; i += 2)                 // any odd slot in the top half?
+            if (g.rank_of_slot[i] < 4) { ++synced; break; }
+    }
+    CHECK(synced > kSeeds / 4);   // pushes are a real, common feature
+}
+
+TEST_CASE("groove: L=1 degenerates cleanly") {
+    Rng r; r.seed(3);
+    GrooveCell g;
+    pg_gen_groove(r, 1, g);
+    CHECK(g.len == 1);
+    CHECK(g.rank_of_slot[0] == 0);
+}

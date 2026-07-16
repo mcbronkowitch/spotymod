@@ -245,4 +245,64 @@ inline void regenerate_unit(Principle p, Rng& rng, const PhraseLayout& layout,
     }
 }
 
+// One groove cell per phrase (spec 2026-07-16-rhythm-groove-design.md §1):
+// rank_of_slot[i] = firing order of cell slot i (0 = the first note DENSE
+// reveals), note_len[i] = composed note length in slots. Period = motif
+// length L, tiled across the phrase like the pitch motifs, truncated over
+// the tail. The downbeat anchor (slot 0) is pinned to rank 0 by construction.
+struct GrooveCell {
+    uint8_t rank_of_slot[32] = {};
+    uint8_t note_len[32] = {};
+    uint8_t len = 1;   // L, >= 1
+};
+
+// Compose the groove. Syncopation comes from displacement: a strong beat may
+// hand its emphasis to the off-beat before it (a push/anticipation), which
+// then OUTRANKS the beat it anticipates. Draw order is fixed (sync degree,
+// one draw per push candidate, jitter, lengths) and the draw count depends
+// only on L, so determinism is stable across outcomes.
+inline void pg_gen_groove(Rng& rng, int L, GrooveCell& out) {
+    if (L < 1) L = 1;
+    if (L > 32) L = 32;
+    out.len = static_cast<uint8_t>(L);
+
+    float score[33];
+    for (int i = 0; i < L; ++i) score[i] = pg_metric_weight(i);
+
+    // Phrase-wide syncopation degree (mild -> spicy). Tuned by ear.
+    float sync = 0.15f + 0.60f * rng.next_unipolar();
+
+    // Pushes: every strong beat (even slot; s == L is the NEXT cell's wrapped
+    // downbeat) may displace onto the off-beat before it.
+    for (int s = 2; s <= L; s += 2) {
+        bool push = rng.next_unipolar() < sync;      // always drawn: fixed count
+        if (!push) continue;
+        float beat_w = (s == L) ? 1.0f : score[s];
+        score[s - 1] = beat_w + 0.05f;               // anticipation outranks its beat
+        if (s < L) score[s] *= 0.35f;                // the displaced beat recedes
+    }
+
+    // Seeded jitter for tie-breaking variety; slot 0 pinned above everything
+    // (spec: anchor rank 0 is enforced, not emergent).
+    for (int i = 1; i < L; ++i) score[i] += (rng.next_unipolar() - 0.5f) * 0.06f;
+    score[0] = 2.0f;
+
+    // Stable insertion sort, descending score -> firing order.
+    uint8_t order[32];
+    for (int i = 0; i < L; ++i) order[i] = static_cast<uint8_t>(i);
+    for (int i = 1; i < L; ++i) {
+        uint8_t o = order[i];
+        int j = i - 1;
+        while (j >= 0 && score[order[j]] < score[o]) { order[j + 1] = order[j]; --j; }
+        order[j + 1] = o;
+    }
+    for (int r = 0; r < L; ++r) out.rank_of_slot[order[r]] = static_cast<uint8_t>(r);
+
+    // Note lengths, biased short (staccato common, sustains rare). Tuned by ear.
+    for (int i = 0; i < L; ++i) {
+        float u = rng.next_unipolar();
+        out.note_len[i] = static_cast<uint8_t>(u < 0.55f ? 1 : u < 0.80f ? 2 : u < 0.95f ? 3 : 4);
+    }
+}
+
 } // namespace spky
