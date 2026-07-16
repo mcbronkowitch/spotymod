@@ -843,7 +843,9 @@ git add host/vcv/res/gen_panel.py host/vcv/res/Spotymod.svg host/vcv/src/generat
 git commit -m "vcv(panel): layout A — TIME group (SYNC/TEMPO/COUPL) under MORPH, per-part sync toggles removed"
 ```
 
----### Task 7: VCV host wiring — SYNC switch, CLK/RST, RATE tooltip
+---
+
+### Task 7: VCV host wiring — SYNC switch, CLK/RST, RATE tooltip
 
 **Files:**
 - Modify: `host/vcv/src/Spotymod.cpp`
