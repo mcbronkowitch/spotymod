@@ -3,6 +3,7 @@
 #include "center/center.h"
 #include "mod/super_modulator.h"
 #include "mod/lane.h"
+#include "mod/divisions.h"
 #include "parts/part.h"
 using namespace spky;
 
@@ -294,4 +295,38 @@ TEST_CASE("center settle: weather and drift glide to 0 within ~1.5 s") {
     r.ticks(1500);                 // ~3 s at control rate
     CHECK(std::fabs(r.c.weather()) < 0.03f);
     CHECK(r.c.drift() < 0.05f);
+}
+
+TEST_CASE("center free: below COUPLE 0.5 the tempo has zero influence") {
+    // Identical rigs, wildly different BPM -> identical rate hooks.
+    Rig r1; r1.init(5u); Rig r2; r2.init(5u);
+    r1.c.set_tempo_bpm(120.f); r2.c.set_tempo_bpm(77.f);
+    for (Rig* r : {&r1, &r2}) {
+        r->a.set_rate(0.62f); r->b.set_rate(0.44f);
+        r->c.set_couple(0.4f); r->c.set_drift(0.f);
+    }
+    for (int k = 0; k < 4000; ++k) {
+        run_synced(r1, 1); run_synced(r2, 1);
+        CHECK(r1.a.pitch_scale() == doctest::Approx(r2.a.pitch_scale()).epsilon(1e-6));
+        CHECK(r1.b.pitch_scale() == doctest::Approx(r2.b.pitch_scale()).epsilon(1e-6));
+    }
+}
+
+TEST_CASE("center free: full COUPLE lands the pair on the ladder and the downbeat") {
+    Rig r; r.init(11u);
+    r.c.set_tempo_bpm(120.f);
+    r.a.set_rate(0.60f); r.b.set_rate(0.52f);   // free Hz, off-grid geometric mean
+    r.c.set_couple(1.f); r.c.set_drift(0.f);
+    run_synced(r, 15000);                        // 30 s to converge
+    const float geo = std::sqrt(r.a.base_hz() * r.b.base_hz());
+    const float grid = division_hz(nearest_division(geo, 120.f), 120.f);
+    CHECK(r.a.master_hz() == doctest::Approx(grid).epsilon(0.03));
+    CHECK(r.b.master_hz() == doctest::Approx(grid).epsilon(0.03));
+    // pairwise phase lock still holds
+    CHECK(std::fabs(r.c.phase_err()) < 0.03f);
+    // and the pair sits on the transport grid phase
+    const float cpb = kDivisions[nearest_division(geo, 120.f)].cpb;
+    const double t = r.c.transport().beats() * (double)cpb;
+    const float tgt = (float)(t - std::floor(t));
+    CHECK(std::fabs(wrap_err(tgt - r.a.pitch_phase())) < 0.05f);
 }

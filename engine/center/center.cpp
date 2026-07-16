@@ -118,8 +118,8 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
 
         // convergence: both banks slide toward the geometric mean.
         const float conv_e = _couple * 0.5f;
-        const float conv_a = std::pow(fb / fa, conv_e);
-        const float conv_b = std::pow(fa / fb, conv_e);
+        float conv_a = std::pow(fb / fa, conv_e);
+        float conv_b = std::pow(fa / fb, conv_e);
 
         // phase pull: opposite sign on the two banks. At full COUPLE this becomes a
         // HARD lock — a much stronger gain (kKHard) with a per-tick slew cap
@@ -131,8 +131,37 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
         const float s = std::sin(TWO_PI * dphi);
         float corr = _couple * (hard ? kKHard : kK) * s;
         if (hard) corr = clampf(corr, -kLockCap, kLockCap);
-        const float pull_a = 1.f - corr;
-        const float pull_b = 1.f + corr;
+        float pull_a = 1.f - corr;
+        float pull_b = 1.f + corr;
+
+        // Grid gravity: above COUPLE 0.5 the pair is additionally pulled onto
+        // the nearest ladder division (rate) and the transport grid (phase).
+        // Below 0.5 g == 0 exactly — the organic pairwise character is
+        // untouched and provably tempo-free. smoothstep avoids a corner at 0.5.
+        float g = 0.f;
+        if (_couple > 0.5f) {
+            const float z = (_couple - 0.5f) * 2.f;
+            g = z * z * (3.f - 2.f * z);
+        }
+        if (g > 0.f) {
+            const float geo  = std::sqrt(fa * fb);
+            const int   div  = nearest_division(geo, _transport.bpm());
+            const float grid = division_hz(div, _transport.bpm());
+            const float grid_mult = std::pow(grid / geo, g);   // common-mode rate pull
+            conv_a *= grid_mult;
+            conv_b *= grid_mult;
+            // Common-mode phase gravity. Bank A is the pair's phase reference:
+            // at this COUPLE level the pairwise pull already holds A and B
+            // together, so steering A steers the pair.
+            const double t = _transport.beats() * static_cast<double>(kDivisions[div].cpb);
+            const float tgt = static_cast<float>(t - std::floor(t));
+            float cme = tgt - a.pitch_phase();
+            cme -= std::floor(cme + 0.5f);
+            const float cm = g * (hard ? clampf(kKHard * cme, -kLockCap, kLockCap)
+                                       : kK * std::sin(TWO_PI * cme));
+            pull_a *= (1.f + cm);
+            pull_b *= (1.f + cm);
+        }
 
         const float mult_a = clampf(conv_a * pull_a, kRateClampLo, kRateClampHi);
         const float mult_b = clampf(conv_b * pull_b, kRateClampLo, kRateClampHi);
