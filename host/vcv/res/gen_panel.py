@@ -49,17 +49,17 @@ BIGKNOB = "BIGKNOB"   # macro pot (0..1)
 KNOBC   = "KNOBC"     # bipolar macro (-1..1)  (MELODY)
 SMKNOB  = "SMKNOB"    # small secondary pot (0..1)
 KNOBI   = "KNOBI"     # small integer pot (snap)
-SW3     = "SW3"       # 3-pos switch (SYNC)
+SW2     = "SW2"       # 2-pos switch (global SYNC)
 LATCH   = "LATCH"     # on/off pad button (binary)
 SMBTN   = "SMBTN"     # momentary pad button
 IN      = "IN"
 OUT     = "OUT"
 LIGHT   = "LIGHT"
 
-GLYPH_R = {BIGKNOB:4.2, KNOBC:4.2, SMKNOB:3.0, KNOBI:3.0, SW3:2.2,
+GLYPH_R = {BIGKNOB:4.2, KNOBC:4.2, SMKNOB:3.0, KNOBI:3.0, SW2:3.0,
            LATCH:2.7, SMBTN:2.7, IN:4.2, OUT:4.2, LIGHT:1.7}
 WKMAP = {BIGKNOB:"WK_BIGKNOB", KNOBC:"WK_KNOBC", SMKNOB:"WK_SMKNOB",
-         KNOBI:"WK_KNOBI", SW3:"WK_SW3", LATCH:"WK_LATCH", SMBTN:"WK_SMBTN",
+         KNOBI:"WK_KNOBI", SW2:"WK_SW2", LATCH:"WK_LATCH", SMBTN:"WK_SMBTN",
          IN:"WK_IN", OUT:"WK_OUT", LIGHT:"WK_LIGHT"}
 
 class Ctl:
@@ -97,12 +97,11 @@ def part_controls():
     for i,(enum,lbl) in enumerate([("FLUX","FLUX"),("GRIT","GRIT"),("COMP","COMP")]):
         out.append(Ctl(enum, SMKNOB, 22.5 + i*13.0, 88.9, lbl))
     out.append(Ctl("STEPS", KNOBI, 61.5, 88.9, "STPS"))
-    # pad row: secondary functions as small buttons (mirror of hardware pads)
-    pads = [("SYNC",SW3,"SYNC"),("ENGINE",LATCH,"ENG"),("GRITMODE",LATCH,"GRIT"),
+    pads = [("ENGINE",LATCH,"ENG"),("GRITMODE",LATCH,"GRIT"),
             ("STEP",LATCH,"STEP"),("PRINCIPLE",SMBTN,"PRIN"),
             ("NEWPHRASE",SMBTN,"NEW"),("TRIGGER",SMBTN,"TRIG")]
     for i,(enum,kind,lbl) in enumerate(pads):
-        out.append(Ctl(enum, kind, 10.5 + i*10.5, 102.8, lbl))
+        out.append(Ctl(enum, kind, 15.75 + i*10.5, 102.8, lbl))
     return out
 
 def mirror(ctls):
@@ -121,23 +120,25 @@ ROW_VOICE = 76.8    # ATK/DEC/RES/SUB/DTUN
 ROW_FX    = 88.9    # FLUX/GRIT/COMP/STPS
 ROW_PAD   = 102.8   # SYNC/ENG/.../TRIG pads
 SHARED = [
-    Ctl("MORPH",  BIGKNOB, CX,  22.0, "MORPH"),   # pushed down off the top edge
-    Ctl("COUPLE", SMKNOB,  L,   39.0, "COUPL"),
-    Ctl("SCALE",  KNOBI,   CX,  39.0, "SCALE"),
-    Ctl("DRIFT",  SMKNOB,  R,   39.0, "DRIFT"),
-    Ctl("SPOT",   SMBTN,   L,   54.0, "SPOT"),
-    Ctl("MASTER_DRIVE", SMKNOB, CX, 54.0, "DRIVE"),
-    Ctl("SETTLE", SMBTN,   R,   54.0, "SETL"),
-    # ROOM: a symmetric diamond, its rows aligned to the part-control rows.
+    Ctl("MORPH",  BIGKNOB, CX,  22.0, "MORPH"),
+    # TIME: the one clock story — the mode switch, its tempo, and how tightly
+    # the two parts hang together (spec 2026-07-16 sync/couple redesign)
+    Ctl("SYNC",   SW2,     L,   38.0, "SYNC"),
+    Ctl("TEMPO",  SMKNOB,  CX,  38.0, "TEMPO"),
+    Ctl("COUPLE", SMKNOB,  R,   38.0, "COUPL"),
+    Ctl("SCALE",  KNOBI,   L,   51.0, "SCALE"),
+    Ctl("DRIFT",  SMKNOB,  R,   51.0, "DRIFT"),
+    Ctl("SPOT",   SMBTN,   L,   62.0, "SPOT"),
+    Ctl("MASTER_DRIVE", SMKNOB, CX, 62.0, "DRIVE"),
+    Ctl("SETTLE", SMBTN,   R,   62.0, "SETL"),
+    # ROOM: unchanged rows; TEMPO has moved out, SMEAR/MOD keep flanking.
     Ctl("REV_SIZE",  SMKNOB, L,  ROW_VOICE, "SIZE"),
     Ctl("REV_DECAY", SMKNOB, R,  ROW_VOICE, "DECAY"),
-    Ctl("REV_MIX",   SMKNOB, CX, (ROW_VOICE + ROW_FX) / 2.0, "MIX"),  # diamond center
+    Ctl("REV_MIX",   SMKNOB, CX, (ROW_VOICE + ROW_FX) / 2.0, "MIX"),
     Ctl("REV_TONE",  SMKNOB, L,  ROW_FX,    "TONE"),
     Ctl("REV_DIFF",  SMKNOB, R,  ROW_FX,    "DIFF"),
-    # two independent reverb-LFO test knobs flanking TEMPO on the pad-row line:
-    Ctl("REV_SMEAR", SMKNOB, L,  ROW_PAD, "SMEAR"),  # diffuser LFO depth (wash)
-    Ctl("TEMPO",     SMKNOB, CX, ROW_PAD, "TEMPO"),
-    Ctl("REV_MOD",   SMKNOB, R,  ROW_PAD, "MOD"),    # tail LFO depth (wobble)
+    Ctl("REV_SMEAR", SMKNOB, L,  ROW_PAD, "SMEAR"),
+    Ctl("REV_MOD",   SMKNOB, R,  ROW_PAD, "MOD"),
 ]
 
 PARAMS = PART_A + PART_B + SHARED
@@ -176,6 +177,7 @@ LIGHTS = [
 TEXTS = [
     (RING_CX_A,     RING_CY + 1.6, 5.0, 0.0, GREEN_DIM,  "A"),
     (W - RING_CX_A, RING_CY + 1.6, 5.0, 0.0, COPPER_DIM, "B"),
+    (CX,            32.2,          2.2, 0.5, MUTED,      "TIME"),
     (CX,            70.0,          2.2, 0.5, MUTED,      "ROOM"),
     (CX,            7.0,           3.6, 0.9, INK,        "SPOTYMOD"),  # top brand
 ]
@@ -266,10 +268,11 @@ def svg():
     for x0 in (5.8, W - 78.2):
         P.append(f'<rect x="{mm(x0)}" y="98.1" width="72.4" height="11.9" '
                  f'rx="1.5" fill="{PAPER_DEEP}" stroke="{LINE}" stroke-width="0.3"/>')
-    # ROOM eyebrow rules (text itself comes from TEXTS)
-    for (x0, x1) in ((CX-19.0, CX-8.0), (CX+8.0, CX+19.0)):
-        P.append(f'<line x1="{mm(x0)}" y1="69.2" x2="{mm(x1)}" y2="69.2" '
-                 f'stroke="{LINE}" stroke-width="0.25"/>')
+    # ROOM + TIME eyebrow rules (text itself comes from TEXTS)
+    for ey in (69.2, 31.4):
+        for (x0, x1) in ((CX-19.0, CX-8.0), (CX+8.0, CX+19.0)):
+            P.append(f'<line x1="{mm(x0)}" y1="{mm(ey)}" x2="{mm(x1)}" y2="{mm(ey)}" '
+                     f'stroke="{LINE}" stroke-width="0.25"/>')
     # brand flanking dots -- one per colour, flanking the top SPOTYMOD logo
     P.append(f'<circle cx="{mm(CX-15)}" cy="5.9" r="0.9" fill="{GREEN}"/>')
     P.append(f'<circle cx="{mm(CX+15)}" cy="5.9" r="0.9" fill="{COPPER}"/>')
@@ -283,9 +286,11 @@ def svg():
         elif c.kind == LIGHT:  # dark LED housing; live YellowLight glows amber on top
             P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(c.r)}" '
                      f'fill="#1a1206" stroke="#3a2c12" stroke-width="0.25"/>')
-        elif c.kind == SW3:
-            P.append(f'<rect x="{mm(c.x-1.4)}" y="{mm(c.y-2.4)}" width="2.8" '
-                     f'height="4.8" rx="0.6" fill="{WHITE}" stroke="{MUTED}" stroke-width="0.3"/>')
+        elif c.kind == SW2:
+            P.append(f'<rect x="{mm(c.x-1.7)}" y="{mm(c.y-3.0)}" width="3.4" '
+                     f'height="6.0" rx="0.8" fill="{WHITE}" stroke="{INK}" stroke-width="0.35"/>')
+            P.append(f'<rect x="{mm(c.x-1.1)}" y="{mm(c.y-2.4)}" width="2.2" '
+                     f'height="2.4" rx="0.5" fill="{GRAPHITE}"/>')
         elif c.kind in (LATCH, SMBTN):   # pads: raised paper keys, side-coloured edge
             P.append(f'<rect x="{mm(c.x-c.r)}" y="{mm(c.y-c.r)}" width="{mm(2*c.r)}" '
                      f'height="{mm(2*c.r)}" rx="1.0" fill="{WHITE}" '
@@ -315,7 +320,7 @@ def header():
     L2.append("namespace spkyvcv {")
     L2.append("struct XY { float x, y; };")
     L2.append("enum WidgetKind { WK_BIGKNOB, WK_KNOBC, WK_SMKNOB, WK_KNOBI, "
-              "WK_SW3, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };")
+              "WK_SW2, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };")
     L2.append("struct PanelCtl { int id; WidgetKind kind; XY mm; const char* label; };")
     L2.append("struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; const char* str; };")
     L2.append(f"static constexpr int PART_STRIDE = {PART_STRIDE};")

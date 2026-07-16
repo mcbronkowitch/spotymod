@@ -2,10 +2,10 @@
 #pragma once
 namespace spkyvcv {
 struct XY { float x, y; };
-enum WidgetKind { WK_BIGKNOB, WK_KNOBC, WK_SMKNOB, WK_KNOBI, WK_SW3, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };
+enum WidgetKind { WK_BIGKNOB, WK_KNOBC, WK_SMKNOB, WK_KNOBI, WK_SW2, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };
 struct PanelCtl { int id; WidgetKind kind; XY mm; const char* label; };
 struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; const char* str; };
-static constexpr int PART_STRIDE = 24;
+static constexpr int PART_STRIDE = 23;
 static constexpr float kRingR = 16.000f;      // mm, LED-dot orbit
 static constexpr float kRingDotR = 0.95f;   // mm, lit-dot radius
 static constexpr int kRingDots = 32;
@@ -29,7 +29,6 @@ enum ParamId {
     GRIT_A,
     COMP_A,
     STEPS_A,
-    SYNC_A,
     ENGINE_A,
     GRITMODE_A,
     STEP_A,
@@ -53,7 +52,6 @@ enum ParamId {
     GRIT_B,
     COMP_B,
     STEPS_B,
-    SYNC_B,
     ENGINE_B,
     GRITMODE_B,
     STEP_B,
@@ -61,6 +59,8 @@ enum ParamId {
     NEWPHRASE_B,
     TRIGGER_B,
     MORPH,
+    SYNC,
+    TEMPO,
     COUPLE,
     SCALE,
     DRIFT,
@@ -73,7 +73,6 @@ enum ParamId {
     REV_TONE,
     REV_DIFF,
     REV_SMEAR,
-    TEMPO,
     REV_MOD,
     NUM_PARAMS
 };
@@ -116,13 +115,12 @@ static const PanelCtl kParamCtls[] = {
     {GRIT_A, WK_SMKNOB, {35.500f, 88.900f}, "GRIT"},
     {COMP_A, WK_SMKNOB, {48.500f, 88.900f}, "COMP"},
     {STEPS_A, WK_KNOBI, {61.500f, 88.900f}, "STPS"},
-    {SYNC_A, WK_SW3, {10.500f, 102.800f}, "SYNC"},
-    {ENGINE_A, WK_LATCH, {21.000f, 102.800f}, "ENG"},
-    {GRITMODE_A, WK_LATCH, {31.500f, 102.800f}, "GRIT"},
-    {STEP_A, WK_LATCH, {42.000f, 102.800f}, "STEP"},
-    {PRINCIPLE_A, WK_SMBTN, {52.500f, 102.800f}, "PRIN"},
-    {NEWPHRASE_A, WK_SMBTN, {63.000f, 102.800f}, "NEW"},
-    {TRIGGER_A, WK_SMBTN, {73.500f, 102.800f}, "TRIG"},
+    {ENGINE_A, WK_LATCH, {15.750f, 102.800f}, "ENG"},
+    {GRITMODE_A, WK_LATCH, {26.250f, 102.800f}, "GRIT"},
+    {STEP_A, WK_LATCH, {36.750f, 102.800f}, "STEP"},
+    {PRINCIPLE_A, WK_SMBTN, {47.250f, 102.800f}, "PRIN"},
+    {NEWPHRASE_A, WK_SMBTN, {57.750f, 102.800f}, "NEW"},
+    {TRIGGER_A, WK_SMBTN, {68.250f, 102.800f}, "TRIG"},
     {RATE_B, WK_BIGKNOB, {171.360f, 10.500f}, "RATE"},
     {SHAPE_B, WK_BIGKNOB, {152.622f, 18.262f}, "SHAPE"},
     {DENSITY_B, WK_BIGKNOB, {144.860f, 37.000f}, "DENS"},
@@ -140,27 +138,27 @@ static const PanelCtl kParamCtls[] = {
     {GRIT_B, WK_SMKNOB, {177.860f, 88.900f}, "GRIT"},
     {COMP_B, WK_SMKNOB, {164.860f, 88.900f}, "COMP"},
     {STEPS_B, WK_KNOBI, {151.860f, 88.900f}, "STPS"},
-    {SYNC_B, WK_SW3, {202.860f, 102.800f}, "SYNC"},
-    {ENGINE_B, WK_LATCH, {192.360f, 102.800f}, "ENG"},
-    {GRITMODE_B, WK_LATCH, {181.860f, 102.800f}, "GRIT"},
-    {STEP_B, WK_LATCH, {171.360f, 102.800f}, "STEP"},
-    {PRINCIPLE_B, WK_SMBTN, {160.860f, 102.800f}, "PRIN"},
-    {NEWPHRASE_B, WK_SMBTN, {150.360f, 102.800f}, "NEW"},
-    {TRIGGER_B, WK_SMBTN, {139.860f, 102.800f}, "TRIG"},
+    {ENGINE_B, WK_LATCH, {197.610f, 102.800f}, "ENG"},
+    {GRITMODE_B, WK_LATCH, {187.110f, 102.800f}, "GRIT"},
+    {STEP_B, WK_LATCH, {176.610f, 102.800f}, "STEP"},
+    {PRINCIPLE_B, WK_SMBTN, {166.110f, 102.800f}, "PRIN"},
+    {NEWPHRASE_B, WK_SMBTN, {155.610f, 102.800f}, "NEW"},
+    {TRIGGER_B, WK_SMBTN, {145.110f, 102.800f}, "TRIG"},
     {MORPH, WK_BIGKNOB, {106.680f, 22.000f}, "MORPH"},
-    {COUPLE, WK_SMKNOB, {96.180f, 39.000f}, "COUPL"},
-    {SCALE, WK_KNOBI, {106.680f, 39.000f}, "SCALE"},
-    {DRIFT, WK_SMKNOB, {117.180f, 39.000f}, "DRIFT"},
-    {SPOT, WK_SMBTN, {96.180f, 54.000f}, "SPOT"},
-    {MASTER_DRIVE, WK_SMKNOB, {106.680f, 54.000f}, "DRIVE"},
-    {SETTLE, WK_SMBTN, {117.180f, 54.000f}, "SETL"},
+    {SYNC, WK_SW2, {96.180f, 38.000f}, "SYNC"},
+    {TEMPO, WK_SMKNOB, {106.680f, 38.000f}, "TEMPO"},
+    {COUPLE, WK_SMKNOB, {117.180f, 38.000f}, "COUPL"},
+    {SCALE, WK_KNOBI, {96.180f, 51.000f}, "SCALE"},
+    {DRIFT, WK_SMKNOB, {117.180f, 51.000f}, "DRIFT"},
+    {SPOT, WK_SMBTN, {96.180f, 62.000f}, "SPOT"},
+    {MASTER_DRIVE, WK_SMKNOB, {106.680f, 62.000f}, "DRIVE"},
+    {SETTLE, WK_SMBTN, {117.180f, 62.000f}, "SETL"},
     {REV_SIZE, WK_SMKNOB, {96.180f, 76.800f}, "SIZE"},
     {REV_DECAY, WK_SMKNOB, {117.180f, 76.800f}, "DECAY"},
     {REV_MIX, WK_SMKNOB, {106.680f, 82.850f}, "MIX"},
     {REV_TONE, WK_SMKNOB, {96.180f, 88.900f}, "TONE"},
     {REV_DIFF, WK_SMKNOB, {117.180f, 88.900f}, "DIFF"},
     {REV_SMEAR, WK_SMKNOB, {96.180f, 102.800f}, "SMEAR"},
-    {TEMPO, WK_SMKNOB, {106.680f, 102.800f}, "TEMPO"},
     {REV_MOD, WK_SMKNOB, {117.180f, 102.800f}, "MOD"},
 };
 static const PanelCtl kInputCtls[] = {
@@ -184,6 +182,7 @@ static const PanelCtl kLightCtls[] = {
 static const PanelTxt kPanelTexts[] = {
     {{42.000f, 38.600f}, 5.00f, 0.00f, 0x2E6355, "A"},
     {{171.360f, 38.600f}, 5.00f, 0.00f, 0x8A5230, "B"},
+    {{106.680f, 32.200f}, 2.20f, 0.50f, 0x656056, "TIME"},
     {{106.680f, 70.000f}, 2.20f, 0.50f, 0x656056, "ROOM"},
     {{106.680f, 7.000f}, 3.60f, 0.90f, 0x171713, "SPOTYMOD"},
 };
