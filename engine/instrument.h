@@ -29,7 +29,6 @@ public:
     void set_tempo_bpm(float bpm);
 
     void set_rate(int p, float n)            { _parts[p].mod().set_rate(n); }
-    void set_sync_mode(int p, SyncMode m)    { _parts[p].mod().set_sync_mode(m); }
     void set_shape(int p, float n)           { _parts[p].mod().set_shape(n); }
     void set_density(int p, float d)         { _parts[p].mod().set_density(d); }
     void set_smooth(int p, float n)          { _parts[p].mod().set_smooth(n); }
@@ -93,6 +92,12 @@ public:
     void set_morph(float m)  { _center.set_morph(m); }
     void set_couple(float c) { _center.set_couple(c); }
     void set_drift(float d)  { _center.set_drift(d); }
+    void set_sync(bool on) {
+        _center.set_sync(on);
+        for (auto& p : _parts) p.mod().set_synced(on);
+    }
+    void clock_pulse()     { _center.clock_pulse(); }
+    void reset_transport() { _center.reset_transport(); }
     void spot()   { _center.spot(_parts[PART_A].mod(),   _parts[PART_B].mod()); }
     void settle() { _center.settle(_parts[PART_A].mod(), _parts[PART_B].mod()); }
     float morph()     const { return _center.morph(); }

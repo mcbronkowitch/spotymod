@@ -6,20 +6,6 @@ using namespace spky;
 
 namespace {
 constexpr float kLaneRatio[LANE_COUNT] = { 2.f, 0.5f, 1.f, 0.75f, 1.5f };
-constexpr float kRateFreeMin = 0.02f;
-constexpr float kRateFreeMax = 30.f;
-
-float free_hz(float norm) {
-    return kRateFreeMin * std::pow(kRateFreeMax / kRateFreeMin, spky::clampf(norm, 0.f, 1.f));
-}
-
-float sync_hz(float norm, float bpm, bool triplet) {
-    // cycles per beat: 8 bars ... 1/32 note
-    static const float cpb[9] = { 1.f/32, 1.f/16, 1.f/8, 1.f/4, 1.f/2, 1.f, 2.f, 4.f, 8.f };
-    int i = static_cast<int>(std::lround(spky::clampf(norm, 0.f, 1.f) * 8.f));
-    float hz = (bpm / 60.f) * cpb[i];
-    return triplet ? hz * 1.5f : hz;
-}
 } // namespace
 
 void SuperModulator::init(float sample_rate, uint32_t seed_base) {
@@ -29,23 +15,22 @@ void SuperModulator::init(float sample_rate, uint32_t seed_base) {
         _lanes[i].init(sample_rate, seed_base + static_cast<uint32_t>(i) * 2654435761u);
         _out[i] = 0.f;
     }
-    _rate_scale = 1.f;
+    _pitch_scale = 1.f; _mod_scale = 1.f;
     _update_rate();
 }
 
 void SuperModulator::_update_rate() {
-    switch (_mode) {
-        case SyncMode::Free:        _base_hz = free_hz(_rate_norm); break;
-        case SyncMode::Sync:        _base_hz = sync_hz(_rate_norm, _bpm, false); break;
-        case SyncMode::SyncTriplet: _base_hz = sync_hz(_rate_norm, _bpm, true); break;
-    }
+    _base_hz = _synced ? division_hz(division_index(_rate_norm), _bpm)
+                       : free_hz(_rate_norm);
     _apply_rate();
 }
 
 void SuperModulator::_apply_rate() {
-    _master_hz = _base_hz * _rate_scale;
-    for (int i = 0; i < LANE_COUNT; ++i)
-        _lanes[i].set_rate_hz(_master_hz * kLaneRatio[i]);
+    _master_hz = _base_hz * _pitch_scale;
+    for (int i = 0; i < LANE_COUNT; ++i) {
+        const float s = (i == LANE_PITCH) ? _pitch_scale : _mod_scale;
+        _lanes[i].set_rate_hz(_base_hz * s * kLaneRatio[i]);
+    }
 }
 
 void SuperModulator::set_shape(float s)       { for (auto& l : _lanes) l.set_shape(s); }

@@ -6,7 +6,7 @@
     {"action":"set_engine","part":0,"value":"test_tone"},
     {"action":"set_engine","part":1,"value":"test_tone"},
     {"_comment":"Reverb v2 showcase. Act 1 (0-20s): Dorian melody over a breathing room. Act 2 (20-30s): DECAY rides past 100% - the room blooms and self-sustains, then falls back. Act 3 (36-46s): SIZE dives and swells - the tail Doppler-warps. Outro: settle."},
-    {"action":"set_sync_mode","part":0,"value":"sync"},
+    {"action":"set_sync","ivalue":1},
     {"action":"set_rate","part":0,"value":0.12},
     {"action":"set_step","part":0,"flag":true,"ivalue":8},
     {"action":"set_shape","part":0,"value":0.3},
@@ -32,7 +32,6 @@
     {"action":"set_fx_target_base","part":0,"slot":4,"value":0.4},
 
     {"_comment":"PART B - low slow pad, breathing into the room on its own lane 3."},
-    {"action":"set_sync_mode","part":1,"value":"free"},
     {"action":"set_rate","part":1,"value":0.05},
     {"action":"set_smooth","part":1,"value":0.7},
     {"action":"set_range","part":1,"value":0.2},

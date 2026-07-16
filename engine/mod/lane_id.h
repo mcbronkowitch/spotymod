@@ -13,6 +13,4 @@ enum LaneId {
     LANE_COUNT  = 5
 };
 
-enum class SyncMode { Sync, SyncTriplet, Free };
-
 } // namespace spky

@@ -37,7 +37,6 @@ TEST_CASE("part: active target modulates around its base, clamped to [0,1]") {
     p.set_depth(1.f);
     p.mod().set_range(1.f);
     p.mod().set_shape(0.5f);
-    p.mod().set_sync_mode(SyncMode::Free);
     p.mod().set_rate(0.6f);
     float minv = 1.f, maxv = 0.f, l, r;
     for (int i = 0; i < 48000; ++i) {
@@ -70,7 +69,6 @@ TEST_CASE("part: a PITCH fire raises the gate") {
     Part p;
     p.init(48000.f, 5);
     p.set_target_active(LANE_PITCH, true);
-    p.mod().set_sync_mode(SyncMode::Free);
     p.mod().set_rate(0.7f);
     bool saw_gate = false;
     float l, r;
@@ -87,7 +85,6 @@ TEST_CASE("part: SCALE mode lands pitch only on allowed dorian degrees") {
     p.set_target_active(LANE_PITCH, true);
     p.set_target_base(LANE_PITCH, 0.5f);
     p.mod().set_range(1.f);
-    p.mod().set_sync_mode(SyncMode::Free);
     p.mod().set_rate(0.6f);
     float l, r;
     for (int i = 0; i < 48000; ++i) {
@@ -128,7 +125,6 @@ TEST_CASE("part: active fx target modulates around its base, clamped") {
     p.set_fx_target_depth(FXT_FLUX_TIME, 1.f);
     p.set_depth(1.f);
     p.mod().set_range(1.f);
-    p.mod().set_sync_mode(SyncMode::Free);
     p.mod().set_rate(0.6f);
     float minv = 1.f, maxv = 0.f, l, r;
     for (int i = 0; i < 48000; ++i) {
@@ -238,8 +234,7 @@ TEST_CASE("part: decay length follows the master cycle (set_cycle forwarding)") 
         p.init(48000.f, 5);
         p.set_step(true, 8);          // cancels the boot FLOW auto-trigger
         p.mod().set_density(0.f);     // only the unmaskable downbeat slot fires
-        p.mod().set_sync_mode(SyncMode::Free);
-        p.mod().set_rate(rate_norm);
+            p.mod().set_rate(rate_norm);
         float l, r;
         p.process(l, r);              // downbeat fires here (step -1 -> 0)
         REQUIRE(p.lane_fired(LANE_PITCH));

@@ -4,7 +4,7 @@
   "duration_s": 18,
   "init": [
     {"_comment":"Wash role of the shared room: same plucks as reverb_delay.json, but pushed to the ambient extreme — full wet (MIX 1.0), big room (SIZE 0.95), long tail (DECAY 0.8), max DIFFUSION. Every attack melts on entry; the plucks arrive as weather."},
-    {"action":"set_sync_mode","part":0,"value":"sync"},
+    {"action":"set_sync","ivalue":1},
     {"action":"set_rate","part":0,"value":0.2},
     {"action":"set_step","part":0,"flag":true,"ivalue":6},
     {"action":"set_shape","part":0,"value":1.0},

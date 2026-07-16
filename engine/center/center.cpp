@@ -48,6 +48,7 @@ constexpr float kLockCap    = 0.35f;    // max rate correction per tick (> _ev_r
 void Center::init(float sample_rate, uint32_t seed) {
     _sr = sample_rate;
     _cr = sample_rate / static_cast<float>(kCtrlInterval);
+    _transport.init(_cr);
 
     _morph_target = 0.5f; _morph = 0.5f;
     _morph_smooth.init(_cr, 0.03f);
@@ -69,6 +70,8 @@ void Center::init(float sample_rate, uint32_t seed) {
 }
 
 void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
+    _transport.tick();
+
     // --- MORPH (equal-power, smoothed at control rate) ---
     _morph = _morph_smooth.process(_morph_target);
     _g_a = std::cos(_morph * kQuarter);
@@ -97,37 +100,32 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     _phase_err = dphi;
 
     const float fa = a.base_hz(), fb = b.base_hz();
-    const bool a_free = a.sync_mode() == SyncMode::Free;
-    const bool b_free = b.sync_mode() == SyncMode::Free;
-    const bool mixed  = a_free != b_free;
 
-    // convergence: FREE banks slide toward the geometric mean; SYNC banks anchor.
-    // In a MIXED pair the lone FREE bank aims fully at the anchor (exponent
-    // _couple), not halfway to a geometric mean it could never reach — so the
-    // pair actually locks. Two FREE banks still meet in the middle (x0.5).
-    const float conv_e = mixed ? _couple : _couple * 0.5f;
-    const float conv_a = a_free ? std::pow(fb / fa, conv_e) : 1.f;
-    const float conv_b = b_free ? std::pow(fa / fb, conv_e) : 1.f;
+    // convergence: both banks slide toward the geometric mean.
+    const float conv_e = _couple * 0.5f;
+    const float conv_a = std::pow(fb / fa, conv_e);
+    const float conv_b = std::pow(fa / fb, conv_e);
 
-    // phase pull: opposite sign on the two banks; a SYNC bank in a MIXED pair stays the
-    // pure anchor (no pull). At full COUPLE this becomes a HARD lock — a much stronger
-    // gain (kKHard) with a per-tick slew cap (kLockCap): the cap keeps engage click-free
-    // and the loop stable, while the strong gain outruns EVOLVE's raw-rate wander so the
-    // residual phase error collapses to ~0. Below full COUPLE the gentle kK nudge acts
-    // as before (an approximate lock that lets the banks breathe).
+    // phase pull: opposite sign on the two banks. At full COUPLE this becomes a
+    // HARD lock — a much stronger gain (kKHard) with a per-tick slew cap
+    // (kLockCap): the cap keeps engage click-free and the loop stable, while
+    // the strong gain outruns EVOLVE's raw-rate wander so the residual phase
+    // error collapses to ~0. Below full COUPLE the gentle kK nudge acts as
+    // before (an approximate lock that lets the banks breathe).
     const bool hard = _couple >= kFullCouple;
     const float s = std::sin(TWO_PI * dphi);
     float corr = _couple * (hard ? kKHard : kK) * s;
     if (hard) corr = clampf(corr, -kLockCap, kLockCap);
-    const float pull_a = (!a_free && mixed) ? 1.f : (1.f - corr);
-    const float pull_b = (!b_free && mixed) ? 1.f : (1.f + corr);
+    const float pull_a = 1.f - corr;
+    const float pull_b = 1.f + corr;
 
     const float mult_a = clampf(conv_a * pull_a, kRateClampLo, kRateClampHi);
     const float mult_b = clampf(conv_b * pull_b, kRateClampLo, kRateClampHi);
 
-    // single rate hook = COUPLE x DRIFT rate tap
-    a.set_rate_scale(mult_a * rate_drift_a);
-    b.set_rate_scale(mult_b * rate_drift_b);
+    // single rate hook = COUPLE x DRIFT rate tap, applied symmetrically to
+    // pitch and mod lanes (Tasks 4-5 split these apart)
+    a.set_rate_scale(mult_a * rate_drift_a, mult_a * rate_drift_a);
+    b.set_rate_scale(mult_b * rate_drift_b, mult_b * rate_drift_b);
 }
 
 void Center::_step_weather() {

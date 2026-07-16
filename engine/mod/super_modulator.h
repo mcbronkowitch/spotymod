@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "mod/lane.h"
 #include "mod/lane_id.h"
+#include "mod/divisions.h"
 
 namespace spky {
 
@@ -14,7 +15,7 @@ public:
 
     void set_tempo_bpm(float bpm)  { _bpm = bpm; _update_rate(); }
     void set_rate(float norm)      { _rate_norm = norm; _update_rate(); }
-    void set_sync_mode(SyncMode m) { _mode = m; _update_rate(); }
+    void set_synced(bool on)       { _synced = on; _update_rate(); }
     void set_shape(float s);
     void set_density(float d) { _lanes[LANE_PITCH].set_density(d); }
     void set_smooth(float s);
@@ -37,12 +38,17 @@ public:
     float master_hz()        const { return _master_hz; }
 
     // --- M4 center hooks ---
-    void set_rate_scale(float s)  { _rate_scale = s; _apply_rate(); }  // COUPLE * DRIFT rate
+    void set_rate_scale(float pitch_s, float mod_s) {
+        _pitch_scale = pitch_s; _mod_scale = mod_s; _apply_rate();
+    }
+    float pitch_scale() const { return _pitch_scale; }
+    float mod_scale()   const { return _mod_scale; }
     void set_shape_offset(float o){ for (auto& l : _lanes) l.set_shape_offset(o); }
     void spot(Rng& rng);          // per-lane SPOT kicks (skips the PITCH lane)
     void settle()                { for (auto& l : _lanes) l.settle(); }
-    float    base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
-    SyncMode sync_mode() const { return _mode; }
+    float base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
+    bool  synced()    const { return _synced; }
+    int   division()  const { return division_index(_rate_norm); }
 
 private:
     void _update_rate();
@@ -54,10 +60,11 @@ private:
     float    _sr = 48000.f;
     float    _bpm = 120.f;
     float    _rate_norm = 0.5f;
-    SyncMode _mode = SyncMode::Free;
+    bool     _synced = false;
+    float    _pitch_scale = 1.f;   // COUPLE/DRIFT on the melody clock
+    float    _mod_scale   = 1.f;   // COUPLE/DRIFT on the texture lanes
     float    _master_hz = 1.f;
     float    _base_hz    = 1.f;   // rate from knob/sync, before rate_scale
-    float    _rate_scale = 1.f;   // COUPLE * DRIFT rate multiplier
 };
 
 } // namespace spky

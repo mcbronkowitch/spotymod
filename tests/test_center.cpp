@@ -115,7 +115,6 @@ void run_coupled(Rig& r, int samples) {
 
 TEST_CASE("center couple: couple 1 locks two free banks and converges their rates") {
     Rig r; r.init(3u);
-    r.a.set_sync_mode(SyncMode::Free); r.b.set_sync_mode(SyncMode::Free);
     r.a.set_rate(0.5f); r.b.set_rate(0.52f);
     r.c.set_couple(1.f);
     run_coupled(r, 48000 * 12);
@@ -130,7 +129,6 @@ TEST_CASE("center couple: couple 1 locks two FREE banks that are several octaves
     // truncated, leaving the pair drifting forever. Regression for the "COUPLE
     // full CW, FREE banks still drift apart" report.
     Rig r; r.init(3u);
-    r.a.set_sync_mode(SyncMode::Free); r.b.set_sync_mode(SyncMode::Free);
     r.a.set_rate(0.3f); r.b.set_rate(0.7f);
     r.c.set_couple(1.f); r.c.set_drift(0.f);
     run_coupled(r, 48000 * 20);
@@ -145,7 +143,7 @@ TEST_CASE("center couple: couple 1 holds the LOOP locked while EVOLVE wanders a 
     // within the cycle (that's what MELO is for) — we lock the loop, not the wander.
     Rig r; r.init(3u);
     r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
-    r.a.set_sync_mode(SyncMode::Sync); r.b.set_sync_mode(SyncMode::Sync);
+    r.a.set_synced(true); r.b.set_synced(true); r.c.set_sync(true);
     r.a.set_rate(0.5f); r.b.set_rate(0.5f);       // identical grid division
     r.a.set_variation(0.9f);                      // EVOLVE (GROW) hard on A
     r.c.set_couple(1.f); r.c.set_drift(0.f);
@@ -169,7 +167,7 @@ TEST_CASE("center couple: couple full HARD-locks the loop through MELO / melody 
     // asserts a sustained lock, not a transient.
     Rig r; r.init(3u);
     r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
-    r.a.set_sync_mode(SyncMode::Sync); r.b.set_sync_mode(SyncMode::Sync);
+    r.a.set_synced(true); r.b.set_synced(true); r.c.set_sync(true);
     r.a.set_rate(0.5f); r.b.set_rate(0.5f);       // identical grid division (~1 Hz)
     r.a.set_step(true, 8); r.b.set_step(true, 8);
     r.a.set_variation(0.9f);                      // MELO hard on A (the default is 0.32)
@@ -193,34 +191,6 @@ TEST_CASE("center couple: couple 0 leaves both rate hooks at unity") {
     run_coupled(r, 48000);
     CHECK(r.a.master_hz() == doctest::Approx(ba));
     CHECK(r.b.master_hz() == doctest::Approx(bb));
-}
-
-TEST_CASE("center couple: in a MIXED pair the FREE bank locks to the SYNC anchor's rate") {
-    // Anchor A = SYNC 2 Hz; B = FREE with a base within an octave of the anchor.
-    // At full couple the FREE bank must converge to the *anchor* rate (not the
-    // geometric mean of the two), so the pair actually locks. Regression for the
-    // mixed-mode "turn COUPLE up, they still drift" bug.
-    Rig r; r.init(3u);
-    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
-    r.a.set_sync_mode(SyncMode::Sync); r.a.set_rate(0.625f);   // anchor: 2 Hz
-    r.b.set_sync_mode(SyncMode::Free);  r.b.set_rate(0.58f);   // ~1.38 Hz, within an octave
-    float anchor = r.a.base_hz();
-    r.c.set_couple(1.f); r.c.set_drift(0.f);
-    run_coupled(r, 48000 * 20);
-    CHECK(r.a.master_hz() == doctest::Approx(anchor));                 // anchor unmoved
-    CHECK(r.b.master_hz() == doctest::Approx(anchor).epsilon(0.03));   // free bank pulled to it
-    CHECK(std::fabs(r.c.phase_err()) < 0.05f);                         // and phase locked
-}
-
-TEST_CASE("center couple: a SYNC bank anchors, its rate is not scaled") {
-    Rig r; r.init(3u);
-    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f);
-    r.a.set_sync_mode(SyncMode::Sync); r.a.set_rate(0.625f);   // anchor: 2 Hz
-    r.b.set_sync_mode(SyncMode::Free); r.b.set_rate(0.3f);
-    float anchor = r.a.base_hz();
-    r.c.set_couple(1.f);
-    run_coupled(r, 48000 * 8);
-    CHECK(r.a.master_hz() == doctest::Approx(anchor));
 }
 
 TEST_CASE("center spot: shape kick decays back within ~5 s (lane level)") {

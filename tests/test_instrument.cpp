@@ -28,8 +28,6 @@ TEST_CASE("instrument: init and render a block without NaNs") {
 TEST_CASE("instrument: the two parts are decorrelated") {
     Instrument inst;
     inst.init(48000.f);
-    inst.set_sync_mode(PART_A, SyncMode::Free);
-    inst.set_sync_mode(PART_B, SyncMode::Free);
     inst.set_rate(PART_A, 0.5f);
     inst.set_rate(PART_B, 0.5f);
     inst.set_shape(PART_A, 1.f);

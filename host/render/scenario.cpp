@@ -43,12 +43,6 @@ bool spky::load_scenario(const std::string& path, Scenario& out, std::string& er
     return true;
 }
 
-static SyncMode parse_sync(const std::string& s) {
-    if (s == "sync")    return SyncMode::Sync;
-    if (s == "triplet") return SyncMode::SyncTriplet;
-    return SyncMode::Free;
-}
-
 static QuantMode parse_qmode(const std::string& s) {
     if (s == "chrom") return QuantMode::Chrom;
     if (s == "free")  return QuantMode::Free;
@@ -80,7 +74,7 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     const std::string& a = e.action;
     if      (a == "set_tempo_bpm")     inst.set_tempo_bpm(e.value);
     else if (a == "set_rate")          inst.set_rate(e.part, e.value);
-    else if (a == "set_sync_mode")     inst.set_sync_mode(e.part, parse_sync(e.svalue));
+    else if (a == "set_sync")          inst.set_sync(e.ivalue != 0);
     else if (a == "set_shape")         inst.set_shape(e.part, e.value);
     else if (a == "set_density")       inst.set_density(e.part, e.value);
     else if (a == "set_smooth")        inst.set_smooth(e.part, e.value);

@@ -13,7 +13,7 @@ TEST_CASE("scenario: parses init + timeline and sorts events by time") {
           "bpm": 100,
           "duration_s": 5,
           "init": [
-            {"action":"set_sync_mode","part":0,"value":"free"},
+            {"action":"set_sync","ivalue":1},
             {"action":"set_rate","part":0,"value":0.5}
           ],
           "events": [

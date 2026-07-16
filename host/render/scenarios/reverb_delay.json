@@ -4,7 +4,7 @@
   "duration_s": 18,
   "init": [
     {"_comment":"A/B base patch: sparse plucks into the shared room. DIFFUSION is the ONLY knob that differs between reverb_delay (0.0 -> discrete slap echoes) and reverb_wash (1.0 -> smeared wash). Everything else identical."},
-    {"action":"set_sync_mode","part":0,"value":"sync"},
+    {"action":"set_sync","ivalue":1},
     {"action":"set_rate","part":0,"value":0.2},
     {"action":"set_step","part":0,"flag":true,"ivalue":6},
     {"action":"set_shape","part":0,"value":1.0},
