@@ -39,6 +39,7 @@ add_executable(spky_tests
     tests/test_quantizer.cpp
     tests/test_rng.cpp
     tests/test_divisions.cpp
+    tests/test_transport.cpp
     tests/test_waveforms.cpp
     tests/test_range.cpp
     engine/mod/lane.cpp
