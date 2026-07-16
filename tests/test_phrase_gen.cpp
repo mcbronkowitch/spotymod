@@ -239,3 +239,113 @@ TEST_CASE("groove: L=1 degenerates cleanly") {
     CHECK(g.len == 1);
     CHECK(g.rank_of_slot[0] == 0);
 }
+
+// --- groove variation-zone mutators ---
+
+static bool gv_is_perm_anchor0(const GrooveCell& g) {
+    bool seen[32] = {};
+    for (int i = 0; i < g.len; ++i) {
+        if (g.rank_of_slot[i] >= g.len) return false;
+        seen[g.rank_of_slot[i]] = true;
+    }
+    for (int i = 0; i < g.len; ++i) if (!seen[i]) return false;
+    return g.rank_of_slot[0] == 0;
+}
+
+TEST_CASE("groove mutators preserve permutation, anchor, and length bounds") {
+    for (int L : {1, 2, 7, 8}) {
+        for (uint32_t seed = 1; seed <= 50; ++seed) {
+            Rng r; r.seed(seed * 0x9E3779B9u + static_cast<uint32_t>(L));
+            GrooveCell g;
+            pg_gen_groove(r, L, g);
+            for (int step = 0; step < 8; ++step) {
+                if (step % 2 == 0) pg_groove_mutate_grow(r, g);
+                else pg_groove_mutate_renew(r, g, /*reroll=*/step == 7);
+                REQUIRE(gv_is_perm_anchor0(g));
+                for (int i = 0; i < g.len; ++i) {
+                    REQUIRE(g.note_len[i] >= 1);
+                    REQUIRE(g.note_len[i] <= 4);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("mutate_grow changes at most one thing") {
+    for (uint32_t seed = 1; seed <= 100; ++seed) {
+        Rng r; r.seed(seed * 2654435761u);
+        GrooveCell g;
+        pg_gen_groove(r, 8, g);
+        GrooveCell before = g;
+        pg_groove_mutate_grow(r, g);
+        int rank_diffs = 0, len_diffs = 0;
+        for (int i = 0; i < 8; ++i) {
+            if (g.rank_of_slot[i] != before.rank_of_slot[i]) ++rank_diffs;
+            if (g.note_len[i] != before.note_len[i]) ++len_diffs;
+        }
+        // nothing, or one adjacent-rank swap (two slots), or one length +/-1
+        CHECK((rank_diffs == 0 || rank_diffs == 2));
+        CHECK(len_diffs <= 1);
+        CHECK((rank_diffs == 0 || len_diffs == 0));   // never both
+        if (rank_diffs == 2) {                        // swapped ranks are adjacent, anchor excluded
+            int ra = -1, rb = -1;
+            for (int i = 0; i < 8; ++i) if (g.rank_of_slot[i] != before.rank_of_slot[i]) {
+                if (ra < 0) ra = before.rank_of_slot[i]; else rb = before.rank_of_slot[i];
+            }
+            if (ra > rb) { int t = ra; ra = rb; rb = t; }
+            CHECK(rb == ra + 1);
+            CHECK(ra >= 1);
+        }
+        if (len_diffs == 1) {
+            for (int i = 0; i < 8; ++i) {
+                int d = static_cast<int>(g.note_len[i]) - static_cast<int>(before.note_len[i]);
+                CHECK(d >= -1); CHECK(d <= 1);
+            }
+        }
+    }
+}
+
+TEST_CASE("mutate_renew push flip swaps an off-beat with its even beat") {
+    int flips = 0;
+    for (uint32_t seed = 1; seed <= 200; ++seed) {
+        Rng r; r.seed(seed * 0xC0FFEEu);
+        GrooveCell g;
+        pg_gen_groove(r, 8, g);
+        GrooveCell before = g;
+        pg_groove_mutate_renew(r, g, false);
+        int diffs = 0, slots[2] = {-1, -1};
+        for (int i = 0; i < 8; ++i) if (g.rank_of_slot[i] != before.rank_of_slot[i]) {
+            if (diffs < 2) slots[diffs] = i;
+            ++diffs;
+        }
+        CHECK(diffs <= 2);
+        if (diffs == 2) {                             // a flip: slots are s-1, s with s even <= L-2
+            ++flips;
+            int lo = slots[0] < slots[1] ? slots[0] : slots[1];
+            int hi = slots[0] < slots[1] ? slots[1] : slots[0];
+            CHECK(hi == lo + 1);
+            CHECK(hi % 2 == 0);
+            CHECK(hi <= 6);
+            CHECK(lo >= 1);
+        }
+    }
+    CHECK(flips > 200 * 3 / 10);                      // ~70% of mutations are flips
+}
+
+TEST_CASE("groove mutators are deterministic per seed") {
+    Rng a; a.seed(0xABCu);
+    Rng b; b.seed(0xABCu);
+    GrooveCell ga, gb;
+    pg_gen_groove(a, 8, ga);
+    pg_gen_groove(b, 8, gb);
+    for (int i = 0; i < 6; ++i) {
+        pg_groove_mutate_grow(a, ga);
+        pg_groove_mutate_grow(b, gb);
+        pg_groove_mutate_renew(a, ga, i == 5);
+        pg_groove_mutate_renew(b, gb, i == 5);
+    }
+    for (int i = 0; i < 8; ++i) {
+        CHECK(ga.rank_of_slot[i] == gb.rank_of_slot[i]);
+        CHECK(ga.note_len[i] == gb.note_len[i]);
+    }
+}

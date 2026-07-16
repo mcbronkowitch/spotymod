@@ -303,4 +303,61 @@ inline void pg_gen_groove(Rng& rng, int L, GrooveCell& out) {
     }
 }
 
+// --- Groove variation-zone mutators (spec 2026-07-16-groove-variation-zones) ---
+// All preserve the GrooveCell invariants: rank permutation, slot-0 anchor at
+// rank 0, note_len in [1,4]. Called by the lane at cycle wraps only; the lane
+// owns the zoning dice. Draws are conditional (like regenerate_unit).
+
+// Shared: pick one slot, nudge its composed length by +/-1 (clamped).
+inline void pg_groove_nudge_len(Rng& rng, GrooveCell& g) {
+    const int L = g.len;
+    int i = static_cast<int>(rng.next_unipolar() * static_cast<float>(L));
+    if (i > L - 1) i = L - 1;
+    int v = static_cast<int>(g.note_len[i]) + (rng.next_unipolar() < 0.5f ? -1 : 1);
+    if (v < 1) v = 1;
+    if (v > 4) v = 4;
+    g.note_len[i] = static_cast<uint8_t>(v);
+}
+
+// GROW-side drift: 50/50 adjacent-rank swap (one note moves one place in the
+// order DENSE reveals notes; rank 0 excluded) or length nudge.
+inline void pg_groove_mutate_grow(Rng& rng, GrooveCell& g) {
+    const int L = g.len;
+    if (rng.next_unipolar() < 0.5f) {
+        if (L < 4) return;                            // no swappable pair beside the anchor
+        int j = 1 + static_cast<int>(rng.next_unipolar() * static_cast<float>(L - 2));
+        if (j > L - 2) j = L - 2;                     // swap ranks j <-> j+1, j in 1..L-2
+        int s1 = -1, s2 = -1;
+        for (int i = 0; i < L; ++i) {
+            if (g.rank_of_slot[i] == j)     s1 = i;
+            if (g.rank_of_slot[i] == j + 1) s2 = i;
+        }
+        g.rank_of_slot[s1] = static_cast<uint8_t>(j + 1);
+        g.rank_of_slot[s2] = static_cast<uint8_t>(j);
+    } else {
+        pg_groove_nudge_len(rng, g);
+    }
+}
+
+// RENEW-side re-decision: 70% push flip — swap the off-beat s-1 with its even
+// beat s, the exact semantic toggle of pg_gen_groove's displacement (s == L,
+// the wrapped downbeat, is excluded: flipping it would demote the anchor) —
+// else length nudge. `reroll` regenerates the whole cell instead.
+inline void pg_groove_mutate_renew(Rng& rng, GrooveCell& g, bool reroll) {
+    const int L = g.len;
+    if (reroll) { pg_gen_groove(rng, L, g); return; }
+    if (rng.next_unipolar() < 0.7f) {
+        int nc = (L - 2) / 2;                         // candidates s = 2, 4, ..., <= L-2
+        if (nc < 1) return;
+        int c = static_cast<int>(rng.next_unipolar() * static_cast<float>(nc));
+        if (c > nc - 1) c = nc - 1;
+        int s = 2 + 2 * c;
+        uint8_t t = g.rank_of_slot[s - 1];
+        g.rank_of_slot[s - 1] = g.rank_of_slot[s];
+        g.rank_of_slot[s] = t;
+    } else {
+        pg_groove_nudge_len(rng, g);
+    }
+}
+
 } // namespace spky
