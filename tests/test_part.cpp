@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <cmath>
 #include <algorithm>
+#include <vector>
 #include "parts/part.h"
 using namespace spky;
 
@@ -273,4 +274,47 @@ TEST_CASE("part: the test tone engine reports zero active voices") {
     for (int i = 0; i < 1000; ++i) p.process(l, r);   // ride out the 4 ms fades
     CHECK(p.engine_id() == ENGINE_TEST_TONE);
     CHECK(p.active_voices() == 0);
+}
+
+// Composed-note sustain routed to the GATE output (rhythm-groove-design.md
+// section 3). SYNCED + tempo 60 + rate norm 0.5 lands on division index 8
+// ("1/4", cpb 1) -> base_hz 1 Hz -> PITCH lane rate = base_hz * kLaneRatio
+// (2.0) = 2 Hz, a 24000-sample cycle / 16 steps = 1500 samples/step. Mirrors
+// the ModLane-level timing in "gate releases before the next note when the
+// gap is long" (tests/test_gate_density.cpp), but observed through Part.
+TEST_CASE("part: gate sustains the composed STEP note, releasing before the next downbeat") {
+    Part p;
+    p.init(48000.f, 5);
+    p.set_step(true, 16);
+    p.mod().set_density(0.f);      // anchor-only: notes at steps 0 and 8 (L=8)
+    p.mod().set_synced(true);
+    p.mod().set_tempo_bpm(60.f);
+    p.mod().set_rate(0.5f);        // -> PITCH lane 2 Hz: 1500 samples/step
+    const int step_samples = 1500;
+    std::vector<char> gate;
+    float l, r;
+    for (int n = 0; n < 24000; ++n) { p.process(l, r); gate.push_back(p.gate()); }
+    CHECK(gate[10]);                          // note sounding just after the downbeat
+    // note_len is capped at 4 < the 8-step gap, so the gate MUST fall in between
+    CHECK_FALSE(gate[7 * step_samples + 10]);
+    int run = 0;                              // high run from the downbeat: 1..4 steps
+    while (run < 24000 && gate[run]) ++run;
+    CHECK(run >= 1 * step_samples - 2);
+    CHECK(run <= 4 * step_samples + 2);
+}
+
+// FLOW must be unaffected by the composed-sustain wiring: ModLane::gate_state()
+// returns true unconditionally in FLOW, so Part::gate() must NOT OR that in —
+// only the retrigger pulse (_gate_ctr) should ever raise the gate here.
+TEST_CASE("part: gate in FLOW stays pulse-only (never permanently high)") {
+    Part p;
+    p.init(48000.f, 5);   // boots in FLOW (drone); no set_step() call
+    CHECK_FALSE(p.gate());   // nothing has fired yet: low at the very first sample
+    bool saw_low = false;
+    float l, r;
+    for (int n = 0; n < 24000; ++n) {   // 0.5 s
+        p.process(l, r);
+        if (!p.gate()) saw_low = true;
+    }
+    CHECK(saw_low);
 }

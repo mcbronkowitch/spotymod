@@ -110,6 +110,21 @@ TEST_CASE("gate can sustain across a frozen (rest) step") {
     CHECK(bridged >= 8);                   // expected ~18/40
 }
 
+// steps=20 forces a tail: pg_derive_sizing(TwoMotif, 20) -> k=3, L=6, r=2
+// (3*6+2==20). At density 0 only the cell anchor (rank 0, always cell-relative
+// slot 0) fires: once per full instance (0, 6, 12) plus the tail's own slot 0,
+// which lands at absolute slot 18 (18 % L(=6) == 0). set_step() only flags a
+// regen (it lands at the next STEP-mode wrap), so the lane still runs its
+// stale init()-time layout (steps=8) for the first cycle; run one full cycle
+// first to let the steps=20 layout actually take effect before sampling.
+TEST_CASE("DENSE 0 truncates cleanly over a tail: anchors plus the tail's own anchor") {
+    ModLane l = melodic_step(0x11, 20);
+    l.set_density(0.f);
+    for (int n = 0; n < 24000; ++n) l.process();       // let the steps=20 regen land
+    auto s = fired_step_set(l, 20, 24000);
+    CHECK(s == std::set<int>{0, 6, 12, 18});
+}
+
 TEST_CASE("STEP re-entry clears stale note state (live FLOW/STEP toggle)") {
     ModLane l = melodic_step(0x11, 16);
     l.set_density(0.f);

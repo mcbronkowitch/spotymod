@@ -69,7 +69,10 @@ public:
     float pitch_pre_quant() const;             // PITCH target + TUNE, pre-quantize
     float lane_output(int slot) const { return _mod.lane_output(slot); }
     bool  lane_fired(int slot) const  { return _mod.lane_fired(slot); }
-    bool  gate() const { return _gate_ctr > 0; }
+    // GATE jack: the ~5 ms retrigger pulse, OR'd with the composed melodic
+    // STEP note sustain (spec: rhythm-groove-design.md section 3). pitch_sustain()
+    // is step-mode-qualified (false in FLOW), so FLOW stays pulse-only.
+    bool  gate() const { return _gate_ctr > 0 || _mod.pitch_sustain(); }
     float pitch_cv() const { return target_value(LANE_PITCH); }
 
     // advance mod one sample + engine + part FX; sends = post-FX x REVERB SEND

@@ -31,6 +31,10 @@ public:
     bool  frozen() const { return _frozen; }  // last dice failed -> holding
     // GATE: melodic STEP sustains the composed note (age < hold); else high.
     bool  gate_state() const { return _step_mode ? (!_melodic || _note_age < _note_hold) : true; }
+    // Step-mode-qualified sustain: true only while a melodic STEP note holds.
+    // Unlike gate_state() this is false in FLOW and non-melodic lanes, so it
+    // is safe to OR into a pulse-based gate without forcing it permanently high.
+    bool  note_sustain() const { return _step_mode && _melodic && _note_age < _note_hold; }
     float phase()  const { return _phase; }
     float phase_eff() const;                  // audible phase = (_phase + EVOLVE offset), wrapped
     float target() const { return _target; }  // pre-smooth, pre-range held value

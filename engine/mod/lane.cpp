@@ -139,6 +139,9 @@ void ModLane::_on_boundary() {
 }
 
 void ModLane::_start_note(int slot) {
+    // For _steps > kSeqSlots this scan models the 32-slot buffer's own order
+    // (slot after step _steps-1 wraps to slot 0), not the outer cycle seam —
+    // unreachable from the panel, where STEPS clamps to 16.
     int n = _steps > kSeqSlots ? kSeqSlots : _steps;   // effective phrase length
     if (n < 1) n = 1;
     int dist = 1;                                       // steps to the next note

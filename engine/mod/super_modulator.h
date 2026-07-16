@@ -26,6 +26,7 @@ public:
     void set_principle(Principle p) { _lanes[LANE_PITCH].set_principle(p); }
     void new_phrase() { _lanes[LANE_PITCH].new_phrase(); }
     bool pitch_gate() const { return _lanes[LANE_PITCH].gate_state(); }
+    bool pitch_sustain() const { return _lanes[LANE_PITCH].note_sustain(); }
 
     void process();                // advance all lanes one sample
 

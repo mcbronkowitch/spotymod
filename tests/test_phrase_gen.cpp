@@ -210,6 +210,28 @@ TEST_CASE("groove: syncopation occurs — off-beats reach the top ranks") {
     CHECK(synced > kSeeds / 4);   // pushes are a real, common feature
 }
 
+TEST_CASE("groove: L=7 (odd) is still a valid permutation, anchor rank 0, lengths in range") {
+    for (uint32_t seed : {1u, 0xBEEFu, 0xC0FFEEu}) {
+        Rng a; a.seed(seed);
+        Rng b; b.seed(seed);
+        GrooveCell ga, gb;
+        pg_gen_groove(a, 7, ga);
+        pg_gen_groove(b, 7, gb);
+        bool seen[7] = {};
+        for (int i = 0; i < 7; ++i) {
+            CHECK(ga.rank_of_slot[i] == gb.rank_of_slot[i]);   // determinism
+            CHECK(ga.note_len[i] == gb.note_len[i]);
+            REQUIRE(ga.rank_of_slot[i] < 7);
+            seen[ga.rank_of_slot[i]] = true;
+            CHECK(ga.note_len[i] >= 1);
+            CHECK(ga.note_len[i] <= 4);
+        }
+        for (int i = 0; i < 7; ++i) CHECK(seen[i]);            // permutation
+        CHECK(ga.rank_of_slot[0] == 0);                        // anchor is always first
+        CHECK(ga.len == 7);
+    }
+}
+
 TEST_CASE("groove: L=1 degenerates cleanly") {
     Rng r; r.seed(3);
     GrooveCell g;
