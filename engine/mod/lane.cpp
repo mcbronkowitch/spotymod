@@ -48,6 +48,7 @@ void ModLane::set_range(float r)      { _range = clampf(r, 0.f, 1.f); }
 void ModLane::set_variation(float v)  { _variation = clampf(v, -1.f, 1.f); }
 
 void ModLane::set_step(bool on, int steps) {
+    if (on && !_step_mode) { _note_age = 0; _note_hold = 0; }  // STEP entry: no stale sustain
     _step_mode = on;
     int new_steps = steps < 1 ? 1 : steps;
     if (_melodic) {

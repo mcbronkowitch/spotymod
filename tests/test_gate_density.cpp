@@ -109,3 +109,14 @@ TEST_CASE("gate can sustain across a frozen (rest) step") {
     }
     CHECK(bridged >= 8);                   // expected ~18/40
 }
+
+TEST_CASE("STEP re-entry clears stale note state (live FLOW/STEP toggle)") {
+    ModLane l = melodic_step(0x11, 16);
+    l.set_density(0.f);
+    for (int n = 0; n < 100; ++n) l.process();   // downbeat note sounding
+    CHECK(l.gate_state());
+    l.set_step(false, 16);                        // FLOW excursion
+    for (int n = 0; n < 100; ++n) l.process();
+    l.set_step(true, 16);                         // back to STEP, same length: no regen
+    CHECK_FALSE(l.gate_state());                  // no stale sustain carried over
+}
