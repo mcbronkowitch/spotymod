@@ -139,18 +139,16 @@ TEST_CASE("instrument: boots both parts on the synth engine with an audible dron
     CHECK(energy > 1e-3f);
 }
 
-// PROBABILITY used to force a permanent freeze so this test could settle for a
-// while and still find the part silent before the manual tap. After its
-// removal the downbeat gate slot is unmaskable (DENSITY never drops it), so
-// entering STEP mode still fires once on the very first process() call (step
-// -1 -> 0). Settle past that single natural note's decay (but short of the
-// next gated step) before checking silence, so the manual trigger is the
-// only voice left.
+// DENSE 0 leaves only the downbeat/anchor slot able to fire, so after the
+// guaranteed first-sample fire (STEP entry: step -1 -> 0) the next natural
+// note is a full cycle away. Settle past that single note's decay before
+// checking silence, so the manual trigger is the only voice left.
 TEST_CASE("instrument: voice setters and manual trigger reach the part") {
     Instrument inst;
     inst.init(48000.f);
     inst.set_voice_decay(PART_A, 0.f);      // shortest decay ratio (0.1x cycle)
     inst.set_step(PART_A, true, 8);
+    inst.set_density(PART_A, 0.f);          // anchor-only: next natural fire is a cycle away
     float l, r;
     for (int i = 0; i < 10000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(inst.active_voices(PART_A) == 0);

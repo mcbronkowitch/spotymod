@@ -76,9 +76,8 @@ TEST_CASE("generate_phrase: TwoMotif shows motivic repetition, deterministic") {
     for (int i = 0; i < 8; ++i) if (pa[i] != pa[16 + i]) any_diff = true;
     CHECK(any_diff);
     for (int i = 0; i < 32; ++i) CHECK(pa[i] == doctest::Approx(pb[i])); // determinism
-    // has at least one rest somewhere (gate layer active)
-    bool any_rest = false; for (int i = 0; i < 32; ++i) any_rest |= !ga[i];
-    CHECK(any_rest);
+    // gates are all-true: rests come from the groove ranking at play time
+    for (int i = 0; i < 32; ++i) CHECK(ga[i]);
 }
 
 TEST_CASE("generate_phrase: OneMotif repeats one identical motif") {

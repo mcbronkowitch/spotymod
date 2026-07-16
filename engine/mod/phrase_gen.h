@@ -119,24 +119,22 @@ inline void pg_build_arrangement(Principle p, int k,
     }
 }
 
-// Generate one motif's content (pitch + gate), length L. Gate uses motif-RELATIVE
-// metric weight so sibling instances copy byte-identically; for aligned L this
-// equals the absolute-slot weight (§spec). CallResponse role is by id parity.
+// Generate one motif's content (pitch; gate is all-true — rhythm lives in the
+// GrooveCell ranking, not per-slot rests). CallResponse role is by id parity.
 inline void pg_gen_motif(Principle p, Rng& rng, int motif_id, int L,
                          float* pitch, bool* gate) {
     switch (p) {
     case Principle::Ostinato: {
         pg_contour_walk(rng, pitch, L, 0.0f, 0.05f, 0.30f); // near-static
-        for (int i = 0; i < L; ++i) gate[i] = pg_metric_weight(i) >= 0.30f;
+        for (int i = 0; i < L; ++i) gate[i] = true;
         break;
     }
     case Principle::Hierarchical: {
         int cl = (L >= 6) ? 4 : 2;              // cell length 2 or 4
         if (cl > L) cl = L;
-        float cell[4]; bool cellg[4];
+        float cell[4];
         pg_contour_walk(rng, cell, cl, 0.0f, 0.6f, 0.10f);
-        for (int i = 0; i < cl; ++i) cellg[i] = pg_metric_weight(i) >= 0.25f;
-        for (int i = 0; i < L; ++i) { pitch[i] = cell[i % cl]; gate[i] = cellg[i % cl]; }
+        for (int i = 0; i < L; ++i) { pitch[i] = cell[i % cl]; gate[i] = true; }
         break;
     }
     case Principle::CallResponse: {
@@ -146,14 +144,14 @@ inline void pg_gen_motif(Principle p, Rng& rng, int motif_id, int L,
             if (answer) pitch[L - 1] = 0.0f;                              // resolve
             else if (std::fabs(pitch[L - 1]) < 0.3f) pitch[L - 1] = 0.5f; // stay open
         }
-        for (int i = 0; i < L; ++i) gate[i] = pg_metric_weight(i) >= 0.25f;
+        for (int i = 0; i < L; ++i) gate[i] = true;
         break;
     }
     case Principle::TwoMotif:
     case Principle::OneMotif:
     default: {
         pg_contour_walk(rng, pitch, L, 0.0f, 0.6f, 0.12f);
-        for (int i = 0; i < L; ++i) gate[i] = pg_metric_weight(i) >= 0.25f;
+        for (int i = 0; i < L; ++i) gate[i] = true;
         break;
     }
     }

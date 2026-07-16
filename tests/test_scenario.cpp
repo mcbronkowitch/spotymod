@@ -111,17 +111,16 @@ TEST_CASE("scenario: fx actions reach the instrument") {
     CHECK(l == l);
 }
 
-// PROBABILITY used to force a permanent freeze so the part could be checked
-// silent before the manual tap even after a settle period. After its removal
-// the downbeat gate slot is unmaskable (DENSITY never drops it), so entering
-// STEP mode still fires once on the very first process() call (step -1 -> 0).
-// Settle past that single natural note's decay (but short of the next gated
-// step) before checking silence, so the manual trigger is the only voice left.
+// DENSE 0 leaves only the downbeat/anchor slot able to fire, so after the
+// guaranteed first-sample fire (STEP entry: step -1 -> 0) the next natural
+// note is a full cycle away. Settle past that single note's decay before
+// checking silence, so the manual trigger is the only voice left.
 TEST_CASE("scenario: M2 synth actions reach the instrument") {
     Instrument inst;
     inst.init(48000.f);
     inst.set_voice_decay(0, 0.f);            // shortest decay: fast test
     inst.set_step(0, true, 8);
+    inst.set_density(0, 0.f);                // anchor-only: next natural fire is a cycle away
     float l = 0.f, r = 0.f;
     for (int i = 0; i < 10000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
     CHECK(inst.active_voices(0) == 0);       // silent before the tap

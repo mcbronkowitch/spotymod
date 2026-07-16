@@ -186,18 +186,16 @@ TEST_CASE("part: boots on the synth engine and hums in FLOW (drone promise)") {
     CHECK(energy > 1e-3f);
 }
 
-// PROBABILITY used to force a permanent freeze (dice pinned to never fire),
-// which let these tests isolate a manual trigger from all natural firing.
-// After PROBABILITY's removal the downbeat gate slot is unmaskable by design
-// (DENSITY never drops it — see test_gate_density.cpp), so entering STEP mode
-// still fires once on the very first process() call (step -1 -> 0). Settle
-// past that single natural note's decay (but short of the next gated step)
-// before checking silence, so the manual trigger is the only voice left.
+// DENSE 0 leaves only the downbeat/anchor slot able to fire, so after the
+// guaranteed first-sample fire (STEP entry: step -1 -> 0) the next natural
+// note is a full cycle away. Settle past that single note's decay before
+// checking silence, so the manual trigger is the only voice left.
 TEST_CASE("part: manual trigger fires at the current pitch and raises the gate") {
     Part p;
     p.init(48000.f, 5);
     p.set_voice_decay(0.f);   // shortest decay ratio: settle window stays short
     p.set_step(true, 8);
+    p.mod().set_density(0.f);     // anchor-only: next natural fire is a cycle away
     float l, r;
     for (int i = 0; i < 10000; ++i) p.process(l, r);   // past the boot note's decay
     CHECK(p.active_voices() == 0);          // silent before the tap
