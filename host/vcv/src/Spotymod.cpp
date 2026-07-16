@@ -7,8 +7,18 @@
 // and (later) the Daisy firmware use. No hardware type crosses this boundary.
 #include "instrument.h"
 #include "fx/flux.h"
+#include "mod/divisions.h"
 
 using namespace spkyvcv;
+
+// RATE tooltip: the division name while SYNC is on, free Hz otherwise.
+struct RateQuantity : ParamQuantity {
+    std::string getDisplayValueString() override {
+        if (module && module->params[SYNC].getValue() > 0.5f)
+            return spky::kDivisions[spky::division_index(getValue())].name;
+        return string::f("%.3f Hz", spky::free_hz(getValue()));
+    }
+};
 
 // Part A params occupy [0..PART_STRIDE), part B the next PART_STRIDE. The
 // generator lays both part blocks out identically (same order, mirrored x) and
@@ -28,7 +38,7 @@ struct Spotymod : Module {
 
     float curSr = 0.f;
     dsp::ClockDivider ctrlDiv;              // throttle param push to control rate
-    dsp::SchmittTrigger clockTrig;
+    dsp::SchmittTrigger clockTrig, resetTrig;
     dsp::BooleanTrigger triggerTrig[2], spotTrig, settleTrig;
     dsp::BooleanTrigger principleTrig[2], newPhraseTrig[2];
     int principleIdx[2] = {0, 0};   // current principle per part (0=TwoMotif)
@@ -49,7 +59,12 @@ struct Spotymod : Module {
             const std::string lbl = c.label;
             switch (c.kind) {
                 case WK_BIGKNOB:
-                case WK_SMKNOB: configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl); break;
+                case WK_SMKNOB:
+                    if (c.id == RATE_A || c.id == RATE_B)
+                        configParam<RateQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
+                    else
+                        configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
+                    break;
                 case WK_KNOBC:  // MELO (bipolar): part A leans toward GROW, B centred
                     configParam(c.id, -1.f, 1.f, c.id == MELODY_A ? 0.32f : 0.f, lbl); break;
                 case WK_KNOBI:
@@ -60,8 +75,8 @@ struct Spotymod : Module {
                         configParam(c.id, 2.f, 16.f, 8.f, "Steps");
                     getParamQuantity(c.id)->snapEnabled = true;
                     break;
-                case WK_SW3:  // init patch runs both parts tempo-Synced
-                    configSwitch(c.id, 0.f, 2.f, 1.f, "Sync", {"Free", "Sync", "Triplet"});
+                case WK_SW2:  // init patch runs the instrument on the grid
+                    configSwitch(c.id, 0.f, 1.f, 1.f, "Sync", {"Free", "Synced"});
                     break;
                 case WK_LATCH:
                     if (c.id == ENGINE_A || c.id == ENGINE_B)
@@ -165,11 +180,6 @@ struct Spotymod : Module {
             inst.set_fx_on(p, spky::FxBlock::Grit, pp(GRIT_A, p) > 1e-4f);
             inst.set_comp(p, pp(COMP_A, p));
 
-            // 3-pos switch: 0=Free, 1=Sync, 2=Triplet.
-            int sm = (int)std::round(pp(SYNC_A, p));
-            inst.set_sync_mode(p, sm == 1 ? spky::SyncMode::Sync
-                                : sm == 2 ? spky::SyncMode::SyncTriplet
-                                          : spky::SyncMode::Free);
             inst.set_engine(p, ppb(ENGINE_A, p) ? spky::ENGINE_TEST_TONE
                                                 : spky::ENGINE_SYNTH);
             inst.set_grit_mode(p, ppb(GRITMODE_A, p) ? spky::GritMode::Reduce
@@ -187,6 +197,7 @@ struct Spotymod : Module {
         inst.set_morph(params[MORPH].getValue());
         inst.set_couple(params[COUPLE].getValue());
         inst.set_drift(params[DRIFT].getValue());
+        inst.set_sync(params[SYNC].getValue() > 0.5f);
         inst.set_reverb_size(params[REV_SIZE].getValue());
         inst.set_reverb_decay(params[REV_DECAY].getValue());
         inst.set_reverb_tone(params[REV_TONE].getValue());
@@ -212,13 +223,18 @@ struct Spotymod : Module {
     void process(const ProcessArgs& args) override {
         if (args.sampleRate != curSr) reinit(args.sampleRate);
 
-        // external clock edge -> remember the period
+        // external clock edge -> remember the period, and phase-align the transport
         if (inputs[CLOCK].isConnected()) {
             clkSamples += 1.f;
             if (clockTrig.process(inputs[CLOCK].getVoltage(), 0.1f, 1.f)) {
                 clkSamples = 0.f;
+                inst.clock_pulse();
             }
         }
+
+        if (inputs[RESET].isConnected() &&
+            resetTrig.process(inputs[RESET].getVoltage(), 0.1f, 1.f))
+            inst.reset_transport();
 
         if (ctrlDiv.process()) pushParams();
 
@@ -318,7 +334,7 @@ struct PanelText : Widget {
         switch (kind) {
             case WK_BIGKNOB: case WK_KNOBC: case WK_IN: case WK_OUT: return 4.2f;
             case WK_SMKNOB:  case WK_KNOBI: return 3.0f;
-            case WK_SW3:     return 2.2f;
+            case WK_SW2:     return 3.0f;
             case WK_LATCH:   case WK_SMBTN: return 2.7f;
             default:         return 1.7f;
         }
@@ -378,8 +394,8 @@ struct SpotymodWidget : ModuleWidget {
                     addParam(createParamCentered<RoundBlackKnob>(pos, module, c.id)); break;
                 case WK_SMKNOB: case WK_KNOBI:
                     addParam(createParamCentered<Trimpot>(pos, module, c.id)); break;
-                case WK_SW3:
-                    addParam(createParamCentered<CKSSThree>(pos, module, c.id)); break;
+                case WK_SW2:
+                    addParam(createParamCentered<CKSS>(pos, module, c.id)); break;
                 case WK_LATCH:
                     addParam(createParamCentered<VCVLatch>(pos, module, c.id)); break;
                 case WK_SMBTN:
