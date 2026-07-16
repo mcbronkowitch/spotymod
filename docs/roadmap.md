@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-15.
+- **Last updated:** 2026-07-16.
 
 > **Reminder:** nothing here has run on real hardware yet. Everything below is
 > verified only against the desktop offline renderer (unit tests + WAV/CSV
@@ -31,6 +31,7 @@ is actually built today, and what is still design-only.
 | **M4.6** | Dynamics — one-knob comp per part (glue → dense → pump, auto-makeup) + stereo-linked master limiter with MASTER DRIVE (delivers M6 engine delta 3 early) | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.8** | Reverb dry/wet — equal-power MIX at the master join + clear-on-sleep CPU bypass | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.9** | Reverb DIFFUSION knob (replaces DEPTH) — room density 0–0.9, weak line-mod coupling, full-wash first pass | ✅ **done** (engine + host; UI wiring deferred to M6) |
+| **SYNC/COUPLE redesign** | One global SYNC switch (replaces per-part sync toggles), transport phase + rate ladder, zoned COUPLE (texture-only in grid world, grid-gravity zone in free world), VCV panel layout A, CLK/RST wired | ✅ **done** (engine + VCV host; spec `docs/superpowers/specs/2026-07-16-sync-couple-redesign-design.md`) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -290,6 +291,39 @@ suggestions: GRIT layer SMOOTH → COMP (per side), FLUX-layer TUNE
   more diffusion smears the first pass (A/B verified by ear, 2026-07-14).
 - Hosts: VCV `REV_DIFF` "DIFF" knob (same panel slot/param id as DEPTH),
   render action `set_reverb_diffusion`; `ambient_wash` migrated.
+
+### SYNC/COUPLE redesign ✅
+
+Landed 2026-07-16 (spec: `docs/superpowers/specs/2026-07-16-sync-couple-redesign-design.md`,
+plan: `docs/superpowers/plans/2026-07-16-sync-couple-redesign.md`). One
+global **SYNC** switch replaces the two near-invisible per-part `Free / Sync /
+Triplet` toggles and gives COUPLE a clear split between "grid world" and
+"organic world":
+
+- **Transport phase** — new beat/bar phase accumulator in the engine core,
+  advanced from tempo BPM at control rate; `Instrument::clock_pulse()` lets a
+  host report external CLK edges (re-measures BPM and aligns downbeat phase,
+  previously rate-only), and RST is now actually read and reset-aligns the
+  phase.
+- **Rate ladder** — 17 speed-sorted musical divisions (`engine/mod/divisions.h`)
+  replace the old 9-division per-part Sync table; SYNC-on RATE snaps to the
+  ladder, SYNC-off RATE stays continuous 0.02–30 Hz.
+- **Grid world (SYNC on)** — both parts' PITCH lanes servo-lock to the
+  transport (rate + downbeat phase); COUPLE governs only the four non-pitch
+  mod lanes (1.0 lockstep, lower = independent Kuramoto breathing); DRIFT's
+  rate tap likewise skips the pitch lane, its detune tap stays global.
+- **Organic world (SYNC off)** — unchanged pairwise Kuramoto below COUPLE 0.5;
+  0.5–1.0 fades in "grid gravity" (the coupled target additionally pulled
+  toward the nearest musical division of tempo, rate and phase); COUPLE = 1.0
+  converges to the same hard lock as grid-world SYNC, so flipping SYNC at full
+  COUPLE is seamless.
+- **VCV host** — panel layout A: TIME group (SYNC / TEMPO / COUPL) under
+  MORPH, per-part sync toggles removed, CLK phase-align + live RST wired,
+  division-aware RATE tooltip. Param relayout breaks saved 2.0.x patches
+  (expected — version bump to **2.1.0**).
+- Full engine suite green (216 cases, 0 skipped) and both `ambient_wash` /
+  `demo_step_melody` renders verified clean post-landing; VCV Rack play test
+  and audio listening pass deferred to a human (see dev log).
 
 ## Planned
 
