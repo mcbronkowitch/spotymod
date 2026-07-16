@@ -49,6 +49,13 @@ public:
     // PLAY tap (M6 wires the gesture; the engine sees an ordinary trigger)
     void trigger_manual();
 
+    // CHOKE (spec 2026-07-16 choke-priority): while inhibited, a lane fire
+    // produces no engine trigger and no gate pulse; the suppressed note's
+    // STEP sustain is latched out of gate() too. trigger_manual() is a user
+    // gesture and is deliberately NOT inhibited.
+    void set_inhibit(bool on) { _inhibit = on; }
+    float max_voice_env() const;   // 0 when idle or on the test-tone engine
+
     // VOICE edit layer - forwarded to the synth engine directly, so edits
     // stick even while the test tone is the active engine
     void set_voice_attack(float n)    { _synth.set_attack(n); }
@@ -72,7 +79,9 @@ public:
     // GATE jack: the ~5 ms retrigger pulse, OR'd with the composed melodic
     // STEP note sustain (spec: rhythm-groove-design.md section 3). pitch_sustain()
     // is step-mode-qualified (false in FLOW), so FLOW stays pulse-only.
-    bool  gate() const { return _gate_ctr > 0 || _mod.pitch_sustain(); }
+    bool  gate() const {
+        return _gate_ctr > 0 || (!_note_suppressed && _mod.pitch_sustain());
+    }
     float pitch_cv() const { return target_value(LANE_PITCH); }
 
     // advance mod one sample + engine + part FX; sends = post-FX x REVERB SEND
@@ -92,6 +101,8 @@ private:
     EngineId       _pending_engine = ENGINE_SYNTH;
     bool           _switching = false;
     bool           _step_on = false;
+    bool           _inhibit = false;
+    bool           _note_suppressed = false;   // last fire was swallowed
     float          _last_master_hz = -1.f;
 
     IPartEngine* _engine_for(EngineId e) {

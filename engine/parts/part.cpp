@@ -22,6 +22,8 @@ void Part::init(float sample_rate, uint32_t seed_base,
     _fx.init(sample_rate, echo_l, echo_r);
     _gate_len = static_cast<int>(sample_rate * 0.005f);
     _gate_ctr = 0;
+    _inhibit = false;
+    _note_suppressed = false;
     _quant.init(sample_rate);                   // boots Dorian / SCALE / root 0
     _pitch_q = _quant.process(pitch_pre_quant());
 }
@@ -68,6 +70,15 @@ void Part::trigger_manual() {
     _engine->trigger(target_value(LANE_PITCH));   // current quantized pitch
 }
 
+float Part::max_voice_env() const {
+    float m = 0.f;
+    for (int v = 0; v < SynthEngine::kVoices; ++v) {
+        const float e = voice_env(v);   // engine-qualified: 0 on test tone
+        if (e > m) m = e;
+    }
+    return m;
+}
+
 void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     _mod.process();
 
@@ -91,7 +102,10 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
         _engine->set_cycle(1.f / hz);
     }
 
-    if (_mod.lane_fired(LANE_PITCH)) _gate_ctr = _gate_len;
+    if (_mod.lane_fired(LANE_PITCH)) {
+        _note_suppressed = _inhibit;
+        if (!_inhibit) _gate_ctr = _gate_len;
+    }
     if (_gate_ctr > 0) --_gate_ctr;
 
     float targets[LANE_COUNT];
@@ -101,7 +115,8 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     targets[LANE_PITCH] = clampf(_pitch_q + _detune_cents * (1.f / 3600.f), 0.f, 1.f);
 
     _engine->set_targets(targets, _tune);
-    if (_mod.lane_fired(LANE_PITCH)) _engine->trigger(targets[LANE_PITCH]);
+    if (_mod.lane_fired(LANE_PITCH) && !_note_suppressed)
+        _engine->trigger(targets[LANE_PITCH]);
     _engine->process(outL, outR);
     outL *= fade;
     outR *= fade;
