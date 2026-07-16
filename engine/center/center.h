@@ -49,6 +49,7 @@ public:
 
 private:
     void _step_weather();
+    float _grid_servo(const SuperModulator& m) const;
 
     Transport _transport;
     bool      _sync = false;

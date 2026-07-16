@@ -99,33 +99,64 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     dphi -= std::floor(dphi + 0.5f);            // wrap to [-0.5, 0.5)
     _phase_err = dphi;
 
-    const float fa = a.base_hz(), fb = b.base_hz();
+    if (_sync) {
+        // GRID WORLD: melody/steps live on the transport; COUPLE only sets how
+        // tightly the four texture lanes follow. texture = 0 at full COUPLE
+        // -> the DRIFT rate wander is fully suppressed and the mod lanes hold
+        // their exact ratios (lockstep); smaller COUPLE lets it through.
+        const float pitch_a = 1.f + _grid_servo(a);
+        const float pitch_b = 1.f + _grid_servo(b);
+        const float texture = 1.f - _couple;
+        const float mod_a = pitch_a * std::pow(rate_drift_a, texture);
+        const float mod_b = pitch_b * std::pow(rate_drift_b, texture);
+        a.set_rate_scale(pitch_a, mod_a);
+        b.set_rate_scale(pitch_b, mod_b);
+    } else {
+        // FREE WORLD: geometric-mean convergence + Kuramoto phase pull; at
+        // full COUPLE this becomes a hard lock (Task 5 adds grid gravity).
+        const float fa = a.base_hz(), fb = b.base_hz();
 
-    // convergence: both banks slide toward the geometric mean.
-    const float conv_e = _couple * 0.5f;
-    const float conv_a = std::pow(fb / fa, conv_e);
-    const float conv_b = std::pow(fa / fb, conv_e);
+        // convergence: both banks slide toward the geometric mean.
+        const float conv_e = _couple * 0.5f;
+        const float conv_a = std::pow(fb / fa, conv_e);
+        const float conv_b = std::pow(fa / fb, conv_e);
 
-    // phase pull: opposite sign on the two banks. At full COUPLE this becomes a
-    // HARD lock — a much stronger gain (kKHard) with a per-tick slew cap
-    // (kLockCap): the cap keeps engage click-free and the loop stable, while
-    // the strong gain outruns EVOLVE's raw-rate wander so the residual phase
-    // error collapses to ~0. Below full COUPLE the gentle kK nudge acts as
-    // before (an approximate lock that lets the banks breathe).
-    const bool hard = _couple >= kFullCouple;
-    const float s = std::sin(TWO_PI * dphi);
-    float corr = _couple * (hard ? kKHard : kK) * s;
-    if (hard) corr = clampf(corr, -kLockCap, kLockCap);
-    const float pull_a = 1.f - corr;
-    const float pull_b = 1.f + corr;
+        // phase pull: opposite sign on the two banks. At full COUPLE this becomes a
+        // HARD lock — a much stronger gain (kKHard) with a per-tick slew cap
+        // (kLockCap): the cap keeps engage click-free and the loop stable, while
+        // the strong gain outruns EVOLVE's raw-rate wander so the residual phase
+        // error collapses to ~0. Below full COUPLE the gentle kK nudge acts as
+        // before (an approximate lock that lets the banks breathe).
+        const bool hard = _couple >= kFullCouple;
+        const float s = std::sin(TWO_PI * dphi);
+        float corr = _couple * (hard ? kKHard : kK) * s;
+        if (hard) corr = clampf(corr, -kLockCap, kLockCap);
+        const float pull_a = 1.f - corr;
+        const float pull_b = 1.f + corr;
 
-    const float mult_a = clampf(conv_a * pull_a, kRateClampLo, kRateClampHi);
-    const float mult_b = clampf(conv_b * pull_b, kRateClampLo, kRateClampHi);
+        const float mult_a = clampf(conv_a * pull_a, kRateClampLo, kRateClampHi);
+        const float mult_b = clampf(conv_b * pull_b, kRateClampLo, kRateClampHi);
 
-    // single rate hook = COUPLE x DRIFT rate tap, applied symmetrically to
-    // pitch and mod lanes (Tasks 4-5 split these apart)
-    a.set_rate_scale(mult_a * rate_drift_a, mult_a * rate_drift_a);
-    b.set_rate_scale(mult_b * rate_drift_b, mult_b * rate_drift_b);
+        // single rate hook = COUPLE x DRIFT rate tap, applied symmetrically to
+        // pitch and mod lanes (Tasks 4-5 split these apart)
+        a.set_rate_scale(mult_a * rate_drift_a, mult_a * rate_drift_a);
+        b.set_rate_scale(mult_b * rate_drift_b, mult_b * rate_drift_b);
+    }
+}
+
+// Per-tick rate correction that servos a synced bank's pitch phase onto its
+// own grid target (transport beats x the bank's division). Uses the same
+// sin-shaped hard-lock law as the free world's full-COUPLE lock (small-signal
+// gain kKHard*2*pi ~ 12.6, cap kLockCap keeps engage click-free) — that is
+// what outruns EVOLVE's +/-20% raw-rate wander, matching the 2026-07-15 lock
+// quality the existing EVOLVE-wander test asserts.
+float Center::_grid_servo(const SuperModulator& m) const {
+    const float cpb = kDivisions[m.division()].cpb;
+    const double t = _transport.beats() * static_cast<double>(cpb);
+    const float target = static_cast<float>(t - std::floor(t));
+    float err = target - m.pitch_phase();
+    err -= std::floor(err + 0.5f);                  // wrap to [-0.5, 0.5)
+    return clampf(kKHard * std::sin(TWO_PI * err), -kLockCap, kLockCap);
 }
 
 void Center::_step_weather() {

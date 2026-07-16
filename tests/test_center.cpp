@@ -17,6 +17,16 @@ struct Rig {
     }
     void ticks(int n) { for (int k = 0; k < n; ++k) c.update(a, b, pa, pb); }
 };
+
+// Advance center AND lanes so phases actually move (ticks() only runs the center).
+static void run_synced(Rig& r, int nticks) {
+    for (int k = 0; k < nticks; ++k) {
+        r.c.update(r.a, r.b, r.pa, r.pb);
+        for (int s = 0; s < Center::kCtrlInterval; ++s) { r.a.process(); r.b.process(); }
+    }
+}
+
+static float wrap_err(float e) { return e - std::floor(e + 0.5f); }
 } // namespace
 
 TEST_CASE("center morph: equal-power law holds across the sweep") {
@@ -191,6 +201,46 @@ TEST_CASE("center couple: couple 0 leaves both rate hooks at unity") {
     run_coupled(r, 48000);
     CHECK(r.a.master_hz() == doctest::Approx(ba));
     CHECK(r.b.master_hz() == doctest::Approx(bb));
+}
+
+TEST_CASE("center grid: pitch sits on the division and the transport phase") {
+    Rig r; r.init();
+    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f); r.c.set_tempo_bpm(120.f);
+    r.a.set_synced(true); r.b.set_synced(true); r.c.set_sync(true);
+    r.a.set_rate(0.5f);            // 1/4 -> 2 Hz
+    r.b.set_rate(13.f / 16.f);     // 1/8T -> 6 Hz
+    r.c.set_couple(1.f); r.c.set_drift(1.f);
+    run_synced(r, 5000);           // 10 s: converge
+    // rate: master pinned to the division despite full COUPLE + DRIFT
+    CHECK(r.a.master_hz() == doctest::Approx(2.f).epsilon(0.02));
+    CHECK(r.b.master_hz() == doctest::Approx(6.f).epsilon(0.02));
+    // phase: each bank tracks its own grid target
+    double beats = r.c.transport().beats();
+    float ta = (float)(beats * 1.0 - std::floor(beats * 1.0));
+    CHECK(std::fabs(wrap_err(ta - r.a.pitch_phase())) < 0.03f);
+}
+
+TEST_CASE("center grid: COUPLE 1 freezes the texture wander exactly") {
+    Rig r; r.init(99u);
+    r.a.set_synced(true); r.b.set_synced(true); r.c.set_sync(true);
+    r.c.set_couple(1.f); r.c.set_drift(1.f);
+    run_synced(r, 3000);           // let the weather walk build up
+    CHECK(r.a.mod_scale() == doctest::Approx(r.a.pitch_scale()));   // wander factor == 1
+    CHECK(r.b.mod_scale() == doctest::Approx(r.b.pitch_scale()));
+}
+
+TEST_CASE("center grid: COUPLE 0 lets DRIFT breathe the textures apart") {
+    Rig r; r.init(99u);
+    r.a.set_synced(true); r.b.set_synced(true); r.c.set_sync(true);
+    r.c.set_couple(0.f); r.c.set_drift(1.f);
+    bool wandered = false;
+    for (int k = 0; k < 3000 && !wandered; ++k) {
+        run_synced(r, 1);
+        if (std::fabs(r.a.mod_scale() / r.a.pitch_scale() - 1.f) > 0.01f) wandered = true;
+    }
+    CHECK(wandered);
+    // and the melody stays pinned regardless
+    CHECK(r.a.master_hz() == doctest::Approx(r.a.base_hz()).epsilon(0.05));
 }
 
 TEST_CASE("center spot: shape kick decays back within ~5 s (lane level)") {
