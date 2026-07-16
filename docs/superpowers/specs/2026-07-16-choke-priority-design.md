@@ -26,6 +26,19 @@
 > pausiert; nach Freigabe blendet sie wieder ein. Damit ist die Sperre in
 > STEP und FLOW identisch wirksam und Raten-unabhängig.
 
+> **Rev. 4 (2026-07-16, dritter Play-Test):** Rev. 3 überblockte Stufe 1 —
+> bei langen Decays hielt „laut" (env > 0.1) das Fenster quasi immer offen,
+> Stufe 1 fühlte sich wie Stufe 2 an. Endgültige Semantik: **Stufe 1 =
+> solange die Vorrang-Seite eine Note HÄLT** (STEP: Gate high, d. h. Note +
+> Sustain — der Ausklang ist frei; FLOW: eine Drone gilt immer als gehalten),
+> **Stufe 2 = zusätzlich durch den kompletten hörbaren Ausklang** (env >
+> 1e-4). Kein Lautstärke-Schwellwert in Stufe 1 mehr. Drone-Ducking aus
+> Rev. 3 bleibt. Neuer Regressions-Test pinnt das Skip-not-delay-Versprechen
+> objektiv: mit aktivem Choke bleiben Lanes/Pitch-CV/Fire-Slots der
+> weichenden Seite bit-identisch zum ungechokten Lauf („läuft nie aus dem
+> Sync" — hörbare Re-Entries mitten in der Phrase sind Skip-Semantik, kein
+> Drift). Panel-Labels: „while playing" / „thru decay".
+
 ## Ziel
 
 Ein performabler Regler, der die beiden Decks ereignisweise entflechtet:

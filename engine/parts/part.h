@@ -45,6 +45,7 @@ public:
 
     // STEP/FLOW reaches both the lanes and the engine (drone rule)
     void set_step(bool on, int steps);
+    bool flow() const { return !_step_on; }   // CHOKE: a FLOW drone is always "on"
 
     // PLAY tap (M6 wires the gesture; the engine sees an ordinary trigger)
     void trigger_manual();

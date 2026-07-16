@@ -148,9 +148,9 @@ static float max_env(const Instrument& inst, int p) {
     return m;
 }
 
-TEST_CASE("choke -0.5 (loud zone): B starts only while A has faded below -20 dB") {
-    // STEP mode with well-separated A notes so the loud window has real gaps
-    // (arm_both's FLOW drone would hold the loud window open forever).
+TEST_CASE("choke -0.5 (note zone): B starts only while A's note is not held; the tail is free") {
+    // STEP mode with rests in A's groove (arm_both's FLOW drone counts as a
+    // note that is always held and would block the stage-1 window forever).
     Instrument inst;
     inst.init(48000.f);
     inst.set_tempo_bpm(120.f);
@@ -158,28 +158,74 @@ TEST_CASE("choke -0.5 (loud zone): B starts only while A has faded below -20 dB"
     for (int p = 0; p < PART_COUNT; ++p) {
         inst.set_step(p, true, 8);
         inst.set_range(p, 1.f);
-        inst.set_voice_decay(p, 0.3f);           // short tails -> audible gaps
+        inst.set_voice_decay(p, 0.7f);           // long tails: ring past the gate
     }
     inst.set_density(PART_A, 0.5f);              // A has rests (DENSE 1 = legato)
     inst.set_density(PART_B, 1.f);
-    inst.set_rate(PART_A, 0.0625f);              // A slow: long quiet stretches
-    inst.set_rate(PART_B, 0.5f);                 // B fast: wants every slot
+    inst.set_rate(PART_A, 0.0625f);              // A slow, B fast: rates differ
+    inst.set_rate(PART_B, 0.5f);
     inst.set_choke(-0.5f);
     std::vector<float> l(1), r(1);
     bool prevB = false;
-    int onsets = 0, in_quiet_tail = 0;
+    int onsets = 0, in_loud_tail = 0;
     for (int i = 0; i < 960000; ++i) {           // 20 s
         inst.process(nullptr, nullptr, l.data(), r.data(), 1);
         if (onset(inst, PART_B, prevB)) {
             ++onsets;
-            const float env = max_env(inst, PART_A);
-            CHECK_FALSE(inst.gate(PART_A));      // never while A's note is on
-            CHECK(env <= 0.1f + 1e-3f);          // never while A is still loud
-            if (env > 1e-4f) ++in_quiet_tail;    // the -80..-20 dB band is free
+            CHECK_FALSE(inst.gate(PART_A));      // never while A's note is held
+            if (max_env(inst, PART_A) > 0.1f)
+                ++in_loud_tail;                  // ...but A's ringing tail is free
         }
     }
-    CHECK(onsets > 0);                            // loud zone still lets B play
-    CHECK(in_quiet_tail > 0);                     // ...already during A's low tail
+    CHECK(onsets > 0);                            // note zone still lets B play
+    CHECK(in_loud_tail > 0);                      // even while A's tail is loud
+}
+
+TEST_CASE("choke -0.5 with a FLOW priority: the drone counts as always held") {
+    Instrument inst;
+    arm_both(inst);                               // FLOW both: A holds a drone
+    inst.set_choke(-0.5f);                        // stage 1 already blocks
+    std::vector<float> l(1), r(1);
+    bool prevB = false;
+    int b_onsets = 0;
+    for (int i = 0; i < 480000; ++i) {            // 10 s
+        inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+        if (onset(inst, PART_B, prevB)) ++b_onsets;
+    }
+    CHECK(b_onsets == 0);                         // no B retrigs under the drone
+    CHECK(max_env(inst, PART_B) <= 1e-4f);        // and B's own drone ducked out
+}
+
+TEST_CASE("choke never touches the clocks: lanes and pitch CV stay bit-identical") {
+    // Skip-not-delay contract: choking mutes notes but must not shift any
+    // lane phase, groove position or pitch CV — no "running out of sync".
+    auto arm = [](Instrument& inst) {
+        inst.init(48000.f);
+        inst.set_tempo_bpm(120.f);
+        inst.set_sync(true);
+        inst.set_couple(1.f);
+        for (int p = 0; p < PART_COUNT; ++p) {
+            inst.set_step(p, true, 8);
+            inst.set_density(p, 0.8f);
+            inst.set_range(p, 1.f);
+        }
+        inst.set_rate(PART_A, 0.25f);
+        inst.set_rate(PART_B, 0.5f);             // different rates on purpose
+    };
+    Instrument ref, choked;
+    arm(ref);
+    arm(choked);
+    choked.set_choke(-1.f);
+    std::vector<float> l(1), r(1);
+    for (int i = 0; i < 480000; ++i) {           // 10 s
+        ref.process(nullptr, nullptr, l.data(), r.data(), 1);
+        choked.process(nullptr, nullptr, l.data(), r.data(), 1);
+        for (int p = 0; p < PART_COUNT; ++p) {
+            REQUIRE(ref.lane_output(p, LANE_PITCH) == choked.lane_output(p, LANE_PITCH));
+            REQUIRE(ref.pitch_cv(p) == choked.pitch_cv(p));
+            REQUIRE(ref.lane_fired(p, LANE_PITCH) == choked.lane_fired(p, LANE_PITCH));
+        }
+    }
 }
 
 TEST_CASE("choke -1: the yielding FLOW drone ducks out and comes back") {

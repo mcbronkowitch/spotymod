@@ -74,14 +74,13 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         _parts[pri].set_inhibit(false);   // knob flips must never strand a part
         _parts[pri].process(pl[pri], prr[pri], psl[pri], psr[pri]);
         if (amt > 0.f) {
-            // "playing", for the ear: gate high (attack underway) or the
-            // loudest voice above the stage threshold. Stage 1 (|c| <= 0.5):
-            // still LOUD (-20 dB) — the tail frees the floor as it fades.
-            // Stage 2: audible at all (full decay). Env-based so it works
-            // the same in STEP and FLOW and at any rate pairing.
-            const float thresh = amt > 0.5f ? 1e-4f : 0.1f;
-            const bool window = _parts[pri].gate()
-                             || _parts[pri].max_voice_env() > thresh;
+            // Stage 1 (|c| <= 0.5): blocked while the priority side HOLDS a
+            // note — STEP: gate high (note + sustain, the tail is free);
+            // FLOW: a drone is always "on". Stage 2 (|c| > 0.5): additionally
+            // through the whole audible decay (env floor 1e-4).
+            bool window = _parts[pri].gate() || _parts[pri].flow();
+            if (!window && amt > 0.5f)
+                window = _parts[pri].max_voice_env() > 1e-4f;
             _parts[yld].set_inhibit(window);
         } else {
             _parts[yld].set_inhibit(false);
