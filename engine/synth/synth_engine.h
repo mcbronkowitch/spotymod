@@ -42,6 +42,7 @@ public:
     void process(float& outL, float& outR) override;
     void set_cycle(float seconds) override;
     void set_flow(bool flow) override;
+    void set_hold(bool on) override;
 
     // VOICE edit layer (normalized knobs; boot defaults live as raw ratios)
     void set_attack(float n);      // ratio = 0.002 * 250^n  (0.2%..50% of cycle)
@@ -66,6 +67,7 @@ private:
     float _sr = 48000.f;
     float _targets[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 0.8f };
     bool  _flow = false;
+    bool  _hold = false;   // CHOKE: drone released + auto-retrigger paused
     int   _sustain_voice = -1;     // -1 = none
     bool  _auto_pending = false;   // drone promise, fires in process()
     int   _next_rr = 0;

@@ -90,6 +90,7 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
         _engine_id = _pending_engine;
         _engine = _engine_for(_engine_id);
         _engine->set_flow(!_step_on);                          // re-sync state
+        _engine->set_hold(_inhibit);
         if (_last_master_hz > 0.f) _engine->set_cycle(1.f / _last_master_hz);
         _switching = false;
         _engine_fade.set_on(true);

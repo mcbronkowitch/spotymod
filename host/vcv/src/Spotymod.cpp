@@ -64,8 +64,8 @@ struct Spotymod : Module {
                         configParam<RateQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     else if (c.id == CHOKE) {  // event-priority, 5 snapped states
                         configSwitch(c.id, -2.f, 2.f, 0.f, lbl,
-                                     {"A chokes B thru decay", "A chokes B (gate)",
-                                      "Off", "B chokes A (gate)", "B chokes A thru decay"});
+                                     {"A chokes B thru decay", "A chokes B while loud",
+                                      "Off", "B chokes A while loud", "B chokes A thru decay"});
                         getParamQuantity(c.id)->snapEnabled = true;
                     }
                     else

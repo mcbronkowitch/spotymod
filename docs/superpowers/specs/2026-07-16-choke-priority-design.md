@@ -14,6 +14,18 @@
 > Die Abschnitte „Kennlinie"/Zonen unten beschreiben Rev. 1 und sind insoweit
 > überholt; Richtung, Skip-Semantik und Architektur gelten unverändert.
 
+> **Rev. 3 (2026-07-16, Bugfix nach zweitem Play-Test):** „Choking wirkt nur
+> bei gleicher Rate" — Ursache: das Stufe-1-Fenster war wörtlich das
+> GATE-Signal (FLOW: 5-ms-Pulse ≈ nie; STEP: endet vor dem hörbaren Ausklang),
+> und die FLOW-Drone der weichenden Seite lief ungebremst weiter (Review-Punkt
+> I1). Fix: **beide Fenster sind env-basiert** — Stufe 1 sperrt solange die
+> Vorrang-Seite *laut* ist (Gate high oder max. Voice-Env > 0.1 ≈ −20 dB),
+> Stufe 2 solange sie *hörbar* ist (env > 1e-4). Zusätzlich neuer Engine-Hook
+> `IPartEngine::set_hold(bool)`: während der Sperre wird die FLOW-Drone der
+> weichenden Seite klickfrei demoted (decays out) und der Auto-Retrigger
+> pausiert; nach Freigabe blendet sie wieder ein. Damit ist die Sperre in
+> STEP und FLOW identisch wirksam und Raten-unabhängig.
+
 ## Ziel
 
 Ein performabler Regler, der die beiden Decks ereignisweise entflechtet:

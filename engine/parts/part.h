@@ -53,7 +53,11 @@ public:
     // produces no engine trigger and no gate pulse; the suppressed note's
     // STEP sustain is latched out of gate() too. trigger_manual() is a user
     // gesture and is deliberately NOT inhibited.
-    void set_inhibit(bool on) { _inhibit = on; }
+    void set_inhibit(bool on) {
+        if (on == _inhibit) return;
+        _inhibit = on;
+        _engine->set_hold(on);   // FLOW drone ducks out / fades back in
+    }
     float max_voice_env() const;   // 0 when idle or on the test-tone engine
 
     // VOICE edit layer - forwarded to the synth engine directly, so edits

@@ -24,6 +24,11 @@ public:
     // sample), flow on STEP/FLOW switches.
     virtual void set_cycle(float /*seconds*/) {}   // master-lane cycle length
     virtual void set_flow(bool /*flow*/) {}        // true = FLOW, false = STEP
+
+    // CHOKE hold (spec 2026-07-16 choke-priority rev. 2): while held, a FLOW
+    // engine releases its sustaining drone (decays out, click-free) and stops
+    // auto-retriggering; releasing the hold re-arms it. Default no-op.
+    virtual void set_hold(bool /*on*/) {}
 };
 
 } // namespace spky

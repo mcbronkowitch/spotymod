@@ -28,6 +28,7 @@ void SynthEngine::init(float sample_rate) {
     _seq = 0;
     _sustain_voice = -1;
     _auto_pending = false;
+    _hold = false;
     _next_rr = 0;
     _ctrl_ctr = 0;                 // first process() runs a control tick
     _level.init(sample_rate, 0.01f);
@@ -52,8 +53,22 @@ void SynthEngine::set_flow(bool flow) {
         if (_sustain_voice >= 0) _voices[_sustain_voice].set_sustaining(false);
         _sustain_voice = -1;
         _auto_pending = false;
-    } else if (_sustain_voice < 0) {
+    } else if (_sustain_voice < 0 && !_hold) {
         _auto_pending = true;      // drone promise; fires in process()
+    }
+}
+
+void SynthEngine::set_hold(bool on) {
+    if (on == _hold) return;
+    _hold = on;
+    if (on) {
+        // CHOKE: release the FLOW drone (decays out, click-free) and stop
+        // the auto-retrigger while the other deck holds the floor.
+        if (_sustain_voice >= 0) _voices[_sustain_voice].set_sustaining(false);
+        _sustain_voice = -1;
+        _auto_pending = false;
+    } else if (_flow && _sustain_voice < 0) {
+        _auto_pending = true;      // floor is free again: drone fades back in
     }
 }
 

@@ -63,10 +63,8 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         --_ctrl_ctr;
 
         // CHOKE: event-priority between the decks (spec 2026-07-16
-        // choke-priority, rev. 2 after play-test: discrete zones, no dice).
-        // |c| in (0, 0.5]: the yielder is blocked while the priority side's
-        // gate is high. |c| > 0.5: also while its voice is still audible
-        // (full decay, 1e-4 floor). The panel snaps to -1/-0.5/0/+0.5/+1.
+        // choke-priority, rev. 2 discrete zones + rev. 3 env windows).
+        // The panel snaps to -1/-0.5/0/+0.5/+1; negative = A priority.
         const int pri = _choke > 0.f ? PART_B : PART_A;
         const int yld = 1 - pri;
         const float amt = _choke < 0.f ? -_choke : _choke;
@@ -76,9 +74,14 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         _parts[pri].set_inhibit(false);   // knob flips must never strand a part
         _parts[pri].process(pl[pri], prr[pri], psl[pri], psr[pri]);
         if (amt > 0.f) {
-            bool window = _parts[pri].gate();
-            if (!window && amt > 0.5f)
-                window = _parts[pri].max_voice_env() > 1e-4f;
+            // "playing", for the ear: gate high (attack underway) or the
+            // loudest voice above the stage threshold. Stage 1 (|c| <= 0.5):
+            // still LOUD (-20 dB) — the tail frees the floor as it fades.
+            // Stage 2: audible at all (full decay). Env-based so it works
+            // the same in STEP and FLOW and at any rate pairing.
+            const float thresh = amt > 0.5f ? 1e-4f : 0.1f;
+            const bool window = _parts[pri].gate()
+                             || _parts[pri].max_voice_env() > thresh;
             _parts[yld].set_inhibit(window);
         } else {
             _parts[yld].set_inhibit(false);

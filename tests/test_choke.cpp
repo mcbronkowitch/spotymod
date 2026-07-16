@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include "parts/part.h"
 #include <vector>
+#include <algorithm>
 #include "instrument.h"
 using namespace spky;
 
@@ -141,21 +142,61 @@ TEST_CASE("choke +1 is the mirror: A yields to B") {
     CHECK(sawB);
 }
 
-TEST_CASE("choke -0.5 (gate zone): every A gate blocks B onsets, the decay does not") {
+static float max_env(const Instrument& inst, int p) {
+    float m = 0.f;
+    for (int v = 0; v < 4; ++v) m = std::max(m, inst.voice_env(p, v));
+    return m;
+}
+
+TEST_CASE("choke -0.5 (loud zone): B starts only while A has faded below -20 dB") {
+    // STEP mode with well-separated A notes so the loud window has real gaps
+    // (arm_both's FLOW drone would hold the loud window open forever).
     Instrument inst;
-    arm_both(inst);
-    inst.set_choke(-0.5f);                       // discrete zone: gate window only
+    inst.init(48000.f);
+    inst.set_tempo_bpm(120.f);
+    inst.set_sync(true);
+    for (int p = 0; p < PART_COUNT; ++p) {
+        inst.set_step(p, true, 8);
+        inst.set_range(p, 1.f);
+        inst.set_voice_decay(p, 0.3f);           // short tails -> audible gaps
+    }
+    inst.set_density(PART_A, 0.5f);              // A has rests (DENSE 1 = legato)
+    inst.set_density(PART_B, 1.f);
+    inst.set_rate(PART_A, 0.0625f);              // A slow: long quiet stretches
+    inst.set_rate(PART_B, 0.5f);                 // B fast: wants every slot
+    inst.set_choke(-0.5f);
     std::vector<float> l(1), r(1);
     bool prevB = false;
-    int onsets = 0, in_decay = 0;
-    for (int i = 0; i < 480000; ++i) {
+    int onsets = 0, in_quiet_tail = 0;
+    for (int i = 0; i < 960000; ++i) {           // 20 s
         inst.process(nullptr, nullptr, l.data(), r.data(), 1);
         if (onset(inst, PART_B, prevB)) {
             ++onsets;
-            CHECK_FALSE(inst.gate(PART_A));      // never inside A's gate
-            if (window_open(inst, PART_A)) ++in_decay;
+            const float env = max_env(inst, PART_A);
+            CHECK_FALSE(inst.gate(PART_A));      // never while A's note is on
+            CHECK(env <= 0.1f + 1e-3f);          // never while A is still loud
+            if (env > 1e-4f) ++in_quiet_tail;    // the -80..-20 dB band is free
         }
     }
-    CHECK(onsets > 0);                            // gate zone still lets B play...
-    CHECK(in_decay > 0);                          // ...including during A's decay
+    CHECK(onsets > 0);                            // loud zone still lets B play
+    CHECK(in_quiet_tail > 0);                     // ...already during A's low tail
+}
+
+TEST_CASE("choke -1: the yielding FLOW drone ducks out and comes back") {
+    Instrument inst;
+    arm_both(inst);                               // FLOW: B holds a drone voice
+    std::vector<float> l(1), r(1);
+    for (int i = 0; i < 96000; ++i)               // let both drones establish
+        inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+    CHECK(max_env(inst, PART_B) > 0.1f);          // B's drone is up
+
+    inst.set_choke(-1.f);                         // A takes the floor
+    for (int i = 0; i < 480000; ++i)              // 10 s to decay out
+        inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+    CHECK(max_env(inst, PART_B) <= 1e-4f);        // drone gone, not just gated
+
+    inst.set_choke(0.f);                          // floor is free again
+    for (int i = 0; i < 480000; ++i)
+        inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+    CHECK(max_env(inst, PART_B) > 0.1f);          // drone re-armed and audible
 }
