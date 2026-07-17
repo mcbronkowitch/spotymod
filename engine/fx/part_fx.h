@@ -42,6 +42,8 @@ public:
     void set_grit_mode(GritMode m) { _grit.set_mode(m); }
     void set_flux_mix(float n) { _flux.set_mix(n); }
     void set_grit_mix(float n) { _grit.set_mix(n); }
+    void set_bpm(float bpm)           { _flux.set_bpm(bpm); }
+    void set_flux_rate(int slice_idx) { _flux.set_rate(slice_idx); }
 
     // fxv[FXT_COUNT]: already-modulated values from Part::fx_target_value().
     void process(float& l, float& r, float& send_l, float& send_r,

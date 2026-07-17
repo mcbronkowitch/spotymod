@@ -108,3 +108,23 @@ TEST_CASE("part_fx: comp sits BEFORE the send tap — the send gets louder too")
     };
     CHECK(send_rms(1.f) > send_rms(0.f) * 1.5f);   // full-wet motivation, verified
 }
+
+TEST_CASE("part_fx: synced rate + BPM place the echo, not FXT_FLUX_TIME") {
+    PartFx fx;
+    fx.init(48000.f, s_pf_l, s_pf_r);
+    fx.set_fx_on(FxBlock::Flux, true, true);
+    fx.set_flux_mix(1.f);              // 0 dB wet
+    fx.set_bpm(120.f);
+    fx.set_flux_rate(3);              // "1/4" @120 -> 0.5 s
+    float v[FXT_COUNT];
+    fill(v, 0.f, 0.99f, 1.f, 0.f, 0.f);   // FXT_FLUX_TIME = 0.99 must NOT move the echo
+    int idx = -1;
+    for (int i = 0; i < 30000; ++i) {
+        float l = (i == 0) ? 1.f : 0.f;
+        float r = l, sl, sr;
+        fx.process(l, r, sl, sr, v);
+        if (i > 100 && std::fabs(l) > 1e-3f) { idx = i; break; }
+    }
+    CHECK(idx >= 23900);
+    CHECK(idx <= 24200);             // ~24000 (0.5 s), independent of v[FXT_FLUX_TIME]
+}
