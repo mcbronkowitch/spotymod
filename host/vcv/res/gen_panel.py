@@ -99,10 +99,15 @@ def part_controls():
                             [("ATTACK","ATK"),("DECAY","DEC"),("RES","RES"),
                              ("SUB","SUB"),("DETUNE","DTUN")]):
         out.append(Ctl(enum, SMKNOB, VOICE_X[i], 76.8, lbl))
-    # fx row + steps -- 4 evenly spaced, same 13 mm pitch, same axis
-    for i,(enum,lbl) in enumerate([("FLUX","FLUX"),("GRIT","GRIT"),("COMP","COMP")]):
-        out.append(Ctl(enum, SMKNOB, 22.5 + i*13.0, 88.9, lbl))
-    out.append(Ctl("STEPS", KNOBI, 61.5, 88.9, "STPS"))
+    # fx row: the FLUX delay cluster (RATE . MIX . FB) sits together on the
+    # left. RATE (x 9.5) and FB (x 35.5) are appended in PARAMS for patch-id
+    # stability; MIX stays at 22.5, GRIT/COMP/STEPS fill 48.5/61.5/74.5.
+    # The append ORDER (FLUX, GRIT, COMP, STEPS) is unchanged, so PART_STRIDE
+    # and every param id stay put -- only the x coordinates move.
+    out.append(Ctl("FLUX", SMKNOB, 22.5, 88.9, "FLUX"))   # delay MIX
+    for i,(enum,lbl) in enumerate([("GRIT","GRIT"),("COMP","COMP")]):
+        out.append(Ctl(enum, SMKNOB, 48.5 + i*13.0, 88.9, lbl))
+    out.append(Ctl("STEPS", KNOBI, 74.5, 88.9, "STPS"))
     pads = [("ENGINE",LATCH,"ENG"),("GRITMODE",LATCH,"GRIT"),
             ("STEP",LATCH,"STEP"),("PRINCIPLE",SMBTN,"PRIN"),
             ("NEWPHRASE",SMBTN,"NEW"),("TRIGGER",SMBTN,"TRIG")]
@@ -164,11 +169,13 @@ PARAMS = PART_A + PART_B + SHARED + [
     Ctl("TIDE", SMKNOB, R, 22.0, "TIDE"),
     # FLUX synced-delay controls (spec 2026-07-17 flux-synced-delay). Per part,
     # appended LAST like FILT/TIDE/CHOKE so existing .vcv patches keep their ids.
-    # They fill the two free FX-row slots (x 9.5 and 74.5) on each side.
+    # They complete the FLUX delay cluster on the left of the FX row: RATE (9.5),
+    # MIX (22.5, from the template), FB (35.5) sit together; GRIT/COMP/STEPS
+    # follow at 48.5/61.5/74.5.
     Ctl("FLUXRATE_A", SMKNOB, 9.5,       88.9, "FRATE"),
     Ctl("FLUXRATE_B", SMKNOB, W - 9.5,   88.9, "FRATE"),
-    Ctl("FLUXFB_A",   SMKNOB, 74.5,      88.9, "FFB"),
-    Ctl("FLUXFB_B",   SMKNOB, W - 74.5,  88.9, "FFB"),
+    Ctl("FLUXFB_A",   SMKNOB, 35.5,      88.9, "FFB"),
+    Ctl("FLUXFB_B",   SMKNOB, W - 35.5,  88.9, "FFB"),
 ]
 
 # --- inputs / outputs / lights ------------------------------------------------
