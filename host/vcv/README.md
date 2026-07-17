@@ -77,6 +77,34 @@ a *native* `make`/`mingw32-make` then trips over the `C:` drive colon
 ("multiple target patterns"). An MSYS2 `make` sees the paths as `/c/…` and
 builds cleanly.
 
+#### Where the toolchain actually lives on this machine
+
+The compiler is a **standalone WinLibs unzip**, *not* an MSYS2 package — so it is
+**not** on `PATH` and **not** under `/c/msys64/mingw64`. Every fresh session
+tends to look in those two places, not find it, and get stuck. It is here:
+
+| Piece | Path | Notes |
+|-------|------|-------|
+| **g++** (WinLibs MinGW-w64 GCC 15.2.0, msvcrt-posix-seh) | `C:\Users\bernd\Documents\AI\mingw64\bin` | must be *prepended* to `PATH`; the system `g++` is the Daisy ARM cross-compiler and is useless here |
+| **make** (MSYS2 make 4.4.1, POSIX) | `/c/msys64/usr/bin/make` | needed for the `/c/…` engine paths; a native make fails on the `C:` colon |
+| **Rack SDK 2.6.6 (win-x64)** | `C:\Users\bernd\Documents\AI\Rack-SDK` | matches the Makefile's default `RACK_DIR` |
+
+Full working build command (copy-paste, run from this `host/vcv/` directory):
+
+```bash
+export PATH="/c/Users/bernd/Documents/AI/mingw64/bin:/c/msys64/usr/bin:$PATH" \
+       RACK_DIR="c:/Users/bernd/Documents/AI/Rack-SDK"
+/c/msys64/usr/bin/make CC=gcc CXX=g++ \
+  TMP="C:/Users/bernd/AppData/Local/Temp" TEMP="C:/Users/bernd/AppData/Local/Temp" \
+  SHELL=/usr/bin/bash -j4
+```
+
+The `TMP`/`TEMP`/`SHELL` overrides are only needed when building from a
+**Git-Bash** shell (e.g. an automated session) rather than a real MSYS2 login
+shell — without them gcc dies with `Cannot create temporary file … Permission
+denied` because the recipe shell inherits `TMP=C:\WINDOWS`. From a normal MSYS2
+shell you can drop them.
+
 ## Regenerating the panel
 
 `generated_panel.hpp` and `Spotymod.svg` are both produced from one script so
