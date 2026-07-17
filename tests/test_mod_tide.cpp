@@ -120,3 +120,20 @@ TEST_CASE("mod: fx targets still follow the master depth") {
         CHECK(p.fx_target_value(FXT_FLUX_TIME) == doctest::Approx(0.5f));
     }
 }
+
+TEST_CASE("range-melody: RANGE narrows the pitch lane, texture stays bit-identical") {
+    SuperModulator a; a.init(48000.f, 42u); a.set_rate(0.5f); a.set_range(1.f);
+    SuperModulator b; b.init(48000.f, 42u); b.set_rate(0.5f); b.set_range(0.2f);
+    bool tex_same = true;
+    float amp_a = 0.f, amp_b = 0.f;
+    for (int i = 0; i < 48000; ++i) {
+        a.process(); b.process();
+        for (int s = 0; s < LANE_COUNT; ++s)
+            if (s != LANE_PITCH && a.lane_output(s) != b.lane_output(s))
+                tex_same = false;
+        amp_a = std::max(amp_a, std::fabs(a.lane_output(LANE_PITCH)));
+        amp_b = std::max(amp_b, std::fabs(b.lane_output(LANE_PITCH)));
+    }
+    CHECK(tex_same);            // Textur-Lanes von RANGE unberührt
+    CHECK(amp_b < amp_a);       // Ambitus schrumpft mit RANGE
+}

@@ -47,7 +47,10 @@ void SuperModulator::_update_tide() {
 
 void SuperModulator::set_shape(float s)       { for (auto& l : _lanes) l.set_shape(s); }
 void SuperModulator::set_smooth(float s)      { for (auto& l : _lanes) l.set_smooth(s); }
-void SuperModulator::set_range(float r)       { for (auto& l : _lanes) l.set_range(r); }
+// RANGE is the melody ambitus: PITCH lane only. The texture lanes stay at
+// full range (lane.h default 1.f); their amplitude is MOD's job at the
+// target combine (spec 2026-07-17 mod-tide).
+void SuperModulator::set_range(float r)       { _lanes[LANE_PITCH].set_range(r); }
 void SuperModulator::set_variation(float v)   { for (auto& l : _lanes) l.set_variation(v); }
 void SuperModulator::set_step(bool on, int n) { for (auto& l : _lanes) l.set_step(on, n); }
 void SuperModulator::set_fixed_slew(bool on)  { for (auto& l : _lanes) l.set_fixed_slew(on); }
