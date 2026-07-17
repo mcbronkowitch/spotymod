@@ -118,6 +118,7 @@ the desktop clang path); the build, install and I/O details live in
 | **M4.6** | Dynamics — one-knob comp per part + master limiter w/ MASTER DRIVE | **done** (engine + host) |
 | **M4.8** | Reverb dry/wet — equal-power MIX at the master join + clear-on-sleep CPU bypass | **done** (engine + host) |
 | **M4.9** | Reverb DIFFUSION knob (replaces DEPTH) — room density 0–0.9, weak line-mod coupling | **done** (engine + host) |
+| **M4.10** | Chord layer — COLOR knob, diatonic stacks, voice-leading, live FLOW surface | **done** (engine + hosts; hardware placement deferred) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | planned |
 

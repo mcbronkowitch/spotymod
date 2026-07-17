@@ -82,6 +82,8 @@ enum ParamId {
     FLUXRATE_B,
     FLUXFB_A,
     FLUXFB_B,
+    COLOR_A,
+    COLOR_B,
     NUM_PARAMS
 };
 enum InputId {
@@ -176,6 +178,8 @@ static const PanelCtl kParamCtls[] = {
     {FLUXRATE_B, WK_SMKNOB, {203.860f, 88.900f}, "FRATE"},
     {FLUXFB_A, WK_SMKNOB, {35.500f, 88.900f}, "FFB"},
     {FLUXFB_B, WK_SMKNOB, {177.860f, 88.900f}, "FFB"},
+    {COLOR_A, WK_BIGKNOB, {76.000f, 14.000f}, "COLOR"},
+    {COLOR_B, WK_BIGKNOB, {137.360f, 14.000f}, "COLOR"},
 };
 static const PanelCtl kInputCtls[] = {
     {IN_L, WK_IN, {56.302f, 118.000f}, "IN L"},

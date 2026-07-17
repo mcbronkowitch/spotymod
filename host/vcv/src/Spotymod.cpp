@@ -165,6 +165,8 @@ struct Spotymod : Module {
             case FLUXRATE_B:   return 6.f / 11.f;   // "1/8" for part B's bass echo
             case FLUXFB_A:     return 0.45f;        // matches the retired FXT_FLUX_FB boot base
             case FLUXFB_B:     return 0.45f;
+            case COLOR_A:
+            case COLOR_B:      return 0.f;    // init patch = single notes (bit-identical)
             default: break;
         }
         const int part = id / PART_STRIDE;  // 0 = A (drone), 1 = B (bass)
@@ -215,6 +217,7 @@ struct Spotymod : Module {
             inst.set_voice_decay(p, pp(DECAY_A, p));
             inst.set_voice_resonance(p, pp(RES_A, p));
             inst.set_voice_filt(p, params[p ? FILT_B : FILT_A].getValue());
+            inst.set_color(p, params[p ? COLOR_B : COLOR_A].getValue());
             inst.set_voice_sub(p, pp(SUB_A, p));
             inst.set_voice_detune(p, pp(DETUNE_A, p));
 

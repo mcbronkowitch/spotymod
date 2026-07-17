@@ -176,6 +176,11 @@ PARAMS = PART_A + PART_B + SHARED + [
     Ctl("FLUXRATE_B", SMKNOB, W - 9.5,   88.9, "FRATE"),
     Ctl("FLUXFB_A",   SMKNOB, 35.5,      88.9, "FFB"),
     Ctl("FLUXFB_B",   SMKNOB, W - 35.5,  88.9, "FFB"),
+    # COLOR: chord density/color per part (spec 2026-07-17 chord-layer).
+    # Appended LAST like FILT/TIDE/FLUX* so existing patches keep their ids;
+    # placed in the free corner between the macro orbit and the center strip.
+    Ctl("COLOR_A", BIGKNOB, 76.0, 14.0, "COLOR"),
+    Ctl("COLOR_B", BIGKNOB, W - 76.0, 14.0, "COLOR"),
 ]
 
 # --- inputs / outputs / lights ------------------------------------------------

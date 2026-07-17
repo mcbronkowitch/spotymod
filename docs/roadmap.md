@@ -32,6 +32,7 @@ is actually built today, and what is still design-only.
 | **M4.8** | Reverb dry/wet — equal-power MIX at the master join + clear-on-sleep CPU bypass | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **M4.9** | Reverb DIFFUSION knob (replaces DEPTH) — room density 0–0.9, weak line-mod coupling, full-wash first pass | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **SYNC/COUPLE redesign** | One global SYNC switch (replaces per-part sync toggles), transport phase + rate ladder, zoned COUPLE (texture-only in grid world, grid-gravity zone in free world), VCV panel layout A, CLK/RST wired | ✅ **done** (engine + VCV host; spec `docs/superpowers/specs/2026-07-16-sync-couple-redesign-design.md`) |
+| **M4.10** | Chord layer — COLOR knob, diatonic stacks, voice-leading, live FLOW surface | ✅ done (engine + hosts; hardware placement deferred to the reduction round) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -325,6 +326,37 @@ Triplet` toggles and gives COUPLE a clear split between "grid world" and
 - Full engine suite green (216 cases, 0 skipped) and both `ambient_wash` /
   `demo_step_melody` renders verified clean post-landing; VCV Rack play test
   and audio listening pass deferred to a human (see dev log).
+
+### M4.10 — Chord layer (COLOR knob) ✅
+
+Spec: `docs/superpowers/specs/2026-07-17-chord-layer-color-design.md`, plan:
+`docs/superpowers/plans/2026-07-17-chord-layer-color.md`. One new per-part
+knob, **COLOR** (0..1), turns the single-note engine into a chord instrument
+without a mode: 0 is today's one note, higher settings add tones (fifth-below,
+then root/third, then seventh, then a ninth color tone at full), zones voiced
+additively and crossfaded with hysteresis so the knob never flutters on an
+edge.
+
+- **Engine** — chord tones are built from the active scale's quantizer mask
+  (diatonic stacking: root + every second scale note), so chord quality is
+  emergent from the scale, never selected, and always harmonizes with the
+  other part's melody. Voice-leading picks the chord lay that minimizes
+  total semitone movement from the previous chord (common tones stay put).
+  Per-note gain scales ~1/sqrt(n) so density changes color, not level.
+- **Live surface** — in FLOW, COLOR acts continuously on the sounding voices
+  (bloom in / collapse out, click-free) rather than latching at the next
+  trigger; in STEP the chord is built at trigger time. `Instrument::set_color(int,
+  float)` is the host entry point.
+- **Hosts** — VCV `COLOR_A`/`COLOR_B` big knobs (panel: free corner between
+  the macro orbit and the center strip), render action `set_color`
+  (`chord_bloom.json` demo scenario). Default 0 keeps the init patch's
+  single-note sound bit-identical.
+- Full engine suite green, zero pre-existing failures; the three Task 1
+  baseline scenario hashes match post-landing (COLOR-0 bit-identity proven);
+  `chord_bloom.json` renders deterministically. VCV Rack play test and
+  audio listening pass deferred to a human. Hardware panel placement is
+  explicitly deferred to the upcoming reduction/macro round (per the
+  standing hardware-reducibility constraint).
 
 ## Planned
 

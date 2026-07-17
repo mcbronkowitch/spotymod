@@ -65,6 +65,10 @@ panel cannot absorb a new knob as-is; resolving that is explicitly deferred
 to the upcoming reduction/macro round (per the standing hardware-reducibility
 constraint).
 
+> **Implementation note (Task 7 errata):** zones are additive (each zone =
+> previous + one tone, triads voice fifth-below/root/third) — supersedes the
+> literal "close triad" wording above; required for the live add/remove sweep.
+
 ### 3. Chord construction — diatonic stacking
 
 Chord tones are built by taking every **second scale note** above the root
