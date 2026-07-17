@@ -68,6 +68,8 @@ struct Spotymod : Module {
                                       "Off", "B chokes A while playing", "B chokes A thru decay"});
                         getParamQuantity(c.id)->snapEnabled = true;
                     }
+                    else if (c.id == FILT_A || c.id == FILT_B)  // bipolar cutoff trim
+                        configParam(c.id, -1.f, 1.f, 0.f, lbl);
                     else
                         configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     break;
@@ -175,6 +177,7 @@ struct Spotymod : Module {
             inst.set_voice_attack(p, pp(ATTACK_A, p));
             inst.set_voice_decay(p, pp(DECAY_A, p));
             inst.set_voice_resonance(p, pp(RES_A, p));
+            inst.set_voice_filt(p, params[p ? FILT_B : FILT_A].getValue());
             inst.set_voice_sub(p, pp(SUB_A, p));
             inst.set_voice_detune(p, pp(DETUNE_A, p));
 

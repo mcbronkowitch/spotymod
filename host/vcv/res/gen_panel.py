@@ -76,6 +76,11 @@ def orbit(cx, cy, r, i, n, start_deg=0.0):
     a = math.radians(start_deg + 360.0 * i / n)
     return (cx + r * math.sin(a), cy - r * math.cos(a))
 
+# voice row x slots (6 @ 13 mm pitch, centred on the ring axis x = 42);
+# slot 2 = FILT, appended at the END of PARAMS (never in the template --
+# that grows PART_STRIDE and shifts every part-B/SHARED param id).
+VOICE_X = [9.5, 22.5, 35.5, 48.5, 61.5, 74.5]
+
 # --- per-part control template (ORDER defines enum order; identical A/B) ------
 # Returns Ctl list with LEFT-side coordinates. Mirror for B by x -> W-x.
 def part_controls():
@@ -90,9 +95,10 @@ def part_controls():
     # voice + fx rows (small), centred on the ring axis. Vertically the two
     # rows sit with equal 3.6 mm gaps in the band between the orbit's bottom
     # label (RANGE baseline, y 70.2) and the pad backplate top (y 98.1).
-    for i,(enum,lbl) in enumerate([("ATTACK","ATK"),("DECAY","DEC"),("RES","RES"),
-                                   ("SUB","SUB"),("DETUNE","DTUN")]):
-        out.append(Ctl(enum, SMKNOB, 16.0 + i*13.0, 76.8, lbl))
+    for i,(enum,lbl) in zip([0,1,3,4,5],
+                            [("ATTACK","ATK"),("DECAY","DEC"),("RES","RES"),
+                             ("SUB","SUB"),("DETUNE","DTUN")]):
+        out.append(Ctl(enum, SMKNOB, VOICE_X[i], 76.8, lbl))
     # fx row + steps -- 4 evenly spaced, same 13 mm pitch, same axis
     for i,(enum,lbl) in enumerate([("FLUX","FLUX"),("GRIT","GRIT"),("COMP","COMP")]):
         out.append(Ctl(enum, SMKNOB, 22.5 + i*13.0, 88.9, lbl))
@@ -145,7 +151,13 @@ SHARED = [
     Ctl("CHOKE",  SMKNOB, CX,  51.0, "CHOKE"),
 ]
 
-PARAMS = PART_A + PART_B + SHARED
+PARAMS = PART_A + PART_B + SHARED + [
+    # FILT: bipolar cutoff trim (spec 2026-07-17). Appended LAST like CHOKE so
+    # existing .vcv patches keep their param ids; coordinates put it in the
+    # voice row (slot 2, between DEC and RES).
+    Ctl("FILT_A", SMKNOB, VOICE_X[2],     76.8, "FILT"),
+    Ctl("FILT_B", SMKNOB, W - VOICE_X[2], 76.8, "FILT"),
+]
 
 # --- inputs / outputs / lights ------------------------------------------------
 # All ten jacks live on ONE line along the very bottom, outside the center box,
