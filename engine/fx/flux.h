@@ -125,7 +125,8 @@ public:
         delay_line_.SetDelay(delay_time_current_ * sample_rate_);
         float out = delay_line_.Read();
         out = bpf_.Process(out);
-        out = daisysp::SoftClip(out);
+        out = std::tanh(out);   // tape-warm limiter: transparent near unity,
+                                // bounded self-oscillation above it (bloom)
         delay_line_.Write(out * feedback_ + in);
         return out;
     }
@@ -157,7 +158,7 @@ public:
     void set_bpm(float bpm);              // recompute synced delay time on change
     void set_rate(int slice_idx);         // 0..kFluxRateCount-1 -> kDivisions slice
     float delay_time() const { return _delay_time; }   // seconds, clamped (test/meter)
-    void set_feedback(float norm);                       // 0 .. 1.1
+    void set_feedback(float norm);                       // 0 .. 1.2 (tanh-bounded bloom)
     void set_mix(float norm);                            // -40 .. 0 dBFS
     void process(float& l, float& r);
 

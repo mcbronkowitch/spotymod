@@ -111,6 +111,49 @@ TEST_CASE("flux: null buffers never engage") {
     CHECK(l == 0.5f);
 }
 
+TEST_CASE("flux: feedback at max blooms but stays bounded") {
+    Flux f;
+    f.init(48000.f, s_buf_l, s_buf_r);
+    f.set_on(true, true);
+    f.set_bpm(120.f);
+    f.set_rate(6);                   // 0.25 s
+    f.set_feedback(1.f);             // -> 1.2 coefficient, self-oscillates
+    f.set_mix(1.f);
+    float peak = 0.f;
+    for (int i = 0; i < 480000; ++i) {   // 10 s
+        float l = (i == 0) ? 1.f : 0.f;
+        float r = l;
+        f.process(l, r);
+        peak = std::max(peak, std::fabs(l));
+        CHECK(std::isfinite(l));
+    }
+    CHECK(peak > 0.3f);              // it did bloom (sustained energy)
+    CHECK(peak < 2.0f);              // but the tanh limiter kept it bounded
+}
+
+TEST_CASE("flux: feedback below unity decays to silence") {
+    Flux f;
+    f.init(48000.f, s_buf_l, s_buf_r);
+    f.set_on(true, true);
+    f.set_bpm(120.f);
+    f.set_rate(3);                   // 0.5 s
+    f.set_feedback(0.7f);            // -> 0.84 coefficient, below unity
+    f.set_mix(1.f);
+    std::vector<float> out(240000);
+    for (int i = 0; i < (int)out.size(); ++i) {
+        float l = (i == 0) ? 1.f : 0.f;
+        float r = l;
+        f.process(l, r);
+        out[i] = l;
+    }
+    auto peak_around = [&](int c) {
+        float p = 0.f;
+        for (int i = c - 600; i < c + 600; ++i) p = std::max(p, std::fabs(out[i]));
+        return p;
+    };
+    CHECK(peak_around(168000) < peak_around(24000));   // 7th repeat quieter than 1st
+}
+
 TEST_CASE("flux slice: norm endpoints hit 1/2 and 1/32") {
     CHECK(kFluxRateCount == 12);
     CHECK(kFluxRateOffset == 5);

@@ -49,7 +49,7 @@ void Flux::recompute_time(bool immediate) {
 
 void Flux::set_feedback(float norm) {
     if (!_buf_ok) return;
-    float fb = clampf(norm, 0.f, 1.f) * 1.1f;   // >1 allowed; SoftClip catches it
+    float fb = clampf(norm, 0.f, 1.f) * 1.2f;   // up to ~120%; tanh loop bounds the bloom
     _echo_l.SetFeedback(fb);
     _echo_r.SetFeedback(fb);
 }
