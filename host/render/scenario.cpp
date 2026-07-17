@@ -83,6 +83,7 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_principle")     inst.set_principle(e.part, e.ivalue);
     else if (a == "set_depth")         inst.set_depth(e.part, e.value);
     else if (a == "set_tune")          inst.set_tune(e.part, e.value);
+    else if (a == "set_color")         inst.set_color(e.part, e.value);
     else if (a == "set_step")          inst.set_step(e.part, e.flag, e.ivalue);
     else if (a == "new_phrase")        inst.new_phrase(e.part);
     else if (a == "set_fixed_slew")    inst.set_fixed_slew(e.part, e.flag);

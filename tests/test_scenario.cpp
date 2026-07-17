@@ -191,3 +191,17 @@ TEST_CASE("scenario: set_comp and set_master_drive dispatch without throwing") {
     // plus the Task 3/4 integration tests covers the wiring.
     CHECK(true);
 }
+
+TEST_CASE("scenario: set_color dispatches to the chord layer") {
+    Instrument inst;
+    inst.init(48000.f);
+    Event e;
+    e.action = "set_color";
+    e.part = 0;
+    e.value = 0.5f;
+    apply_event(inst, e);          // must not throw; observable via chord bloom
+    inst.set_density(0, 0.f);
+    float outL[64], outR[64];
+    for (int i = 0; i < 3000; ++i) inst.process(nullptr, nullptr, outL, outR, 64);
+    CHECK(inst.active_voices(0) >= 3);
+}

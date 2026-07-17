@@ -1,0 +1,36 @@
+{
+ "sample_rate": 48000,
+ "bpm": 100,
+ "duration_s": 48,
+ "init": [
+  { "_comment": "COLOR showcase. Part A: Dorian FLOW drone that blooms into a pad (live COLOR sweep 8-20s), collapses (24-28s), then STEP chord stabs at COLOR 0.6 (32s on). Part B silenced (boot lanes would siren)." },
+  { "action": "set_engine", "part": 1, "value": "test_tone" },
+  { "action": "set_target_active", "part": 1, "slot": 4, "flag": false },
+  { "action": "set_target_base", "part": 1, "slot": 4, "value": 0.0 },
+  { "action": "set_sync", "ivalue": 1 },
+  { "action": "set_rate", "part": 0, "value": 0.125 },
+  { "action": "set_density", "part": 0, "value": 0.3 },
+  { "action": "set_target_base", "part": 0, "slot": 2, "value": 0.25 },
+  { "action": "set_range", "part": 0, "value": 0.3 },
+  { "action": "set_voice_decay", "part": 0, "value": 0.8 },
+  { "action": "set_reverb_mix", "value": 0.4 }
+ ],
+ "events": [
+  { "_comment": "8-20s: COLOR sweeps 0 -> 0.95 over the standing pad — the bloom, live" },
+  { "t": 8,  "action": "set_color", "part": 0, "value": 0.2 },
+  { "t": 10, "action": "set_color", "part": 0, "value": 0.35 },
+  { "t": 12, "action": "set_color", "part": 0, "value": 0.5 },
+  { "t": 14, "action": "set_color", "part": 0, "value": 0.65 },
+  { "t": 16, "action": "set_color", "part": 0, "value": 0.8 },
+  { "t": 18, "action": "set_color", "part": 0, "value": 0.95 },
+  { "_comment": "24-28s: collapse back to a single line" },
+  { "t": 24, "action": "set_color", "part": 0, "value": 0.5 },
+  { "t": 26, "action": "set_color", "part": 0, "value": 0.2 },
+  { "t": 28, "action": "set_color", "part": 0, "value": 0.0 },
+  { "_comment": "32s on: STEP chord stabs — the groove fires diatonic stacks" },
+  { "t": 32, "action": "set_step", "part": 0, "flag": true, "ivalue": 8 },
+  { "t": 32, "action": "set_color", "part": 0, "value": 0.6 },
+  { "t": 32, "action": "set_voice_decay", "part": 0, "value": 0.45 },
+  { "t": 40, "action": "set_color", "part": 0, "value": 0.9 }
+ ]
+}
