@@ -28,9 +28,21 @@ void SuperModulator::_update_rate() {
 void SuperModulator::_apply_rate() {
     _master_hz = _base_hz * _pitch_scale;
     for (int i = 0; i < LANE_COUNT; ++i) {
-        const float s = (i == LANE_PITCH) ? _pitch_scale : _mod_scale;
+        const float s = (i == LANE_PITCH) ? _pitch_scale
+                                          : _mod_scale * _tide_mult;
         _lanes[i].set_rate_hz(_base_hz * s * kLaneRatio[i]);
     }
+}
+
+void SuperModulator::set_tide(float norm) {
+    _tide_norm = clampf(norm, 0.f, 1.f);
+    _update_tide();
+}
+
+void SuperModulator::_update_tide() {
+    _tide_mult = _synced ? kTideRatios[tide_index(_tide_norm)]
+                         : tide_free(_tide_norm);
+    _apply_rate();
 }
 
 void SuperModulator::set_shape(float s)       { for (auto& l : _lanes) l.set_shape(s); }

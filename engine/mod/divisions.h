@@ -46,4 +46,23 @@ inline float free_hz(float norm) {
     return kRateFreeMin * std::pow(kRateFreeMax / kRateFreeMin, clampf(norm, 0.f, 1.f));
 }
 
+// TIDE: texture-lane rate scale (spec 2026-07-17 mod-tide). 9 rungs,
+// reciprocal-symmetric so the knob centre (index 4) is exactly x1 — that is
+// what makes TIDE 0.5 a bit-identical no-op. Names appear verbatim in the
+// VCV TIDE tooltip.
+inline constexpr float kTideRatios[] =
+    { 0.25f, 1.f/3.f, 0.5f, 2.f/3.f, 1.f, 1.5f, 2.f, 3.f, 4.f };
+inline constexpr const char* kTideNames[] =
+    { "x1/4", "x1/3", "x1/2", "x2/3", "x1", "x3/2", "x2", "x3", "x4" };
+inline constexpr int kTideCount = 9;
+
+inline int tide_index(float norm) {
+    return static_cast<int>(clampf(norm, 0.f, 1.f) * (kTideCount - 1) + 0.5f);
+}
+
+// free (unsynced) curve: 1/4 .. 4, exactly 1 at centre (2^0)
+inline float tide_free(float norm) {
+    return std::pow(2.f, 4.f * (clampf(norm, 0.f, 1.f) - 0.5f));
+}
+
 } // namespace spky

@@ -15,7 +15,9 @@ public:
 
     void set_tempo_bpm(float bpm)  { _bpm = bpm; _update_rate(); }
     void set_rate(float norm)      { _rate_norm = norm; _update_rate(); }
-    void set_synced(bool on)       { _synced = on; _update_rate(); }
+    void set_synced(bool on)       { _synced = on; _update_tide(); _update_rate(); }
+    void set_tide(float norm);     // 0..1 texture-lane rate scale; 0.5 = neutral
+    float tide_mult() const { return _tide_mult; }
     void set_shape(float s);
     void set_density(float d) { _lanes[LANE_PITCH].set_density(d); }
     void set_smooth(float s);
@@ -54,6 +56,7 @@ public:
 private:
     void _update_rate();
     void _apply_rate();
+    void _update_tide();
 
     std::array<ModLane, LANE_COUNT> _lanes;
     std::array<float, LANE_COUNT>   _out {};
@@ -66,6 +69,8 @@ private:
     float    _mod_scale   = 1.f;   // COUPLE/DRIFT on the texture lanes
     float    _master_hz = 1.f;
     float    _base_hz    = 1.f;   // rate from knob/sync, before rate_scale
+    float    _tide_norm = 0.5f;   // TIDE knob position (0..1)
+    float    _tide_mult = 1.f;    // effective factor: ladder rung or free curve
 };
 
 } // namespace spky
