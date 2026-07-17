@@ -72,6 +72,7 @@ private:
     void _do_trigger(float pitch_norm, float vel, int chord_slot);
     void _demote_all();
     void _update_control();
+    void _adjust_surface();
 
     std::array<Voice, kVoices>    _voices;
     std::array<uint32_t, kVoices> _order {};   // trigger sequence per voice

@@ -153,7 +153,34 @@ void SynthEngine::_do_trigger(float pitch_norm, float vel, int chord_slot) {
     _voices[pick].trigger(pitch_to_hz(pitch_norm));   // pitch LATCHED here
 }
 
+void SynthEngine::_adjust_surface() {
+    int m = 0, worst = -1;
+    bool has[kMaxChord] = { false, false, false, false };
+    for (int v = 0; v < kVoices; ++v)
+        if (_sustaining[v]) {
+            ++m;
+            const int s = _chord_slot[v];
+            if (s >= 0 && s < kMaxChord) has[s] = true;
+            if (worst < 0 || _chord_slot[v] > _chord_slot[worst]) worst = v;
+        }
+    if (m == 0) return;                    // no surface -> nothing to grow
+    _vel_now = 1.f / std::sqrt(static_cast<float>(_chord_n));
+    if (_chord_n > m) {                    // bloom: add the first missing slot
+        for (int s = 0; s < _chord_n; ++s)
+            if (!has[s]) { _do_trigger(_chord[s], _vel_now, s); break; }
+    } else if (m > _chord_n && worst >= 0 && _chord_slot[worst] >= _chord_n) {
+        _voices[worst].set_sustaining(false);   // collapse: drop the top slot
+        _sustaining[worst] = false;
+        _chord_slot[worst] = -1;
+    }
+}
+
 void SynthEngine::_update_control() {
+    // chord surface follows COLOR live (spec §2 amendment): one voice per
+    // control tick blooms in / the top slot collapses out — never while a
+    // stab is still strewing in
+    if (_flow && !_hold && _pending_n == 0) _adjust_surface();
+
     const float attack_s = clampf(_attack_ratio * _cycle_s, kAttackFloorS, kDecayMaxS);
     const float decay_s  = clampf(_decay_ratio  * _cycle_s, kDecayMinS,  kDecayMaxS);
 

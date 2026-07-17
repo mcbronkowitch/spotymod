@@ -272,3 +272,92 @@ TEST_CASE("synth: chord stabs are deterministic across engines") {
         CHECK(ra == rb);
     }
 }
+
+namespace {
+// drive an engine for n samples, feeding a constant chord surface
+static void run_surface(SynthEngine& e, const float* chord, int n_chord,
+                        int samples, float* max_step = nullptr) {
+    float prev = 0.f;
+    for (int i = 0; i < samples; ++i) {
+        e.set_chord(chord, n_chord);
+        float l = 0.f, r = 0.f;
+        e.process(l, r);
+        if (max_step && i > 0 && std::fabs(l - prev) > *max_step)
+            *max_step = std::fabs(l - prev);
+        prev = l;
+    }
+}
+} // namespace
+
+TEST_CASE("synth: FLOW drones the whole chord as a surface") {
+    SynthEngine e;
+    e.set_seed(3u);
+    e.init(48000.f);
+    const float chord[4] = { 0.3f, 0.36f, 0.42f, 0.5f };
+    e.set_flow(true);                              // promise arms
+    run_surface(e, chord, 4, 48000);               // 1 s
+    CHECK(e.sustain_count() == 4);
+    for (int v = 0; v < SynthEngine::kVoices; ++v)
+        CHECK(e.voice_env(v) == doctest::Approx(0.7f).epsilon(0.05));
+}
+
+TEST_CASE("synth: the next chord crossfades the surface") {
+    SynthEngine e;
+    e.set_seed(3u);
+    e.init(48000.f);
+    const float chord[4] = { 0.3f, 0.36f, 0.42f, 0.5f };
+    e.set_flow(true);
+    run_surface(e, chord, 4, 48000);
+    const float next[3] = { 0.35f, 0.41f, 0.47f };
+    e.trigger_chord(next, 3);
+    run_surface(e, next, 3, 48000);
+    CHECK(e.sustain_count() == 3);
+}
+
+TEST_CASE("synth: COLOR bloom and collapse without a trigger, click-free") {
+    SynthEngine e;
+    e.set_seed(3u);
+    e.init(48000.f);
+    const float one[1] = { 0.4f };
+    const float three[3] = { 0.4f, 0.33f, 0.48f };
+    e.set_flow(true);
+    run_surface(e, one, 1, 24000);                 // settle as a single drone
+    CHECK(e.sustain_count() == 1);
+    float step = 0.f;
+    run_surface(e, three, 3, 24000, &step);        // knob turned up: bloom
+    CHECK(e.sustain_count() == 3);
+    CHECK(step < 0.3f);                            // no hard discontinuity
+    step = 0.f;
+    run_surface(e, one, 1, 48000, &step);          // knob back down: collapse
+    CHECK(e.sustain_count() == 1);
+    CHECK(step < 0.3f);
+}
+
+TEST_CASE("synth: hold releases the whole surface and re-arms the chord") {
+    SynthEngine e;
+    e.set_seed(3u);
+    e.init(48000.f);
+    const float chord[3] = { 0.3f, 0.36f, 0.42f };
+    e.set_flow(true);
+    run_surface(e, chord, 3, 48000);
+    CHECK(e.sustain_count() == 3);
+    e.set_hold(true);                              // CHOKE
+    run_surface(e, chord, 3, 4800);
+    CHECK(e.sustain_count() == 0);
+    e.set_hold(false);                             // floor free: full chord returns
+    run_surface(e, chord, 3, 48000);
+    CHECK(e.sustain_count() == 3);
+}
+
+TEST_CASE("synth: entering FLOW fires the promise as the full chord") {
+    SynthEngine e;
+    e.set_seed(3u);
+    e.init(48000.f);
+    e.set_flow(false);
+    const float chord[3] = { 0.3f, 0.36f, 0.42f };
+    run_surface(e, chord, 3, 480);                 // STEP: surface ignored
+    CHECK(e.sustain_count() == 0);
+    e.set_flow(true);
+    run_surface(e, chord, 3, 48000);
+    CHECK(e.sustain_count() == 3);
+}
