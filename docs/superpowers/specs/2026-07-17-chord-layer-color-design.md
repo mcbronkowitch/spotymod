@@ -45,6 +45,21 @@ position per part, not a deck assignment. It passes the capture test:
 audible at every position, no armed state, no latching — turning it up is a
 performance gesture (the arrangement blooms), not a menu item.
 
+**COLOR is live, not latched (performance-review amendment).** In STEP the
+chord is built at trigger time (stabs are short; the next trigger is near).
+In FLOW, latching would make the knob dead until the next chord change —
+at low DENS that is seconds of nothing, the capture mistake in a new coat.
+So in FLOW COLOR acts **continuously on the sounding surface**: voices fade
+in/out click-free as the knob crosses zones — turning up blooms the drone
+into a pad, turning down collapses it to a single note. Zone boundaries
+carry hysteresis (as in the quantizer) so a knob parked on an edge never
+flutters.
+
+**Loudness compensation.** One note vs. four is a +6..12 dB jump; without
+compensation COLOR is secretly a volume knob that pumps the compressor. The
+builder scales per-note gain ~1/sqrt(n) (equal-power) so COLOR changes
+density and color, not level. Exact curve is ear-tunable.
+
 Panel: COLOR joins the per-part macro row in the VCV panel. The hardware
 panel cannot absorb a new knob as-is; resolving that is explicitly deferred
 to the upcoming reduction/macro round (per the standing hardware-reducibility
@@ -101,33 +116,53 @@ always (n = 1 at COLOR = 0).
 
 **SynthEngine** overrides it:
 
-- **STEP:** chord stabs on the AD envelopes. A 4-note chord uses all 4
-  voices; overlapping stabs steal the oldest tails (accepted — the click-free
-  steal already exists).
+- **STEP:** chord stabs on the AD envelopes, with a few milliseconds of
+  deterministic, seeded micro-offset per chord tone (ear-tunable constant, no
+  control) — four voices firing on the same sample sound like a home organ;
+  this is humanization, NOT the cut strum feature.
 - **FLOW:** the whole chord becomes the sustaining surface — all chord voices
   decay to the sustain level and hold; their pitches follow the (re-voiced)
-  chord targets. The next trigger crossfades to the new chord surface exactly
-  as the single sustaining voice hands over today, just polyphonic. The
-  drone promise (auto-trigger on entering FLOW) fires a chord at the current
-  COLOR.
+  chord targets, and COLOR adds/removes surface voices live (click-free
+  fades, see §2). The next trigger crossfades to the new chord surface
+  exactly as the single sustaining voice hands over today, just polyphonic.
+  The drone promise (auto-trigger on entering FLOW) fires a chord at the
+  current COLOR.
 - **CHOKE:** releases the entire surface, click-free, re-arms on release —
   the existing `set_hold` contract, unchanged in meaning.
+
+**Known feel (accepted, so the play test isn't surprised):**
+
+- STEP at COLOR max: a 4-note stab uses all 4 voices, so each new chord cuts
+  the previous tails entirely. Accepted — most of the sweep lives at 2–3
+  notes with a spare voice, and the pad magic lives in FLOW anyway.
+- A chord surface counts as a held note for CHOKE: with choke priority set, a
+  standing pad on the priority part blocks the other part permanently. This
+  is the existing, intended drone semantics — chords just make the case more
+  likely.
 
 ### 7. Testing
 
 - Unit tests (doctest): degree qualities per scale (Dorian i = minor,
   IV = major, vi° = diminished; pentatonic quartal stacks), COLOR sweep
-  monotonicity (note count and spread never decrease), voice-leading
+  monotonicity (note count and spread never decrease), zone-boundary
+  hysteresis (a COLOR value parked on an edge never flutters), voice-leading
   optimality (movement cost ≤ any other lay of the same chord), 36-semi
-  fold, determinism across runs, `trigger_chord` default = n × `trigger`.
+  fold, gain compensation (RMS roughly level across the sweep on a static
+  chord), determinism across runs (incl. the seeded stab micro-offsets),
+  `trigger_chord` default = n × `trigger`.
+- FLOW live-response test: with no new trigger, moving COLOR changes the
+  number of sustaining voices, click-free (no sample-to-sample jump above
+  threshold).
 - Render scenarios: STEP stabs and FLOW pad crossfades at several COLOR
-  positions, both engines' `mods.csv` inspected for chord pitch sets.
+  positions, plus a COLOR sweep over a standing FLOW pad; `mods.csv`
+  inspected for chord pitch sets.
 
 ## Explicitly out of scope (YAGNI)
 
 - Explicit chord-quality selection (the scale is the quality axis).
 - Manual inversion stepping (voice-leading owns the lay).
-- Strum / arpeggio spread of the chord trigger.
+- Strum / arpeggio spread of the chord trigger (the STEP micro-offset is
+  humanization on a fixed few-ms scale, not a playable spread).
 - Combi split (chords + independent melody inside one part) — two parts
   already cover it; revisit only if both parts are otherwise occupied.
 - Hardware panel placement of COLOR — deferred to the reduction/macro round.
