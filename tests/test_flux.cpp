@@ -1,8 +1,10 @@
 #include <doctest/doctest.h>
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <vector>
 #include "fx/flux.h"
+#include "mod/divisions.h"
 using namespace spky;
 
 // 5 s stereo of echo memory, shared by all cases in this file; Flux::init
@@ -94,4 +96,15 @@ TEST_CASE("flux: null buffers never engage") {
     float l = 0.5f, r = 0.5f;
     f.process(l, r);
     CHECK(l == 0.5f);
+}
+
+TEST_CASE("flux slice: norm endpoints hit 1/2 and 1/32") {
+    CHECK(kFluxRateCount == 12);
+    CHECK(kFluxRateOffset == 5);
+    // norm 0 -> slice 0 -> kDivisions[5] == "1/2"
+    CHECK(std::string(kDivisions[kFluxRateOffset + flux_division_index(0.f)].name) == "1/2");
+    // norm 1 -> slice 11 -> kDivisions[16] == "1/32"
+    CHECK(std::string(kDivisions[kFluxRateOffset + flux_division_index(1.f)].name) == "1/32");
+    // norm ~0.273 -> slice 3 -> kDivisions[8] == "1/4"
+    CHECK(std::string(kDivisions[kFluxRateOffset + flux_division_index(3.f/11.f)].name) == "1/4");
 }

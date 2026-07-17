@@ -38,6 +38,17 @@ inline int nearest_division(float hz, float bpm) {
     return best;
 }
 
+// FLUX synced-delay rate: a slice of kDivisions starting at "1/2" (idx 5)
+// through "1/32" (idx 16) — 12 rungs, incl. dotted & triplet. The shorter
+// divisions above "1/2" keep every synced delay time inside the 5 s echo
+// buffer down to ~24 BPM. Names come from kDivisions[kFluxRateOffset + i].
+inline constexpr int kFluxRateOffset = 5;
+inline constexpr int kFluxRateCount  = 12;
+
+inline int flux_division_index(float norm) {
+    return static_cast<int>(clampf(norm, 0.f, 1.f) * (kFluxRateCount - 1) + 0.5f);
+}
+
 // Free-mode rate curve. Lives here (not in super_modulator.cpp) so the VCV
 // tooltip shows exactly the Hz the engine runs.
 inline constexpr float kRateFreeMin = 0.02f;
