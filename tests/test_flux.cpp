@@ -23,35 +23,48 @@ static int first_echo_index(Flux& f, int n) {
     return -1;
 }
 
-TEST_CASE("flux: echo arrives at the mapped delay time (0.5 -> 0.5 s)") {
+TEST_CASE("flux: synced 1/4 at 120 BPM = 0.5 s echo") {
     Flux f;
     f.init(48000.f, s_buf_l, s_buf_r);
     f.set_on(true, true);
-    f.set_time(0.5f, true);          // fmap LOG 0.05..5 -> exactly 0.5 s
+    f.set_bpm(120.f);
+    f.set_rate(3);                   // slice 3 -> kDivisions[8] "1/4" -> 0.5 s @120
     f.set_feedback(0.f);
-    f.set_mix(1.f);                  // 0 dB
+    f.set_mix(1.f);
+    CHECK(f.delay_time() == doctest::Approx(0.5f).epsilon(0.001));
     int idx = first_echo_index(f, 30000);
     CHECK(idx >= 23990);
     CHECK(idx <= 24100);
 }
 
-TEST_CASE("flux: time 0 maps to 50 ms") {
+TEST_CASE("flux: synced 1/8 at 120 BPM = 0.25 s echo") {
     Flux f;
     f.init(48000.f, s_buf_l, s_buf_r);
     f.set_on(true, true);
-    f.set_time(0.f, true);
+    f.set_bpm(120.f);
+    f.set_rate(6);                   // slice 6 -> kDivisions[11] "1/8" -> 0.25 s @120
     f.set_feedback(0.f);
     f.set_mix(1.f);
-    int idx = first_echo_index(f, 5000);
-    CHECK(idx >= 2390);              // 0.05 s = 2400 samples
-    CHECK(idx <= 2500);
+    CHECK(f.delay_time() == doctest::Approx(0.25f).epsilon(0.001));
+}
+
+TEST_CASE("flux: longest division clamps to the echo buffer at low BPM") {
+    Flux f;
+    f.init(48000.f, s_buf_l, s_buf_r);
+    f.set_on(true, true);
+    f.set_bpm(20.f);                 // "1/2" @20 BPM = 6 s > 5 s buffer
+    f.set_rate(0);
+    const float buf_s = (float)Flux::kMaxSamples / 48000.f;   // 5 s
+    CHECK(f.delay_time() < buf_s);
+    CHECK(f.delay_time() > buf_s - 0.1f);   // clamped just under the buffer
 }
 
 TEST_CASE("flux: feedback produces decaying repeats") {
     Flux f;
     f.init(48000.f, s_buf_l, s_buf_r);
     f.set_on(true, true);
-    f.set_time(0.5f, true);
+    f.set_bpm(120.f);
+    f.set_rate(3);                   // 0.5 s echo, as before
     f.set_feedback(0.45f);           // -> 0.495 linear
     f.set_mix(1.f);
     std::vector<float> out(80000);

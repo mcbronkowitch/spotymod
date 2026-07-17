@@ -31,7 +31,6 @@ void PartFx::process(float& l, float& r, float& send_l, float& send_r,
             _grit.set_intensity(v[FXT_GRIT_INT]);
             _grit_applied = v[FXT_GRIT_INT];
         }
-        _flux.set_time(v[FXT_FLUX_TIME]);      // slewed inside EchoDelay (tape)
         _flux.set_feedback(v[FXT_FLUX_FB]);
         const float dry_l = l, dry_r = r;
         _grit.process(l, r);

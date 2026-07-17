@@ -5,6 +5,7 @@
 #include <cmath>
 #include "Utility/dsp.h"
 #include "fx/fx_util.h"
+#include "mod/divisions.h"
 
 namespace spky {
 
@@ -153,17 +154,25 @@ public:
         return _buf_ok && (_sw.is_on() || !_sw.is_idle());
     }
     bool has_buffers() const { return _buf_ok; }
-    void set_time(float norm, bool immediate = false);   // 50 ms .. 5 s, exp
+    void set_bpm(float bpm);              // recompute synced delay time on change
+    void set_rate(int slice_idx);         // 0..kFluxRateCount-1 -> kDivisions slice
+    float delay_time() const { return _delay_time; }   // seconds, clamped (test/meter)
     void set_feedback(float norm);                       // 0 .. 1.1
     void set_mix(float norm);                            // -40 .. 0 dBFS
     void process(float& l, float& r);
 
 private:
+    void recompute_time(bool immediate);
+
     EchoDelay<kMaxSamples> _echo_l;
     EchoDelay<kMaxSamples> _echo_r;
     SoftSwitch _sw;
     float _mix_lin = 0.f;
     bool _buf_ok = false;
+    float _sr = 48000.f;
+    float _bpm = 120.f;
+    int   _rate_idx = 3;         // "1/4"
+    float _delay_time = 0.5f;
 };
 
 } // namespace spky
