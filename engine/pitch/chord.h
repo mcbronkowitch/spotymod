@@ -57,16 +57,76 @@ public:
     int note_count() const { return _count; }   // knob side (post-hysteresis)
     int size() const       { return _n; }       // currently latched chord size
 
-    // Full rebuild at trigger time. Task 1: nominal lay only; Task 2 adds the
-    // voice-leading search. Latches the slot intervals, returns n, fills
+    // Full rebuild at trigger time. Searches the lay (each non-root slot may
+    // shift by an octave) for minimal movement vs. the previous chord, span-
+    // limited by COLOR. Latches the slot intervals, returns n, fills
     // out_norm[kMaxNotes].
     int build(float root_norm, uint16_t mask, int root_semi, float* out_norm) {
         const float root_s = clampf(root_norm, 0.f, 1.f) * Quantizer::SPAN_SEMIS;
         const int ref = nearest(static_cast<int>(root_s + 0.5f), mask, root_semi);
-        _nominal(ref, mask, root_semi, _count, _ninth, _intervals);
-        _n = _count;
+        const int n = _count;
+        int nom[kMaxNotes];
+        _nominal(ref, mask, root_semi, n, _ninth, nom);
+
+        // Lay search: slot 0 (the root) is fixed; every other slot may shift
+        // by one octave either way. Minimal total movement vs the previous
+        // chord (nearest-tone cost); no history -> prefer the nominal lay.
+        // 3^(n-1) <= 27 candidates, trigger rate only.
+        static constexpr int kOff[3] = { -12, 0, 12 };
+        const float span_max = _span_max();
+        int   best[kMaxNotes] = { nom[0], nom[1], nom[2], nom[3] };
+        float best_cost = 1e9f, best_sum = 1e9f;
+        int total = 1;
+        for (int i = 1; i < n; ++i) total *= 3;
+        for (int m = 0; m < total; ++m) {
+            int off[kMaxNotes] = { 0, 0, 0, 0 };
+            int mm = m;
+            for (int i = 1; i < n; ++i) { off[i] = kOff[mm % 3]; mm /= 3; }
+            float cand[kMaxNotes];
+            float lo = 1e9f, hi = -1e9f, sum = 0.f;
+            bool ok = true;
+            for (int i = 0; i < n; ++i) {
+                cand[i] = root_s + static_cast<float>(nom[i] + off[i]);
+                if (cand[i] < 0.f || cand[i] > Quantizer::SPAN_SEMIS) ok = false;
+                if (cand[i] < lo) lo = cand[i];
+                if (cand[i] > hi) hi = cand[i];
+                sum += cand[i];
+            }
+            if (!ok || hi - lo > span_max) continue;
+            for (int i = 0; i < n && ok; ++i)      // two slots on one semitone: no
+                for (int j = i + 1; j < n; ++j)
+                    if (nom[i] + off[i] == nom[j] + off[j]) ok = false;
+            if (!ok) continue;
+            float cost = 0.f;
+            if (_prev_n > 0) {
+                for (int i = 0; i < n; ++i) {      // nearest previous tone
+                    float d = 1e9f;
+                    for (int j = 0; j < _prev_n; ++j) {
+                        const float dd = std::fabs(cand[i] - _prev[j]);
+                        if (dd < d) d = dd;
+                    }
+                    cost += d;
+                }
+            } else {
+                for (int i = 0; i < n; ++i)
+                    cost += static_cast<float>(off[i] < 0 ? -off[i] : off[i]);
+            }
+            if (cost < best_cost - 1e-4f ||
+                (cost < best_cost + 1e-4f && sum < best_sum)) {   // tie: lower lay
+                best_cost = cost;
+                best_sum = sum;
+                for (int i = 0; i < n; ++i) best[i] = nom[i] + off[i];
+            }
+        }
+
+        for (int i = 0; i < n; ++i) _intervals[i] = best[i];
+        _n = n;
         _ninth_applied = _ninth;
-        return apply(root_norm, mask, root_semi, out_norm);
+        const int r = apply(root_norm, mask, root_semi, out_norm);
+        _prev_n = r;                                // voice-leading memory
+        for (int i = 0; i < r; ++i)
+            _prev[i] = out_norm[i] * Quantizer::SPAN_SEMIS;
+        return r;
     }
 
     // Cheap per-sample surface refresh: re-applies the latched intervals to
@@ -116,6 +176,11 @@ private:
     bool _hyst(bool above, float edge) const {
         if (above) return _color > edge - kHyst;
         return _color >= edge + kHyst;
+    }
+
+    float _span_max() const {
+        const float t = clampf((_color - kEdge4) / (1.f - kEdge4), 0.f, 1.f);
+        return kSpanClose + (kSpanOpen - kSpanClose) * t;
     }
 
     // Nominal (pre-lay) slot intervals relative to the root, ADD order.

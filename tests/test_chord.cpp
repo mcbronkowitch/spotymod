@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <cmath>
+#include <initializer_list>
 #include "pitch/chord.h"
 using namespace spky;
 
@@ -96,4 +97,100 @@ TEST_CASE("chord: ninth zone swaps the fifth slot for the ninth") {
     bool has_ninth = false;
     for (int i = 0; i < n; ++i) if (std::fabs(s[i] - 26.f) < 0.01f) has_ninth = true;
     CHECK(has_ninth);
+}
+
+TEST_CASE("chord: voice-leading minimizes movement on a root change") {
+    ChordBuilder cb; cb.init();
+    cb.set_color(0.5f);
+    float out[ChordBuilder::kMaxNotes], s[ChordBuilder::kMaxNotes];
+    cb.build(12.f / 36.f, DORIAN, 0, out);        // tonic lay: {7,12,15}
+    int n = cb.build(17.f / 36.f, DORIAN, 0, out); // IV — nominal would be {12,17,21}
+    REQUIRE(n == 3);
+    semis(out, n, s);
+    // minimal-movement lay pulls the third down an octave: {9,12,17}
+    // (cost 4 vs nominal's 8; 12 is a held common tone)
+    CHECK(s[0] == doctest::Approx(9.f));
+    CHECK(s[1] == doctest::Approx(12.f));
+    CHECK(s[2] == doctest::Approx(17.f));
+}
+
+TEST_CASE("chord: the root slot is never octave-displaced") {
+    ChordBuilder cb; cb.init();
+    cb.set_color(0.95f);
+    float out[ChordBuilder::kMaxNotes];
+    for (float r : { 4.f, 12.f, 19.f, 30.f }) {
+        int n = cb.build(r / 36.f, DORIAN, 0, out);
+        CHECK(out[0] == doctest::Approx(r / 36.f));   // slot 0 == root, always
+        (void)n;
+    }
+}
+
+TEST_CASE("chord: apply follows the root without re-laying") {
+    ChordBuilder cb; cb.init();
+    cb.set_color(0.5f);
+    float out[ChordBuilder::kMaxNotes], s[ChordBuilder::kMaxNotes];
+    cb.build(12.f / 36.f, DORIAN, 0, out);        // latches {-5, 0, +3}
+    int n = cb.apply(13.f / 36.f, DORIAN, 0, out);
+    REQUIRE(n == 3);
+    semis(out, n, s);
+    CHECK(s[0] == doctest::Approx(8.f));
+    CHECK(s[1] == doctest::Approx(13.f));
+    CHECK(s[2] == doctest::Approx(16.f));
+}
+
+TEST_CASE("chord: COLOR growth/shrink is incremental — old slots keep their lay") {
+    ChordBuilder cb; cb.init();
+    cb.set_color(0.5f);
+    float out[ChordBuilder::kMaxNotes];
+    cb.build(12.f / 36.f, DORIAN, 0, out);
+    const float slot1 = out[1], slot2 = out[2];
+    cb.set_color(0.75f);                           // grow to 4 without a trigger
+    int n = cb.apply(12.f / 36.f, DORIAN, 0, out);
+    REQUIRE(n == 4);
+    CHECK(out[1] == doctest::Approx(slot1));       // surviving slots untouched
+    CHECK(out[2] == doctest::Approx(slot2));
+    cb.set_color(0.2f);                            // shrink to 2
+    n = cb.apply(12.f / 36.f, DORIAN, 0, out);
+    REQUIRE(n == 2);
+    CHECK(out[1] == doctest::Approx(slot1));
+}
+
+TEST_CASE("chord: every tone stays inside the 36-semi contract") {
+    ChordBuilder cb; cb.init();
+    cb.set_color(0.95f);
+    float out[ChordBuilder::kMaxNotes];
+    for (float r : { 0.f, 1.f, 34.f, 36.f }) {
+        int n = cb.build(r / 36.f, DORIAN, 0, out);
+        for (int i = 0; i < n; ++i) {
+            CHECK(out[i] >= 0.f);
+            CHECK(out[i] <= 1.f);
+        }
+    }
+}
+
+TEST_CASE("chord: fully deterministic — same input sequence, same output") {
+    ChordBuilder a, b; a.init(); b.init();
+    float oa[ChordBuilder::kMaxNotes], ob[ChordBuilder::kMaxNotes];
+    const float roots[] = { 12.f, 17.f, 14.f, 22.f, 9.f };
+    const float colors[] = { 0.3f, 0.55f, 0.8f, 0.95f, 0.6f };
+    for (int k = 0; k < 5; ++k) {
+        a.set_color(colors[k]); b.set_color(colors[k]);
+        int na = a.build(roots[k] / 36.f, DORIAN, 0, oa);
+        int nb = b.build(roots[k] / 36.f, DORIAN, 0, ob);
+        REQUIRE(na == nb);
+        for (int i = 0; i < na; ++i) CHECK(oa[i] == ob[i]);   // exact
+    }
+}
+
+TEST_CASE("chord: FREE-style off-grid root keeps its detune character") {
+    ChordBuilder cb; cb.init();
+    cb.set_color(0.5f);
+    float out[ChordBuilder::kMaxNotes], s[ChordBuilder::kMaxNotes];
+    // root 12.4 semis is off-grid; intervals come from the nearest on-grid
+    // reference (12) but ride on the REAL root (spec §3 FREE rule)
+    int n = cb.build(12.4f / 36.f, DORIAN, 0, out);
+    REQUIRE(n == 3);
+    CHECK(out[0] == doctest::Approx(12.4f / 36.f));
+    semis(out, n, s);
+    CHECK(s[2] == doctest::Approx(15.4f));         // third rides the offset
 }
