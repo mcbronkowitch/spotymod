@@ -24,6 +24,7 @@ public:
     void trigger(float freq_hz);          // latch pitch + retrigger env from level
     void set_sustaining(bool on);         // FLOW: sustain 0.7; off = AD / demotion
     void set_pitch_hz(float freq_hz);     // FLOW sustaining voice tracks the target
+    void set_vel(float v);                // chord gain comp; slewed, snaps idle
 
     // control-rate parameter feeds
     void set_env_times(float attack_s, float decay_s);
@@ -59,6 +60,8 @@ private:
     float _drift_amt = 0.f;
     float _gain_l = 0.70710678f;
     float _gain_r = 0.70710678f;
+    float _vel = 1.f;
+    float _vel_target = 1.f;
 
     // slow deterministic drift (control-rate)
     float _drift_pan_phase = 0.f;

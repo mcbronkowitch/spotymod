@@ -41,6 +41,11 @@ void Voice::trigger(float freq_hz) {
 
 void Voice::set_sustaining(bool on) { _env.set_sustain(on ? 0.7f : 0.f); }
 
+void Voice::set_vel(float v) {
+    _vel_target = clampf(v, 0.f, 1.f);
+    if (!_env.active()) _vel = _vel_target;   // idle: snap — nothing can click
+}
+
 void Voice::set_pitch_hz(float freq_hz) {
     _freq = freq_hz < 0.f ? 0.f : freq_hz;
     _sub_inc = 0.5f * _freq / _sr;         // sub: one octave below
@@ -72,6 +77,7 @@ void Voice::_apply_freq() {                // control-rate (std::pow inside)
 }
 
 void Voice::update_control(float dt_s) {
+    _vel += 0.35f * (_vel_target - _vel);     // ~10 ms at the 96-sample tick (ear-tunable)
     _drift_pan_phase += _drift_pan_hz * dt_s;
     _drift_pan_phase -= std::floor(_drift_pan_phase);
     _drift_det_phase += _drift_det_hz * dt_s;
@@ -97,7 +103,7 @@ void Voice::process(float& accL, float& accR) {
     s += _sub_level * fast_sin(_sub_phase);
 
     _filt.Process(s);
-    s = _filt.Low() * _env.process();
+    s = _filt.Low() * _env.process() * _vel;
 
     accL += s * _gain_l;
     accR += s * _gain_r;

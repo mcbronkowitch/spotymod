@@ -24,21 +24,59 @@ void SynthEngine::init(float sample_rate) {
     for (int v = 0; v < kVoices; ++v) {
         _voices[v].init(sample_rate, _seed + 0x9e3779b9u * static_cast<uint32_t>(v + 1));
         _order[v] = 0;
+        _sustaining[v] = false;
+        _chord_slot[v] = -1;
     }
     _seq = 0;
-    _sustain_voice = -1;
     _auto_pending = false;
     _hold = false;
     _next_rr = 0;
     _ctrl_ctr = 0;                 // first process() runs a control tick
+    _pending_n = 0;
+    _chord_n = 1;
+    _chord[0] = _targets[LANE_PITCH];
+    _vel_now = 1.f;
+    _stab_rng.seed(_seed ^ 0x57AB5EEDu);
     _level.init(sample_rate, 0.01f);
     _level.reset(_targets[LANE_LEVEL]);
     _update_control();
 }
 
+int SynthEngine::sustain_voice() const {
+    for (int v = 0; v < kVoices; ++v)
+        if (_sustaining[v]) return v;
+    return -1;
+}
+
+int SynthEngine::sustain_count() const {
+    int n = 0;
+    for (int v = 0; v < kVoices; ++v)
+        if (_sustaining[v]) ++n;
+    return n;
+}
+
+void SynthEngine::_demote_all() {
+    for (int v = 0; v < kVoices; ++v)
+        if (_sustaining[v]) {
+            _voices[v].set_sustaining(false);
+            _sustaining[v] = false;
+            _chord_slot[v] = -1;
+        }
+}
+
 void SynthEngine::set_targets(const float* t, float /*tune*/) {
     // tune is already summed into the quantized PITCH target upstream (Part).
     for (int i = 0; i < LANE_COUNT; ++i) _targets[i] = t[i];
+    // engine-standalone default: with no chord fed, the surface is the pitch
+    // target (keeps engine-only tests and the test tone semantics unchanged)
+    if (_chord_n <= 1) _chord[0] = _targets[LANE_PITCH];
+}
+
+void SynthEngine::set_chord(const float* p, int n) {
+    if (n < 1) n = 1;
+    if (n > kMaxChord) n = kMaxChord;
+    for (int i = 0; i < n; ++i) _chord[i] = p[i];
+    _chord_n = n;
 }
 
 void SynthEngine::set_cycle(float seconds) {
@@ -49,12 +87,11 @@ void SynthEngine::set_flow(bool flow) {
     if (flow == _flow) return;
     _flow = flow;
     if (!flow) {
-        // STEP: no sustaining voice; a holding drone is released (decays out)
-        if (_sustain_voice >= 0) _voices[_sustain_voice].set_sustaining(false);
-        _sustain_voice = -1;
+        _demote_all();                 // STEP: no surface; drones decay out
+        _pending_n = 0;
         _auto_pending = false;
-    } else if (_sustain_voice < 0 && !_hold) {
-        _auto_pending = true;      // drone promise; fires in process()
+    } else if (sustain_count() == 0 && !_hold) {
+        _auto_pending = true;          // drone promise; fires in process()
     }
 }
 
@@ -62,19 +99,33 @@ void SynthEngine::set_hold(bool on) {
     if (on == _hold) return;
     _hold = on;
     if (on) {
-        // CHOKE: release the FLOW drone (decays out, click-free) and stop
-        // the auto-retrigger while the other deck holds the floor.
-        if (_sustain_voice >= 0) _voices[_sustain_voice].set_sustaining(false);
-        _sustain_voice = -1;
+        _demote_all();                 // CHOKE: the whole surface ducks out
+        _pending_n = 0;
         _auto_pending = false;
-    } else if (_flow && _sustain_voice < 0) {
-        _auto_pending = true;      // floor is free again: drone fades back in
+    } else if (_flow && sustain_count() == 0) {
+        _auto_pending = true;
     }
 }
 
-void SynthEngine::trigger(float pitch_norm) { _do_trigger(pitch_norm); }
+void SynthEngine::trigger(float pitch_norm) { _do_trigger(pitch_norm, 1.f, 0); }
 
-void SynthEngine::_do_trigger(float pitch_norm) {
+void SynthEngine::trigger_chord(const float* p, int n) {
+    if (n <= 1) { _do_trigger(p[0], 1.f, 0); return; }   // COLOR-0 exact path
+    if (n > kMaxChord) n = kMaxChord;
+    _vel_now = 1.f / std::sqrt(static_cast<float>(n));   // equal-power comp
+    _pending_n = 0;
+    _do_trigger(p[0], _vel_now, 0);                      // root lands on the beat
+    for (int i = 1; i < n; ++i) {                        // rest strews over ~8 ms
+        const int ctr = 1 + static_cast<int>(_stab_rng.next_unipolar()
+                                             * kStabSpreadS * _sr);
+        _pending[_pending_n].ctr = ctr;
+        _pending[_pending_n].pitch = p[i];
+        _pending[_pending_n].slot = i;
+        ++_pending_n;
+    }
+}
+
+void SynthEngine::_do_trigger(float pitch_norm, float vel, int chord_slot) {
     int pick = -1;
     for (int i = 0; i < kVoices; ++i) {              // round-robin over free voices
         int v = (_next_rr + i) % kVoices;
@@ -90,11 +141,15 @@ void SynthEngine::_do_trigger(float pitch_norm) {
     _order[pick] = ++_seq;
 
     if (_flow) {
-        if (_sustain_voice >= 0 && _sustain_voice != pick)
-            _voices[_sustain_voice].set_sustaining(false);   // demote: decays out
-        _sustain_voice = pick;
+        if (chord_slot == 0) _demote_all();   // a new chord replaces the surface
+        _sustaining[pick] = true;
+        _chord_slot[pick] = chord_slot;
         _voices[pick].set_sustaining(true);
+    } else {
+        _sustaining[pick] = false;
+        _chord_slot[pick] = -1;
     }
+    _voices[pick].set_vel(vel);
     _voices[pick].trigger(pitch_to_hz(pitch_norm));   // pitch LATCHED here
 }
 
@@ -124,15 +179,30 @@ void SynthEngine::_update_control() {
         vc.update_control(dt_s);
     }
 
-    // only the FLOW sustaining voice tracks the target after its trigger
-    if (_flow && _sustain_voice >= 0)
-        _voices[_sustain_voice].set_pitch_hz(pitch_to_hz(_targets[LANE_PITCH]));
+    // surface voices track their chord slot; vel follows the chord size
+    for (int v = 0; v < kVoices; ++v)
+        if (_sustaining[v]) {
+            const int s = _chord_slot[v];
+            if (s >= 0 && s < _chord_n)
+                _voices[v].set_pitch_hz(pitch_to_hz(_chord[s]));
+            _voices[v].set_vel(_vel_now);
+        }
 }
 
 void SynthEngine::process(float& outL, float& outR) {
-    if (_auto_pending) {                     // targets are fresh by now (Part
-        _auto_pending = false;               // calls set_targets every sample)
-        _do_trigger(_targets[LANE_PITCH]);
+    if (_pending_n > 0) {                        // strewed stab tones land here
+        int w = 0;
+        for (int i = 0; i < _pending_n; ++i) {
+            if (--_pending[i].ctr <= 0)
+                _do_trigger(_pending[i].pitch, _vel_now, _pending[i].slot);
+            else
+                _pending[w++] = _pending[i];
+        }
+        _pending_n = w;
+    }
+    if (_auto_pending) {
+        _auto_pending = false;
+        trigger_chord(_chord, _chord_n);         // full chord at current COLOR
     }
     if (--_ctrl_ctr <= 0) {
         _ctrl_ctr = kCtrlInterval;

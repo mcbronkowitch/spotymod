@@ -153,3 +153,54 @@ TEST_CASE("voice: retrigger mid-decay has no output discontinuity (steal)") {
     // phase-continuous oscillators keep the delta at waveform scale.
     CHECK(max_delta < 0.12f);
 }
+
+TEST_CASE("voice: set_vel scales output, snaps when idle, slews when active") {
+    // idle snap: two identical voices, one at vel 0.5 -> half the energy
+    Voice a, b;
+    a.init(48000.f, 77u);
+    b.init(48000.f, 77u);
+    b.set_vel(0.5f);
+    a.set_env_times(0.002f, 0.2f); b.set_env_times(0.002f, 0.2f);
+    a.trigger(220.f); b.trigger(220.f);
+    float ea = 0.f, eb = 0.f;
+    for (int i = 0; i < 9600; ++i) {
+        if (i % 96 == 0) { a.update_control(0.002f); b.update_control(0.002f); }
+        float la = 0.f, ra = 0.f, lb = 0.f, rb = 0.f;
+        a.process(la, ra); b.process(lb, rb);
+        ea += la * la + ra * ra;
+        eb += lb * lb + rb * rb;
+    }
+    CHECK(std::sqrt(eb / ea) == doctest::Approx(0.5f).epsilon(0.05));
+
+    // active slew: changing vel mid-note must not step the output
+    Voice c;
+    c.init(48000.f, 77u);
+    c.set_env_times(0.002f, 2.f);
+    c.trigger(220.f);
+    for (int i = 0; i < 4800; ++i) {
+        if (i % 96 == 0) c.update_control(0.002f);
+        float l = 0.f, r = 0.f; c.process(l, r);
+    }
+    float before_l = 0.f, before_r = 0.f;
+    c.process(before_l, before_r);
+    c.set_vel(0.3f);                               // no update_control yet
+    float after_l = 0.f, after_r = 0.f;
+    c.process(after_l, after_r);
+    CHECK(std::fabs(after_l - before_l) < 0.05f);  // no instant jump
+}
+
+TEST_CASE("voice: vel 1 is bit-identical to the pre-vel path") {
+    // vel defaults to exactly 1; update_control's slew term is exactly 0
+    Voice a, b;
+    a.init(48000.f, 5u);
+    b.init(48000.f, 5u);
+    b.set_vel(1.f);                                // explicit 1 == untouched
+    a.trigger(330.f); b.trigger(330.f);
+    for (int i = 0; i < 4800; ++i) {
+        if (i % 96 == 0) { a.update_control(0.002f); b.update_control(0.002f); }
+        float la = 0.f, ra = 0.f, lb = 0.f, rb = 0.f;
+        a.process(la, ra); b.process(lb, rb);
+        CHECK(la == lb);                           // exact
+        CHECK(ra == rb);
+    }
+}

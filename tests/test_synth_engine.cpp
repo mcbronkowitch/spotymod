@@ -227,3 +227,48 @@ TEST_CASE("synth: identical seed + call sequence is bit-identical") {
     };
     CHECK(run() == run());
 }
+
+TEST_CASE("synth: trigger_chord with one note is bit-identical to trigger") {
+    SynthEngine a, b;
+    a.set_seed(42u); b.set_seed(42u);
+    a.init(48000.f); b.init(48000.f);
+    a.set_flow(false); b.set_flow(false);
+    a.trigger(0.4f);
+    const float p = 0.4f;
+    b.trigger_chord(&p, 1);
+    for (int i = 0; i < 9600; ++i) {
+        float la = 0.f, ra = 0.f, lb = 0.f, rb = 0.f;
+        a.process(la, ra); b.process(lb, rb);
+        CHECK(la == lb);                           // exact — the COLOR-0 invariant
+        CHECK(ra == rb);
+    }
+}
+
+TEST_CASE("synth: a 4-note stab lands all voices inside the spread window") {
+    SynthEngine e;
+    e.set_seed(7u);
+    e.init(48000.f);
+    e.set_flow(false);
+    const float chord[4] = { 0.3f, 0.36f, 0.42f, 0.5f };
+    e.trigger_chord(chord, 4);
+    CHECK(e.active_voices() >= 1);                 // the root fires immediately
+    const int window = static_cast<int>(SynthEngine::kStabSpreadS * 48000.f) + 2;
+    for (int i = 0; i < window; ++i) { float l, r; e.process(l, r); }
+    CHECK(e.active_voices() == 4);                 // the rest strewed in behind
+}
+
+TEST_CASE("synth: chord stabs are deterministic across engines") {
+    SynthEngine a, b;
+    a.set_seed(9u); b.set_seed(9u);
+    a.init(48000.f); b.init(48000.f);
+    a.set_flow(false); b.set_flow(false);
+    const float chord[3] = { 0.3f, 0.38f, 0.47f };
+    a.trigger_chord(chord, 3);
+    b.trigger_chord(chord, 3);
+    for (int i = 0; i < 9600; ++i) {
+        float la = 0.f, ra = 0.f, lb = 0.f, rb = 0.f;
+        a.process(la, ra); b.process(lb, rb);
+        CHECK(la == lb);
+        CHECK(ra == rb);
+    }
+}

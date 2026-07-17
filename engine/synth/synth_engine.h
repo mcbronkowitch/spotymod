@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include "mod/rng.h"
 #include "parts/engine_iface.h"
 #include "synth/voice.h"
 #include "util/onepole.h"
@@ -33,6 +34,8 @@ public:
     static constexpr float kDecayMinS    = 0.05f;
     static constexpr float kDecayMaxS    = 20.f;
     static constexpr float kDetuneCeilCt = 35.f;
+    static constexpr int   kMaxChord     = 4;
+    static constexpr float kStabSpreadS  = 0.008f;   // stab humanization (ear-tunable)
 
     // FILT: linke Haelfte uebersteuert die Schiene um genau die Blendzone,
     // damit t = -1 bei JEDER Lane-Stellung in Stille endet (Invariante:
@@ -45,6 +48,8 @@ public:
     void init(float sample_rate) override;
     void set_targets(const float* t, float tune) override;
     void trigger(float pitch_norm) override;
+    void trigger_chord(const float* pitches_norm, int n) override;
+    void set_chord(const float* pitches_norm, int n) override;
     void process(float& outL, float& outR) override;
     void set_cycle(float seconds) override;
     void set_flow(bool flow) override;
@@ -60,10 +65,12 @@ public:
 
     int   active_voices() const;
     float voice_env(int v) const;
-    int   sustain_voice() const { return _sustain_voice; }
+    int   sustain_voice() const;
+    int   sustain_count() const;
 
 private:
-    void _do_trigger(float pitch_norm);
+    void _do_trigger(float pitch_norm, float vel, int chord_slot);
+    void _demote_all();
     void _update_control();
 
     std::array<Voice, kVoices>    _voices;
@@ -75,10 +82,19 @@ private:
     float _targets[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 0.8f };
     bool  _flow = false;
     bool  _hold = false;   // CHOKE: drone released + auto-retrigger paused
-    int   _sustain_voice = -1;     // -1 = none
     bool  _auto_pending = false;   // drone promise, fires in process()
     int   _next_rr = 0;
     int   _ctrl_ctr = 0;
+
+    float _chord[kMaxChord] = { 0.f, 0.f, 0.f, 0.f };   // surface targets (Part)
+    int   _chord_n = 1;
+    bool  _sustaining[kVoices] = { false, false, false, false };
+    int   _chord_slot[kVoices] = { -1, -1, -1, -1 };
+    struct Pending { int ctr; float pitch; int slot; };
+    Pending _pending[kMaxChord] = {};
+    int   _pending_n = 0;
+    float _vel_now = 1.f;
+    Rng   _stab_rng;                                    // draws ONLY for n>=2 chords
 
     float _cycle_s = 1.f;
     float _attack_ratio = 0.02f;   // boot: 2 % of cycle (spec)
