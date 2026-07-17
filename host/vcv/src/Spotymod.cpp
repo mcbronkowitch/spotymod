@@ -31,6 +31,21 @@ struct TideQuantity : ParamQuantity {
     }
 };
 
+// FLUX RATE tooltip: the synced division name (always synced).
+struct FluxRateQuantity : ParamQuantity {
+    std::string getDisplayValueString() override {
+        int k = spky::kFluxRateOffset + spky::flux_division_index(getValue());
+        return spky::kDivisions[k].name;
+    }
+};
+
+// FLUX FB tooltip: percent, reaching >100% into the tanh bloom.
+struct FluxFbQuantity : ParamQuantity {
+    std::string getDisplayValueString() override {
+        return string::f("%.0f%%", getValue() * 120.f);
+    }
+};
+
 // Part A params occupy [0..PART_STRIDE), part B the next PART_STRIDE. The
 // generator lays both part blocks out identically (same order, mirrored x) and
 // emits PART_STRIDE; these guards catch any drift.
@@ -84,6 +99,10 @@ struct Spotymod : Module {
                         configParam(c.id, -1.f, 1.f, 0.f, lbl);
                     else if (c.id == TIDE)  // texture-lane rate, snaps under SYNC
                         configParam<TideQuantity>(c.id, 0.f, 1.f, 0.5f, lbl);
+                    else if (c.id == FLUXRATE_A || c.id == FLUXRATE_B)
+                        configParam<FluxRateQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
+                    else if (c.id == FLUXFB_A || c.id == FLUXFB_B)
+                        configParam<FluxFbQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     else
                         configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     break;
@@ -142,6 +161,10 @@ struct Spotymod : Module {
             case REV_SMEAR:    return 0.568f;  // diffuser LFO smear (wash)
             case REV_MOD:      return 0.237f;  // tail LFO wobble
             case TEMPO:        return 0.00f;   // as saved (40 BPM floor; parts run Synced)
+            case FLUXRATE_A:   return 3.f / 11.f;   // "1/4" for part A's drone echo
+            case FLUXRATE_B:   return 6.f / 11.f;   // "1/8" for part B's bass echo
+            case FLUXFB_A:     return 0.45f;        // matches the retired FXT_FLUX_FB boot base
+            case FLUXFB_B:     return 0.45f;
             default: break;
         }
         const int part = id / PART_STRIDE;  // 0 = A (drone), 1 = B (bass)
@@ -196,6 +219,10 @@ struct Spotymod : Module {
             inst.set_voice_detune(p, pp(DETUNE_A, p));
 
             inst.set_flux_mix(p, pp(FLUX_A, p));
+            inst.set_flux_rate(p, spky::flux_division_index(
+                params[p ? FLUXRATE_B : FLUXRATE_A].getValue()));
+            inst.set_fx_target_base(p, spky::FXT_FLUX_FB,
+                params[p ? FLUXFB_B : FLUXFB_A].getValue());
             inst.set_grit_mix(p, pp(GRIT_A, p));
             // The FX blocks are gated by an explicit on/off (a pad on hardware,
             // a scenario action on the desktop). VCV has no such pad, so the mix

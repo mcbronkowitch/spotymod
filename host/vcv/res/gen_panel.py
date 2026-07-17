@@ -162,6 +162,13 @@ PARAMS = PART_A + PART_B + SHARED + [
     # the coordinate puts it beside MORPH in the centre's movement column
     # (COUPLE/DRIFT/SETL).
     Ctl("TIDE", SMKNOB, R, 22.0, "TIDE"),
+    # FLUX synced-delay controls (spec 2026-07-17 flux-synced-delay). Per part,
+    # appended LAST like FILT/TIDE/CHOKE so existing .vcv patches keep their ids.
+    # They fill the two free FX-row slots (x 9.5 and 74.5) on each side.
+    Ctl("FLUXRATE_A", SMKNOB, 9.5,       88.9, "FRATE"),
+    Ctl("FLUXRATE_B", SMKNOB, W - 9.5,   88.9, "FRATE"),
+    Ctl("FLUXFB_A",   SMKNOB, 74.5,      88.9, "FFB"),
+    Ctl("FLUXFB_B",   SMKNOB, W - 74.5,  88.9, "FFB"),
 ]
 
 # --- inputs / outputs / lights ------------------------------------------------

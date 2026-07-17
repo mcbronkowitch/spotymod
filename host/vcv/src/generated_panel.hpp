@@ -78,6 +78,10 @@ enum ParamId {
     FILT_A,
     FILT_B,
     TIDE,
+    FLUXRATE_A,
+    FLUXRATE_B,
+    FLUXFB_A,
+    FLUXFB_B,
     NUM_PARAMS
 };
 enum InputId {
@@ -168,6 +172,10 @@ static const PanelCtl kParamCtls[] = {
     {FILT_A, WK_SMKNOB, {35.500f, 76.800f}, "FILT"},
     {FILT_B, WK_SMKNOB, {177.860f, 76.800f}, "FILT"},
     {TIDE, WK_SMKNOB, {117.180f, 22.000f}, "TIDE"},
+    {FLUXRATE_A, WK_SMKNOB, {9.500f, 88.900f}, "FRATE"},
+    {FLUXRATE_B, WK_SMKNOB, {203.860f, 88.900f}, "FRATE"},
+    {FLUXFB_A, WK_SMKNOB, {74.500f, 88.900f}, "FFB"},
+    {FLUXFB_B, WK_SMKNOB, {138.860f, 88.900f}, "FFB"},
 };
 static const PanelCtl kInputCtls[] = {
     {IN_L, WK_IN, {56.302f, 118.000f}, "IN L"},
