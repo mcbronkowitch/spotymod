@@ -331,6 +331,86 @@ TEST_CASE("center free: full COUPLE lands the pair on the ladder and the downbea
     CHECK(std::fabs(wrap_err(tgt - r.a.pitch_phase())) < 0.05f);
 }
 
+TEST_CASE("center grid: live STEPS turn is tempo-smooth — the servo target rebases") {
+    // Rack report 2026-07-17: turning STEPS live briefly sped the loop up or
+    // slowed it down (direction-dependent) until the pattern had run through.
+    // set_step() preserves the local step position (spec: seamless turn), but
+    // the grid target — total transport steps mod the NEW count — generally
+    // lands elsewhere, so the hard servo dragged the rate by up to kLockCap
+    // (±35%) until the phase reconverged. The rebase pins the servo target to
+    // the lane's phase at the moment of the turn: position kept, tempo still.
+    Rig r; r.init();
+    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f); r.c.set_tempo_bpm(120.f);
+    r.a.set_synced(true); r.b.set_synced(true); r.c.set_sync(true);
+    r.a.set_rate(0.5f); r.b.set_rate(0.5f);          // same rung: 1/4 -> 2 Hz
+    r.a.set_step(true, 8); r.b.set_step(true, 8);
+    r.c.set_couple(1.f); r.c.set_drift(0.f);
+    run_synced(r, 5000);                             // 10 s: lock onto the grid
+    // Advance to a moment where the 12-step grid target disagrees strongly
+    // with the preserved step position — the worst case a live turn can hit.
+    int guard = 0;
+    for (; guard < 20000; ++guard) {
+        run_synced(r, 1);
+        const double t = r.c.transport().beats() * (8.0 / 12.0);
+        const float tgt = (float)(t - std::floor(t));
+        if (std::fabs(wrap_err(tgt - r.a.pitch_phase())) > 0.3f) break;
+    }
+    REQUIRE(guard < 20000);
+    r.a.set_step(true, 12);                          // the live turn
+    float worst = 0.f;
+    for (int k = 0; k < 3000; ++k) {                 // the next ~6 s
+        run_synced(r, 1);
+        float d = std::fabs(r.a.pitch_scale() - 1.f);
+        if (d > worst) worst = d;
+    }
+    CHECK(worst < 0.02f);                            // no tempo drag, ever
+}
+
+TEST_CASE("center grid: RST resyncs the loops onto the bar start, drag-free") {
+    // The rebase (above) lets a live STEPS turn leave the loop free-running
+    // against the bar (offset != 0). RST is the deliberate way back: it zeroes
+    // the downbeat, drops the grid offsets, and the host snaps the lane phases
+    // to 0 — everything restarts together at the bar start, with no servo drag.
+    Rig r; r.init();
+    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f); r.c.set_tempo_bpm(120.f);
+    r.a.set_synced(true); r.b.set_synced(true); r.c.set_sync(true);
+    r.a.set_rate(0.5f); r.b.set_rate(0.5f);
+    r.a.set_step(true, 8); r.b.set_step(true, 8);
+    r.c.set_couple(1.f); r.c.set_drift(0.f);
+    run_synced(r, 5000);
+    int guard = 0;                                   // force a big offset first
+    for (; guard < 20000; ++guard) {
+        run_synced(r, 1);
+        const double t = r.c.transport().beats() * (8.0 / 12.0);
+        const float tgt = (float)(t - std::floor(t));
+        if (std::fabs(wrap_err(tgt - r.a.pitch_phase())) > 0.3f) break;
+    }
+    REQUIRE(guard < 20000);
+    r.a.set_step(true, 12);                          // live turn -> offset rebased
+    run_synced(r, 1000);
+    // the resync gesture
+    r.c.reset_transport();
+    r.a.reset_phases(); r.b.reset_phases();
+    float worst = 0.f;
+    for (int k = 0; k < 2500; ++k) {                 // ~5 s after RST
+        run_synced(r, 1);
+        float d = std::fabs(r.a.pitch_scale() - 1.f);
+        if (d > worst) worst = d;
+    }
+    // Snap, not drag: the old path dragged at kLockCap (0.35). What remains is
+    // a one-shot settle blip of kKHard*sin(2*pi*rate*tick) ~ 0.034 — update()
+    // measures the lane one control tick behind the freshly zeroed transport,
+    // and the servo walks that skew into its equilibrium once.
+    CHECK(worst < 0.05f);
+    // and the loop tracks the un-offset grid target again (12 steps: cpb x 8/12)
+    const double t = r.c.transport().beats() * (8.0 / 12.0);
+    const float tgt = (float)(t - std::floor(t));
+    CHECK(std::fabs(wrap_err(tgt - r.a.pitch_phase())) < 0.03f);
+    const double tb = r.c.transport().beats();       // B: 8 steps, factor 1
+    const float tgtb = (float)(tb - std::floor(tb));
+    CHECK(std::fabs(wrap_err(tgtb - r.b.pitch_phase())) < 0.03f);
+}
+
 TEST_CASE("center grid: step-clock — a 16-step bank locks at half the division rate") {
     // Step-clock (spec 2026-07-17): with S steps the pitch cycle spans S/8
     // divisions, so the grid servo must target beats*cpb*(8/S), not beats*cpb.

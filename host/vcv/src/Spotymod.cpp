@@ -1,5 +1,6 @@
 #include <cmath>
 #include <algorithm>
+#include <atomic>
 #include "plugin.hpp"
 #include "generated_panel.hpp"   // enums + control table (generated from res/gen_panel.py)
 
@@ -54,6 +55,7 @@ struct Spotymod : Module {
     int principleIdx[2] = {0, 0};   // current principle per part (0=TwoMotif)
     float clkSamples = 0.f;                 // samples since last external clock edge
     float gateFilt[2] = {0.f, 0.f};
+    std::atomic<bool> resyncReq { false };  // menu "Resync to bar" -> audio thread
 
     Spotymod() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -257,8 +259,9 @@ struct Spotymod : Module {
             }
         }
 
-        if (inputs[RESET].isConnected() &&
-            resetTrig.process(inputs[RESET].getVoltage(), 0.1f, 1.f))
+        if ((inputs[RESET].isConnected() &&
+             resetTrig.process(inputs[RESET].getVoltage(), 0.1f, 1.f)) ||
+            resyncReq.exchange(false))
             inst.reset_transport();
 
         if (ctrlDiv.process()) pushParams();
@@ -447,6 +450,15 @@ struct SpotymodWidget : ModuleWidget {
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+    }
+
+    void appendContextMenu(Menu* menu) override {
+        auto* m = getModule<Spotymod>();
+        menu->addChild(new MenuSeparator);
+        // Same gesture as a pulse into RST: zero the downbeat and restart the
+        // loops at the bar start (a live STEPS turn leaves them free-running).
+        menu->addChild(createMenuItem("Resync loops to bar", "",
+                                      [m]() { m->resyncReq = true; }));
     }
 };
 

@@ -104,7 +104,13 @@ public:
     // |c| > 0.5 through the full decay (while the voice is audible).
     void set_choke(float c) { _choke = clampf(c, -1.f, 1.f); }
     void clock_pulse()     { _center.clock_pulse(); }
-    void reset_transport() { _center.reset_transport(); }
+    // RST = bar resync: zero the downbeat, drop the grid offsets a live STEPS
+    // turn left behind, and restart the loops at phase 0 — everything lands on
+    // the fresh bar start together (no servo drag).
+    void reset_transport() {
+        _center.reset_transport();
+        for (auto& p : _parts) p.mod().reset_phases();
+    }
     void spot()   { _center.spot(_parts[PART_A].mod(),   _parts[PART_B].mod()); }
     void settle() { _center.settle(_parts[PART_A].mod(), _parts[PART_B].mod()); }
     float morph()     const { return _center.morph(); }

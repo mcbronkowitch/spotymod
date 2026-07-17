@@ -49,6 +49,10 @@ public:
     void set_shape_offset(float o){ for (auto& l : _lanes) l.set_shape_offset(o); }
     void spot(Rng& rng);          // per-lane SPOT kicks (skips the PITCH lane)
     void settle()                { for (auto& l : _lanes) l.settle(); }
+    // RST bar resync: all lanes restart at phase 0 (step 0 fires on the next
+    // sample), so the loops land ON the fresh downbeat instead of being
+    // dragged onto it by the grid servo.
+    void reset_phases()          { for (auto& l : _lanes) l.reset(0.f); }
     float base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
     bool  synced()    const { return _synced; }
     int   division()  const { return division_index(_rate_norm); }

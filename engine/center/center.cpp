@@ -71,6 +71,8 @@ void Center::init(float sample_rate, uint32_t seed) {
 
 void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     _transport.tick();
+    _rebase_grid(a, 0);
+    _rebase_grid(b, 1);
 
     // --- MORPH (equal-power, smoothed at control rate) ---
     _morph = _morph_smooth.process(_morph_target);
@@ -104,8 +106,8 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
         // tightly the four texture lanes follow. texture = 0 at full COUPLE
         // -> the DRIFT rate wander is fully suppressed and the mod lanes hold
         // their exact ratios (lockstep); smaller COUPLE lets it through.
-        const float pitch_a = 1.f + _grid_servo(a);
-        const float pitch_b = 1.f + _grid_servo(b);
+        const float pitch_a = 1.f + _grid_servo(a, _grid_off[0]);
+        const float pitch_b = 1.f + _grid_servo(b, _grid_off[1]);
         const float texture = 1.f - _couple;
         const float mod_a = pitch_a * std::pow(rate_drift_a, texture);
         const float mod_b = pitch_b * std::pow(rate_drift_b, texture);
@@ -156,7 +158,8 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
             // Bank A is the phase reference, so its step-clock factor scales
             // the grid target (spec 2026-07-17 step-clock).
             const double t = _transport.beats()
-                             * static_cast<double>(kDivisions[div].cpb * a.clock_scale());
+                             * static_cast<double>(kDivisions[div].cpb * a.clock_scale())
+                             + static_cast<double>(_grid_off[0]);
             const float tgt = static_cast<float>(t - std::floor(t));
             float cme = tgt - a.pitch_phase();
             cme -= std::floor(cme + 0.5f);
@@ -182,13 +185,32 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
 // gain kKHard*2*pi ~ 12.6, cap kLockCap keeps engage click-free) — that is
 // what outruns EVOLVE's +/-20% raw-rate wander, matching the 2026-07-15 lock
 // quality the existing EVOLVE-wander test asserts.
-float Center::_grid_servo(const SuperModulator& m) const {
+// A live STEPS turn jumps the grid target (total transport steps mod the NEW
+// count) while set_step() preserves the local step position — left alone, the
+// hard servo drags the tempo by up to kLockCap until the phase reconverges
+// (Rack report 2026-07-17: live STEPS turns briefly sped up / slowed down).
+// Rebase the per-bank target offset onto the lane's current phase, so the
+// servo error restarts at 0: position kept, tempo untouched. The offset
+// persists — the loop free-runs against the bar — until RST resyncs it.
+void Center::_rebase_grid(const SuperModulator& m, int i) {
+    const float cs = m.clock_scale();
+    if (cs == _grid_cs[i]) return;
+    _grid_cs[i] = cs;
+    const double t = _transport.beats()
+                     * static_cast<double>(kDivisions[m.division()].cpb * cs);
+    float off = m.pitch_phase() - static_cast<float>(t - std::floor(t));
+    off -= std::floor(off);                         // keep in [0,1)
+    _grid_off[i] = off;
+}
+
+float Center::_grid_servo(const SuperModulator& m, float off) const {
     // Step-clock (spec 2026-07-17): with S steps the pitch cycle spans S/8
     // divisions, so the grid target runs at cpb x 8/S. Without this scale the
     // servo drags the lane back to cycle==division and re-imposes the retired
     // pattern-clock feel whenever SYNC is on.
     const float cpb = kDivisions[m.division()].cpb * m.clock_scale();
-    const double t = _transport.beats() * static_cast<double>(cpb);
+    const double t = _transport.beats() * static_cast<double>(cpb)
+                     + static_cast<double>(off);
     const float target = static_cast<float>(t - std::floor(t));
     float err = target - m.pitch_phase();
     err -= std::floor(err + 0.5f);                  // wrap to [-0.5, 0.5)

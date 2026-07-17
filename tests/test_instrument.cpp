@@ -474,3 +474,23 @@ TEST_CASE("instrument M4.8: mix automation incl. sleep is deterministic end to e
     REQUIRE(a.size() == b.size());
     for (size_t i = 0; i < a.size(); ++i) CHECK(a[i] == b[i]);
 }
+
+TEST_CASE("instrument: RST restarts both loops at the bar start") {
+    // RST (reset_transport) is the bar-resync gesture: zero the downbeat AND
+    // snap the lane phases to 0, so the loops restart on the new bar instead
+    // of being dragged onto it by the grid servo.
+    Instrument inst;
+    inst.init(48000.f);
+    inst.set_tempo_bpm(120.f);
+    inst.set_sync(true);
+    inst.set_step(PART_A, true, 12);
+    inst.set_step(PART_B, true, 8);
+    std::vector<float> l(1), r(1);
+    for (int i = 0; i < 48000; ++i)                  // run ~1 s into the pattern
+        inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+    inst.reset_transport();
+    inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+    // the very next sample fires step 0 on both parts — a fresh downbeat
+    CHECK(inst.lane_fired(PART_A, LANE_PITCH));
+    CHECK(inst.lane_fired(PART_B, LANE_PITCH));
+}

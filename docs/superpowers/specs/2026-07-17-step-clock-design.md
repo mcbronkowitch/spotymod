@@ -64,6 +64,23 @@ _cur_step  = int(fmod(pos, neue_steps)) // kein Geister-Boundary
   Regen-Logik (Phrase neu würfeln am Wrap, wenn sich die effektive Länge
   ändert, `lane.cpp:57-61`) bleibt wie sie ist.
 
+**Grid-Servo-Rebase (Nachtrag 2026-07-17, Rack-Befund):** Unter SYNC zielte
+der Grid-Servo nach einer Live-Drehung auf *Gesamt-Steps mod neue Step-Zahl* —
+das widerspricht i.A. der erhaltenen Step-Position, der Hard-Lock zerrte das
+Tempo mit bis zu ±35 % (`kLockCap`) zurecht, hörbar als kurzzeitiges
+Schneller-/Langsamerwerden. Fix: `Center::_rebase_grid()` erkennt die Änderung
+des Step-Clock-Faktors und rebased ein per-Bank-Offset (`_grid_off`) auf die
+aktuelle Lane-Phase — Servo-Fehler startet bei 0, Position bleibt, Tempo steht.
+Der Loop läuft danach frei gegen den Takt, bis RST ihn zurückholt.
+
+### RST = Bar-Resync
+
+`Instrument::reset_transport()` (RST-Buchse, plus Kontextmenü „Resync loops
+to bar" im VCV-Host) ist die bewusste Rücksynchronisation: Downbeat auf 0,
+Grid-Offsets verworfen, alle Lane-Phasen auf 0 — beide Loops starten gemeinsam
+auf dem frischen Bar-Anfang (Snap statt Servo-Zerren; Rest-Blip ≈ 3 %, ein
+Control-Tick Mess-Skew, einmalig).
+
 ### Alle 5 Lanes einheitlich
 
 `SuperModulator::set_step` verteilt Steps schon heute an alle Lanes

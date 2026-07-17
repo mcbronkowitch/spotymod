@@ -28,7 +28,9 @@ public:
     void set_sync(bool on)        { _sync = on; }
     void set_tempo_bpm(float bpm) { _transport.set_bpm(bpm); }
     void clock_pulse()            { _transport.clock_pulse(); }
-    void reset_transport()        { _transport.reset(); }
+    // RST = bar resync: zero the downbeat AND drop any grid offsets a live
+    // STEPS turn left behind, so the servo pulls the loops back onto the bar.
+    void reset_transport()        { _transport.reset(); _grid_off[0] = _grid_off[1] = 0.f; }
     const Transport& transport() const { return _transport; }
 
     // one control tick: read both banks, write hooks, advance weather + morph
@@ -49,10 +51,15 @@ public:
 
 private:
     void _step_weather();
-    float _grid_servo(const SuperModulator& m) const;
+    void _rebase_grid(const SuperModulator& m, int i);
+    float _grid_servo(const SuperModulator& m, float off) const;
 
     Transport _transport;
     bool      _sync = false;
+    // Grid-servo rebase (live STEPS turns, spec 2026-07-17): per-bank target
+    // offset in cycles, and the last seen step-clock factor to detect a turn.
+    float _grid_off[2] = { 0.f, 0.f };
+    float _grid_cs[2]  = { 1.f, 1.f };
 
     float _sr = 48000.f;
     float _cr = 500.f;               // control rate = sr / kCtrlInterval
