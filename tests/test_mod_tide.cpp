@@ -196,6 +196,7 @@ TEST_CASE("level floor: only the LEVEL slot is floored; base 0 stays free") {
     p.set_depth(1.f);
     p.set_target_active(LANE_SIZE, true);
     p.set_target_base(LANE_SIZE, 0.8f);
+    p.set_target_depth(LANE_SIZE, 1.f);   // full swing (boot tdepth is 0.55)
     p.mod().set_shape(0.5f);
     p.mod().set_rate(0.6f);
     float l, r, mn_size = 1.f;
@@ -214,4 +215,39 @@ TEST_CASE("level floor: only the LEVEL slot is floored; base 0 stays free") {
         mx = std::max(mx, q.target_value(LANE_LEVEL));
     }
     CHECK(mx == doctest::Approx(0.f));   // floor of base 0 is 0, not 0.4
+}
+
+// Boot-targets spec (2026-07-17): modulation first is the shipped state —
+// a fresh Part moves all five targets, and MOD 0 stills the texture ones.
+TEST_CASE("boot targets: all five slots modulate out of the box") {
+    Part p; p.init(48000.f, 5);
+    p.set_depth(0.5f);                   // half swing: keeps SIZE/SOURCE off
+    p.mod().set_shape(0.5f);             // the [0,1] clamp so the staggered
+    p.mod().set_rate(0.6f);              // boot depths stay observable
+    float l, r;
+    float mn[LANE_COUNT], mx[LANE_COUNT];
+    for (int s = 0; s < LANE_COUNT; ++s) { mn[s] = 1.f; mx[s] = 0.f; }
+    for (int i = 0; i < 96000; ++i) {
+        p.process(l, r);
+        for (int s = 0; s < LANE_COUNT; ++s) {
+            float t = p.target_value(s);
+            mn[s] = std::min(mn[s], t);
+            mx[s] = std::max(mx[s], t);
+        }
+    }
+    for (int s = 0; s < LANE_COUNT; ++s)
+        CHECK(mx[s] - mn[s] > 0.02f);    // every slot is alive at boot
+
+    // FILTER breathes shallower than TIMBRE (staggered boot depths 0.55 vs 1)
+    CHECK((mx[LANE_SIZE] - mn[LANE_SIZE])
+          < 0.8f * (mx[LANE_SOURCE] - mn[LANE_SOURCE]));
+
+    Part q; q.init(48000.f, 5);          // MOD 0: texture stands on its bases
+    q.set_depth(0.f);
+    for (int i = 0; i < 5000; ++i) {
+        q.process(l, r);
+        CHECK(q.target_value(LANE_SOURCE) == doctest::Approx(0.5f));
+        CHECK(q.target_value(LANE_SIZE)   == doctest::Approx(0.5f));
+        CHECK(q.target_value(LANE_MOTION) == doctest::Approx(0.5f));
+    }
 }

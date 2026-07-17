@@ -117,9 +117,13 @@ private:
     }
     PartFx         _fx;
 
-    std::array<bool,  LANE_COUNT> _active { { false, false, true, false, true } };
+    // Modulation first is the shipped state (spec 2026-07-17 boot-targets):
+    // all five targets boot active, with staggered depths — FILTER 0.55 (the
+    // exponential cutoff dominates; the big sweep belongs to FILT), MOTION
+    // 0.7 (width moves without pumping). Ear-tunable. M6 pads toggle _active.
+    std::array<bool,  LANE_COUNT> _active { { true, true, true, true, true } };
     std::array<float, LANE_COUNT> _base   { { 0.5f, 0.5f, 0.5f, 0.5f, 0.8f } };
-    std::array<float, LANE_COUNT> _tdepth { { 1.f, 1.f, 1.f, 1.f, 1.f } };
+    std::array<float, LANE_COUNT> _tdepth { { 1.f, 0.55f, 1.f, 0.7f, 1.f } };
 
     // FX target row (boot: all modulation inactive, spec "Boot defaults").
     // Bases, by FxTargetId: GRIT_INT .3 | FLUX_TIME .4 | FX_MIX 1 | REV_SEND .25 | FLUX_FB .45
