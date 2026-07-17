@@ -199,7 +199,9 @@ TEST_CASE("scenario: set_color dispatches to the chord layer") {
     e.action = "set_color";
     e.part = 0;
     e.value = 0.5f;
-    apply_event(inst, e);          // must not throw; observable via chord bloom
+    apply_event(inst, e);          // dispatch smoke test: the voice-count check does NOT discriminate the
+    // wiring (density-0 anchor fires alone reach 3 voices); the real evidence
+    // is the chord_bloom render with-vs-without set_color (task-6 report)
     inst.set_density(0, 0.f);
     float outL[64], outR[64];
     for (int i = 0; i < 3000; ++i) inst.process(nullptr, nullptr, outL, outR, 64);
