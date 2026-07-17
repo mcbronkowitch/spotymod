@@ -374,3 +374,28 @@ Nach vorhandenen Mustern (`tests/test_part.cpp`, `test_super_modulator.cpp`,
 - **WOBL als Label:** kurz, aber ungewohnt. Falls es im Play-Test stolpert,
   ist jedes andere Wort ein Einzeiler in `gen_panel.py` — nur nicht wieder
   „MOD".
+
+## Errata (Final-Review 2026-07-17)
+
+**Die Behauptung „mathematisch geht nichts verloren" ist nur für RANGE = 1
+wahr.** `apply_range` (`engine/mod/range.h`) ist affin, nicht linear: für
+`r ≤ 0.5` gilt `apply_range(v, r) = r·v + r` (unipolar, positiver
+DC-Offset); erst bei `r = 1` ist es das reine bipolare `v`. Folgen:
+
+- **Init-Patch Part B** (alt RANGE 0.38, DEPTH 0.622): der Textur-/FX-Hub
+  stimmt nach der Produkt-Umrechnung exakt (`0.236·v`), aber der alte
+  **DC-Lift von +0.236 fehlt** — die Targets atmeten oben angepinnt und
+  schwingen jetzt symmetrisch um ihre Basis. Hörbar v. a. am boot-aktiven
+  LEVEL-Target (Basis 0.8): der Bass sitzt im Mittel leiser. Wenn B nach dem
+  Update flach wirkt: **Target-Basen anheben, nicht MOD** — MOD ändert den
+  Hub, nicht den Lift. Part A (alt RANGE 1.0) ist exakt äquivalent.
+- **Render-Szenarien mit `set_range < 1`** (`ambient_wash` 0.45/0.2,
+  `reverb_delay` 0.4, `reverb_wash` 0.4): verlieren den Lift UND ihr
+  Textur-Hub wächst (alt `0.45·v + 0.45` → neu `1.0·v` bei depth 1). Beim
+  Abhör-Pass gegen v2.3.0-Referenzen hören; ggf. `set_depth` in die
+  Szenarien schreiben.
+- **Release-Text v2.4.0:** Migration alter Patches heißt „weniger Lift +
+  Charakter-Änderung bei RANGE < 1", nicht nur „andere Amplitude".
+- Rand-Detail: `fx_target_value` liest per Index-Gleichheit `FXT_FX_MIX`(2)
+  aus `LANE_PITCH`(2) — dieser eine FX-Slot folgt damit dem RANGE-Ambitus
+  (boot-inaktiv, vorbestehende Zuordnung).

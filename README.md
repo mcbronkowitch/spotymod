@@ -27,7 +27,7 @@ the **modulation system is the primary interface**, and the sound engine is
 whatever you point it at.
 
 Each of the two **parts** is a **SuperModulator** — one performable macro
-surface (RATE, SHAPE, PROBABILITY, SMOOTH, RANGE, DEPTH) sitting on top of
+surface (RATE, SHAPE, DENSITY, SMOOTH, RANGE, MOD) sitting on top of
 **five independent modulation lanes**, one per target. Every lane has its own
 phase, its own random stream and its own probability dice, running at a fixed
 musical ratio of the master rate. Shared character, independent motion: the
