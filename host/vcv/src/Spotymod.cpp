@@ -20,6 +20,16 @@ struct RateQuantity : ParamQuantity {
     }
 };
 
+// TIDE tooltip: the ratio-ladder rung while SYNC is on, the free multiplier
+// otherwise (same table the engine snaps to, mod/divisions.h).
+struct TideQuantity : ParamQuantity {
+    std::string getDisplayValueString() override {
+        if (module && module->params[SYNC].getValue() > 0.5f)
+            return spky::kTideNames[spky::tide_index(getValue())];
+        return string::f("x%.2f", spky::tide_free(getValue()));
+    }
+};
+
 // Part A params occupy [0..PART_STRIDE), part B the next PART_STRIDE. The
 // generator lays both part blocks out identically (same order, mirrored x) and
 // emits PART_STRIDE; these guards catch any drift.
@@ -70,6 +80,8 @@ struct Spotymod : Module {
                     }
                     else if (c.id == FILT_A || c.id == FILT_B)  // bipolar cutoff trim
                         configParam(c.id, -1.f, 1.f, 0.f, lbl);
+                    else if (c.id == TIDE)  // texture-lane rate, snaps under SYNC
+                        configParam<TideQuantity>(c.id, 0.f, 1.f, 0.5f, lbl);
                     else
                         configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     break;
@@ -136,8 +148,8 @@ struct Spotymod : Module {
             case SHAPE_A:  return part ? 0.60f  : 0.40f;
             case DENSITY_A: return part ? 0.60f : 0.67f;
             case SMOOTH_A: return part ? 0.30f  : 0.10f;
-            case RANGE_A:  return part ? 0.38f  : 1.00f;   // A full range (2026-07-16)
-            case DEPTH_A:  return part ? 0.622f : 0.78f;
+            case RANGE_A:  return part ? 0.236f : 0.78f;   // melody ambitus (= old RANGE*DEPTH)
+            case MOD_A:    return part ? 0.236f : 0.78f;   // texture depth  (= old RANGE*DEPTH)
             case TUNE_A:   return part ? 0.00f  : 0.55f;   // B down an octave-ish
             case ATTACK_A: return part ? 0.686f : 0.657f;
             case DECAY_A:  return part ? 0.721f : 0.902f;  // A rings/stacks; B plucks
@@ -171,7 +183,7 @@ struct Spotymod : Module {
             inst.set_smooth(p, pp(SMOOTH_A, p));
             inst.set_range(p, pp(RANGE_A, p));
             inst.set_variation(p, pp(MELODY_A, p));          // -1..+1 RENEW<-LOOP->GROW
-            inst.set_depth(p, pp(DEPTH_A, p));
+            inst.set_depth(p, pp(MOD_A, p));
             inst.set_tune(p, pp(TUNE_A, p));
 
             inst.set_voice_attack(p, pp(ATTACK_A, p));
@@ -208,6 +220,7 @@ struct Spotymod : Module {
         inst.set_morph(params[MORPH].getValue());
         inst.set_couple(params[COUPLE].getValue());
         inst.set_drift(params[DRIFT].getValue());
+        inst.set_tide(params[TIDE].getValue());
         inst.set_sync(params[SYNC].getValue() > 0.5f);
         inst.set_choke(params[CHOKE].getValue() * 0.5f);   // snap -2..+2 -> zones
         inst.set_reverb_size(params[REV_SIZE].getValue());

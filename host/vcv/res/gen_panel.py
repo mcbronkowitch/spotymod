@@ -88,7 +88,7 @@ def part_controls():
     out = []
     # 8 macro knobs encircling the ring
     macros = [("RATE","RATE"),("SHAPE","SHAPE"),("DENSITY","DENS"),("SMOOTH","SMTH"),
-              ("RANGE","RANGE"),("MELODY","MELO"),("DEPTH","DEPTH"),("TUNE","TUNE")]
+              ("RANGE","RANGE"),("MELODY","MELO"),("MOD","MOD"),("TUNE","TUNE")]
     for i,(enum,lbl) in enumerate(macros):
         x,y = orbit(cx, RING_CY, KNOB_R, i, 8, start_deg=0.0)
         out.append(Ctl(enum, KNOBC if enum=="MELODY" else BIGKNOB, x, y, lbl))
@@ -144,7 +144,7 @@ SHARED = [
     Ctl("REV_TONE",  SMKNOB, L,  ROW_FX,    "TONE"),
     Ctl("REV_DIFF",  SMKNOB, R,  ROW_FX,    "DIFF"),
     Ctl("REV_SMEAR", SMKNOB, L,  ROW_PAD, "SMEAR"),
-    Ctl("REV_MOD",   SMKNOB, R,  ROW_PAD, "MOD"),
+    Ctl("REV_MOD",   SMKNOB, R,  ROW_PAD, "WOBL"),
     # CHOKE: bipolar event-priority between the decks (spec 2026-07-16
     # choke-priority). Fills the free centre slot between SCALE and DRIFT.
     # Appended LAST on purpose: existing .vcv patches keep their param ids.
@@ -157,6 +157,11 @@ PARAMS = PART_A + PART_B + SHARED + [
     # voice row (slot 2, between DEC and RES).
     Ctl("FILT_A", SMKNOB, VOICE_X[2],     76.8, "FILT"),
     Ctl("FILT_B", SMKNOB, W - VOICE_X[2], 76.8, "FILT"),
+    # TIDE: texture-lane rate of both decks (spec 2026-07-17 mod-tide).
+    # Appended LAST like CHOKE/FILT so existing .vcv patches keep their ids;
+    # the coordinate puts it beside MORPH in the centre's movement column
+    # (COUPLE/DRIFT/SETL).
+    Ctl("TIDE", SMKNOB, R, 22.0, "TIDE"),
 ]
 
 # --- inputs / outputs / lights ------------------------------------------------

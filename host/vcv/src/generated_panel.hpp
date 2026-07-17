@@ -18,7 +18,7 @@ enum ParamId {
     SMOOTH_A,
     RANGE_A,
     MELODY_A,
-    DEPTH_A,
+    MOD_A,
     TUNE_A,
     ATTACK_A,
     DECAY_A,
@@ -41,7 +41,7 @@ enum ParamId {
     SMOOTH_B,
     RANGE_B,
     MELODY_B,
-    DEPTH_B,
+    MOD_B,
     TUNE_B,
     ATTACK_B,
     DECAY_B,
@@ -77,6 +77,7 @@ enum ParamId {
     CHOKE,
     FILT_A,
     FILT_B,
+    TIDE,
     NUM_PARAMS
 };
 enum InputId {
@@ -107,7 +108,7 @@ static const PanelCtl kParamCtls[] = {
     {SMOOTH_A, WK_BIGKNOB, {60.738f, 55.738f}, "SMTH"},
     {RANGE_A, WK_BIGKNOB, {42.000f, 63.500f}, "RANGE"},
     {MELODY_A, WK_KNOBC, {23.262f, 55.738f}, "MELO"},
-    {DEPTH_A, WK_BIGKNOB, {15.500f, 37.000f}, "DEPTH"},
+    {MOD_A, WK_BIGKNOB, {15.500f, 37.000f}, "MOD"},
     {TUNE_A, WK_BIGKNOB, {23.262f, 18.262f}, "TUNE"},
     {ATTACK_A, WK_SMKNOB, {9.500f, 76.800f}, "ATK"},
     {DECAY_A, WK_SMKNOB, {22.500f, 76.800f}, "DEC"},
@@ -130,7 +131,7 @@ static const PanelCtl kParamCtls[] = {
     {SMOOTH_B, WK_BIGKNOB, {152.622f, 55.738f}, "SMTH"},
     {RANGE_B, WK_BIGKNOB, {171.360f, 63.500f}, "RANGE"},
     {MELODY_B, WK_KNOBC, {190.098f, 55.738f}, "MELO"},
-    {DEPTH_B, WK_BIGKNOB, {197.860f, 37.000f}, "DEPTH"},
+    {MOD_B, WK_BIGKNOB, {197.860f, 37.000f}, "MOD"},
     {TUNE_B, WK_BIGKNOB, {190.098f, 18.262f}, "TUNE"},
     {ATTACK_B, WK_SMKNOB, {203.860f, 76.800f}, "ATK"},
     {DECAY_B, WK_SMKNOB, {190.860f, 76.800f}, "DEC"},
@@ -162,10 +163,11 @@ static const PanelCtl kParamCtls[] = {
     {REV_TONE, WK_SMKNOB, {96.180f, 88.900f}, "TONE"},
     {REV_DIFF, WK_SMKNOB, {117.180f, 88.900f}, "DIFF"},
     {REV_SMEAR, WK_SMKNOB, {96.180f, 102.800f}, "SMEAR"},
-    {REV_MOD, WK_SMKNOB, {117.180f, 102.800f}, "MOD"},
+    {REV_MOD, WK_SMKNOB, {117.180f, 102.800f}, "WOBL"},
     {CHOKE, WK_SMKNOB, {106.680f, 51.000f}, "CHOKE"},
     {FILT_A, WK_SMKNOB, {35.500f, 76.800f}, "FILT"},
     {FILT_B, WK_SMKNOB, {177.860f, 76.800f}, "FILT"},
+    {TIDE, WK_SMKNOB, {117.180f, 22.000f}, "TIDE"},
 };
 static const PanelCtl kInputCtls[] = {
     {IN_L, WK_IN, {56.302f, 118.000f}, "IN L"},
