@@ -50,6 +50,8 @@ public:
     void set_root(int semis)        { if (semis != _root)   { _root = semis;   on_change(); } }
 
     QuantMode mode() const { return _mode; }
+    uint16_t scale_mask() const { return _scale; }   // last active scale (survives FREE)
+    int      root_semis() const { return _root; }
 
     float process(float norm) {
         if (_mode == QuantMode::Free) {

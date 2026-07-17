@@ -37,6 +37,7 @@ add_executable(spky_tests
     tests/test_main.cpp
     tests/smoke.cpp
     tests/test_quantizer.cpp
+    tests/test_chord.cpp
     tests/test_rng.cpp
     tests/test_divisions.cpp
     tests/test_transport.cpp
