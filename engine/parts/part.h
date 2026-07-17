@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "mod/super_modulator.h"
 #include "pitch/quantizer.h"
+#include "pitch/chord.h"
 #include "parts/engine_iface.h"
 #include "parts/test_tone_engine.h"
 #include "synth/synth_engine.h"
@@ -27,6 +28,10 @@ public:
 
     void set_depth(float d) { _depth = clampf(d, 0.f, 1.f); }
     void set_tune(float t)  { _tune = clampf(t, 0.f, 1.f); }
+    // COLOR (spec 2026-07-17 chord-layer): 0 = single note (bit-identical),
+    // sweeps to a 4-note diatonic chord. Live on the FLOW surface.
+    void set_color(float c) { _chord.set_color(clampf(c, 0.f, 1.f)); }
+    int  chord_size() const { return _chord.size(); }
     void set_detune_cents(float c) { _detune_cents = c; }   // DRIFT tune tap; engine pitch only
     void set_target_active(int slot, bool on) { _active[slot] = on; }
     void set_target_base(int slot, float b)   { _base[slot] = clampf(b, 0.f, 1.f); }
@@ -144,6 +149,10 @@ private:
 
     Quantizer _quant;
     float     _pitch_q = 0.f;
+    ChordBuilder _chord;
+    uint16_t _chord_mask() const {
+        return _quant.mode() == QuantMode::Chrom ? CHROM_MASK : _quant.scale_mask();
+    }
 };
 
 } // namespace spky

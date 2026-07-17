@@ -494,3 +494,44 @@ TEST_CASE("instrument: RST restarts both loops at the bar start") {
     CHECK(inst.lane_fired(PART_A, LANE_PITCH));
     CHECK(inst.lane_fired(PART_B, LANE_PITCH));
 }
+
+TEST_CASE("instrument: set_color blooms the FLOW pad live, click-free") {
+    Instrument inst;
+    inst.init(48000.f);
+    inst.set_density(0, 0.f);                      // no lane fires: pure drone
+    float outL[64], outR[64];
+    for (int i = 0; i < 750; ++i)                  // 1 s warmup: drone settles
+        inst.process(nullptr, nullptr, outL, outR, 64);
+    CHECK(inst.active_voices(0) >= 1);
+    inst.set_color(0, 0.7f);                       // knob turned up, NO trigger
+    float max_step = 0.f, prev = 0.f;
+    bool first = true;
+    for (int i = 0; i < 1500; ++i) {               // 2 s
+        inst.process(nullptr, nullptr, outL, outR, 64);
+        for (int k = 0; k < 64; ++k) {
+            if (!first && std::fabs(outL[k] - prev) > max_step)
+                max_step = std::fabs(outL[k] - prev);
+            prev = outL[k];
+            first = false;
+        }
+    }
+    CHECK(inst.active_voices(0) >= 3);             // the pad bloomed
+    CHECK(max_step < 0.5f);                        // no hard discontinuity
+}
+
+TEST_CASE("instrument: COLOR 0 stays bit-deterministic") {
+    Instrument a, b;
+    a.init(48000.f);
+    b.init(48000.f);
+    b.set_color(0, 0.f);                           // explicit 0 == untouched
+    b.set_color(1, 0.f);
+    float al[64], ar[64], bl[64], br[64];
+    for (int i = 0; i < 1500; ++i) {
+        a.process(nullptr, nullptr, al, ar, 64);
+        b.process(nullptr, nullptr, bl, br, 64);
+        for (int k = 0; k < 64; ++k) {
+            CHECK(al[k] == bl[k]);                 // exact
+            CHECK(ar[k] == br[k]);
+        }
+    }
+}

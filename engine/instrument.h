@@ -40,6 +40,7 @@ public:
     void set_fixed_slew(int p, bool on)      { _parts[p].mod().set_fixed_slew(on); }
     void set_depth(int p, float n)           { _parts[p].set_depth(n); }
     void set_tune(int p, float n)            { _parts[p].set_tune(n); }
+    void set_color(int p, float n)           { _parts[p].set_color(n); }
     void set_target_active(int p, int s, bool on) { _parts[p].set_target_active(s, on); }
     void set_target_base(int p, int s, float n)   { _parts[p].set_target_base(s, n); }
     void set_target_depth(int p, int s, float n)  { _parts[p].set_target_depth(s, n); }

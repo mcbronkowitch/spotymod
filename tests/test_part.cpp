@@ -318,3 +318,54 @@ TEST_CASE("part: gate in FLOW stays pulse-only (never permanently high)") {
     }
     CHECK(saw_low);
 }
+
+TEST_CASE("part: COLOR never touches pitch CV or gate (chords are engine-side)") {
+    Part a, b;
+    a.init(48000.f, 123u);
+    b.init(48000.f, 123u);
+    b.set_color(0.8f);                             // chords on part B's twin only
+    a.set_step(true, 8); b.set_step(true, 8);
+    for (int i = 0; i < 96000; ++i) {
+        float al, ar, bl, br;
+        a.process(al, ar);
+        b.process(bl, br);
+        CHECK(a.pitch_cv() == b.pitch_cv());       // exact — CV contract survives
+        CHECK(a.gate() == b.gate());
+    }
+}
+
+TEST_CASE("part: chord size follows COLOR") {
+    Part p;
+    p.init(48000.f, 5u);
+    CHECK(p.chord_size() == 1);
+    p.set_color(0.5f);
+    float l, r;
+    for (int i = 0; i < 4800; ++i) p.process(l, r);   // apply() refreshes slots
+    CHECK(p.chord_size() == 3);
+    p.set_color(0.0f);
+    for (int i = 0; i < 4800; ++i) p.process(l, r);
+    CHECK(p.chord_size() == 1);
+}
+
+TEST_CASE("part: COLOR swept and returned to 0 renders like never touched") {
+    Part a, b;
+    a.init(48000.f, 42u);
+    b.init(48000.f, 42u);
+    float al, ar, bl, br;
+    for (int i = 0; i < 4800; ++i) { a.process(al, ar); b.process(bl, br); }
+    b.set_color(0.9f);                             // sweep up...
+    for (int i = 0; i < 4800; ++i) { b.process(bl, br); a.process(al, ar); }
+    // now both back at COLOR 0 — but b carries surface history; release it
+    b.set_color(0.f);
+    a.set_step(true, 8); b.set_step(true, 8);      // drop surfaces, STEP world
+    for (int i = 0; i < 48000; ++i) {
+        a.process(al, ar);
+        b.process(bl, br);
+    }
+    // state cleanliness: identical firing (pitch CV) from here on
+    for (int i = 0; i < 48000; ++i) {
+        a.process(al, ar);
+        b.process(bl, br);
+        CHECK(a.pitch_cv() == b.pitch_cv());
+    }
+}

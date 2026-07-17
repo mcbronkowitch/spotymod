@@ -26,6 +26,7 @@ void Part::init(float sample_rate, uint32_t seed_base,
     _note_suppressed = false;
     _quant.init(sample_rate);                   // boots Dorian / SCALE / root 0
     _pitch_q = _quant.process(pitch_pre_quant());
+    _chord.init();
 }
 
 float Part::target_raw(int slot) const {
@@ -77,7 +78,10 @@ void Part::set_step(bool on, int steps) {
 
 void Part::trigger_manual() {
     _gate_ctr = _gate_len;
-    _engine->trigger(target_value(LANE_PITCH));   // current quantized pitch
+    float chord[ChordBuilder::kMaxNotes];
+    const int n = _chord.build(target_value(LANE_PITCH), _chord_mask(),
+                               _quant.root_semis(), chord);
+    _engine->trigger_chord(chord, n);
 }
 
 float Part::max_voice_env() const {
@@ -126,8 +130,18 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     targets[LANE_PITCH] = clampf(_pitch_q + _detune_cents * (1.f / 3600.f), 0.f, 1.f);
 
     _engine->set_targets(targets, _tune);
-    if (_mod.lane_fired(LANE_PITCH) && !_note_suppressed)
-        _engine->trigger(targets[LANE_PITCH]);
+
+    // chord layer: refresh the surface every sample (cheap interval apply);
+    // full voice-leading build only on a fire
+    float chord[ChordBuilder::kMaxNotes];
+    int nch = _chord.apply(targets[LANE_PITCH], _chord_mask(),
+                           _quant.root_semis(), chord);
+    _engine->set_chord(chord, nch);
+    if (_mod.lane_fired(LANE_PITCH) && !_note_suppressed) {
+        nch = _chord.build(targets[LANE_PITCH], _chord_mask(),
+                           _quant.root_semis(), chord);
+        _engine->trigger_chord(chord, nch);
+    }
     _engine->process(outL, outR);
     outL *= fade;
     outR *= fade;
