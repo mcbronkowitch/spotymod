@@ -104,7 +104,10 @@ void SynthEngine::_update_control() {
 
     const float timbre = _targets[LANE_SOURCE];       // pad 1 = TIMBRE
     const float det_ct = timbre * timbre * _detune_max_ct;   // t^2 law (spec)
-    const float cutoff = filter_hz(_targets[LANE_SIZE]);     // pad 2 = FILTER
+    const float off    = _filt_amt < 0.f ? kFiltLeftScale * _filt_amt : _filt_amt;
+    const float n_raw  = _targets[LANE_SIZE] + off;          // pad 2 = FILTER + trim
+    const float cutoff = filter_hz(n_raw);                   // clamps 0..1 internally
+    _filt_gain = clampf(1.f + n_raw / kFiltFadeRange, 0.f, 1.f);
     const float width  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
     const float dt_s   = kCtrlInterval / _sr;
 
@@ -135,7 +138,7 @@ void SynthEngine::process(float& outL, float& outR) {
         _ctrl_ctr = kCtrlInterval;
         _update_control();
     }
-    const float gain = _level.process(_targets[LANE_LEVEL]) * kVoiceGain;
+    const float gain = _level.process(_targets[LANE_LEVEL] * _filt_gain) * kVoiceGain;
     float l = 0.f, r = 0.f;
     for (auto& v : _voices) v.process(l, r);
     outL = l * gain;
@@ -152,6 +155,7 @@ void SynthEngine::set_decay(float n) {
 
 void SynthEngine::set_resonance(float n) { _resonance = clampf(n, 0.f, 1.f); }
 void SynthEngine::set_sub(float n)       { _sub_level = clampf(n, 0.f, 1.f); }
+void SynthEngine::set_filt(float n) { _filt_amt = clampf(n, -1.f, 1.f); }
 
 void SynthEngine::set_detune(float n) {
     _detune_max_ct = clampf(n, 0.f, 1.f) * kDetuneCeilCt;

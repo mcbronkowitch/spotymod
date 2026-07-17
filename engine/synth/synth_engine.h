@@ -34,6 +34,12 @@ public:
     static constexpr float kDecayMaxS    = 20.f;
     static constexpr float kDetuneCeilCt = 35.f;
 
+    // FILT: linke Haelfte uebersteuert die Schiene um genau die Blendzone,
+    // damit t = -1 bei JEDER Lane-Stellung in Stille endet (Invariante:
+    // kFiltLeftScale >= 1 + kFiltFadeRange).
+    static constexpr float kFiltLeftScale = 1.25f;
+    static constexpr float kFiltFadeRange = 0.25f;
+
     void set_seed(uint32_t seed) { _seed = seed; }   // call BEFORE init
 
     void init(float sample_rate) override;
@@ -50,6 +56,7 @@ public:
     void set_resonance(float n);
     void set_sub(float n);
     void set_detune(float n);      // DETUNE_MAX = n * 35 ct
+    void set_filt(float n);        // -1..+1 cutoff trim; left end fades to silence
 
     int   active_voices() const;
     float voice_env(int v) const;
@@ -79,6 +86,8 @@ private:
     float _resonance = 0.15f;      // boot (spec)
     float _sub_level = 0.3f;       // boot (spec)
     float _detune_max_ct = 18.f;   // boot DETUNE_MAX (spec)
+    float _filt_amt  = 0.f;        // FILT knob -1..+1 (boot: neutral)
+    float _filt_gain = 1.f;        // silence fade below the 60 Hz rail (control-rate)
 
     OnePole _level;                // smoothed master gain (LEVEL target)
 };
