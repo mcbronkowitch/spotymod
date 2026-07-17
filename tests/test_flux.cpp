@@ -120,15 +120,29 @@ TEST_CASE("flux: feedback at max blooms but stays bounded") {
     f.set_feedback(1.f);             // -> 1.2 coefficient, self-oscillates
     f.set_mix(1.f);
     float peak = 0.f;
+    double late_sum_sq = 0.0;
+    int late_n = 0;
     for (int i = 0; i < 480000; ++i) {   // 10 s
         float l = (i == 0) ? 1.f : 0.f;
         float r = l;
         f.process(l, r);
         peak = std::max(peak, std::fabs(l));
         CHECK(std::isfinite(l));
+        if (i >= 432000) {               // last ~1 s (432000..480000)
+            late_sum_sq += (double)l * (double)l;
+            ++late_n;
+        }
     }
+    float late_rms = (float)std::sqrt(late_sum_sq / late_n);
     CHECK(peak > 0.3f);              // it did bloom (sustained energy)
     CHECK(peak < 2.0f);              // but the tanh limiter kept it bounded
+    // Sustain check: this is what actually distinguishes self-oscillation
+    // from mere boundedness. Measured late_rms ~0.095 here (feedback=1.0,
+    // coefficient 1.2); the sub-unity decay case (feedback=0.7) measures
+    // ~0.0005 in an equivalent late window, i.e. it has decayed to silence.
+    // 0.03 sits with comfortable margin below the sustained value and two
+    // orders of magnitude above the decayed one.
+    CHECK(late_rms > 0.03f);
 }
 
 TEST_CASE("flux: feedback below unity decays to silence") {
