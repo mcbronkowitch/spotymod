@@ -93,6 +93,7 @@ public:
     void set_morph(float m)  { _center.set_morph(m); }
     void set_couple(float c) { _center.set_couple(c); }
     void set_drift(float d)  { _center.set_drift(d); }
+    void set_tide(float n)   { for (auto& p : _parts) p.mod().set_tide(n); }
     void set_sync(bool on) {
         _center.set_sync(on);
         for (auto& p : _parts) p.mod().set_synced(on);

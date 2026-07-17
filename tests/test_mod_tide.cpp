@@ -5,6 +5,8 @@
 #include "mod/super_modulator.h"
 #include "mod/divisions.h"
 #include "parts/part.h"
+#include "instrument.h"
+#include "render/scenario.h"
 using namespace spky;
 
 TEST_CASE("tide: ladder is reciprocal-symmetric with x1 at centre") {
@@ -136,4 +138,40 @@ TEST_CASE("range-melody: RANGE narrows the pitch lane, texture stays bit-identic
     }
     CHECK(tex_same);            // Textur-Lanes von RANGE unberührt
     CHECK(amp_b < amp_a);       // Ambitus schrumpft mit RANGE
+}
+
+TEST_CASE("tide: instrument fans out to both parts; melody stays bit-identical") {
+    Instrument a; a.init(48000.f);
+    Instrument b; b.init(48000.f);
+    b.set_tide(1.f);                                  // frei: x4
+    float l = 0.f, r = 0.f, l2 = 0.f, r2 = 0.f;
+    bool pitch_same = true, tex_differ = false;
+    for (int i = 0; i < 48000; ++i) {
+        a.process(nullptr, nullptr, &l, &r, 1);
+        b.process(nullptr, nullptr, &l2, &r2, 1);
+        for (int p = 0; p < PART_COUNT; ++p) {
+            if (a.lane_output(p, LANE_PITCH) != b.lane_output(p, LANE_PITCH))
+                pitch_same = false;
+            if (a.lane_output(p, LANE_SOURCE) != b.lane_output(p, LANE_SOURCE))
+                tex_differ = true;
+        }
+    }
+    CHECK(pitch_same);       // Melodie-Lane unbeeindruckt, beide Parts
+    CHECK(tex_differ);       // Textur läuft woanders
+}
+
+TEST_CASE("tide: scenario action reaches the instrument") {
+    Instrument a; a.init(48000.f);
+    Instrument b; b.init(48000.f);
+    Event e; e.action = "set_tide"; e.value = 1.f;
+    apply_event(b, e);
+    float l = 0.f, r = 0.f, l2 = 0.f, r2 = 0.f;
+    bool tex_differ = false;
+    for (int i = 0; i < 48000; ++i) {
+        a.process(nullptr, nullptr, &l, &r, 1);
+        b.process(nullptr, nullptr, &l2, &r2, 1);
+        if (a.lane_output(0, LANE_SOURCE) != b.lane_output(0, LANE_SOURCE))
+            tex_differ = true;
+    }
+    CHECK(tex_differ);       // der Dispatch beweist sich als Rate-Änderung
 }

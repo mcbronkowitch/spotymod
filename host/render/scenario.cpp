@@ -101,6 +101,7 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_grit_mix")         inst.set_grit_mix(e.part, e.value);
     else if (a == "set_comp")             inst.set_comp(e.part, e.value);
     else if (a == "set_master_drive")     inst.set_master_drive(e.value);
+    else if (a == "set_tide")             inst.set_tide(e.value);
     else if (a == "set_reverb_size")      inst.set_reverb_size(e.value);
     else if (a == "set_reverb_tone")      inst.set_reverb_tone(e.value);
     else if (a == "set_reverb_decay")     inst.set_reverb_decay(e.value);
