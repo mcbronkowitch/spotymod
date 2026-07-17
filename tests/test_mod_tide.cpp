@@ -4,6 +4,7 @@
 #include <algorithm>
 #include "mod/super_modulator.h"
 #include "mod/divisions.h"
+#include "parts/part.h"
 using namespace spky;
 
 TEST_CASE("tide: ladder is reciprocal-symmetric with x1 at centre") {
@@ -73,4 +74,49 @@ TEST_CASE("tide: composes with the center rate_scale") {
     float pitch = m.lane_phase(LANE_PITCH);
     CHECK(m.lane_phase(LANE_SOURCE)
           == doctest::Approx(pitch * 2.f * 2.f * 4.f));
+}
+
+TEST_CASE("mod: depth sweep leaves melody and gates bit-identical") {
+    auto run = [](float depth, std::vector<float>& cv, std::vector<char>& gate,
+                  float& tex_spread) {
+        Part p; p.init(48000.f, 5);
+        p.set_depth(depth);
+        p.set_target_active(LANE_SOURCE, true);
+        p.set_target_base(LANE_SOURCE, 0.5f);
+        p.mod().set_range(1.f);
+        p.mod().set_rate(0.6f);
+        float l, r, mn = 1.f, mx = 0.f;
+        for (int i = 0; i < 48000; ++i) {
+            p.process(l, r);
+            cv.push_back(p.pitch_cv());
+            gate.push_back(p.gate() ? 1 : 0);
+            float t = p.target_value(LANE_SOURCE);
+            mn = std::min(mn, t); mx = std::max(mx, t);
+        }
+        tex_spread = mx - mn;
+    };
+    std::vector<float> cv0, cv1; std::vector<char> g0, g1;
+    float tex0 = 0.f, tex1 = 0.f;
+    run(0.f, cv0, g0, tex0);
+    run(1.f, cv1, g1, tex1);
+    CHECK(cv0 == cv1);                         // Melodie bit-identisch
+    CHECK(g0 == g1);                           // Rhythmus bit-identisch
+    CHECK(tex0 == doctest::Approx(0.f));       // Textur steht bei MOD 0 ...
+    CHECK(tex1 > 0.05f);                       // ... und lebt bei MOD 1
+    float cv_min = *std::min_element(cv0.begin(), cv0.end());
+    float cv_max = *std::max_element(cv0.begin(), cv0.end());
+    CHECK(cv_max - cv_min > 0.01f);            // Melodie moduliert trotz MOD 0
+}
+
+TEST_CASE("mod: fx targets still follow the master depth") {
+    Part p; p.init(48000.f, 5);
+    p.set_fx_target_active(FXT_FLUX_TIME, true);
+    p.set_fx_target_base(FXT_FLUX_TIME, 0.5f);
+    p.set_depth(0.f);
+    p.mod().set_range(1.f);
+    float l, r;
+    for (int i = 0; i < 5000; ++i) {
+        p.process(l, r);
+        CHECK(p.fx_target_value(FXT_FLUX_TIME) == doctest::Approx(0.5f));
+    }
 }

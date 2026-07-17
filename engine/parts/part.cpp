@@ -29,8 +29,12 @@ void Part::init(float sample_rate, uint32_t seed_base,
 }
 
 float Part::target_raw(int slot) const {
-    float mod = _active[slot] ? _mod.lane_output(slot) * _depth * _tdepth[slot] : 0.f;
-    return clampf(_base[slot] + mod, 0.f, 1.f);
+    // Master MOD (ex-DEPTH) shapes the texture only; the PITCH lane is the
+    // anchor and keeps its per-slot depth alone (spec 2026-07-17 mod-tide).
+    const float d = (slot == LANE_PITCH) ? 1.f : _depth;
+    float mod = _active[slot] ? _mod.lane_output(slot) * d * _tdepth[slot] : 0.f;
+    float v = _base[slot] + mod;
+    return clampf(v, 0.f, 1.f);
 }
 
 // PITCH target + TUNE offset, summed BEFORE quantization so the final audible

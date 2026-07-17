@@ -48,8 +48,8 @@ TEST_CASE("instrument: the two parts are decorrelated") {
 TEST_CASE("instrument: set_scale is global and reaches both parts") {
     Instrument inst;
     inst.init(48000.f);
-    inst.set_depth(PART_A, 0.f);
-    inst.set_depth(PART_B, 0.f);
+    inst.set_target_depth(PART_A, LANE_PITCH, 0.f);
+    inst.set_target_depth(PART_B, LANE_PITCH, 0.f);
     inst.set_target_base(PART_A, LANE_PITCH, 0.5f);
     inst.set_target_base(PART_B, LANE_PITCH, 0.5f);
     inst.set_scale(SCALE_WHOLE);   // 18 semis is a whole-tone degree

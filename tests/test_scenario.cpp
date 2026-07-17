@@ -45,7 +45,8 @@ TEST_CASE("scenario: parses init + timeline and sorts events by time") {
 TEST_CASE("scenario: quantizer actions reach the instrument") {
     Instrument inst;
     inst.init(48000.f);
-    Event depth;  depth.action = "set_depth"; depth.part = 0; depth.value = 0.f;
+    Event depth;  depth.action = "set_target_depth"; depth.part = 0;
+    depth.slot = LANE_PITCH; depth.value = 0.f;
     apply_event(inst, depth);
     Event base;   base.action = "set_target_base"; base.part = 0;
     base.slot = LANE_PITCH; base.value = 0.5f;

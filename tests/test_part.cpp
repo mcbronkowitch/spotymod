@@ -18,7 +18,7 @@ TEST_CASE("part: inactive target contributes only its base value") {
 
 TEST_CASE("part detune: engine pitch shifts but pitch_cv stays quantized") {
     Part p; p.init(48000.f, 1u);
-    p.set_depth(0.f);                          // isolate the base value
+    p.set_target_depth(LANE_PITCH, 0.f);       // isolate the base value
     p.set_target_base(LANE_PITCH, 0.5f);
     p.set_tune(0.5f);
     float l, r;
@@ -51,18 +51,17 @@ TEST_CASE("part: active target modulates around its base, clamped to [0,1]") {
     CHECK(maxv <= 1.f);
 }
 
-TEST_CASE("part: DEPTH 0 pins targets to base") {
+TEST_CASE("part: DEPTH 0 pins texture targets to base (pitch is exempt)") {
     Part p;
     p.init(48000.f, 5);
-    p.quant().set_mode(QuantMode::Free);   // this test asserts the raw path
-    p.set_target_active(LANE_PITCH, true);
-    p.set_target_base(LANE_PITCH, 0.5f);
+    p.set_target_active(LANE_SIZE, true);
+    p.set_target_base(LANE_SIZE, 0.5f);
     p.set_depth(0.f);
     p.mod().set_range(1.f);
     float l, r;
     for (int i = 0; i < 5000; ++i) {
         p.process(l, r);
-        CHECK(p.target_value(LANE_PITCH) == doctest::Approx(0.5f));
+        CHECK(p.target_value(LANE_SIZE) == doctest::Approx(0.5f));
     }
 }
 
@@ -102,7 +101,7 @@ TEST_CASE("part: FREE mode restores the raw continuous pitch path") {
     p.init(48000.f, 5);
     p.quant().set_mode(QuantMode::Free);
     p.set_target_base(LANE_PITCH, 0.5f);
-    p.set_depth(0.f);
+    p.set_target_depth(LANE_PITCH, 0.f);
     float l, r;
     p.process(l, r);
     CHECK(p.pitch_cv() == doctest::Approx(0.5f));   // off-grid value passes through
