@@ -84,8 +84,7 @@ void ModLane::set_step(bool on, int steps) {
 // exactly 1.0f, so the panel default stays bit-identical to the old
 // pattern-clock behavior.
 void ModLane::_update_inc() {
-    const float f = _step_mode ? 8.f / static_cast<float>(_steps) : 1.f;
-    _phase_inc = (_rate_hz / _sr) * f;
+    _phase_inc = (_rate_hz / _sr) * clock_scale();
 }
 
 void ModLane::new_phrase() { if (_melodic) _regen_pending = true; }

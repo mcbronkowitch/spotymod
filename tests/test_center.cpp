@@ -330,3 +330,28 @@ TEST_CASE("center free: full COUPLE lands the pair on the ladder and the downbea
     const float tgt = (float)(t - std::floor(t));
     CHECK(std::fabs(wrap_err(tgt - r.a.pitch_phase())) < 0.05f);
 }
+
+TEST_CASE("center grid: step-clock — a 16-step bank locks at half the division rate") {
+    // Step-clock (spec 2026-07-17): with S steps the pitch cycle spans S/8
+    // divisions, so the grid servo must target beats*cpb*(8/S), not beats*cpb.
+    // The unscaled target drags the lane back to cycle==division and re-imposes
+    // the retired pattern-clock feel (Rack report 2026-07-17: STEPS changed the
+    // melody tempo again and 12-vs-8 decks never met the same step grid).
+    Rig r; r.init();
+    r.a.set_tempo_bpm(120.f); r.b.set_tempo_bpm(120.f); r.c.set_tempo_bpm(120.f);
+    r.a.set_synced(true); r.b.set_synced(true); r.c.set_sync(true);
+    r.a.set_rate(0.5f); r.b.set_rate(0.5f);          // same rung: 1/4 -> 2 Hz
+    r.a.set_step(true, 8); r.b.set_step(true, 16);   // same step tempo, B twice as long
+    r.c.set_couple(1.f); r.c.set_drift(0.f);
+    run_synced(r, 5000);                             // 10 s: converge
+    // rate: the servo leaves both banks on their step-clock rate (pitch_scale ~1)
+    CHECK(r.a.master_hz() == doctest::Approx(2.f).epsilon(0.02));
+    CHECK(r.b.master_hz() == doctest::Approx(2.f).epsilon(0.02));
+    // phase: each bank tracks its own step-scaled grid target
+    const double beats = r.c.transport().beats();
+    const float ta = (float)(beats - std::floor(beats));            // cpb 1 x 8/8
+    const double tbd = beats * 0.5;                                 // cpb 1 x 8/16
+    const float tb = (float)(tbd - std::floor(tbd));
+    CHECK(std::fabs(wrap_err(ta - r.a.pitch_phase())) < 0.03f);
+    CHECK(std::fabs(wrap_err(tb - r.b.pitch_phase())) < 0.03f);
+}

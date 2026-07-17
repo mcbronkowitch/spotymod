@@ -52,6 +52,9 @@ public:
     float base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
     bool  synced()    const { return _synced; }
     int   division()  const { return division_index(_rate_norm); }
+    // Step-clock factor of the pitch/master lane (8/steps in STEP, 1 in FLOW):
+    // the grid servo scales its transport target by this (spec 2026-07-17).
+    float clock_scale() const { return _lanes[LANE_PITCH].clock_scale(); }
 
 private:
     void _update_rate();

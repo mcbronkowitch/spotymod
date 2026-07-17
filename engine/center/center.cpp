@@ -153,7 +153,10 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
             // Common-mode phase gravity. Bank A is the pair's phase reference:
             // at this COUPLE level the pairwise pull already holds A and B
             // together, so steering A steers the pair.
-            const double t = _transport.beats() * static_cast<double>(kDivisions[div].cpb);
+            // Bank A is the phase reference, so its step-clock factor scales
+            // the grid target (spec 2026-07-17 step-clock).
+            const double t = _transport.beats()
+                             * static_cast<double>(kDivisions[div].cpb * a.clock_scale());
             const float tgt = static_cast<float>(t - std::floor(t));
             float cme = tgt - a.pitch_phase();
             cme -= std::floor(cme + 0.5f);
@@ -180,7 +183,11 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
 // what outruns EVOLVE's +/-20% raw-rate wander, matching the 2026-07-15 lock
 // quality the existing EVOLVE-wander test asserts.
 float Center::_grid_servo(const SuperModulator& m) const {
-    const float cpb = kDivisions[m.division()].cpb;
+    // Step-clock (spec 2026-07-17): with S steps the pitch cycle spans S/8
+    // divisions, so the grid target runs at cpb x 8/S. Without this scale the
+    // servo drags the lane back to cycle==division and re-imposes the retired
+    // pattern-clock feel whenever SYNC is on.
+    const float cpb = kDivisions[m.division()].cpb * m.clock_scale();
     const double t = _transport.beats() * static_cast<double>(cpb);
     const float target = static_cast<float>(t - std::floor(t));
     float err = target - m.pitch_phase();

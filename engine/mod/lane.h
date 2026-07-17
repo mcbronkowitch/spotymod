@@ -36,6 +36,10 @@ public:
     // is safe to OR into a pulse-based gate without forcing it permanently high.
     bool  note_sustain() const { return _step_mode && _melodic && _note_age < _note_hold; }
     float phase()  const { return _phase; }
+    // Step-clock factor on the cycle rate (spec 2026-07-17): 8/steps in STEP,
+    // 1 in FLOW. The grid servo scales its transport target by this so a
+    // synced bank locks its S-step cycle across S/8 divisions.
+    float clock_scale() const { return _step_mode ? 8.f / static_cast<float>(_steps) : 1.f; }
     float phase_eff() const;                  // audible phase = (_phase + EVOLVE offset), wrapped
     float target() const { return _target; }  // pre-smooth, pre-range held value
 
