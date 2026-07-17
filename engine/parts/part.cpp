@@ -33,8 +33,14 @@ float Part::target_raw(int slot) const {
     // anchor and keeps its per-slot depth alone (spec 2026-07-17 mod-tide).
     const float d = (slot == LANE_PITCH) ? 1.f : _depth;
     float mod = _active[slot] ? _mod.lane_output(slot) * d * _tdepth[slot] : 0.f;
-    float v = _base[slot] + mod;
-    return clampf(v, 0.f, 1.f);
+    float v = clampf(_base[slot] + mod, 0.f, 1.f);
+    // LEVEL floor (play-test rev 2026-07-17): modulation may duck the part to
+    // at most 40% of its set level, never into silence. Relative to the base,
+    // so a hand-muted part (base 0) stays silent; FILT's deliberate fade and
+    // the other slots are untouched.
+    const float floor_v = kLevelFloor * _base[slot];
+    if (slot == LANE_LEVEL && v < floor_v) v = floor_v;
+    return v;
 }
 
 // PITCH target + TUNE offset, summed BEFORE quantization so the final audible

@@ -127,6 +127,10 @@ private:
     std::array<float, FXT_COUNT> _fx_base   { { 0.3f, 0.4f, 1.f, 0.25f, 0.45f } };
     std::array<float, FXT_COUNT> _fx_depth  { { 1.f, 1.f, 1.f, 1.f, 1.f } };
 
+    // Modulation may duck LEVEL to at most this fraction of its base — the
+    // part breathes, it never vanishes (play-test rev 2026-07-17, ear-tunable).
+    static constexpr float kLevelFloor = 0.4f;
+
     float _depth = 1.f;
     float _tune = 0.5f;
     float _detune_cents = 0.f;   // DRIFT detune, applied post-quantizer to the engine only

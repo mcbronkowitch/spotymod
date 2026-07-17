@@ -175,3 +175,43 @@ TEST_CASE("tide: scenario action reaches the instrument") {
     }
     CHECK(tex_differ);       // der Dispatch beweist sich als Rate-Änderung
 }
+
+TEST_CASE("level floor: modulation never ducks LEVEL below 40% of its base") {
+    Part p; p.init(48000.f, 5);          // LEVEL target is boot-active
+    p.set_depth(1.f);
+    p.set_target_base(LANE_LEVEL, 0.8f);
+    p.mod().set_shape(0.5f);
+    p.mod().set_rate(0.6f);
+    float l, r, mn = 1.f;
+    for (int i = 0; i < 96000; ++i) {
+        p.process(l, r);
+        mn = std::min(mn, p.target_value(LANE_LEVEL));
+    }
+    CHECK(mn >= 0.4f * 0.8f - 1e-6f);    // floor holds ...
+    CHECK(mn < 0.5f);                    // ... and actually engaged (full swing)
+}
+
+TEST_CASE("level floor: only the LEVEL slot is floored; base 0 stays free") {
+    Part p; p.init(48000.f, 5);
+    p.set_depth(1.f);
+    p.set_target_active(LANE_SIZE, true);
+    p.set_target_base(LANE_SIZE, 0.8f);
+    p.mod().set_shape(0.5f);
+    p.mod().set_rate(0.6f);
+    float l, r, mn_size = 1.f;
+    for (int i = 0; i < 96000; ++i) {
+        p.process(l, r);
+        mn_size = std::min(mn_size, p.target_value(LANE_SIZE));
+    }
+    CHECK(mn_size < 0.2f);               // texture slots may still dive freely
+
+    Part q; q.init(48000.f, 5);          // a hand-muted part stays mutable
+    q.set_depth(0.f);
+    q.set_target_base(LANE_LEVEL, 0.f);
+    float mx = 0.f;
+    for (int i = 0; i < 4000; ++i) {
+        q.process(l, r);
+        mx = std::max(mx, q.target_value(LANE_LEVEL));
+    }
+    CHECK(mx == doctest::Approx(0.f));   // floor of base 0 is 0, not 0.4
+}
