@@ -68,6 +68,7 @@ public:
     void set_voice_resonance(float n) { _synth.set_resonance(n); }
     void set_voice_sub(float n)       { _synth.set_sub(n); }
     void set_voice_detune(float n)    { _synth.set_detune(n); }
+    void set_voice_filt(float t)      { _synth.set_filt(t); }
 
     int active_voices() const {
         return _engine_id == ENGINE_SYNTH ? _synth.active_voices() : 0;

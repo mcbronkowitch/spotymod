@@ -76,6 +76,7 @@ public:
     void set_voice_resonance(int p, float n) { _parts[p].set_voice_resonance(n); }
     void set_voice_sub(int p, float n)       { _parts[p].set_voice_sub(n); }
     void set_voice_detune(int p, float n)    { _parts[p].set_voice_detune(n); }
+    void set_voice_filt(int p, float t)      { _parts[p].set_voice_filt(t); }
     void trigger_manual(int p)               { _parts[p].trigger_manual(); }
     int  active_voices(int p) const          { return _parts[p].active_voices(); }
     float voice_env(int p, int v) const      { return _parts[p].voice_env(v); }

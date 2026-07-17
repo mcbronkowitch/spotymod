@@ -2,6 +2,8 @@
 #include <cmath>
 #include <vector>
 #include "synth/synth_engine.h"
+#include "instrument.h"
+#include "render/scenario.h"
 using namespace spky;
 
 // SynthEngine-Ebene: Kennlinien-Tests brauchen gepinnte Lane-Werte (auf
@@ -114,4 +116,62 @@ TEST_CASE("filt: sweep through the whole range is click-free") {
         }
     }
     CHECK(maxstep < 0.05f);           // Klicks waeren Spruenge >> Signal-Delta
+}
+
+// ---- Instrument-Ebene: Regression + Verkabelung (Muster: test_choke.cpp) ----
+
+TEST_CASE("filt: 0 is bit-identical to an untouched instrument") {
+    Instrument a, b;
+    a.init(48000.f);
+    b.init(48000.f);
+    b.set_voice_filt(0, 0.f);
+    b.set_voice_filt(1, 0.f);
+    std::vector<float> al(1), ar(1), bl(1), br(1);
+    for (int i = 0; i < 48000; ++i) {
+        a.process(nullptr, nullptr, al.data(), ar.data(), 1);
+        b.process(nullptr, nullptr, bl.data(), br.data(), 1);
+        REQUIRE(al[0] == bl[0]);
+        REQUIRE(ar[0] == br[0]);
+    }
+}
+
+static float inst_rms(Instrument& inst, int samples, int skip) {
+    std::vector<float> l(1), r(1);
+    double acc = 0.0;
+    for (int i = 0; i < samples; ++i) {
+        inst.process(nullptr, nullptr, l.data(), r.data(), 1);
+        if (i >= skip) acc += (double)l[0] * l[0] + (double)r[0] * r[0];
+    }
+    return std::sqrt((float)(acc / (double)(samples - skip)));
+}
+
+TEST_CASE("filt: per-part plumbing - one part fades, the other keeps playing") {
+    Instrument inst;
+    inst.init(48000.f);
+    for (int p = 0; p < 2; ++p) {      // beide Decks sicher hoerbar machen
+        inst.set_rate(p, p == 0 ? 0.8f : 0.9f);
+        inst.set_density(p, 1.f);
+    }
+    CHECK(inst_rms(inst, 96000, 0) > 1e-3f);       // sanity: es klingt
+
+    inst.set_voice_filt(0, -1.f);                   // A weg, B bleibt
+    CHECK(inst_rms(inst, 96000, 9600) > 1e-3f);
+
+    inst.set_voice_filt(1, -1.f);                   // beide weg -> Stille
+    CHECK(inst_rms(inst, 96000, 48000) < 1e-4f);
+}
+
+TEST_CASE("filt: scenario action reaches the instrument") {
+    Instrument inst;
+    inst.init(48000.f);
+    for (int p = 0; p < 2; ++p) {
+        inst.set_rate(p, 0.8f);
+        inst.set_density(p, 1.f);
+        Event e;
+        e.action = "set_voice_filt";
+        e.part = p;
+        e.value = -1.f;
+        apply_event(inst, e);
+    }
+    CHECK(inst_rms(inst, 96000, 48000) < 1e-4f);    // dispatch beweist sich als Stille
 }
