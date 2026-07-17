@@ -65,7 +65,7 @@ public:
         const float root_s = clampf(root_norm, 0.f, 1.f) * Quantizer::SPAN_SEMIS;
         const int ref = nearest(static_cast<int>(root_s + 0.5f), mask, root_semi);
         const int n = _count;
-        int nom[kMaxNotes];
+        int nom[kMaxNotes] = { 0, 0, 0, 0 };   // _nominal fills only [0..n-1]
         _nominal(ref, mask, root_semi, n, _ninth, nom);
 
         // Lay search: slot 0 (the root) is fixed; every other slot may shift
