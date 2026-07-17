@@ -361,3 +361,39 @@ TEST_CASE("synth: entering FLOW fires the promise as the full chord") {
     run_surface(e, chord, 3, 48000);
     CHECK(e.sustain_count() == 3);
 }
+
+TEST_CASE("synth: re-bloom under a decay tail never cannibalizes the surface") {
+    // final-review finding #1: a bloom that finds no free voice must steal
+    // the oldest NON-sustaining voice, never a live surface voice. Repro:
+    // 4-voice FLOW surface -> collapse to 3 (demoted voice still decaying,
+    // long tail) -> bloom back to 4. Under the bug, the steal picks the
+    // globally oldest voice by _order regardless of _sustaining[], which
+    // hits the root (slot 0) and breaks slot contiguity; a later bloom then
+    // lands on the now-missing slot 0 and _demote_all() nukes the whole
+    // surface (sustain_count churns 3 -> 1 -> ... instead of holding >= 3).
+    SynthEngine e;
+    e.set_seed(5u);
+    e.init(48000.f);
+    e.set_decay(0.8f);                              // long tail outlives the re-bloom window
+    const float four[4]  = { 0.3f, 0.36f, 0.42f, 0.5f };
+    const float three[3] = { 0.3f, 0.36f, 0.42f };
+    e.set_flow(true);                               // promise arms the 4-note surface
+    run_surface(e, four, 4, 48000);                  // ~1 s: settle as a full surface
+    CHECK(e.sustain_count() == 4);
+    run_surface(e, three, 3, 480);                   // collapse to 3; demoted voice still decaying
+    CHECK(e.sustain_count() == 3);
+
+    int min_sustain = e.sustain_count();
+    int reached_four_at = -1;
+    for (int i = 0; i < 480; ++i) {                  // re-bloom to 4 (~5 control ticks)
+        e.set_chord(four, 4);
+        float l = 0.f, r = 0.f;
+        e.process(l, r);
+        const int sc = e.sustain_count();
+        if (sc < min_sustain) min_sustain = sc;
+        if (reached_four_at < 0 && sc == 4) reached_four_at = i;
+    }
+    CHECK(min_sustain >= 3);                         // never cannibalized below the collapsed floor
+    REQUIRE(reached_four_at >= 0);
+    CHECK(reached_four_at < 300);                    // reaches 4 within ~3 control ticks
+}

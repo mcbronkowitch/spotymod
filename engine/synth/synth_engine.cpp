@@ -110,6 +110,7 @@ void SynthEngine::set_hold(bool on) {
 void SynthEngine::trigger(float pitch_norm) { _do_trigger(pitch_norm, 1.f, 0); }
 
 void SynthEngine::trigger_chord(const float* p, int n) {
+    if (n < 1) return;                                   // nothing to trigger
     if (n <= 1) { _do_trigger(p[0], 1.f, 0); return; }   // COLOR-0 exact path
     if (n > kMaxChord) n = kMaxChord;
     _vel_now = 1.f / std::sqrt(static_cast<float>(n));   // equal-power comp
@@ -131,11 +132,23 @@ void SynthEngine::_do_trigger(float pitch_norm, float vel, int chord_slot) {
         int v = (_next_rr + i) % kVoices;
         if (!_voices[v].active()) { pick = v; break; }
     }
-    if (pick < 0) {                                   // none free: steal the oldest
-        uint32_t oldest = _order[0];
-        pick = 0;
-        for (int v = 1; v < kVoices; ++v)
-            if (_order[v] < oldest) { oldest = _order[v]; pick = v; }
+    if (pick < 0) {
+        // none free: steal the oldest NON-sustaining voice first (a decaying
+        // demoted voice or a plain STEP note) so a live surface voice is
+        // never cannibalized by a mere bloom/retrigger; fall back to the
+        // oldest sustaining voice only if every voice currently sustains
+        // (unreachable during a bloom, since bloom implies m < _chord_n <=
+        // kVoices, i.e. at least one voice is free or non-sustaining).
+        int free_pick = -1, sus_pick = -1;
+        uint32_t oldest_free = 0, oldest_sus = 0;
+        for (int v = 0; v < kVoices; ++v) {
+            if (_sustaining[v]) {
+                if (sus_pick < 0 || _order[v] < oldest_sus) { oldest_sus = _order[v]; sus_pick = v; }
+            } else {
+                if (free_pick < 0 || _order[v] < oldest_free) { oldest_free = _order[v]; free_pick = v; }
+            }
+        }
+        pick = (free_pick >= 0) ? free_pick : sus_pick;
     }
     _next_rr = (pick + 1) % kVoices;
     _order[pick] = ++_seq;

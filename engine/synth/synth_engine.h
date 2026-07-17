@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "mod/rng.h"
 #include "parts/engine_iface.h"
+#include "pitch/chord.h"
 #include "synth/voice.h"
 #include "util/onepole.h"
 
@@ -36,6 +37,9 @@ public:
     static constexpr float kDetuneCeilCt = 35.f;
     static constexpr int   kMaxChord     = 4;
     static constexpr float kStabSpreadS  = 0.008f;   // stab humanization (ear-tunable)
+
+    static_assert(kMaxChord == ChordBuilder::kMaxNotes,
+                  "chord slot count must match the builder");
 
     // FILT: linke Haelfte uebersteuert die Schiene um genau die Blendzone,
     // damit t = -1 bei JEDER Lane-Stellung in Stille endet (Invariante:
