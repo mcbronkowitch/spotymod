@@ -83,6 +83,12 @@ gefühlte Geschwindigkeit.
 - **STEP↔FLOW bei ≠8 Steps ändert die gefühlte Geschwindigkeit:** FLOW
   läuft auf der Zyklusrate, STEP auf der Step-Clock; nur bei 8 Steps sind
   beide identisch. Folgt direkt aus der Semantik.
+- **`_ev_phase` (EVOLVE-Offset) wird bei einer Live-STEPS-Drehung nicht
+  neu skaliert:** `_ev_phase` ist in Zyklus-Einheiten gespeichert, `set_step()`
+  reskaliert (bewusst) nur `_phase`/`_cur_step`. Der hörbare Versatz,
+  gemessen in Steps, ändert sich also mit der Step-Zahl. Der Offset ist
+  klein (auf ±0.5 Zyklus geklemmt) und selbstkorrigierend — final zu
+  beurteilen im Rack-Listening-Pass.
 
 ## Implementierung
 

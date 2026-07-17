@@ -15,7 +15,7 @@ public:
     void set_rate_hz(float hz);
     void set_shape(float s);          // 0..1
     void set_density(float d) { _density = pg_clampf(d, 0.f, 1.f); }  // 0..1 -> how deep into the groove ranking (k of L cell notes)
-    void set_step(bool on, int steps_per_cycle);
+    void set_step(bool on, int steps);
     void set_fixed_slew(bool on);     // panel switch 3 middle position
     void set_smooth(float s);         // 0..1
     void set_range(float r);          // 0..1

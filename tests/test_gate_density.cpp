@@ -117,11 +117,13 @@ TEST_CASE("gate can sustain across a frozen (rest) step") {
 // regen (it lands at the next STEP-mode wrap), so the lane still runs its
 // stale init()-time layout (steps=8) for the first cycle; with the step-clock
 // a 20-step cycle is 60000 samples, so run past the first wrap before sampling.
+// The window deliberately spans the wrap (65000 > 60000) so the step-0 anchor
+// of the next cycle is captured robustly, not just by float-phasor drift.
 TEST_CASE("DENSE 0 truncates cleanly over a tail: anchors plus the tail's own anchor") {
     ModLane l = melodic_step(0x11, 20);
     l.set_density(0.f);
     for (int n = 0; n < 61000; ++n) l.process();       // let the steps=20 regen land
-    auto s = fired_step_set(l, 20, 59000);
+    auto s = fired_step_set(l, 20, 65000);
     CHECK(s == std::set<int>{0, 6, 12, 18});
 }
 

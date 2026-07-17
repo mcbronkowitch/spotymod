@@ -3,7 +3,7 @@
   "bpm": 120,
   "duration_s": 40,
   "init": [
-    {"_comment":"Principle/variation/groove showcase: a 16-step STEP PITCH melody on synth voices. RATE = '2 bars' rung (4 s cycle at 120 -> 8th-note steps); DENSE 0.55 = syncopated groove (k~4 of 8 ranked cell slots). MELODY sweeps right into GROW, back to LOOP, left into RENEW, a new_phrase tap, a PRINCIPLE change, then a DENSE sweep (sparse anchors -> running steps)."},
+    {"_comment":"Principle/variation/groove showcase: a 16-step STEP PITCH melody on synth voices. RATE = '2 bars' rung; under the step-clock (cycle_hz = rate_hz*8/steps) that rung with 16 steps is an 8 s cycle -> quarter-note steps. DENSE 0.55 = syncopated groove (k~4 of 8 ranked cell slots). MELODY sweeps right into GROW, back to LOOP, left into RENEW, a new_phrase tap, a PRINCIPLE change, then a DENSE sweep (sparse anchors -> running steps)."},
     {"action":"set_engine","part":1,"value":"test_tone"},
     {"_comment":"Part B silenced: default lanes would otherwise siren its pitch (PITCH/LEVEL targets are active by boot default)."},
     {"action":"set_target_active","part":1,"slot":4,"flag":false},
