@@ -48,6 +48,7 @@ public:
 
 private:
     void  _update_slew();
+    void  _update_inc();            // step-clock: inc = rate/sr * (STEP ? 8/steps : 1)
     void  _on_boundary();
     float _compute_raw() const;
     int   _sh_slot() const;         // which _seq slot the S&H end reads now
@@ -66,6 +67,7 @@ private:
     float _sr = 48000.f;
     float _phase = 0.f;
     float _phase_inc = 0.f;
+    float _rate_hz = 0.f;
     float _shape = 0.f;
     float _range = 1.f;
     float _smooth = 0.f;

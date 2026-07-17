@@ -45,21 +45,43 @@ void ModLane::init(float sample_rate, uint32_t seed) {
 
 float ModLane::phase_eff() const { float p = _phase + _ev_phase; return p - std::floor(p); }
 
-void ModLane::set_rate_hz(float hz)   { _phase_inc = (hz > 0.f ? hz : 0.f) / _sr; }
+void ModLane::set_rate_hz(float hz)   { _rate_hz = hz > 0.f ? hz : 0.f; _update_inc(); }
 void ModLane::set_shape(float s)      { _shape = clampf(s, 0.f, 1.f); }
 void ModLane::set_range(float r)      { _range = clampf(r, 0.f, 1.f); }
 void ModLane::set_variation(float v)  { _variation = clampf(v, -1.f, 1.f); }
 
 void ModLane::set_step(bool on, int steps) {
     if (on && !_step_mode) { _note_age = 0; _note_hold = 0; }  // STEP entry: no stale sustain
-    _step_mode = on;
     int new_steps = steps < 1 ? 1 : steps;
     if (_melodic) {
         int old_n = _steps > kSeqSlots ? kSeqSlots : _steps;
         int new_n = new_steps > kSeqSlots ? kSeqSlots : new_steps;
         if (new_n != old_n) _regen_pending = true; // only when effective length changes
     }
+    if (on && _step_mode && new_steps != _steps && _cur_step >= 0) {
+        // Seamless live STEPS turn (spec: step-clock): keep the step index and
+        // the fraction inside it so the boundary grid never jumps; _cur_step
+        // follows along so the next sample sees no ghost boundary. The
+        // _cur_step >= 0 guard keeps pre-run configuration (init -> set_step
+        // before the first process()) on the old path, where the first sample
+        // must still fire step 0.
+        float pos = std::fmod(_phase * static_cast<float>(_steps),
+                              static_cast<float>(new_steps));
+        _phase = pos / static_cast<float>(new_steps);
+        _cur_step = static_cast<int>(pos);
+    }
+    _step_mode = on;
     _steps = new_steps;
+    _update_inc();
+}
+
+// Spec 2026-07-17 step-clock: STEP runs RATE as a step clock with an 8-step
+// reference; FLOW keeps RATE as the cycle rate. At 8 steps the factor is
+// exactly 1.0f, so the panel default stays bit-identical to the old
+// pattern-clock behavior.
+void ModLane::_update_inc() {
+    const float f = _step_mode ? 8.f / static_cast<float>(_steps) : 1.f;
+    _phase_inc = (_rate_hz / _sr) * f;
 }
 
 void ModLane::new_phrase() { if (_melodic) _regen_pending = true; }

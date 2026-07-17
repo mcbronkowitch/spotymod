@@ -278,9 +278,10 @@ TEST_CASE("part: the test tone engine reports zero active voices") {
 // Composed-note sustain routed to the GATE output (rhythm-groove-design.md
 // section 3). SYNCED + tempo 60 + rate norm 0.5 lands on division index 8
 // ("1/4", cpb 1) -> base_hz 1 Hz -> PITCH lane rate = base_hz * kLaneRatio
-// (2.0) = 2 Hz, a 24000-sample cycle / 16 steps = 1500 samples/step. Mirrors
-// the ModLane-level timing in "gate releases before the next note when the
-// gap is long" (tests/test_gate_density.cpp), but observed through Part.
+// (2.0) = 2 Hz; with the step-clock a step is 48000/(8*2) = 3000 samples
+// regardless of the 16-step count. Mirrors the ModLane-level timing in "gate
+// releases before the next note when the gap is long"
+// (tests/test_gate_density.cpp), but observed through Part.
 TEST_CASE("part: gate sustains the composed STEP note, releasing before the next downbeat") {
     Part p;
     p.init(48000.f, 5);
@@ -288,8 +289,8 @@ TEST_CASE("part: gate sustains the composed STEP note, releasing before the next
     p.mod().set_density(0.f);      // anchor-only: notes at steps 0 and 8 (L=8)
     p.mod().set_synced(true);
     p.mod().set_tempo_bpm(60.f);
-    p.mod().set_rate(0.5f);        // -> PITCH lane 2 Hz: 1500 samples/step
-    const int step_samples = 1500;
+    p.mod().set_rate(0.5f);        // -> PITCH lane 2 Hz: 3000 samples/step
+    const int step_samples = 3000;
     std::vector<char> gate;
     float l, r;
     for (int n = 0; n < 24000; ++n) { p.process(l, r); gate.push_back(p.gate()); }

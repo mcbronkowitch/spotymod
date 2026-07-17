@@ -12,12 +12,12 @@ static ModLane melodic_step(uint32_t seed, int steps) {
     l.init(48000.f, seed);           // variation defaults to 0 (LOOP)
     l.set_shape(1.0f);
     l.set_step(true, steps);
-    l.set_rate_hz(2.0f);             // one cycle = 24000 samples
+    l.set_rate_hz(2.0f);             // step-clock: step = 3000 samples
     return l;
 }
 
-// Which step indices fire over one full cycle. At rate 2 Hz / 16 steps a step
-// is 1500 samples; l.phase() just after a fire identifies the entered step.
+// Which step indices fire over one full cycle. At rate 2 Hz a step is 3000
+// samples (step-clock); l.phase() just after a fire identifies the entered step.
 static std::set<int> fired_step_set(ModLane& l, int steps, int samples) {
     std::set<int> out;
     for (int n = 0; n < samples; ++n) {
@@ -33,7 +33,7 @@ TEST_CASE("DENSE is monotonic: raising density only adds notes to the groove") {
     for (int d = 0; d < 4; ++d) {
         ModLane l = melodic_step(0x11, 16);
         l.set_density(densities[d]);
-        auto s = fired_step_set(l, 16, 24000);
+        auto s = fired_step_set(l, 16, 47000);
         for (int step : prev) CHECK(s.count(step) == 1);  // superset of the sparser set
         CHECK(s.size() >= prev.size());
         prev = s;
@@ -44,7 +44,7 @@ TEST_CASE("DENSE is monotonic: raising density only adds notes to the groove") {
 TEST_CASE("DENSE 0 leaves exactly the cell anchors") {
     ModLane l = melodic_step(0x11, 16);   // n=16 -> 2 instances of L=8
     l.set_density(0.f);
-    auto s = fired_step_set(l, 16, 24000);
+    auto s = fired_step_set(l, 16, 47000);
     CHECK(s == std::set<int>{0, 8});      // slot 0 of each instance (rank 0)
 }
 
@@ -53,7 +53,7 @@ TEST_CASE("DENSE is reversible: density 1 == the full pattern") {
     ModLane b = melodic_step(0x11, 16);
     b.set_density(0.2f);             // thin...
     b.set_density(1.0f);             // ...then restore (never edits the groove)
-    CHECK(fired_step_set(a, 16, 24000) == fired_step_set(b, 16, 24000));
+    CHECK(fired_step_set(a, 16, 47000) == fired_step_set(b, 16, 47000));
 }
 
 TEST_CASE("FLOW never freezes after PROBABILITY removal") {
@@ -71,7 +71,7 @@ TEST_CASE("FLOW never freezes after PROBABILITY removal") {
 TEST_CASE("gate releases before the next note when the gap is long") {
     ModLane l = melodic_step(0x11, 16);
     l.set_density(0.f);                    // notes at steps 0 and 8 only (L=8)
-    const int step_samples = 1500;         // 24000-sample cycle / 16 steps
+    const int step_samples = 3000;         // step-clock: 48000/(8*2 Hz)
     std::vector<char> gate;
     for (int n = 0; n < 24000; ++n) { l.process(); gate.push_back(l.gate_state()); }
     CHECK(gate[10]);                       // note sounding just after the downbeat
@@ -101,7 +101,7 @@ TEST_CASE("gate can sustain across a frozen (rest) step") {
         ModLane l = melodic_step(seed * 31u, 16);
         l.set_density(0.9f);               // k=7 of 8
         bool high_while_frozen = false;
-        for (int n = 0; n < 24000; ++n) {
+        for (int n = 0; n < 48000; ++n) {
             l.process();
             if (l.frozen() && l.gate_state()) high_while_frozen = true;
         }
@@ -115,13 +115,13 @@ TEST_CASE("gate can sustain across a frozen (rest) step") {
 // slot 0) fires: once per full instance (0, 6, 12) plus the tail's own slot 0,
 // which lands at absolute slot 18 (18 % L(=6) == 0). set_step() only flags a
 // regen (it lands at the next STEP-mode wrap), so the lane still runs its
-// stale init()-time layout (steps=8) for the first cycle; run one full cycle
-// first to let the steps=20 layout actually take effect before sampling.
+// stale init()-time layout (steps=8) for the first cycle; with the step-clock
+// a 20-step cycle is 60000 samples, so run past the first wrap before sampling.
 TEST_CASE("DENSE 0 truncates cleanly over a tail: anchors plus the tail's own anchor") {
     ModLane l = melodic_step(0x11, 20);
     l.set_density(0.f);
-    for (int n = 0; n < 24000; ++n) l.process();       // let the steps=20 regen land
-    auto s = fired_step_set(l, 20, 24000);
+    for (int n = 0; n < 61000; ++n) l.process();       // let the steps=20 regen land
+    auto s = fired_step_set(l, 20, 59000);
     CHECK(s == std::set<int>{0, 6, 12, 18});
 }
 

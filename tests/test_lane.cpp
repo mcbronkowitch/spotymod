@@ -36,15 +36,15 @@ TEST_CASE("lane: SMOOTH turns a step into a glide") {
     l.init(48000.f, 55);
     l.set_range(1.f);
     l.set_shape(0.5f);        // ramp: consecutive step values differ
-    l.set_step(true, 2);      // 2 steps/cycle; boundary at phase 0.5
+    l.set_step(true, 2);      // step-clock: step = 6000 samples; boundary at ~6000
     l.set_smooth(0.5f);       // glide ~3 ms: settles well within a step, still gliding ~1 ms past a boundary
-    l.set_rate_hz(1.f);       // 48000 samples/cycle -> step is 24000 samples
+    l.set_rate_hz(1.f);       // cycle_hz = 4 -> 12000 samples/cycle
 
-    for (int i = 0; i < 20000; ++i) l.process();   // settle in step 0
+    for (int i = 0; i < 5000; ++i) l.process();    // settle in step 0
     float settled0 = l.process();
     float target0  = l.target();
-    for (int i = 20002; i < 24050; ++i) l.process(); // cross into step 1
-    float out_after = l.process();                   // ~1 ms past boundary
+    for (int i = 5002; i < 6050; ++i) l.process(); // cross into step 1
+    float out_after = l.process();                 // ~1 ms past boundary
     float target1   = l.target();
 
     CHECK(target1 != doctest::Approx(target0));        // new value latched
