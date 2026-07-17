@@ -50,6 +50,7 @@ void Instrument::set_tempo_bpm(float bpm) {
     _bpm = bpm;
     _center.set_tempo_bpm(bpm);
     for (auto& p : _parts) p.mod().set_tempo_bpm(bpm);
+    for (auto& p : _parts) p.fx().set_bpm(bpm);
 }
 
 void Instrument::process(const float* /*inL*/, const float* /*inR*/,
