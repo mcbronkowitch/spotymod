@@ -401,8 +401,8 @@ The headline numbers are no longer estimates — they come from a real Daisy
 Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-185c488.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 156 % of the block
-  budget offline and 156 % anchored inside a real audio callback — over
+  parts, all FX on, high diffusion, echo at max) costs 156 % (max) of the block
+  budget offline and 156 % (max) anchored inside a real audio callback — over
   budget either way. **The 2×4 architecture does not fit**; anchor mode
   confirmed this audibly, with the callback unable to keep up and the DAC
   emitting underrun garbage. The design has to shed voices or FX before M6.
@@ -415,7 +415,8 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-185c488.md`):
   lane, even though the audio path itself had used the cheap `fast_sin`
   polynomial since M2 — the modulation path had simply never been moved
   over. Switching it to `fast_sin` brought the plane down to about **26 %**
-  of the block budget. The spec's own prediction (a fall to about 17 %)
+  of the block budget; still measured from AXI SRAM rather than the firmware's
+  zero-wait DTCMRAM, so the figure stays conservative. The spec's own prediction (a fall to about 17 %)
   **fell short** — the sine really was the single biggest line item, but
   its estimated per-lane cost was too high, so the realized saving came in
   at about 40 % of what the spec predicted. A smaller residual cost

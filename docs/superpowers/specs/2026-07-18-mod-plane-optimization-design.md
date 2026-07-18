@@ -178,7 +178,7 @@ per lane per sample, well under half of what the spec assumed.
    density-setting difference already documented in the Phase 1 decomposition
    check, not a measurement mismatch.
 2. Within one bank, a default (SHAPE 0, FLOW) lane is still the single most
-   expensive lane at 25 491 cycles (2.65 % of budget). A residual ~4 907-cycle
+   expensive lane at 25 491 cycles (about 3 % of budget). A residual ~4 907-cycle
    gap over SHAPE 0.3 (20 584 cycles) remains — evidence that `fast_sin`
    itself costs closer to ~50 cycles at this call site than the ~10–15
    cycles its own header comment claims, not a coding error.
@@ -213,7 +213,7 @@ is a small, already-explained ~4 900-cycle-per-lane remainder, not another
 one-line fix. What is left is the lane state machine's own floor cost, and
 cutting that means the control-rate rework this spec explicitly excluded —
 a lane-semantics redesign, not a follow-up patch. The instrument's real
-problem is elsewhere: `instrument_worst` is still 151 % of budget offline
+problem is elsewhere: `instrument_worst` is still 151 % (avg; 156 % max) of budget offline
 with the plane at only 26 % of that total, and zeroing the plane entirely
 would still leave the instrument at roughly 125 % — over budget on its own.
 Further CPU work belongs in a voice-count or FX spec, where the 2×4 gap
