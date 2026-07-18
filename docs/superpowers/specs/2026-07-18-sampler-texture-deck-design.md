@@ -51,7 +51,7 @@ heap, injected memory, own seeded `Rng` (the established engine rules):
 |------|----------|--------|
 | `sampler_config.h` | constants: `kRecordFade` 192 (4 ms), `kDefaultFeedback` 0.95, `kGrains` 8, `kBurstRelease` (~60 ms), scatter ranges, size curve | new (record constants from `src/core/config.h`) |
 | `sample_buffer.h/.cpp` | record buffer: fadein→sustain→fadeout state machine, overdub feedback write, cut, fill/empty queries, clear | copy of `src/core/buffer.h/.cpp` + the `SoftSwitch`/`XFade` pieces it needs, `namespace spky` |
-| `grain.h` | one grain: latched start/ratio/pan/window, interpolated stereo read, Hann window with skew, forward/reverse | new (`vox.cpp` as math reference) |
+| `grain.h` | one grain: latched start/ratio/pan/window, interpolated stereo read, Hann window with skew, forward/reverse | new (`vox.cpp` as math reference; window/pan/normalization follow the DUST grain idiom — see *Relation to DUST/ROT*) |
 | `sampler_engine.h/.cpp` | `IPartEngine`: scheduler, chord distribution, scatter, gating, transport | new |
 
 `src/` stays untouched and buildable — the frozen reference.
@@ -249,7 +249,10 @@ gains per-part `fill` columns.
   engine-expansion research surfaced (NIME source). Of all engines the
   sampler is the most exposed to SDRAM latency; it goes on the benchmark
   firmware list before the 2×4 CPU budget is committed. Desktop numbers
-  do not transfer.
+  do not transfer. The benchmark must measure the **combined** worst case:
+  a sampler part with DUST high is 8 sampler grains + 8 DUST grains
+  = 16 scattered grain reads per part — and on hardware the FLUX `DeLine`
+  the DUST grains read from presumably lives in SDRAM too.
 
 ## Testing (doctest, TDD as established)
 
@@ -296,6 +299,39 @@ resampling the own synth part via patch cable, menu load/save, patch
 save/reopen with a recorded texture, MOTION sweep, COLOR shimmer, STEP
 chop under CHOKE, voice-row sweep (ATK/DEC grain shape, FILT fade to
 silence, SUB octave layer, DTUN spread).
+
+## Relation to DUST/ROT (FLUX grain stage)
+
+Designed the same day: `2026-07-18-dust-grain-cloud-design.md` adds a
+granular stage to the FLUX tape delay. The two do not overlap — the
+canonical distinction:
+
+> **The sampler cloud is harmonic** — pitch-quantized, chord-locked, it
+> plays *in the scale*. **DUST is inharmonic** — no pitch shift, it
+> scatters *time on the tape*.
+
+Consequences agreed for both specs:
+
+- **Sequencing: DUST ships first.** It is far smaller (no new audio
+  buffer), establishes the grain idiom (fixed pool, raised-cosine window
+  via `fast_sin`, equal-power pan, `1/sqrt(overlap)` normalization,
+  seeded-Rng statistics tests) cheaply, and — since both specs append
+  panel params at the end of `PARAMS` — release order fixes the param
+  ids: DUST/ROT/FRZ first, then M5's REC. The two must not be developed
+  in parallel branches touching `gen_panel.py`.
+- **Shared building blocks, separate read mechanics.** The read paths
+  stay distinct by design (sampler: interpolated, pitch-scaled read on a
+  static buffer; DUST: integer offsets behind a moving write head). But
+  window, pan and normalization are the same math — the sampler reuses
+  the DUST window/pan helpers (extracted to `engine/util/` if that is
+  cleaner once DUST lands) instead of re-deriving them from `vox.cpp`.
+- **Chaining is a feature, not a conflict:** a sampler part runs through
+  its part FX, so sampler cloud → DUST → erosion is a legitimate extreme
+  sound. The combined CPU/SDRAM worst case is named in the CPU section.
+- Considered and rejected: probabilistic reverse in sampler MOTION
+  (DUST borrow — MOTION is a full axis already, Reverse lives in the
+  edit layer) and writeback/erosion on the sampler buffer (self-eating
+  is DUST's signature; the sampler's tape variant is overdub feedback).
 
 ## Roadmap placement
 

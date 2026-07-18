@@ -102,6 +102,8 @@ Per part (mirrored A/B like the FLUX cluster):
 
 **Patch compatibility (hard requirement):** all new params/inputs appended at the **end** of their enums in `gen_panel.py` with explicit coordinates — never added to the `part_controls()` template (would shift part-B/SHARED ids and break existing `.vcv` patches).
 
+**Sequencing vs. M5 sampler (agreed 2026-07-18):** DUST ships **before** the M5 sampler. Both specs append params at the end of `PARAMS`, so release order fixes the ids — DUST/ROT/FRZ first, then M5's REC. The two must not be developed in parallel branches touching `gen_panel.py`.
+
 **No FX-target lane** (user decision): DUST/ROT are hand-played; rhythm comes from the sync zone and the freeze gate. The 5-lane == pad-slot structure stays untouched.
 
 **Hardware reducibility note:** worst case +4 small knobs, +2 pads, +2 jacks across both parts. Reduction ladder if the real panel runs out of space: (1) drop gate jacks, (2) one shared FRZ button, (3) ROT becomes a shared (both-parts) knob, (4) last resort: ROT fixed mid-travel and DUST alone — the engine API is per-part and per-axis regardless, so the panel can merge without engine changes.
@@ -132,6 +134,26 @@ New `tests/test_dust.cpp` (+ small additions to `tests/test_flux.cpp`):
 - **Writeback boundedness:** full-scale input, d = 1, r = 1, sustained ⇒ tape and output stay within headroom (no runaway).
 - **Click-free grains:** max sample-to-sample delta of the grain sum bounded across many births/deaths (both directions).
 - **Scheduler statistics:** free-zone birth rate for a given d within tolerance of the mapped rate (style of `test_rng.cpp`).
+
+## Relation to the M5 sampler (texture deck)
+
+Designed the same day: `2026-07-18-sampler-texture-deck-design.md` is a
+granular *engine* over its own 42 s buffer. The two do not overlap — the
+canonical distinction:
+
+> **The sampler cloud is harmonic** — pitch-quantized, chord-locked, it
+> plays *in the scale*. **DUST is inharmonic** — no pitch shift, it
+> scatters *time on the tape*.
+
+FREEZE (5 s, performative, eroding) and sampler record (42 s, deliberate,
+persistent) are likewise two different gestures, not duplicates. DUST is
+implemented first (see sequencing note in §6) and establishes the grain
+idiom — pool, `fast_sin` window, equal-power pan, `1/sqrt(overlap)`
+normalization, seeded-Rng statistics tests — which the sampler then
+reuses (window/pan helpers extracted to `engine/util/` if that is cleaner
+once DUST lands). The read mechanics stay separate by design: DUST reads
+integer offsets behind a moving write head; the sampler does interpolated,
+pitch-scaled reads on a static buffer.
 
 ## Out of scope / deferred
 
