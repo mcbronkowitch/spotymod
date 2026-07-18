@@ -1,10 +1,16 @@
 #pragma once
 #include <cmath>
 #include "util/math.h"
+#include "util/fast_sin.h"
 
 namespace spky {
 
-inline float wave_sine(float ph)     { return std::sin(ph * TWO_PI); }
+// fast_sin(p) IS sin(2*pi*p), so this is a drop-in for std::sin(ph * TWO_PI).
+// The audio path has used it since M2 (see util/fast_sin.h: ~10-15 cycles on
+// the M7 against ~80-120 for libm sinf); the modulation path was simply never
+// moved over. Error < 1.2e-3, which is inaudible on an LFO but can shift an
+// individual S&H or gate decision by a sample, since those sit on thresholds.
+inline float wave_sine(float ph)     { return fast_sin(ph); }
 inline float wave_triangle(float ph) { return ph < 0.5f ? (-1.f + 4.f * ph) : (3.f - 4.f * ph); }
 inline float wave_ramp(float ph)     { return 2.f * ph - 1.f; }
 inline float wave_pulse(float ph)    { return ph < 0.5f ? 1.f : -1.f; }
