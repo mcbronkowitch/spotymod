@@ -173,7 +173,9 @@ on every platform, including future chunked SD reads on hardware.
     automatically.
 - **Context menu per part:** *Load sample…* (osdialog file dialog +
   vendored `dr_wav`, host-only — the engine stays clean), *Save sample…*,
-  *Clear sample*, Tape/Digital, Reverse.
+  *Clear sample*, Tape/Digital, Reverse, window skew (menu slider),
+  overdub feedback (menu slider) — the full edit layer, so the panel
+  stays at ENGINE + REC.
 - **Persistence:** the loaded WAV path goes into `dataToJson` and is
   re-loaded on patch load. Additionally `onSave` writes the current buffer
   content as WAV into the Rack patch-storage directory and reloads it on
