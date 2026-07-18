@@ -112,8 +112,6 @@ def part_groups(mir):
             (fx(43.5, 38.5), 72.4, 38.5, 24.5, "FX",    MUTED),
             (fx(4.0, 78.0),  98.6, 78.0, 12.6, "PLAY",  MUTED)]
 
-GROUPS = part_groups(False) + part_groups(True)
-
 def group_box(x, y, w, h, legend):
     """Box + the paper chip that breaks the top border for the legend. The
     legend TEXT itself goes through TEXTS, so Rack draws it too (NanoSVG
@@ -210,36 +208,46 @@ PART_STRIDE = len(PART_A)
 
 # --- shared center strip ------------------------------------------------------
 CX = W / 2.0
-L, R = CX - 10.5, CX + 10.5
-# The center box now runs the full height (bottom-aligned with the A/B pad
-# boxes at y 110). Its lower rows line up horizontally with the part rows:
-ROW_VOICE = 76.8    # ATK/DEC/RES/SUB/DTUN
-ROW_FX    = 88.9    # FLUX/GRIT/COMP/STPS
-ROW_PAD   = 102.8   # ENG/.../TRIG pads
+# The centre's outer background card is gone (spec 2026-07-18 §6) -- the four
+# fieldset boxes carry the grouping alone and grew to 41 mm, so the columns
+# move out from +-10.5 to +-11.5.
+L, R = CX - 11.5, CX + 11.5
+ROW_BLEND = 21.5
+ROW_TIME  = 41.0
+ROW_DUO1, ROW_DUO2 = 56.5, 66.0
+ROW_ROOM1, ROW_ROOM2, ROW_ROOM3 = 82.5, 93.0, 103.5
+# The four free-standing centre boxes (spec 2026-07-18 §6); GROUPS is assigned
+# here, not alongside part_groups() above, because these entries need CX.
+GROUPS = part_groups(False) + part_groups(True) + [
+    (CX - 20.5, 13.0, 41.0, 19.5, "BLEND", MUTED),
+    (CX - 20.5, 35.0, 41.0, 13.5, "TIME",  MUTED),
+    (CX - 20.5, 51.0, 41.0, 22.5, "DUO",   MUTED),
+    (CX - 20.5, 76.5, 41.0, 34.7, "ROOM",  MUTED),
+]
 SHARED = [
-    Ctl("MORPH",  BIGKNOB, CX,  22.0, "MORPH"),
-    # TIME: the one clock story — the mode switch, its tempo, and how tightly
+    Ctl("MORPH",  BIGKNOB, CX - 7.0, ROW_BLEND, "MORPH"),
+    # TIME: the one clock story -- the mode switch, its tempo, and how tightly
     # the two parts hang together (spec 2026-07-16 sync/couple redesign)
-    Ctl("SYNC",   SW2,     L,   38.0, "SYNC"),
-    Ctl("TEMPO",  SMKNOB,  CX,  38.0, "TEMPO"),
-    Ctl("COUPLE", SMKNOB,  R,   38.0, "COUPL"),
-    Ctl("SCALE",  KNOBI,   L,   51.0, "SCALE"),
-    Ctl("DRIFT",  SMKNOB,  R,   51.0, "DRIFT"),
-    Ctl("SPOT",   SMBTN,   L,   62.0, "SPOT"),
-    Ctl("MASTER_DRIVE", SMKNOB, CX, 62.0, "DRIVE"),
-    Ctl("SETTLE", SMBTN,   R,   62.0, "SETL"),
-    # ROOM: unchanged rows; TEMPO has moved out, SMEAR/MOD keep flanking.
-    Ctl("REV_SIZE",  SMKNOB, L,  ROW_VOICE, "SIZE"),
-    Ctl("REV_DECAY", SMKNOB, R,  ROW_VOICE, "DECAY"),
-    Ctl("REV_MIX",   SMKNOB, CX, (ROW_VOICE + ROW_FX) / 2.0, "MIX"),
-    Ctl("REV_TONE",  SMKNOB, L,  ROW_FX,    "TONE"),
-    Ctl("REV_DIFF",  SMKNOB, R,  ROW_FX,    "DIFF"),
-    Ctl("REV_SMEAR", SMKNOB, L,  ROW_PAD, "SMEAR"),
-    Ctl("REV_MOD",   SMKNOB, R,  ROW_PAD, "WOBL"),
+    Ctl("SYNC",   SW2,     L,  ROW_TIME, "SYNC"),
+    Ctl("TEMPO",  SMKNOB,  CX, ROW_TIME, "TEMPO"),
+    Ctl("COUPLE", SMKNOB,  R,  ROW_TIME, "COUPL"),
+    Ctl("SCALE",  KNOBI,   L,  ROW_DUO1, "SCALE"),
+    Ctl("DRIFT",  SMKNOB,  R,  ROW_DUO1, "DRIFT"),
+    Ctl("SPOT",   SMBTN,   L,  ROW_DUO2, "SPOT"),
+    Ctl("MASTER_DRIVE", SMKNOB, CX, ROW_DUO2, "DRIVE"),
+    Ctl("SETTLE", SMBTN,   R,  ROW_DUO2, "SETL"),
+    # ROOM: three rows in its own box, bottom edge flush with the PLAY boxes.
+    Ctl("REV_SIZE",  SMKNOB, L,  ROW_ROOM1, "SIZE"),
+    Ctl("REV_DECAY", SMKNOB, R,  ROW_ROOM1, "DECAY"),
+    Ctl("REV_MIX",   SMKNOB, CX, ROW_ROOM1, "MIX"),
+    Ctl("REV_TONE",  SMKNOB, L,  ROW_ROOM2, "TONE"),
+    Ctl("REV_DIFF",  SMKNOB, R,  ROW_ROOM2, "DIFF"),
+    Ctl("REV_SMEAR", SMKNOB, L,  ROW_ROOM3, "SMEAR"),
+    Ctl("REV_MOD",   SMKNOB, R,  ROW_ROOM3, "WOBL"),
     # CHOKE: bipolar event-priority between the decks (spec 2026-07-16
-    # choke-priority). Fills the free centre slot between SCALE and DRIFT.
-    # Appended LAST on purpose: existing .vcv patches keep their param ids.
-    Ctl("CHOKE",  SMKNOB, CX,  51.0, "CHOKE"),
+    # choke-priority). Appended LAST on purpose: existing .vcv patches keep
+    # their param ids.
+    Ctl("CHOKE",  SMKNOB, CX, ROW_DUO1, "CHOKE"),
 ]
 
 def color_ctl(suffix, mir):
@@ -260,7 +268,7 @@ PARAMS = PART_A + PART_B + SHARED + [
     # Appended LAST like CHOKE/FILT so existing .vcv patches keep their ids;
     # the coordinate puts it beside MORPH in the centre's movement column
     # (COUPLE/DRIFT/SETL).
-    Ctl("TIDE", SMKNOB, R, 22.0, "TIDE"),
+    Ctl("TIDE", SMKNOB, CX + 11.0, ROW_BLEND, "TIDE"),
     # FLUX synced-delay controls (spec 2026-07-17 flux-synced-delay). Per part,
     # appended LAST like FILT/TIDE/CHOKE so existing .vcv patches keep their ids.
     # They complete the FLUX delay cluster atop the FX box: RATE (FX_TOP[0]),
@@ -311,8 +319,6 @@ LIGHTS = [
 TEXTS = [
     (RING_CX_A,     RING_CY + 1.6, 5.0, 0.0, GREEN_DIM,  "A"),
     (W - RING_CX_A, RING_CY + 1.6, 5.0, 0.0, COPPER_DIM, "B"),
-    (CX,            32.2,          2.2, 0.5, MUTED,      "TIME"),
-    (CX,            70.0,          2.2, 0.5, MUTED,      "ROOM"),
     (CX,            7.0,           3.6, 0.9, INK,        "SPOTYMOD"),  # top brand
 ] + [
     # sector captions, tucked into the free panel corners (spec §1)
@@ -411,11 +417,6 @@ def svg():
         for hy in (3.0, Hh-3.0):
             P.append(f'<circle cx="{mm(hx)}" cy="{mm(hy)}" r="1.6" '
                      f'fill="#d8d0bf" stroke="{LINE}" stroke-width="0.3"/>')
-    # center strip card (neutral zone between the two coloured halves). Runs
-    # the full height, bottom edge (y 110) level with the A/B pad boxes; the
-    # jack strip lives below it on the bare bottom edge.
-    P.append(f'<rect x="{mm(CX-21)}" y="10.0" width="42.0" height="100.0" rx="2" '
-             f'fill="{PAPER_DEEP}" stroke="{LINE}" stroke-width="0.3"/>')
     # sector tints behind the orbit (drawn first: everything else sits on top)
     for mir, cx, accent in ((False, RING_CX_A, GREEN), (True, W - RING_CX_A, COPPER)):
         for (name, a0, a1, _cap) in SECTORS:
@@ -430,11 +431,6 @@ def svg():
     for dx in (28.7, W - 28.7):
         P.append(f'<line x1="{mm(dx)}" y1="100.6" x2="{mm(dx)}" y2="109.2" '
                  f'stroke="{LINE}" stroke-width="0.35"/>')
-    # ROOM + TIME eyebrow rules (text itself comes from TEXTS)
-    for ey in (69.2, 31.4):
-        for (x0, x1) in ((CX-19.0, CX-8.0), (CX+8.0, CX+19.0)):
-            P.append(f'<line x1="{mm(x0)}" y1="{mm(ey)}" x2="{mm(x1)}" y2="{mm(ey)}" '
-                     f'stroke="{LINE}" stroke-width="0.25"/>')
     # brand flanking dots -- one per colour, flanking the top SPOTYMOD logo
     P.append(f'<circle cx="{mm(CX-15)}" cy="5.9" r="0.9" fill="{GREEN}"/>')
     P.append(f'<circle cx="{mm(CX+15)}" cy="5.9" r="0.9" fill="{COPPER}"/>')

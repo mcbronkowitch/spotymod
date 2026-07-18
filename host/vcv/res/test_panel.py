@@ -249,6 +249,56 @@ def test_pad_backplates_are_gone():
           "the old pad backplate is still drawn")
 
 
+CENTER = {   # enum -> (x offset from CX, y)
+    'MORPH': (-7.0, 21.5), 'TIDE': (11.0, 21.5),
+    'SYNC': (-11.5, 41.0), 'TEMPO': (0.0, 41.0), 'COUPLE': (11.5, 41.0),
+    'SCALE': (-11.5, 56.5), 'CHOKE': (0.0, 56.5), 'DRIFT': (11.5, 56.5),
+    'SPOT': (-11.5, 66.0), 'MASTER_DRIVE': (0.0, 66.0), 'SETTLE': (11.5, 66.0),
+    'REV_SIZE': (-11.5, 82.5), 'REV_MIX': (0.0, 82.5), 'REV_DECAY': (11.5, 82.5),
+    'REV_TONE': (-11.5, 93.0), 'REV_DIFF': (11.5, 93.0),
+    'REV_SMEAR': (-11.5, 103.5), 'REV_MOD': (11.5, 103.5),
+}
+
+
+def test_center_positions():
+    for enum, (dx, y) in CENTER.items():
+        c = ctl(enum)
+        want_x = g.CX + dx
+        check(approx(c.x, want_x) and approx(c.y, y),
+              f"{enum} at ({c.x:.2f}, {c.y:.2f}), want ({want_x:.2f}, {y})")
+
+
+def test_center_group_boxes():
+    want = [(13.0, 19.5, 'BLEND'), (35.0, 13.5, 'TIME'),
+            (51.0, 22.5, 'DUO'), (76.5, 34.7, 'ROOM')]
+    for (y, h, name) in want:
+        check(any(approx(gx, g.CX - 20.5) and approx(gy, y) and approx(gw, 41.0)
+                  and approx(gh, h) and gn == name
+                  for (gx, gy, gw, gh, gn, _c) in g.GROUPS),
+              f"centre group {name} missing at y {y} (h {h}, x {g.CX - 20.5:.2f})")
+
+
+def test_center_card_is_gone():
+    check('width="42.000" height="100.000"' not in g.svg(),
+          "the full-height centre card is still drawn")
+
+
+def test_old_eyebrow_texts_are_gone():
+    """TIME/ROOM are group legends now, not free-floating eyebrows."""
+    for (x, y, sz, sp, col, t) in g.TEXTS:
+        if t in ('TIME', 'ROOM'):
+            check(approx(sz, 1.8) and approx(x, g.CX - 20.5 + 5.0),
+                  f"{t} is still the old eyebrow (size {sz} at x {x:.2f})")
+
+
+def test_room_is_flush_with_play():
+    """Spec §6: ROOM's bottom edge lines up with the PLAY boxes."""
+    room = [gr for gr in g.GROUPS if gr[4] == 'ROOM'][0]
+    play = [gr for gr in g.GROUPS if gr[4] == 'PLAY'][0]
+    check(approx(room[1] + room[3], play[1] + play[3]),
+          f"ROOM ends at {room[1] + room[3]:.2f}, PLAY at {play[1] + play[3]:.2f}")
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
