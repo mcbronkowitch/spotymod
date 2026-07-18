@@ -1,7 +1,9 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo
 
-**Date:** 2026-07-18 (rev 2 — performance/experimental redesign, same day)
-**Status:** design approved, ready for implementation plan
+**Date:** 2026-07-18 (rev 3 — control surface reduced to what the hardware will
+actually have, same day)
+**Status:** design approved; implementation plan written —
+`docs/superpowers/plans/2026-07-18-dust-grain-cloud.md`
 **Scope:** a per-part granular read/write stage inside the FLUX block, a character axis (ROT), and a tape FREEZE with erosion. No new audio buffers. No change to GRIT, COMP, reverb, or the master chain.
 
 ## Problem
@@ -16,13 +18,13 @@ Requirements (user decisions):
 - Character range: tempo-synced stutter → free scatter → reverse grains → self-eating writeback.
 - FREEZE with two personalities: preserving looper (low ROT) or **eroding loop that decomposes itself** (high ROT).
 - No pitch-shifted grains (reverse is time-reversal, not transposition).
-- No FX-target lane; live play = knobs + freeze gate.
+- No FX-target lane; live play = knobs + freeze pad.
 
 ## Existing infrastructure this reuses
 
 - `engine/fx/flux.h` — `EchoDelay` over `DeLine` rings (240 000 samples = 5 s per channel per part). The write pointer decrements once per sample; a read at constant offset behind it **is** 1× forward playback delayed by that offset. `Flux` already receives BPM and knows `_delay_time`.
 - `engine/mod/rng.h` — deterministic xorshift32 `Rng` (bit-reproducible, statistically testable).
-- `engine/util/fast_sin.h` — for the raised-cosine (Hann) grain window.
+- `engine/fx/fx_util.h` — `hann_value_at()`, the existing 192-entry table. It is `sin²(π/2·x)`, so folding a grain's age about its midpoint yields **exactly** `sin²(π·age)` — a true Hann grain window with no new table and no `fast_sin` call. (`engine/util/fast_sin.h` is still used, but for the equal-power pan, matching the `Voice::update_control` idiom.)
 - `engine/fx/part_fx.*`, `engine/instrument.*` — per-part FX plumbing and setter forwarding.
 - `host/vcv/res/gen_panel.py` — panel generator; params appended at end of `PARAMS` for patch compatibility (FILT/TIDE/FLUXRATE precedent).
 
@@ -95,30 +97,38 @@ out += (e * head_gain(d) + gLR) * _mix_lin
 
 Per part (mirrored A/B like the FLUX cluster):
 
-- **`DUST_A/B`** — SMKNOB (amount).
-- **`ROT_A/B`** — SMKNOB (character: sync → free → rot).
-- **`FRZ_A/B`** — LATCH pad (widget family of ENG/GRIT pads).
-- **`FRZGATE_A/B`** — gate input in the jack strip: latch **OR** gate high = frozen ⇒ a sequencer can stutter-freeze rhythmically; held gate + high ROT = performed erosion.
+- **`DUST_A/B`** — SMKNOB (amount). Appended; sits in slot 3 of the FX box's bottom row, which widens from two knobs to four (`GRIT COMP DUST ROT`, pitch 8.833 mm against a 3.0 mm knob radius).
+- **`ROT_A/B`** — SMKNOB (character: sync → free → rot). Appended; slot 4 of the same row.
+- **`FRZ_A/B`** — LATCH pad. **Reuses the `TRIGGER_A/B` slot in place** in `part_controls()`: the manual trigger was unused, and taking over its template position is what keeps `PART_STRIDE` at 23. Kind changes from momentary (`SMBTN`) to latch.
 
-**Patch compatibility (hard requirement):** all new params/inputs appended at the **end** of their enums in `gen_panel.py` with explicit coordinates — never added to the `part_controls()` template (would shift part-B/SHARED ids and break existing `.vcv` patches).
+**No gate inputs (decision 2026-07-18).** The spec's earlier `FRZGATE_A/B` is
+dropped: the real hardware will not have those jacks, so putting them on the
+VCV panel would violate the standing reducibility constraint — this is
+reduction ladder step (1) below, taken up front rather than held in reserve.
+Consequence, accepted: **no sequencer-gated stutter-freeze in v1.** FREEZE is
+hand-played. The engine API stays per-part and level-driven (`set_freeze(p,
+on)`), so if the gates ever return, only `gen_panel.py` and one host line
+change.
+
+**Patch compatibility (hard requirement):** all new params appended at the **end** of their enums in `gen_panel.py` with explicit coordinates — never added to the `part_controls()` template (would shift part-B/SHARED ids and break existing `.vcv` patches). The one template edit, `TRIGGER_A/B` → `FRZ_A/B`, is a rename at a fixed index: the count is unchanged, so `PART_STRIDE` stays 23 and every id holds. Residue: a patch saved with TRIGGER held down would load with FREEZE engaged — momentary buttons are effectively never saved at 1, so this is accepted rather than mitigated.
 
 **Sequencing vs. M5 sampler (agreed 2026-07-18):** DUST ships **before** the M5 sampler. Both specs append params at the end of `PARAMS`, so release order fixes the ids — DUST/ROT/FRZ first, then M5's REC. The two must not be developed in parallel branches touching `gen_panel.py`.
 
-**No FX-target lane** (user decision): DUST/ROT are hand-played; rhythm comes from the sync zone and the freeze gate. The 5-lane == pad-slot structure stays untouched.
+**No FX-target lane** (user decision): DUST/ROT are hand-played; rhythm comes from the sync zone alone. The 5-lane == pad-slot structure stays untouched.
 
-**Hardware reducibility note:** worst case +4 small knobs, +2 pads, +2 jacks across both parts. Reduction ladder if the real panel runs out of space: (1) drop gate jacks, (2) one shared FRZ button, (3) ROT becomes a shared (both-parts) knob, (4) last resort: ROT fixed mid-travel and DUST alone — the engine API is per-part and per-axis regardless, so the panel can merge without engine changes.
+**Hardware reducibility note:** net cost after the reductions above is **+4 small knobs and 0 new pads** across both parts (the FRZ pads reuse TRIGGER's slot, and the gate jacks are gone). Reduction ladder, with step (1) already taken: ~~(1) drop gate jacks~~ **done**, (2) one shared FRZ button, (3) ROT becomes a shared (both-parts) knob, (4) last resort: ROT fixed mid-travel and DUST alone — the engine API is per-part and per-axis regardless, so the panel can merge without engine changes.
 
 ### 7. Engine API + host plumbing
 
 - `Flux::set_dust(float)`, `Flux::set_rot(float)`, `Flux::set_freeze(bool)`; `Flux` owns the `DustCloud`, passes tap access + delay time (sync grid) + collects writeback.
 - `PartFx` / `Instrument` forwarding in the `set_flux_mix` pattern: `set_dust(p, v)`, `set_rot(p, v)`, `set_freeze(p, on)`.
 - `host/render/scenario.cpp`: actions `set_dust`, `set_rot`, `set_freeze` + demo scenarios (`dust_stutter.json` — sync zone; `dust_erosion.json` — freeze + zone R).
-- `host/vcv/src/Spotymod.cpp`: knobs/pad/gate → setters; DUST tooltip in percent; ROT tooltip naming the zone ("SYNC / FREE / ROT"); FRZ on/off.
+- `host/vcv/src/Spotymod.cpp`: knobs/pad → setters; DUST tooltip in percent; ROT tooltip naming the zone ("SYNC / FREE / ROT"); FRZ read as a level (the latch state *is* the freeze state), and the old manual-trigger wiring removed.
 
 ### 8. CPU + memory budget
 
 - **Memory:** ~8 grain structs × 2 parts (< 1 KB). **No new audio buffers.**
-- **CPU:** worst case 16 grains × (1 read + window + 2 mults); reverse costs one extra add. Writeback adds one tanh per part-sample *only in zone R*; erosion one more *only while frozen*. No transcendentals otherwise in the hot path (window via LUT/`fast_sin`). Estimated ≪ 1 % on the H750 @ 480 MHz.
+- **CPU:** worst case 16 grains × (1 read + window + 2 mults); reverse costs one extra add. Writeback adds one tanh per part-sample *only in zone R*; erosion one more *only while frozen*. No transcendentals otherwise in the hot path — the window is a table lookup (`hann_value_at`), and pan gains are computed once at grain birth, not per sample. Estimated ≪ 1 % on the H750 @ 480 MHz.
 - DUST = 0 and no freeze: two branch checks.
 
 ## Testing
@@ -158,6 +168,7 @@ pitch-scaled reads on a static buffer.
 ## Out of scope / deferred
 
 - Rack play-test and listening pass (project convention) — final tuning of all zone breakpoints, curves, `wear`, `wb_gain`, takeover knee, normalization.
+- **`FRZGATE_A/B` gate inputs** — cut from v1 (decision 2026-07-18, see §6): the hardware will not have the jacks. With them go sequencer-gated stutter-freeze and performed erosion via a held gate. Reinstating them needs a `JACK_GROUPS` entry, the enum added to the hardcoded `IN` tuple in `jack_at()`, and one `pushParams` line — the jack strip has no room at today's 23.0 mm box width, so it would also need the strip constants retuned.
 - Unfreeze write-in crossfade — only if the play-test hears a click.
 - Pitch-shifted grains, half/double-speed heads, write-head skip chaos (GRIT overlap) — deliberately not in v1.
 - Firmware (M6) wiring — engine code is target-agnostic like the rest of the FX layer.
@@ -167,7 +178,8 @@ pitch-scaled reads on a static buffer.
 - `engine/fx/dust.h`, `engine/fx/dust.cpp` — **new**: `DustCloud` (pool, zones, scheduler, window, reverse, writeback sum).
 - `engine/fx/flux.h`, `engine/fx/flux.cpp` — `ReadTap`, freeze/erosion store, writeback input, dust integration, head takeover.
 - `engine/fx/part_fx.h/.cpp`, `engine/instrument.h/.cpp` — setter forwarding.
-- `host/vcv/res/gen_panel.py` + regenerated `generated_panel.hpp` — `DUST_A/B`, `ROT_A/B`, `FRZ_A/B`, `FRZGATE_A/B` appended.
-- `host/vcv/src/Spotymod.cpp` — param config, zone tooltip, gate OR latch logic.
+- `host/vcv/res/gen_panel.py` + regenerated `Spotymod.svg` / `generated_panel.hpp` — `FX_BOT` widened to four slots, `TRIGGER_A/B` renamed to `FRZ_A/B` in the template, `DUST_A/B` + `ROT_A/B` appended.
+- `host/vcv/res/test_panel.py` — `PARAM_ORDER`, `LOWER_A`, plus a guard that `PART_STRIDE` is still 23 and the new params are appended rather than templated.
+- `host/vcv/src/Spotymod.cpp` — param config, DUST/ROT tooltips, FRZ latch read, manual-trigger wiring removed.
 - `host/render/scenario.cpp` + `host/render/scenarios/dust_stutter.json`, `dust_erosion.json`.
 - `tests/test_dust.cpp` (new), `tests/test_flux.cpp`.
