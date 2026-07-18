@@ -451,3 +451,84 @@ EOF
 - No anchor-mode additions — the offline rows suffice for attribution; anchor stays the 3-row go/no-go set.
 - No new instrument states beyond the three ablations (no STEP-vs-FLOW matrix, no per-lane sweeps — the mod family owns lane granularity).
 - The firmware-shell cost (ADC/UI/LED/meter of the eventual 2×4 shell) stays unpriced here; it needs a shell to measure. Note it in the roadmap as standing headroom (~10 %) the engine budget must leave.
+
+---
+
+## Outcome (2026-07-19)
+
+**Provenance note first.** Task 2's hardware run happened before its own
+commit landed, so its result pair was written under the wrong git hash
+(`3e67399`, a commit that predates the `abl` family, even though the binary
+it measured already contained the `abl` code). That pair was never used for
+this closure — a fresh run was taken at `HEAD = 9be5df9` (clean tree) and
+produced the correctly-named `docs/bench/2026-07-19-9be5df9.{md,csv}`, which
+is the sole source for everything below (same-run-only, no cross-build
+figures). Both passes checksum-identical, no drift warning. One free
+datapoint fell out of the re-run: `fx_none` moved 30158 → 32047 → 32322
+across `185c488` → `3e67399`-labeled → this run — the ~7 % jump the b2
+report flagged happened once, when `workloads_abl.cpp` first linked into the
+binary, and stayed flat (+0.9 %) afterward with no further code change.
+Consistent with a one-time icache-layout shift, not an ongoing drift.
+
+**Closure arithmetic** (all avg cycles, `docs/bench/2026-07-19-9be5df9.csv`):
+
+| term | value | ≈ % of budget |
+|---|---:|---:|
+| Part glue (per part) | 112820 | 12 % |
+| In-context FLUX | 111124 | 12 % |
+| coupling_flux | −21710 | −2 % |
+| In-context reverb | 228749 | 24 % |
+| coupling_reverb | 42076 | 4 % |
+| CHOKE tax | −94293 | −10 % |
+| Driven-limiter tax | 27698 | 3 % |
+| FLUX memory tax (2 ch) | 3370 | 0.4 % |
+| FLUX tanh share (2 ch) | 39890 | 4 % |
+| FLUX remainder (bpf/interp/SetDelay, 2 ch) | 23157 | 2 % |
+| full PartFx (1 part, all 3 blocks additive) | 128971 | 13 % |
+
+**Closure test:** `super_mod_5lanes`×2 + `center_tick` + 2×glue +
+2×`synth_4_voices` + 2×full PartFx + in-context reverb + driven-limiter tax
+= 1373283 cycles, against `instrument_worst` = 1448033 cycles.
+
+**Residual = 74750 cycles = 7.8 % of budget (5.2 % of `instrument_worst`).**
+Inside the brief's 10-point no-action threshold, a hair over its ~5 %
+closeness target. Not treated as a missing owner: `full PartFx` stacks
+GRIT/FLUX/COMP's deltas over `fx_none` additively (no row measures all three
+engaged in one part at once, so any pairwise coupling between FX blocks —
+the same kind of effect the reverb ablation surfaced at +42076 cycles — is
+invisible to the formula), and nine summed rows each carry their own
+~1700-cycle jitter band. **Named next ablation, if this is worth closing
+further:** `fx_all_solo` — one `Part`'s full FX chain with GRIT + FLUX
+(SDRAM) + COMP all engaged simultaneously, `fx_none`'s harness — to measure
+FX-block coupling directly instead of assuming it's additive.
+
+**Ranking, largest predicted saving first** (ceilings unless noted, all vs.
+the 960k-cycle budget):
+
+1. Part glue to control rate — ceiling ≈225640 cycles (≈23 %, both parts).
+   Largest attributed line by far; not proven safe (control-rate rework was
+   explicitly out of scope for the mod-plane spec on the same STEP/FLOW
+   risk grounds).
+2. Reverb composition-coupling (≈42076 cycles, ≈4 %, already paid,
+   mechanism unexplained) + a speculative, unmeasured half-rate-reverb
+   hypothesis (order ≈93000 cycles, ≈10 %, no bench row backs this yet).
+3. Fast tanh in `EchoDelay` — ceiling ≈79780 cycles (≈8 %, both parts).
+   Confirmed FLUX's dominant cost; mirrors the `wave_sine`→`fast_sin` cut.
+4. Fast tanh in `Limiter::shape()` — ≈27698 cycles (≈3 %), one call site.
+5. Hygiene: `PartFx` rev-send `std::sin`→`fast_sin` — measured ≈10228
+   cycles (≈1 %), ceiling ≤ `micro_sinf`×2 parts = 22582 cycles (≈2 %).
+6. Hygiene: double pitch quantization in `Part::process` — ceiling
+   ≤ `micro_sinf`×2 parts = 22582 cycles (≈2 %), no dedicated row, likely
+   much smaller than the ceiling.
+
+**Findings, not cuts:** CHOKE tax is negative (−94293 cycles, ≈−10 %) —
+CHOKE is not a worst-case axis; `coupling_flux` is negative (−21710 cycles,
+≈−2 %) — FLUX shows no reverb-style composition tax; GRIT Reduce costs
++11489 cycles (≈+78 % relative) over Drive solo, and the current worst case
+measures Drive only — flag for whoever next redefines the worst-case row.
+
+**The 2×4 go/no-go conclusion did not move.** `instrument_worst` = 150.83 %
+avg / 156.06 % max offline, 152.03 % avg / 155.95 % max anchored — within
+jitter of every prior measurement. The architecture still does not fit; this
+task's contribution is naming where the cost lives, not changing the
+verdict. Full report: `.superpowers/sdd/cpuhunt-b3-report.md`.

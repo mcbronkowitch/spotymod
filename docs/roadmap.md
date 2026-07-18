@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-18 (mod-plane decomposition + `fast_sin` cut).
+- **Last updated:** 2026-07-19 (ablation family closes the instrument's unaccounted budget).
 
 > **Reminder:** the engine and its milestones are still verified only against
 > the desktop offline renderer (unit tests + WAV/CSV render) — the Daisy
@@ -398,14 +398,59 @@ Makefile) is untouched by its presence; Step 1 of the bench plan re-proves
 that on every run.
 
 The headline numbers are no longer estimates — they come from a real Daisy
-Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-185c488.md`):
+Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-9be5df9.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 156 % (max) of the block
-  budget offline and 156 % (max) anchored inside a real audio callback — over
-  budget either way. **The 2×4 architecture does not fit**; anchor mode
-  confirmed this audibly, with the callback unable to keep up and the DAC
-  emitting underrun garbage. The design has to shed voices or FX before M6.
+  parts, all FX on, high diffusion, echo at max) costs 150.83 % (avg) /
+  156.06 % (max) of the block budget offline and 152.03 % (avg) /
+  155.95 % (max) anchored inside a real audio callback — over budget either
+  way. **The 2×4 architecture does not fit**; anchor mode confirmed this
+  audibly, with the callback unable to keep up and the DAC emitting
+  underrun garbage. The design has to shed voices or FX before M6.
+- **The unaccounted gap is now attributed, and the go/no-go conclusion did
+  not move.** Component rows summed to ~120 % of budget while
+  `instrument_worst` measured ~159 % (avg) — a ~375k-cycle (39-point) gap
+  with no named owner. Fourteen `abl` bench rows
+  (`docs/superpowers/plans/2026-07-18-bench-ablation-family.md`) close it on
+  paper: **Part glue** — `Part::process`'s per-sample lane-target/quantizer/
+  ChordBuilder machinery, isolated for the first time — is the single
+  largest owner at ≈112820 cycles/part (≈12 % of budget each, ≈23 % for
+  both parts); the **driven master limiter** costs 27698 cycles (≈3 %)
+  whenever `MASTER DRIVE` defeats its bit-exact bypass; running the
+  **reverb** in-context costs 42076 cycles (≈4 %) more than its isolated
+  cost — a real composition/cache-coupling tax that FLUX's own coupling
+  term does *not* show (that one came back negative); and **CHOKE**, once
+  actually measured instead of assumed, *reduces* worst-case cost by
+  ≈94293 cycles (≈10 %) — it is not a worst-case axis. Inside FLUX,
+  `std::tanh` in `EchoDelay` is now confirmed the dominant per-sample cost
+  (≈60 % of FLUX's in-context delta over the FX-none shell), ahead of its
+  SDRAM memory tax (≈5 %) and its remaining bpf/interpolation/SetDelay
+  machinery (≈35 %). Summing every named term (mod plane ×2, Part glue ×2,
+  engine ×2, full PartFx ×2, in-context reverb, driven-limiter tax) against
+  `instrument_worst` closes to within 7.8 % of budget (5.2 % of
+  `instrument_worst`) — under the 10-point threshold, so the residual is not
+  treated as a missing owner; it's attributed to the additive-stacking
+  approximation used for "full PartFx" (no row yet measures GRIT+FLUX+COMP
+  running together in one part) plus compounded row-to-row jitter. The 2×4
+  verdict itself is unchanged — `instrument_worst` sits within jitter of
+  every prior measurement — the closure just names where the cost lives
+  instead of leaving 39 points dark. Ranked cut list for the next spec
+  (predicted savings, largest first, all as % of the 960k-cycle budget):
+  Part glue to control rate (ceiling ≈23 %, not proven safe — STEP's
+  fire-gating already exists, FLOW's SMOOTH=0 near-passthrough is the risk
+  case); reverb composition-coupling investigation (≈4 % already paid,
+  mechanism unexplained) plus a speculative, unmeasured half-rate-reverb
+  hypothesis (order ≈10 %, needs its own ablation before it's trusted); fast
+  tanh in `EchoDelay` (ceiling ≈8 %, mirrors the `wave_sine`→`fast_sin`
+  cut); fast tanh in the master limiter's `shape()` (≈3 %); and two hygiene
+  one-liners already known from source — `PartFx` rev-send `std::sin` →
+  `fast_sin` (measured ≈1 %, ceiling ≈2 %) and the double pitch
+  quantization in `Part::process` (ceiling ≈2 %, likely much smaller, no
+  dedicated bench row yet) — both change engine output and belong with a
+  listening pass, not a silent merge. Full arithmetic and the complete
+  ranked list:
+  `docs/superpowers/plans/2026-07-18-bench-ablation-family.md`, `## Outcome
+  (2026-07-19)`.
 - The modulation plane was originally measured at about 33 % of the block
   budget against the design spec's 4–6 % estimate — wrong by roughly six
   times, and the single most actionable finding in the table. The cause,
