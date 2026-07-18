@@ -28,8 +28,14 @@ Decisions from the brainstorm:
 - **MOTION: scatter macro**, one axis from focused loop to diffuse fog.
 - **STEP: groove-gated bursts** — the phrase generator chops the texture in
   composed rhythm. FLOW: the standing cloud.
-- **Panel: ENGINE switch + REC button per part.** No further surface; the
-  edit layer lives in the context menu.
+- **Panel: existing ENG pad + one new REC button per part.** No further
+  surface; the edit layer lives in the context menu.
+- **No dead knobs (critical-review addendum, 2026-07-18):** the voice row
+  (ATK DEC FILT RES SUB DTUN) is remapped to analogous cloud meanings —
+  every printed label stays true for both engines. The cloud granulates
+  the already-captured region *while* recording, and a factory sample
+  auto-loads when a part switches to the sampler with an empty buffer —
+  one pad press and it sounds, nothing to configure.
 - **Architecture: fresh grain scheduler + copied record core.** The player
   is written natively for cloud/chord/scatter/gating semantics; the
   battle-tested `Buffer` record state machine is copied, not rewritten.
@@ -111,8 +117,27 @@ the old slice-mode distinction becomes a grain property:
   and fleeting. The tape character as a cloud property.
 
 Edit layer (context menu, `Instrument` API now, hardware gesture later):
-speed mode (Tape/Digital), **Reverse** (grains read backwards), **window
-skew** (soft↔percussive grain envelope).
+speed mode (Tape/Digital), **Reverse** (grains read backwards), overdub
+feedback.
+
+### Voice row remapped — no dead knobs
+
+The per-part voice row is synth-only today; on a sampler part six knobs
+would go dead. Instead the same knobs get analogous cloud meanings, so the
+panel stays 1:1 across engines (and on hardware the VOICE edit layer is
+simply reinterpreted per engine — zero new controls):
+
+| Knob | Synth | Sampler (cloud) |
+|------|-------|-----------------|
+| ATK / DEC | envelope | grain-window attack/decay halves (soft↔percussive; replaces a separate skew control); DEC additionally scales the STEP burst release |
+| FILT / RES | bipolar cutoff trim / resonance per voice | **one stereo `Svf` on the cloud output, same bipolar FILT semantics** — full left fades the texture into silence (LEVEL-OnePole fade, the FILT invariant), full right opens to 14 kHz; RES = its resonance |
+| SUB | sub oscillator level | share of grains spawning an octave down |
+| DTUN | voice detune | per-grain detune spread in cents (seeded jitter) |
+
+`Instrument` gains the sampler-side setters (`sampler_window`,
+`sampler_filt`, `sampler_res`, `sampler_sub`, `sampler_detune`); the VCV
+layer pushes voice-row values to both engines every frame, as it already
+does for synth edits (edits stick while the other engine is active).
 
 ### FLOW and STEP
 
@@ -139,6 +164,11 @@ skew** (soft↔percussive grain envelope).
   generator's job). Buffer full (42 s) → auto-stop with fade. Recording
   over existing content = **overdub** (feedback write, default 0.95
   ≈ −3 dB).
+- **The cloud plays while recording (fill-follows):** the growing content
+  length is live — grains granulate the already-captured region as REC
+  runs (SOURCE maps into the current fill). The sound *emerges under the
+  gesture* instead of appearing after it; together with auto-monitoring
+  this makes live sampling a performance move, not an admin step.
 - **Monitoring:** while enabled, the dry input passes to the engine output
   at unity — into the part chain pre-GRIT, so the player hears the source
   in context and can set levels by ear. The host enables it automatically
@@ -148,9 +178,10 @@ skew** (soft↔percussive grain envelope).
 
 **Instrument API:** `set_engine(p, ENGINE_SAMPLER)` (exists),
 `sampler_record(p, bool)`, `sampler_clear(p)`, `sampler_fill(p)`,
-`sampler_monitor(p, bool)`, `load_sample(p, l, r, frames)`, and the edit
-layer: `sampler_speed_mode`, `sampler_reverse`, `sampler_skew`,
-`sampler_feedback`.
+`sampler_monitor(p, bool)`, `load_sample(p, l, r, frames)`, the edit
+layer (`sampler_speed_mode`, `sampler_reverse`, `sampler_feedback`) and
+the voice-row setters (`sampler_window`, `sampler_filt`, `sampler_res`,
+`sampler_sub`, `sampler_detune`).
 
 **Loading semantics:** loading implies `clear()`; the content length grows
 as chunks arrive (the record path's fill-follows semantics reused). Playing
@@ -161,21 +192,30 @@ on every platform, including future chunked SD reads on hardware.
 
 - **Jacks:** IN L/R finally wired to `Instrument::process` inputs; L
   normals to R when only L is patched.
-- **Panel:** two new per-part controls, appended LAST in PARAMS as a pair
-  (param ids stable, saved patches compatible):
-  - **ENGINE** — snapped 2-position switch SYNTH/SMPL. Extensible for
-    future engines (engine-expansion research); TestTone stays API-only.
-    Switching runs through the existing click-free path. Pressing REC on a
-    synth part does **not** switch engines — ENGINE is the only mode
-    selector; REC on a synth part is inert (LED dark).
-  - **REC** — latching button with LED: on = record (empty buffer defines
-    length, full = overdub), off = stop with fade. Monitoring follows REC
-    automatically.
+- **Panel:** the per-part **ENG pad already exists** (today it latches
+  Synth ↔ Test tone). It is remapped to **Synth ↔ Sampler** — the test
+  tone moves to the context menu as a dev tool (a saved patch that had
+  test tone selected now opens as sampler; accepted, no real patches use
+  it). Switching runs through the existing click-free path. The **only new
+  panel element** is **REC** — a latching button + LED per part, appended
+  LAST in PARAMS as a pair (param ids stable, saved patches compatible):
+  on = record (empty buffer defines length, full = overdub), off = stop
+  with fade. Monitoring follows REC automatically. REC on a synth part is
+  inert (LED dark) — ENG is the only mode selector.
 - **Context menu per part:** *Load sample…* (osdialog file dialog +
   vendored `dr_wav`, host-only — the engine stays clean), *Save sample…*,
-  *Clear sample*, Tape/Digital, Reverse, window skew (menu slider),
-  overdub feedback (menu slider) — the full edit layer, so the panel
-  stays at ENGINE + REC.
+  *Clear sample*, Tape/Digital, Reverse, overdub feedback (menu slider),
+  *Engine: test tone* (dev) — the full edit layer, so the panel stays at
+  ENG + REC.
+- **Factory sample (first-user experience):** a short factory WAV ships as
+  a plugin asset — a bounced spotymod synth drone (harmonically rich
+  sustained material granulates well and is on-brand). When a part
+  switches to the sampler **with an empty buffer**, the factory sample
+  auto-loads: one pad press and it sounds, nothing to configure. It never
+  overwrites recorded, loaded or patch-persisted content, and REC/load/
+  clear treat it like any other content. Hardware counterpart (M6): a
+  factory `A.wav`/`B.wav` on the shipped SD card — the planned boot
+  autoload covers it.
 - **Persistence:** the loaded WAV path goes into `dataToJson` and is
   re-loaded on patch load. Additionally `onSave` writes the current buffer
   content as WAV into the Rack patch-storage directory and reloads it on
@@ -202,9 +242,14 @@ gains per-part `fill` columns.
 - **Errors:** `nullptr` buffer → silent part, no crash; empty buffer →
   no-op triggers; all edit setters safe while another engine is active.
 - **CPU:** 8 grains × 2 parts = 16 interpolated stereo reads + window math
-  — expected well under the synth budget. Measured with the host bench;
-  the number goes into the milestone notes as a checkpoint. Hardware
-  measurement stays an M6/benchmark topic.
+  — expected well under the synth budget on desktop. Measured with the
+  host bench; the number goes into the milestone notes as a checkpoint.
+  **Hardware caveat (named honestly):** grain reads are scattered SDRAM
+  accesses that bypass the cache — exactly the SRAM-vs-SDRAM weakness the
+  engine-expansion research surfaced (NIME source). Of all engines the
+  sampler is the most exposed to SDRAM latency; it goes on the benchmark
+  firmware list before the 2×4 CPU budget is committed. Desktop numbers
+  do not transfer.
 
 ## Testing (doctest, TDD as established)
 
@@ -224,6 +269,14 @@ gains per-part `fill` columns.
   drops below threshold in any 50 ms window.
 - **CHOKE hold:** `set_hold(true)` fades the cloud out click-free, release
   re-arms; the priority-window rules match the synth drone.
+- **Play-while-recording:** grains during REC stay inside the current
+  fill (never read ahead of the write head into stale memory); sound is
+  present before REC stops.
+- **Voice row:** FILT full left → silence for any lane (the FILT fade
+  invariant, mirrored from the synth test); SUB share and DTUN spread
+  statistically match their settings from the seeded Rng.
+- **Factory autoload (VCV, play-test):** ENG flip with empty buffer →
+  sound within one gesture; never overwrites existing content.
 - **Empty/nullptr:** silence, no crash.
 - **Determinism:** double render bit-identical.
 - **Engine switch:** synth ↔ sampler click-free (M2 pattern extended).
@@ -237,10 +290,12 @@ Scenario render: part A = synth phrase with COLOR, part B = sampler.
 from tight loop to fog, PITCH chord-locked to A's harmony; a switch to
 STEP-chopped texture at the end. Output WAV + CSV (fill, grain count).
 
-Rack play-test checklist (user, by ear): REC gesture on live input,
+Rack play-test checklist (user, by ear): ENG flip → factory drone sounds
+immediately; REC gesture on live input (texture emerges while recording);
 resampling the own synth part via patch cable, menu load/save, patch
 save/reopen with a recorded texture, MOTION sweep, COLOR shimmer, STEP
-chop under CHOKE.
+chop under CHOKE, voice-row sweep (ATK/DEC grain shape, FILT fade to
+silence, SUB octave layer, DTUN spread).
 
 ## Roadmap placement
 
