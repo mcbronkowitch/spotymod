@@ -15,8 +15,16 @@ constexpr int   kTrigEvery = 12000;   // 0.25 s
 
 int g_ctr = 0;
 
-// --- the anchor: one spotymod MorphOsc voice --------------------------------
-// Everything else in this table is read as a multiple of THIS row.
+// --- component reference: ONE BARE MorphOsc ---------------------------------
+// NOT the anchor for "our voice" -- read the note below. This row exists to
+// price a single oscillator kernel, so the six Plaits oscillator candidates
+// (which are also bare kernels) have a like-for-like comparison.
+//
+// A real spotymod Voice is ~7.3x this: engine/synth/voice.cpp drives TWO
+// MorphOsc instances in unison plus a sub-oscillator, an SVF and an envelope.
+// The decision-relevant anchor is family 1's `synth_1_voice` row, which
+// measures exactly that full pipeline. Ratios that steer engine selection are
+// computed against THAT, not against this row.
 spky::MorphOsc g_morph;
 
 void setup_morph()
@@ -194,7 +202,7 @@ float proc_varshape()
 } // namespace
 
 const Workload kVoiceWorkloads[] = {
-    { "voice", "morph_osc_ANCHOR",     setup_morph,    proc_morph    },
+    { "voice", "morph_osc_bare",       setup_morph,    proc_morph    },
     { "voice", "modal_voice",          setup_modal,    proc_modal    },
     { "voice", "string_voice",         setup_string,   proc_string   },
     { "voice", "resonator",            setup_reso,     proc_reso     },
