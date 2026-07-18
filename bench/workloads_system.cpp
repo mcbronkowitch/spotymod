@@ -56,21 +56,29 @@ float proc_mod()
 }
 
 // --- 3-5. synth voices, 1 / 2 / 4 -------------------------------------------
-// Does polyphony scale linearly? One SynthEngine, triggered often enough that
-// the requested number of voices is genuinely sounding for the whole window.
+// Does polyphony scale linearly? One SynthEngine, triggered exactly once in
+// setup for the row's intended voice count and never topped up.
+//
+// SynthEngine::_do_trigger allocates round-robin over *inactive* voices
+// (synth_engine.cpp), so retriggering the full set mid-measurement -- as an
+// earlier version of this row did -- doesn't refresh voices, it ADDS them:
+// with this decay/cycle pairing giving ~16 s of envelope, none of the
+// original voices had freed up by the next retrigger, and the "1 voice" row
+// silently grew to 2, 3, then 4 voices over the measured window. The fix is
+// structural: trigger the intended count once, and rely on the same long
+// decay (now a feature, not a bug) to keep exactly those voices sounding,
+// unrefreshed, for the whole ~2.2 s measured window.
 SynthEngine g_synth;
 int         g_synth_voices = 1;
-int         g_trig_ctr = 0;
 
 void setup_synth_n(int n)
 {
     g_synth_voices = n;
     g_synth.set_seed(3u);
     g_synth.init(kSampleRate);
-    g_synth.set_decay(1.f);       // 8x cycle: notes stay up, no silent blocks
+    g_synth.set_decay(1.f);       // 8x cycle: ~16s decay outlives the measured window
     g_synth.set_cycle(2.f);
     g_synth.set_flow(false);
-    g_trig_ctr = 0;
     for (int v = 0; v < n; ++v) g_synth.trigger(0.3f + 0.1f * v);
 }
 void setup_synth_1() { setup_synth_n(1); }
@@ -81,15 +89,14 @@ float proc_synth()
 {
     float acc = 0.f, l, r;
     for (size_t i = 0; i < kBlock; ++i) {
-        // Retrigger the whole set periodically so envelopes never all decay
-        // out from under the measurement.
-        if (++g_trig_ctr >= 24000) {
-            g_trig_ctr = 0;
-            for (int v = 0; v < g_synth_voices; ++v) g_synth.trigger(0.3f + 0.1f * v);
-        }
         g_synth.process(l, r);
         acc += l + r;
     }
+    // Cheap regression guard: fold the actual active voice count into the
+    // returned value so it reaches the checksum. If a future change makes
+    // this row hold the wrong number of voices, the checksum moves -- no
+    // print inside the measured loop, no silent pass.
+    acc += static_cast<float>(g_synth.active_voices());
     return acc;
 }
 

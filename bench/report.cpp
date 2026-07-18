@@ -1,6 +1,7 @@
 #include "report.h"
 #include <cstdio>
 #include <cstdarg>
+#include <daisy_seed.h>   // daisy::System::GetSysClkFreq(), CMSIS SCB/SCB_CCR_*_Msk
 
 namespace bench {
 namespace {
@@ -36,8 +37,19 @@ void logf(const char* fmt, ...)
 
 void report_begin(const char* githash)
 {
-    // Fixed measurement conditions, echoed so a result file is self-describing.
-    logf("BENCH_BEGIN,%s,480000000,96,dcache+icache\n", githash);
+    // Measured, not asserted: this is exactly the failure mode that already
+    // bit this project once (the plan claimed 480 MHz while hw.Init() was
+    // actually delivering something else). Read the real clock and the real
+    // cache-enable bits so the header line describes what is actually true.
+    const uint32_t clk = daisy::System::GetSysClkFreq();
+    const uint32_t ccr = SCB->CCR;
+    const bool     ic  = (ccr & SCB_CCR_IC_Msk) != 0;
+    const bool     dc  = (ccr & SCB_CCR_DC_Msk) != 0;
+    const char* cache = (ic && dc) ? "dcache+icache"
+                      : ic         ? "icache"
+                      : dc         ? "dcache"
+                                   : "none";
+    logf("BENCH_BEGIN,%s,%lu,96,%s\n", githash, (unsigned long)clk, cache);
 }
 
 void report_end()
