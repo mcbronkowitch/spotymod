@@ -401,9 +401,9 @@ The headline numbers are no longer estimates — they come from a real Daisy
 Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-9be5df9.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 150.83 % (avg) /
-  156.06 % (max) of the block budget offline and 152.03 % (avg) /
-  155.95 % (max) anchored inside a real audio callback — over budget either
+  parts, all FX on, high diffusion, echo at max) costs 151 % (avg) /
+  156 % (max) of the block budget offline and 152 % (avg) /
+  156 % (max) anchored inside a real audio callback — over budget either
   way. **The 2×4 architecture does not fit**; anchor mode confirmed this
   audibly, with the callback unable to keep up and the DAC emitting
   underrun garbage. The design has to shed voices or FX before M6.
@@ -423,7 +423,7 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-9be5df9.md`):
   actually measured instead of assumed, *reduces* worst-case cost by
   ≈94293 cycles (≈10 %) — it is not a worst-case axis. Inside FLUX,
   `std::tanh` in `EchoDelay` is now confirmed the dominant per-sample cost
-  (≈60 % of FLUX's in-context delta over the FX-none shell), ahead of its
+  (≈60 % of FLUX's isolated per-part delta over the FX-none shell (fx_flux_sdram − fx_none)), ahead of its
   SDRAM memory tax (≈5 %) and its remaining bpf/interpolation/SetDelay
   machinery (≈35 %). Summing every named term (mod plane ×2, Part glue ×2,
   engine ×2, full PartFx ×2, in-context reverb, driven-limiter tax) against

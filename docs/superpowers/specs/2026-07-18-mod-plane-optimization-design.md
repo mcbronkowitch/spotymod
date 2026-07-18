@@ -169,7 +169,7 @@ cycles) within 2 %. What was wrong was the per-call cost estimate: the
 real saving from swapping libm `sinf` for `fast_sin` is about 66 cycles
 per lane per sample, well under half of what the spec assumed.
 
-**Decomposition ranking, post-change** (`docs/bench/2026-07-18-185c488.md`,
+**Decomposition ranking, post-change** (`docs/bench/2026-07-18-185c488.md` (superseded pair, removed under the one-pair convention; retrievable at commit `a3f8a35`),
 `mod` family):
 
 1. The ten lanes account for essentially the whole plane: two
