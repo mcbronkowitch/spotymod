@@ -11,7 +11,25 @@ static daisy::DaisySeed hw;
 
 int main(void)
 {
-    hw.Init();                 // 480 MHz boost, caches on, SDRAM up
+    // BOOT_SRAM loads jump straight into the app's reset vector via the debug
+    // probe (openocd/spotykach-sram.cfg), bypassing the Daisy bootloader
+    // entirely. DaisySeed::Init() infers "already chained from an old
+    // (<v6.0) bootloader that brought SDRAM up itself" from a stale/blank
+    // .backup_sram boot_info marker, and on that inference SKIPS both
+    // ConfigureClocks()/ConfigureMpu() (System::Config::skip_clocks) AND
+    // sdram_handle.Init() outright -- the same "bootloader normally does
+    // this" gap as the FPU CPACR fix already carried in
+    // openocd/spotykach-sram.cfg, just for SDRAM instead of the FPU.
+    // Stamping boot_info to a recognized real-bootloader version before
+    // Init() defeats that inference so both steps run for real. Confirmed
+    // on hardware 2026-07-18: without this, the first workload to touch
+    // SDRAM (fx_grit's Flux::init(), which memsets its injected echo
+    // buffer) hits a HardFault -- SCB->CFSR IMPRECISERR, traced via
+    // arm-none-eabi-addr2line into libDaisy's HardFault_Handler.
+    daisy::System::InitBackupSram();
+    daisy::boot_info.version = daisy::System::BootInfo::Version::v6_1;
+
+    hw.Init(true);              // 480 MHz boost, caches on, SDRAM up
     hw.SetAudioBlockSize(96);
     hw.SetAudioSampleRate(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ);
 

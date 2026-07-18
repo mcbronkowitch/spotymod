@@ -28,7 +28,20 @@ CPP_SOURCES = \
 	main.cpp \
 	report.cpp \
 	runner.cpp \
-	workloads_system.cpp
+	mem.cpp \
+	workloads_system.cpp \
+	../engine/mod/lane.cpp \
+	../engine/mod/super_modulator.cpp \
+	../engine/parts/part.cpp \
+	../engine/instrument.cpp \
+	../engine/center/center.cpp \
+	../engine/fx/grit.cpp \
+	../engine/fx/flux.cpp \
+	../engine/fx/reverb.cpp \
+	../engine/fx/part_fx.cpp \
+	../engine/fx/comp.cpp \
+	../engine/synth/voice.cpp \
+	../engine/synth/synth_engine.cpp
 
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile
