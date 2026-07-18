@@ -46,4 +46,14 @@ Result run_workload(const Workload& w)
     return r;
 }
 
+const Workload* find_workload(const char* name)
+{
+    const Workload* tables[] = { kCoreWorkloads, kVoiceWorkloads, kMemWorkloads };
+    const int       counts[] = { kCoreCount,     kVoiceCount,     kMemCount     };
+    for (int t = 0; t < 3; ++t)
+        for (int i = 0; i < counts[t]; ++i)
+            if (std::strcmp(tables[t][i].name, name) == 0) return &tables[t][i];
+    return nullptr;
+}
+
 } // namespace bench

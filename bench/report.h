@@ -21,4 +21,6 @@ void report_end();
 
 void report_row(const Workload& w, const Result& r);
 
+void report_anchor(const char* name, uint32_t avg_x100, uint32_t max_x100);
+
 } // namespace bench

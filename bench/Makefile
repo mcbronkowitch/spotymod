@@ -28,6 +28,7 @@ CPP_SOURCES = \
 	main.cpp \
 	report.cpp \
 	runner.cpp \
+	anchor.cpp \
 	mem.cpp \
 	workloads_system.cpp \
 	workloads_daisysp.cpp \

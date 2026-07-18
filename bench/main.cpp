@@ -3,6 +3,8 @@
 #include "workload.h"
 #include "cycles.h"
 
+namespace bench { void run_anchors(daisy::DaisySeed& hw); }
+
 #ifndef BENCH_GIT_HASH
 #define BENCH_GIT_HASH "unknown"
 #endif
@@ -50,6 +52,11 @@ int main(void)
         const bench::Workload& w = bench::kMemWorkloads[i];
         bench::report_row(w, bench::run_workload(w));
     }
+
+    // Offline is optimistic: no ISR overhead, no DMA contention. Three rows
+    // re-run inside a real callback calibrate the offset -- and audibly.
+    bench::run_anchors(hw);
+
     bench::report_end();
 
     while (1) { hw.DelayMs(1000); }

@@ -68,7 +68,7 @@ def main():
                     help="openocd interface cfg; this desk's probe is an ST-Link V3")
     ap.add_argument("--transport", default="semihost", choices=["semihost"],
                     help="capture transport (USB-CDC fallback: see bench/README.md)")
-    ap.add_argument("--timeout", type=float, default=300.0,
+    ap.add_argument("--timeout", type=float, default=600.0,
                     help="seconds to wait for BENCH_END")
     ap.add_argument("--build-only", action="store_true")
     ap.add_argument("--no-build", action="store_true")

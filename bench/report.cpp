@@ -90,4 +90,12 @@ void report_row(const Workload& w, const Result& r)
          (unsigned long)r.checksum);
 }
 
+void report_anchor(const char* name, uint32_t avg_x100, uint32_t max_x100)
+{
+    logf("ANCHOR,%s,%lu.%02lu,%lu.%02lu\n",
+         name,
+         (unsigned long)(avg_x100 / 100), (unsigned long)(avg_x100 % 100),
+         (unsigned long)(max_x100 / 100), (unsigned long)(max_x100 % 100));
+}
+
 } // namespace bench
