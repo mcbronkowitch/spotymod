@@ -1,6 +1,6 @@
 <p align="center">
   <img src="docs/img/spotymod-panel.png" width="820"
-       alt="The Spotymod front panel: two mirrored modulation banks — green A on the left, copper B on the right — framing a shared center ROOM section (MORPH, COUPLE, DRIFT, SPOT, SETTLE and the reverb controls), with the SPOTYMOD wordmark along the bottom.">
+       alt="The Spotymod front panel: two mirrored halves — green A on the left, copper B on the right — each with nine macro knobs orbiting an LED ring inside MOTION, TIMBRE and PITCH sectors, above VOICE, FX and PLAY rows. The centre column holds BLEND, TIME, DUO and ROOM, with the SPOTYMOD wordmark on top and ten jacks in five labelled groups along the bottom.">
 </p>
 
 # spotymod — modulation-first firmware for the Spotykach
