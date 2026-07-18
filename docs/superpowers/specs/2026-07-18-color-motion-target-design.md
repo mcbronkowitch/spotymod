@@ -1,7 +1,9 @@
 # COLOR as a MOTION target — chord density that varies per note
 
 **Date:** 2026-07-18
-**Status:** approved (brainstorm with Bastian, 2026-07-18)
+**Status:** approved (brainstorm with Bastian, 2026-07-18; revised same day:
+bipolar additive with zero-gate instead of multiplicative ceiling — subtle
+±1-zone motion, and a barely-open knob may modulate *upward* into chords)
 
 ## Problem
 
@@ -51,19 +53,23 @@ Pan and drift **stay**. MOTION now moves three things in lockstep: width, drift
 and chord density. Dense becomes wide as a side effect — accepted deliberately
 as one "fullness" gesture rather than paying for a separate depth control.
 
-### 2. Multiplicative: the knob is the ceiling
+### 2. Bipolar additive with a zero-gate: the knob is the centre
 
 In `Part`:
 
 ```
-m         = _active[LANE_MOTION] ? _mod.lane_output(LANE_MOTION) * _depth * kColorMod : 0
-color_eff = _color * clampf(1 + m, 0, 1)
+gate      = clampf(_color / kColorGate, 0, 1)
+m         = _active[LANE_MOTION] ? _mod.lane_output(LANE_MOTION) * _depth * kColorMod * gate : 0
+color_eff = clampf(_color + m, 0, 1)
 ```
 
 - `_color` is the COLOR knob, stored in `Part` (new member).
 - `_depth` is the existing MOD macro.
-- `kColorMod` is an ear-tunable constant in `part.h`, starting at **1.0**,
+- `kColorMod` is an ear-tunable constant in `part.h`, starting at **0.2**,
   in the style of `kLevelFloor`.
+- `kColorGate` ≈ **0.01**: the swing fades in over the first 1% of knob
+  travel, so "barely open" already modulates at full depth while `COLOR = 0`
+  stays structurally silent (the swing is multiplied by 0, not special-cased).
 - `lane_output` is bipolar −1…+1 for texture lanes (range 1 → `apply_range`
   returns the raw value).
 
@@ -71,18 +77,23 @@ color_eff = _color * clampf(1 + m, 0, 1)
 
 | Condition | Result | Why it matters |
 |-----------|--------|----------------|
-| `COLOR = 0` | `color_eff = 0` — always one note | The chord layer's bit-identity guarantee survives untouched |
+| `COLOR = 0` | `gate = 0` → `color_eff = 0` — always one note | The chord layer's bit-identity guarantee survives untouched |
 | `MOD = 0` | `m = 0` → `color_eff = COLOR` | Today's behaviour exactly; modulation is opt-in through a knob that already exists |
 
 Every saved patch and every existing render that leaves COLOR at 0 is
 unaffected, by construction rather than by tuning.
 
-**Accepted asymmetry.** Because the knob is the ceiling, only the *negative*
-half of MOTION's swing does anything; the positive half clamps at 1. Density
-therefore sits at the knob value roughly half the time and dips between. This
-is the direct price of the bit-identity invariant and was chosen with that
-trade-off on the table. `kColorMod = 1.0` at `MOD = 1` lets the dip reach a
-single note; lowering it narrows the dip.
+**Why additive, and why 0.2.** The intent is *subtle*: here and there a
+neighbouring chord, not a density collapse. The ChordBuilder's zones are 0.25
+wide (edges 0.125 / 0.375 / 0.625, ninth-flip 0.85), so a bipolar swing of
+±0.2 crosses at most one zone edge in each direction — density pendles ±1
+note around the knob position, and near the top the fifth↔ninth flip gives a
+different chord *colour* at unchanged density. An additive swing (rather than
+multiplicative) keeps that reach constant across the knob range; with a
+multiplicative law a barely-open knob could never rise into chord territory,
+which is explicitly wanted: at `COLOR` just past zero the positive peaks reach
+the two-note zone — mostly single tones, occasionally a dyad. The negative
+half simply clamps at 0 there.
 
 ### 3. Where it applies
 
@@ -126,9 +137,13 @@ be re-run on those three and `chord_bloom`'s reference re-cut.
   trigger across a full cycle (bit-identity invariant).
 - `MOD = 0` → the value reaching the ChordBuilder equals the knob exactly, for
   several knob positions (today's-behaviour invariant).
-- `COLOR = 1`, `MOD = 1` → observed chord sizes over one MOTION cycle vary
-  (min < max). Assert the spread, not specific sizes — zone edges carry
-  hysteresis.
+- `COLOR = 0.005`, `MOD = 1`, MOTION active → at least one trigger across a
+  full MOTION cycle receives `n >= 2` (the barely-open knob reaches upward
+  into chords — the gate works and the swing is additive).
+- `COLOR = 0.5`, `MOD = 1` → observed chord sizes over one MOTION cycle vary
+  (min < max). A knob position near a zone edge, because at ±0.2 swing an
+  edge-distant position may legitimately never cross one. Assert the spread,
+  not specific sizes — zone edges carry hysteresis.
 - MOTION target inactive → no modulation regardless of MOD.
 - Determinism: two identically seeded renders stay byte-identical.
 
