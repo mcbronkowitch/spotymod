@@ -302,6 +302,64 @@ def test_room_is_flush_with_play():
               f"ROOM ends at {room[1] + room[3]:.2f}, PLAY at {play[1] + play[3]:.2f}")
 
 
+JACKS = {   # enum -> (x, y, label, white label?)
+    'PITCH_A': (12.95, 118.4, 'PIT',  True),
+    'GATE_A':  (24.45, 118.4, 'GATE', True),
+    'IN_L':    (55.25, 118.4, 'L',    False),
+    'IN_R':    (66.75, 118.4, 'R',    False),
+    'CLOCK':   (100.93, 118.4, 'CLK', False),
+    'RESET':   (112.43, 118.4, 'RST', False),
+    'OUT_L':   (146.61, 118.4, 'L',   True),
+    'OUT_R':   (158.11, 118.4, 'R',   True),
+    'GATE_B':  (188.91, 118.4, 'GATE', True),
+    'PITCH_B': (200.41, 118.4, 'PIT',  True),
+}
+
+
+def test_jack_positions_and_labels():
+    for enum, (x, y, label, white) in JACKS.items():
+        c = ctl(enum)
+        check(approx(c.x, x) and approx(c.y, y),
+              f"{enum} at ({c.x:.2f}, {c.y:.2f}), want ({x}, {y})")
+        check(c.label == label, f"{enum} label {c.label!r}, want {label!r}")
+        lx, ly, anchor, size, colour = g.label_of(c)
+        check(approx(ly, 124.8), f"{enum} label y {ly:.2f}, want 124.8")
+        check(approx(size, 1.8), f"{enum} label size {size}, want 1.8")
+        want_col = g.WHITE if white else g.INK
+        check(colour == want_col,
+              f"{enum} label colour {colour}, want {want_col}")
+
+
+def test_jack_groups():
+    want = [(7.2, 'CV A', g.GREEN), (49.5, 'IN', g.MUTED),
+            (g.CX - 11.5, 'CLOCK', g.MUTED), (g.W - 72.5, 'OUT', g.MUTED),
+            (g.W - 30.2, 'CV B', g.COPPER)]
+    for (x, name, colour) in want:
+        check(any(approx(gx, x) and approx(gy, 112.6) and approx(gw, 23.0)
+                  and approx(gh, 14.4) and gn == name and gc == colour
+                  for (gx, gy, gw, gh, gn, gc) in g.GROUPS),
+              f"jack group {name} missing at x {x:.2f}")
+
+
+def test_output_wells():
+    """Spec §7: output groups get a dark inner well; inputs stay on paper."""
+    s = g.svg()
+    for (x, has_well) in ((7.2, True), (49.5, False), (g.CX - 11.5, False),
+                          (g.W - 72.5, True), (g.W - 30.2, True)):
+        well = (f'<rect x="{g.mm(x + 1.4)}" y="{g.mm(112.6 + 1.6)}" '
+                f'width="{g.mm(20.2)}" height="{g.mm(11.2)}" rx="1.2" '
+                f'fill="{g.WELL}"/>')
+        check((well in s) == has_well,
+              f"well at x {x:.2f}: expected {has_well}")
+
+
+def test_header_carries_tooltips():
+    h = g.header()
+    check('const char* tip;' in h, "PanelCtl has no tip column")
+    check('"L", ' in h and '"IN L"' in h,
+          "IN_L lost its 'IN L' tooltip while its panel label became 'L'")
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

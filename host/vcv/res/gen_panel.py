@@ -84,6 +84,7 @@ class Ctl:
         # explicit (x, y, anchor, size, colour) tuple. Radial orbit captions
         # and white-on-well jack labels set this.
         self.lbl = None
+        self.tip = label   # tooltip text; panel label and tooltip differ on jacks
 
 # geometry of a side ring
 RING_CY   = 37.0
@@ -208,6 +209,54 @@ PART_STRIDE = len(PART_A)
 
 # --- shared center strip ------------------------------------------------------
 CX = W / 2.0
+
+# --- inputs / outputs / lights ------------------------------------------------
+# The ten jacks split into five labelled fieldset groups with real gaps, signal
+# flow reading left -> right (spec 2026-07-18 §7). Output groups sit on a dark
+# well with white lettering, inputs stay on paper with ink -- so in/out reads at
+# a glance and the duplicated PIT/GATE labels are disambiguated by the legend.
+# NOTE: this block sits here (above GROUPS, not down by LIGHTS) because
+# JACK_GROUPS feeds GROUPS below and must be defined before it runs; it only
+# needs CX/W, the colour constants and the JACK_* constants, all already in scope.
+JACK_Y     = 118.4
+JACK_BOX_Y = 112.6
+JACK_BOX_W, JACK_BOX_H = 23.0, 14.4
+JACK_DX    = 5.75            # jack offset from the box's left edge; pitch 11.5
+
+# (box x, legend, legend colour, dark well?, [(enum, panel label, tooltip)])
+JACK_GROUPS = [
+    (7.2,        "CV A",  GREEN,  True,  [("PITCH_A", "PIT",  "Pitch A"),
+                                          ("GATE_A",  "GATE", "Gate A")]),
+    (49.5,       "IN",    MUTED,  False, [("IN_L", "L", "IN L"),
+                                          ("IN_R", "R", "IN R")]),
+    (CX - 11.5,  "CLOCK", MUTED,  False, [("CLOCK", "CLK", "Clock"),
+                                          ("RESET", "RST", "Reset")]),
+    (W - 72.5,   "OUT",   MUTED,  True,  [("OUT_L", "L", "OUT L"),
+                                          ("OUT_R", "R", "OUT R")]),
+    (W - 30.2,   "CV B",  COPPER, True,  [("GATE_B",  "GATE", "Gate B"),
+                                          ("PITCH_B", "PIT",  "Pitch B")]),
+]
+
+def jack(enum, kind, x, label, tip, white):
+    c = Ctl(enum, kind, x, JACK_Y, label)
+    c.tip = tip
+    c.lbl = (x, JACK_Y + LBL_DY[kind], "middle", 1.8, WHITE if white else INK)
+    return c
+
+def jack_at(enum):
+    """Look a jack up in JACK_GROUPS and build it. Keeps the INPUTS/OUTPUTS
+    enum ORDER free of the visual left-to-right order -- ids stay put."""
+    for (bx, _lg, _col, well, items) in JACK_GROUPS:
+        for i, (e, label, tip) in enumerate(items):
+            if e == enum:
+                kind = IN if enum in ("IN_L", "IN_R", "CLOCK", "RESET") else OUT
+                return jack(enum, kind, bx + JACK_DX + i * 11.5, label, tip, well)
+    raise KeyError(enum)
+
+INPUTS = [jack_at(e) for e in ("IN_L", "IN_R", "CLOCK", "RESET")]
+OUTPUTS = [jack_at(e) for e in ("OUT_L", "OUT_R", "PITCH_A", "GATE_A",
+                                "PITCH_B", "GATE_B")]
+
 # The centre's outer background card is gone (spec 2026-07-18 §6) -- the four
 # fieldset boxes carry the grouping alone and grew to 41 mm, so the columns
 # move out from +-10.5 to +-11.5.
@@ -223,7 +272,8 @@ GROUPS = part_groups(False) + part_groups(True) + [
     (CX - 20.5, 35.0, 41.0, 13.5, "TIME",  MUTED),
     (CX - 20.5, 51.0, 41.0, 22.5, "DUO",   MUTED),
     (CX - 20.5, 76.5, 41.0, 34.7, "ROOM",  MUTED),
-]
+] + [(bx, JACK_BOX_Y, JACK_BOX_W, JACK_BOX_H, lg, col)
+     for (bx, lg, col, _well, _items) in JACK_GROUPS]
 SHARED = [
     Ctl("MORPH",  BIGKNOB, CX - 7.0, ROW_BLEND, "MORPH"),
     # TIME: the one clock story -- the mode switch, its tempo, and how tightly
@@ -285,29 +335,9 @@ PARAMS = PART_A + PART_B + SHARED + [
     color_ctl("_B", True),
 ]
 
-# --- inputs / outputs / lights ------------------------------------------------
-# All ten jacks live on ONE line along the very bottom, outside the center box,
-# spanning the full width. Mirror-symmetric about center: the two part CV pairs
-# (PIT/GATE) bookend the row, the shared audio + clock I/O sits in the middle.
-#   PIT_A GATE_A | IN_L IN_R CLK RST OUT_L OUT_R | GATE_B PIT_B
-JACK_Y   = 118.0
-JACK_MRG = 16.0                                   # x of the outermost jacks
-JS = [JACK_MRG + i * (W - 2 * JACK_MRG) / 9.0 for i in range(10)]  # 10 even slots
-INPUTS = [
-    Ctl("IN_L",  IN, JS[2], JACK_Y, "IN L"),
-    Ctl("IN_R",  IN, JS[3], JACK_Y, "IN R"),
-    Ctl("CLOCK", IN, JS[4], JACK_Y, "CLK"),
-    Ctl("RESET", IN, JS[5], JACK_Y, "RST"),
-]
-OUTPUTS = [
-    Ctl("OUT_L", OUT, JS[6], JACK_Y, "OUT L"),
-    Ctl("OUT_R", OUT, JS[7], JACK_Y, "OUT R"),
-    # per-part modulation taps bookending the row (A outer-left, B outer-right)
-    Ctl("PITCH_A", OUT, JS[0], JACK_Y, "PIT"),
-    Ctl("GATE_A",  OUT, JS[1], JACK_Y, "GATE"),
-    Ctl("PITCH_B", OUT, JS[9], JACK_Y, "PIT"),
-    Ctl("GATE_B",  OUT, JS[8], JACK_Y, "GATE"),
-]
+# --- lights --------------------------------------------------------------------
+# INPUTS/OUTPUTS are built above (see JACK_GROUPS, near CX) -- they had to move
+# ahead of GROUPS, which folds the jack boxes in. Only the lights are left here.
 LIGHTS = [
     # glow at each ring center, driven by that part's gate
     Ctl("GATE_A_L", LIGHT, RING_CX_A,     RING_CY, ""),
@@ -427,6 +457,12 @@ def svg():
     # fieldset group boxes (drawn under the glyphs, over the sector tints)
     for (x, y, w, h, name, _colour) in GROUPS:
         P.append(group_box(x, y, w, h, name))
+    # dark inner wells under the output groups -- in/out at a glance (spec §7)
+    for (bx, _lg, _col, well, _items) in JACK_GROUPS:
+        if well:
+            P.append(f'<rect x="{mm(bx + 1.4)}" y="{mm(JACK_BOX_Y + 1.6)}" '
+                     f'width="{mm(JACK_BOX_W - 2.8)}" '
+                     f'height="{mm(JACK_BOX_H - 3.2)}" rx="1.2" fill="{WELL}"/>')
     # PLAY: hairline between the two mode pads and the sequencer block
     for dx in (28.7, W - 28.7):
         P.append(f'<line x1="{mm(dx)}" y1="100.6" x2="{mm(dx)}" y2="109.2" '
@@ -481,7 +517,8 @@ def header():
     L2.append("enum WidgetKind { WK_BIGKNOB, WK_KNOBC, WK_SMKNOB, WK_KNOBI, "
               "WK_SW2, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };")
     L2.append("struct PanelCtl { int id; WidgetKind kind; XY mm; const char* label; "
-              "XY lbl; unsigned char anchor; float lblSize; unsigned lblRgb; };")
+              "XY lbl; unsigned char anchor; float lblSize; unsigned lblRgb; "
+              "const char* tip; };")
     L2.append("// anchor: 0 = middle, 1 = start (left-aligned), 2 = end (right-aligned)")
     L2.append("struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; const char* str; };")
     L2.append(f"static constexpr int PART_STRIDE = {PART_STRIDE};")
@@ -512,7 +549,7 @@ def header():
             lx, ly, anchor, size, colour = label_of(c)
             L2.append(f'    {{{c.enum}, {WKMAP[c.kind]}, {{{c.x:.3f}f, {c.y:.3f}f}}, '
                       f'"{c.label}", {{{lx:.3f}f, {ly:.3f}f}}, {ANCHOR_ID[anchor]}, '
-                      f'{size:.2f}f, {rgb(colour)}}},')
+                      f'{size:.2f}f, {rgb(colour)}, "{c.tip}"}},')
         L2.append("};")
 
     emit_table("kParamCtls",  PARAMS)

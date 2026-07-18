@@ -136,8 +136,10 @@ struct Spotymod : Module {
                 default: break;
             }
         }
-        for (const auto& c : kInputCtls)  configInput(c.id, c.label);
-        for (const auto& c : kOutputCtls) configOutput(c.id, c.label);
+        // panel labels are short ("L", "PIT"); the group legend carries the rest,
+        // so tooltips use the control table's spelled-out tip instead
+        for (const auto& c : kInputCtls)  configInput(c.id, c.tip);
+        for (const auto& c : kOutputCtls) configOutput(c.id, c.tip);
     }
 
     // Init "patch" (Rack Initialize / fresh instance): part A = a slow chord
