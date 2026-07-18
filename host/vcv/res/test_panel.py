@@ -189,6 +189,66 @@ def test_small_knobs_have_no_collar():
         check(needle not in s, f"{enum} still draws a collar")
 
 
+LOWER_A = {   # enum -> (x, y)   part A; part B is W - x
+    'ATTACK_A': (9.50, 77.30), 'DECAY_A': (22.50, 77.30), 'FILT_A': (35.50, 77.30),
+    'RES_A': (9.50, 89.40), 'SUB_A': (22.50, 89.40), 'DETUNE_A': (35.50, 89.40),
+    'FLUXRATE_A': (49.50, 77.30), 'FLUX_A': (62.75, 77.30), 'FLUXFB_A': (76.00, 77.30),
+    'GRIT_A': (56.00, 89.40), 'COMP_A': (69.50, 89.40),
+    'ENGINE_A': (11.50, 103.60), 'GRITMODE_A': (22.00, 103.60),
+    'STEPS_A': (35.50, 103.60), 'STEP_A': (46.00, 103.60),
+    'PRINCIPLE_A': (56.50, 103.60), 'NEWPHRASE_A': (67.00, 103.60),
+    'TRIGGER_A': (77.50, 103.60),
+}
+
+
+def test_lower_half_positions():
+    for enum, (x, y) in LOWER_A.items():
+        c = ctl(enum)
+        check(approx(c.x, x) and approx(c.y, y),
+              f"{enum} at ({c.x:.2f}, {c.y:.2f}), want ({x}, {y})")
+        b = ctl(enum[:-2] + '_B')
+        check(approx(b.x, g.W - x) and approx(b.y, y),
+              f"{b.enum} at ({b.x:.2f}, {b.y:.2f}), want ({g.W - x:.2f}, {y})")
+
+
+def test_steps_left_the_fx_row():
+    """STPS is a sequencer parameter -- it belongs in PLAY, not in FX."""
+    s = ctl('STEPS_A')
+    check(approx(s.y, 103.60), f"STEPS_A at y {s.y:.2f}, want 103.60 (PLAY row)")
+
+
+def test_part_group_boxes():
+    want = [(4.0, 72.4, 37.0, 24.5, 'VOICE'), (43.5, 72.4, 38.5, 24.5, 'FX'),
+            (4.0, 98.6, 78.0, 12.6, 'PLAY')]
+    for (x, y, w, h, name) in want:
+        check(any(approx(gx, x) and approx(gy, y) and approx(gw, w)
+                  and approx(gh, h) and gn == name
+                  for (gx, gy, gw, gh, gn, _c) in g.GROUPS),
+              f"part-A group {name} missing at ({x}, {y}, {w}, {h})")
+        bx = g.W - x - w
+        check(any(approx(gx, bx) and approx(gy, y) and gn == name
+                  for (gx, gy, gw, gh, gn, _c) in g.GROUPS),
+              f"part-B group {name} missing at x {bx:.2f}")
+
+
+def test_group_legend_geometry():
+    """Legend chip rides the top border, text sits 5 mm in from the left."""
+    s = g.svg()
+    for (x, y, w, h, name, colour) in g.GROUPS:
+        cw = 1.35 * len(name) + 2.5
+        chip = (f'<rect x="{g.mm(x + 5.0 - cw / 2)}" y="{g.mm(y - 1.3)}" '
+                f'width="{g.mm(cw)}" height="2.6" fill="{g.PAPER}"/>')
+        check(chip in s, f"legend chip for {name} missing/misplaced")
+        check(any(approx(tx, x + 5.0) and approx(ty, y + 0.75) and t == name
+                  for (tx, ty, sz, sp, col, t) in g.TEXTS),
+              f"legend text for {name} missing at ({x + 5.0:.2f}, {y + 0.75:.2f})")
+
+
+def test_pad_backplates_are_gone():
+    check('width="72.4" height="11.9"' not in g.svg(),
+          "the old pad backplate is still drawn")
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

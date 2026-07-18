@@ -103,6 +103,32 @@ SECTORS = [("MOTION", -16.0,  96.0, (74.0,  8.2)),
            ("TIMBRE", 112.0, 176.0, (74.0, 67.6)),
            ("PITCH",  192.0, 336.0, (11.0,  8.2))]
 
+# --- fieldset groups (spec 2026-07-18 §4) ------------------------------------
+# One shared style: paper-deep panel, hairline stroke, and a legend riding the
+# top border on a small paper chip. (x, y, w, h, legend, legend colour)
+def part_groups(mir):
+    def fx(x, w): return (W - x - w) if mir else x
+    return [(fx(4.0, 37.0),  72.4, 37.0, 24.5, "VOICE", MUTED),
+            (fx(43.5, 38.5), 72.4, 38.5, 24.5, "FX",    MUTED),
+            (fx(4.0, 78.0),  98.6, 78.0, 12.6, "PLAY",  MUTED)]
+
+GROUPS = part_groups(False) + part_groups(True)
+
+def group_box(x, y, w, h, legend):
+    """Box + the paper chip that breaks the top border for the legend. The
+    legend TEXT itself goes through TEXTS, so Rack draws it too (NanoSVG
+    ignores <text>)."""
+    cw = 1.35 * len(legend) + 2.5
+    return "\n".join([
+        f'<rect x="{mm(x)}" y="{mm(y)}" width="{mm(w)}" height="{mm(h)}" rx="1.5" '
+        f'fill="{PAPER_DEEP}" stroke="{LINE}" stroke-width="0.35"/>',
+        f'<rect x="{mm(x + 5.0 - cw / 2)}" y="{mm(y - 1.3)}" width="{mm(cw)}" '
+        f'height="2.6" fill="{PAPER}"/>'])
+
+def legend_texts():
+    return [(x + 5.0, y + 0.75, 1.8, 0.35, colour, name)
+            for (x, y, w, h, name, colour) in GROUPS]
+
 def orbit(cx, cy, r, ang_deg, mir=False):
     a = math.radians(ang_deg)
     s = math.sin(a)
@@ -121,10 +147,15 @@ def orbit_label(cx, cy, ang_deg, mir):
         anchor = {"start": "end", "end": "start", "middle": "middle"}[anchor]
     return (cx + r * s, cy - r * c + dy, anchor, 1.9, INK)
 
-# voice row x slots (6 @ 13 mm pitch, centred on the ring axis x = 42);
-# slot 2 = FILT, appended at the END of PARAMS (never in the template --
-# that grows PART_STRIDE and shifts every part-B/SHARED param id).
-VOICE_X = [9.5, 22.5, 35.5, 48.5, 61.5, 74.5]
+# --- lower half per part (spec 2026-07-18 §5) --------------------------------
+# VOICE and FX sit side by side, PLAY spans the full part width below them.
+VOICE_X  = [9.5, 22.5, 35.5]        # ATK DEC FILT / RES SUB DTUN
+ROW_V1, ROW_V2 = 77.3, 89.4
+FX_TOP   = [49.5, 62.75, 76.0]      # FRATE FLUX FFB -- the delay cluster
+FX_BOT   = [56.0, 69.5]             # GRIT COMP
+PLAY_Y   = 103.6
+PAD_X    = [11.5, 22.0, 46.0, 56.5, 67.0, 77.5]   # ENG GRIT | STEP PRIN NEW TRIG
+STEPS_X  = 35.5                     # sequencer knob, between the two pad blocks
 
 # --- per-part control template (ORDER defines enum order; identical A/B) ------
 # Returns Ctl list with per-part coordinates (mirrored for B when mir=True).
@@ -141,27 +172,28 @@ def part_controls(mir=False):
         c = Ctl(enum, KNOBC if enum == "MELODY" else BIGKNOB, x, y, lbl)
         c.lbl = orbit_label(cx, RING_CY, ang, mir)
         out.append(c)
-    # voice + fx rows (small), centred on the ring axis. Vertically the two
-    # rows sit with equal 3.6 mm gaps in the band between the orbit's bottom
-    # label (RANGE baseline, y 70.2) and the pad backplate top (y 98.1).
-    for i,(enum,lbl) in zip([0,1,3,4,5],
-                            [("ATTACK","ATK"),("DECAY","DEC"),("RES","RES"),
-                             ("SUB","SUB"),("DETUNE","DTUN")]):
-        out.append(Ctl(enum, SMKNOB, fx(VOICE_X[i]), 76.8, lbl))
-    # fx row: the FLUX delay cluster (RATE . MIX . FB) sits together on the
-    # left. RATE (x 9.5) and FB (x 35.5) are appended in PARAMS for patch-id
-    # stability; MIX stays at 22.5, GRIT/COMP/STEPS fill 48.5/61.5/74.5.
-    # The append ORDER (FLUX, GRIT, COMP, STEPS) is unchanged, so PART_STRIDE
-    # and every param id stay put -- only the x coordinates move.
-    out.append(Ctl("FLUX", SMKNOB, fx(22.5), 88.9, "FLUX"))   # delay MIX
-    for i,(enum,lbl) in enumerate([("GRIT","GRIT"),("COMP","COMP")]):
-        out.append(Ctl(enum, SMKNOB, fx(48.5 + i*13.0), 88.9, lbl))
-    out.append(Ctl("STEPS", KNOBI, fx(74.5), 88.9, "STPS"))
-    pads = [("ENGINE",LATCH,"ENG"),("GRITMODE",LATCH,"GRIT"),
-            ("STEP",LATCH,"STEP"),("PRINCIPLE",SMBTN,"PRIN"),
-            ("NEWPHRASE",SMBTN,"NEW"),("TRIGGER",SMBTN,"TRIG")]
-    for i,(enum,kind,lbl) in enumerate(pads):
-        out.append(Ctl(enum, kind, fx(15.75 + i*10.5), 102.8, lbl))
+    # voice row (small): ATK DEC | RES SUB DTUN. FILT fills slot 2 of the top
+    # row but is appended at the END of PARAMS (see below), never here -- that
+    # would grow PART_STRIDE and shift every part-B/SHARED param id.
+    for (enum, lbl, x, y) in [("ATTACK", "ATK", VOICE_X[0], ROW_V1),
+                              ("DECAY",  "DEC", VOICE_X[1], ROW_V1),
+                              ("RES",    "RES", VOICE_X[0], ROW_V2),
+                              ("SUB",    "SUB", VOICE_X[1], ROW_V2),
+                              ("DETUNE", "DTUN", VOICE_X[2], ROW_V2)]:
+        out.append(Ctl(enum, SMKNOB, fx(x), y, lbl))
+    # fx box: the FLUX delay cluster (RATE . MIX . FB) on top, GRIT/COMP below.
+    # FLUX (the delay MIX) is the template member; RATE/FB are appended at the
+    # end of PARAMS. STEPS keeps its append slot here but has moved to the PLAY
+    # box -- it is a sequencer parameter, not an effect (spec 2026-07-18 §5).
+    out.append(Ctl("FLUX", SMKNOB, fx(FX_TOP[1]), ROW_V1, "FLUX"))
+    for i, (enum, lbl) in enumerate([("GRIT", "GRIT"), ("COMP", "COMP")]):
+        out.append(Ctl(enum, SMKNOB, fx(FX_BOT[i]), ROW_V2, lbl))
+    out.append(Ctl("STEPS", KNOBI, fx(STEPS_X), PLAY_Y, "STPS"))
+    pads = [("ENGINE", LATCH, "ENG"), ("GRITMODE", LATCH, "GRIT"),
+            ("STEP", LATCH, "STEP"), ("PRINCIPLE", SMBTN, "PRIN"),
+            ("NEWPHRASE", SMBTN, "NEW"), ("TRIGGER", SMBTN, "TRIG")]
+    for i, (enum, kind, lbl) in enumerate(pads):
+        out.append(Ctl(enum, kind, fx(PAD_X[i]), PLAY_Y, lbl))
     return out
 
 def part(suffix, mir):
@@ -221,9 +253,9 @@ def color_ctl(suffix, mir):
 PARAMS = PART_A + PART_B + SHARED + [
     # FILT: bipolar cutoff trim (spec 2026-07-17). Appended LAST like CHOKE so
     # existing .vcv patches keep their param ids; coordinates put it in the
-    # voice row (slot 2, between DEC and RES).
-    Ctl("FILT_A", SMKNOB, VOICE_X[2],     76.8, "FILT"),
-    Ctl("FILT_B", SMKNOB, W - VOICE_X[2], 76.8, "FILT"),
+    # top voice row, third slot (after ATK, DEC).
+    Ctl("FILT_A", SMKNOB, VOICE_X[2],     ROW_V1, "FILT"),
+    Ctl("FILT_B", SMKNOB, W - VOICE_X[2], ROW_V1, "FILT"),
     # TIDE: texture-lane rate of both decks (spec 2026-07-17 mod-tide).
     # Appended LAST like CHOKE/FILT so existing .vcv patches keep their ids;
     # the coordinate puts it beside MORPH in the centre's movement column
@@ -231,13 +263,13 @@ PARAMS = PART_A + PART_B + SHARED + [
     Ctl("TIDE", SMKNOB, R, 22.0, "TIDE"),
     # FLUX synced-delay controls (spec 2026-07-17 flux-synced-delay). Per part,
     # appended LAST like FILT/TIDE/CHOKE so existing .vcv patches keep their ids.
-    # They complete the FLUX delay cluster on the left of the FX row: RATE (9.5),
-    # MIX (22.5, from the template), FB (35.5) sit together; GRIT/COMP/STEPS
-    # follow at 48.5/61.5/74.5.
-    Ctl("FLUXRATE_A", SMKNOB, 9.5,       88.9, "FRATE"),
-    Ctl("FLUXRATE_B", SMKNOB, W - 9.5,   88.9, "FRATE"),
-    Ctl("FLUXFB_A",   SMKNOB, 35.5,      88.9, "FFB"),
-    Ctl("FLUXFB_B",   SMKNOB, W - 35.5,  88.9, "FFB"),
+    # They complete the FLUX delay cluster atop the FX box: RATE (FX_TOP[0]),
+    # MIX (FX_TOP[1], from the template), FB (FX_TOP[2]) sit together;
+    # GRIT/COMP fill FX_BOT below.
+    Ctl("FLUXRATE_A", SMKNOB, FX_TOP[0],     ROW_V1, "FRATE"),
+    Ctl("FLUXRATE_B", SMKNOB, W - FX_TOP[0], ROW_V1, "FRATE"),
+    Ctl("FLUXFB_A",   SMKNOB, FX_TOP[2],     ROW_V1, "FFB"),
+    Ctl("FLUXFB_B",   SMKNOB, W - FX_TOP[2], ROW_V1, "FFB"),
     # COLOR: chord density/colour per part (spec 2026-07-17 chord-layer), a full
     # orbit member since the 2026-07-18 redesign -- it is pitch material, so it
     # sits in the PITCH sector. Still appended LAST: order defines the param id.
@@ -287,7 +319,7 @@ TEXTS = [
     (W - cx if mir else cx, cy, 1.7, 0.3, COPPER if mir else GREEN, name)
     for mir in (False, True)
     for (name, _a0, _a1, (cx, cy)) in SECTORS
-]
+] + legend_texts()
 
 # =============================================================================
 #  SVG
@@ -391,12 +423,13 @@ def svg():
     # two rings (dark well + dim track; the live SpkyRing widget lights them)
     P.append(ring_svg(RING_CX_A, GREEN_DIM))
     P.append(ring_svg(W - RING_CX_A, COPPER_DIM))
-    # pad-row backplates, centred on the ring axis; bottom edge flush with the
-    # center card (y=110). Uniform 2.0 mm padding: pads span x 7.8..76.2,
-    # y 100.1..105.5; label baselines sit at y 108.0 (caps only, no descenders).
-    for x0 in (5.8, W - 78.2):
-        P.append(f'<rect x="{mm(x0)}" y="98.1" width="72.4" height="11.9" '
-                 f'rx="1.5" fill="{PAPER_DEEP}" stroke="{LINE}" stroke-width="0.3"/>')
+    # fieldset group boxes (drawn under the glyphs, over the sector tints)
+    for (x, y, w, h, name, _colour) in GROUPS:
+        P.append(group_box(x, y, w, h, name))
+    # PLAY: hairline between the two mode pads and the sequencer block
+    for dx in (28.7, W - 28.7):
+        P.append(f'<line x1="{mm(dx)}" y1="100.6" x2="{mm(dx)}" y2="109.2" '
+                 f'stroke="{LINE}" stroke-width="0.35"/>')
     # ROOM + TIME eyebrow rules (text itself comes from TEXTS)
     for ey in (69.2, 31.4):
         for (x0, x1) in ((CX-19.0, CX-8.0), (CX+8.0, CX+19.0)):
