@@ -147,6 +147,19 @@ bootloader does — but it was undocumented until now, so future debugging
 of boot-related oddities on this specific board should know the bench is a
 possible source.
 
+## `instrument_worst` measures the reverb in SRAM
+
+`Instrument::init` wires its reverb pointer through `fx_mem()`, and
+`bench/mem.cpp`'s `fx_mem()` hands back `&g_rev_sram` unconditionally --
+there is no SDRAM variant reachable from the instrument rows. So
+`instrument_worst` (and `instrument_init`) pay the SRAM reverb's cost, not
+the SDRAM one. The bench's own SRAM-vs-SDRAM measurement for the same
+Oliverb (`oliverb_solo_sram` vs `oliverb_sdram`, family 3) puts that
+difference at roughly 1.1x -- small next to the grain-read proxy's 5.3x,
+but not zero. If a future production build moves the reverb buffer to
+SDRAM, expect `instrument_worst`'s headline percentage to rise by roughly
+two points, not to hold at the figure recorded here.
+
 ## Adding a workload
 
 Add one row to the relevant `kXxxWorkloads[]` table (`workloads_system.cpp`

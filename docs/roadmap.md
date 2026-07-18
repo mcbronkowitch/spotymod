@@ -398,10 +398,10 @@ Makefile) is untouched by its presence; Step 1 of the bench plan re-proves
 that on every run.
 
 The headline numbers are no longer estimates — they come from a real Daisy
-Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-256da41.md`):
+Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-7e99b74.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 165 % of the block
+  parts, all FX on, high diffusion, echo at max) costs 164 % of the block
   budget offline and 164 % anchored inside a real audio callback — over
   budget either way. **The 2×4 architecture does not fit**; anchor mode
   confirmed this audibly, with the callback unable to keep up and the DAC
@@ -412,7 +412,12 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-256da41.md`):
   sits in zero-wait DTCMRAM.
 - The grain-read proxy — the access pattern M5's granular engine will lean
   on — costs about 5.3× in SDRAM against the same reads in SRAM. That is
-  the sampler's exposure, measured before the sampler exists.
+  the sampler's exposure, measured before the sampler exists. **Caveat**
+  (carried from the texture-deck spec): this is a directional floor-risk
+  number measured over a 64 KB window, not a constant to carry forward —
+  and it is a lower bound twice over, because the RNG draw and division per
+  grain are common to both the SRAM and SDRAM rows and dilute the ratio,
+  and a 64 KB SDRAM window is partly cached.
 
 Numbers, method and the full nine-candidate DaisySP table live in
 `docs/bench/`; how to run the bench yourself is in `bench/README.md`.

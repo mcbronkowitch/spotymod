@@ -247,7 +247,7 @@ gains per-part `fill` columns.
   **Hardware caveat (measured):** the bench firmware's grain-read proxy —
   8 scattered interpolated stereo reads per sample, identical pattern in
   both regions — costs 5.3× in SDRAM against SRAM
-  (`docs/bench/2026-07-18-256da41.md`), confirming the SRAM-vs-SDRAM
+  (`docs/bench/2026-07-18-7e99b74.md`), confirming the SRAM-vs-SDRAM
   weakness the engine-expansion research surfaced (NIME source) as a real
   cost, not a hypothesis. That figure is a directional floor-risk number
   from a 64 KB window, not a constant to carry forward: the real deck's

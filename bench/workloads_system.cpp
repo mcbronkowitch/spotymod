@@ -105,7 +105,13 @@ float proc_synth()
 // 8-10 % FX estimate decomposes. `FxBlock` is an enum class with only Flux and
 // Grit -- COMP is not a block, it is set_comp(amount) and bypasses bit-exactly
 // at 0, so the selector here is a plain int, not an FxBlock.
-enum FxSel { SEL_GRIT = 0, SEL_FLUX = 1, SEL_COMP = 2 };
+//
+// SEL_NONE runs the identical PartFx::process shell with every block
+// disabled (GRIT off, FLUX off, set_comp(0.f), which the engine bypasses
+// bit-exactly). Without this row, fx_grit/fx_flux_sdram/fx_comp each measure
+// "shell + one block" and there is no way to isolate a block's own cost --
+// this is the row that makes fx_X - fx_none the block's isolated cost.
+enum FxSel { SEL_GRIT = 0, SEL_FLUX = 1, SEL_COMP = 2, SEL_NONE = 3 };
 
 PartFx g_fx;
 float  g_fxv[FXT_COUNT];
@@ -131,6 +137,7 @@ void setup_fx(int sel)
     g_fxv[FXT_REV_SEND]  = 0.5f;
     g_fxv[FXT_FLUX_FB]   = 0.7f;
 }
+void setup_fx_none() { setup_fx(SEL_NONE); }
 void setup_fx_grit() { setup_fx(SEL_GRIT); }
 void setup_fx_flux() { setup_fx(SEL_FLUX); }
 void setup_fx_comp() { setup_fx(SEL_COMP); }
@@ -178,11 +185,19 @@ float proc_reverb()
 
 // --- 8-9. the whole instrument ---------------------------------------------
 Instrument g_inst;
+int        g_inst_ctr = 0;
 
 void setup_inst_common()
 {
     g_inst.init(kSampleRate, fx_mem());
     g_inst.set_tempo_bpm(120.f);
+    // Reset the retrigger phase here, not just at file-scope initialization:
+    // without this, instrument_worst's phase silently inherits whatever
+    // instrument_init's process() loop left it at (they share g_inst_ctr and
+    // run in table order). Deterministic today because nothing runs between
+    // them, but a row inserted before either would then shift both retrigger
+    // phases with it, unnoticed.
+    g_inst_ctr = 0;
 }
 
 // Init patch: the typical load.
@@ -218,7 +233,6 @@ void setup_inst_worst()
     g_inst.set_master_drive(1.f);
 }
 
-int g_inst_ctr = 0;
 float proc_inst()
 {
     const float* in = test_input();
@@ -231,6 +245,13 @@ float proc_inst()
     }
     float acc = 0.f;
     for (size_t i = 0; i < kBlock; ++i) acc += g_out_l[i] + g_out_r[i];
+    // Same guard proc_synth uses: fold both parts' active voice counts into
+    // the returned value so a wrong voice count -- the exact failure that
+    // shipped undetected as a "1 voice" row measuring 2.8 voices -- moves
+    // the checksum instead of passing silently. No printing inside the
+    // measured loop.
+    acc += static_cast<float>(g_inst.active_voices(PART_A));
+    acc += static_cast<float>(g_inst.active_voices(PART_B));
     return acc;
 }
 
@@ -242,6 +263,7 @@ const Workload kCoreWorkloads[] = {
     { "system", "synth_1_voice",      setup_synth_1,   proc_synth   },
     { "system", "synth_2_voices",     setup_synth_2,   proc_synth   },
     { "system", "synth_4_voices",     setup_synth_4,   proc_synth   },
+    { "system", "fx_none",            setup_fx_none,   proc_fx      },
     { "system", "fx_grit",            setup_fx_grit,   proc_fx      },
     { "system", "fx_flux_sdram",      setup_fx_flux,   proc_fx      },
     { "system", "fx_comp",            setup_fx_comp,   proc_fx      },

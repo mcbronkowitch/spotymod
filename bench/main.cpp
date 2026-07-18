@@ -59,8 +59,15 @@ int main(void)
         bench::report_row(w, bench::run_workload(w));
     }
 
-    // Offline is optimistic: no ISR overhead, no DMA contention. Three rows
-    // re-run inside a real callback calibrate the offset -- and audibly.
+    // Offline is optimistic: no cache/DMA contention from a live audio
+    // engine sharing the bus. Three rows re-run inside a real callback to
+    // calibrate that offset -- and audibly. NOTE what this actually
+    // calibrates: anchor.cpp's AnchorCallback calls CpuLoadMeter::OnBlockStart()
+    // *after* the ISR prologue and dispatch already ran, so the anchored
+    // figures capture cache and DMA contention only, not the ISR/dispatch
+    // overhead itself. That gap makes the anchored numbers conservative
+    // (an understatement of true in-callback cost), which is why they never
+    // move the "does not fit" conclusion in the wrong direction.
     bench::run_anchors(hw);
 
     bench::report_end();
