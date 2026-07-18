@@ -33,6 +33,7 @@ is actually built today, and what is still design-only.
 | **M4.9** | Reverb DIFFUSION knob (replaces DEPTH) — room density 0–0.9, weak line-mod coupling, full-wash first pass | ✅ **done** (engine + host; UI wiring deferred to M6) |
 | **SYNC/COUPLE redesign** | One global SYNC switch (replaces per-part sync toggles), transport phase + rate ladder, zoned COUPLE (texture-only in grid world, grid-gravity zone in free world), VCV panel layout A, CLK/RST wired | ✅ **done** (engine + VCV host; spec `docs/superpowers/specs/2026-07-16-sync-couple-redesign-design.md`) |
 | **M4.10** | Chord layer — COLOR knob, diatonic stacks, voice-leading, live FLOW surface | ✅ done (engine + hosts; hardware placement deferred to the reduction round) |
+| **+ COLOR-MOTION** | MOTION becomes COLOR's third destination — bipolar additive with a zero-gate, density varies per note | ✅ **done** (engine only; no new surface) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -357,6 +358,31 @@ edge.
   audio listening pass deferred to a human. Hardware panel placement is
   explicitly deferred to the upcoming reduction/macro round (per the
   standing hardware-reducibility constraint).
+
+### COLOR as a MOTION target ✅ (extends M4.10)
+
+Spec: `docs/superpowers/specs/2026-07-18-color-motion-target-design.md`, plan:
+`docs/superpowers/plans/2026-07-18-color-motion-target.md`. COLOR was the one
+pitch-layer macro nothing could modulate — a stab in a phrase always carried
+the same chord density. MOTION becomes COLOR's third destination, alongside
+the pan fan and drift amount it already drives, so density now varies per
+note instead of tracking wherever the knob was last left.
+
+- **Engine** — bipolar additive with a zero-gate, not multiplicative: `Part`
+  now owns the COLOR knob and adds MOTION's ±1 output, scaled by MOD and a
+  `kColorMod` constant (0.2), gated in over the first 1% of knob travel
+  (`kColorGate`). In STEP each trigger samples whatever density is current at
+  that instant; in FLOW the existing zone-hysteresis path reads a moving
+  color as a bloom/collapse. `COLOR = 0` forces the gate to 0 and `MOD = 0`
+  zeroes the swing, so both invariants hold structurally rather than by
+  tuning: the chord layer's bit-identity guarantee and today's-behaviour
+  default survive untouched.
+- **No new surface** — no panel control, no scenario action, no parameter id;
+  disabling works through MOTION's existing target-active flag.
+- The three COLOR-0 chord-layer baselines (`ambient_wash`, `demo_step_melody`,
+  `demo_density_sweep`) render byte-identical pre- and post-landing;
+  `chord_bloom.json` sweeps COLOR to 0.95 at the boot MOD of 1.0 with MOTION
+  active, so its reference render was re-cut to the now-breathing chords.
 
 ## Planned
 

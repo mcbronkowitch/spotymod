@@ -3,7 +3,7 @@
  "bpm": 100,
  "duration_s": 48,
  "init": [
-  { "_comment": "COLOR showcase. Part A: Dorian FLOW drone that blooms into a pad (live COLOR sweep 8-20s), collapses (24-28s), then STEP chord stabs at COLOR 0.6 (32s on). Part B silenced (boot lanes would siren)." },
+  { "_comment": "COLOR showcase. Part A: Dorian FLOW drone that blooms into a pad (live COLOR sweep 8-20s), collapses (24-28s), then STEP chord stabs at COLOR 0.6 (32s on). Density also breathes per note: MOD sits at the boot 1.0 with MOTION active, so MOTION swings COLOR +/-0.2 around the knob (spec 2026-07-18 color-motion-target) and the stabs from 32s differ in size. Part B silenced (boot lanes would siren)." },
   { "action": "set_engine", "part": 1, "value": "test_tone" },
   { "action": "set_target_active", "part": 1, "slot": 4, "flag": false },
   { "action": "set_target_base", "part": 1, "slot": 4, "value": 0.0 },
