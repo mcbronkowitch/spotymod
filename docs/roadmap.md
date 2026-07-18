@@ -10,11 +10,13 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-16.
+- **Last updated:** 2026-07-18.
 
-> **Reminder:** nothing here has run on real hardware yet. Everything below is
-> verified only against the desktop offline renderer (unit tests + WAV/CSV
-> render). The Daisy firmware shell is milestone **M6**.
+> **Reminder:** the engine and its milestones are still verified only against
+> the desktop offline renderer (unit tests + WAV/CSV render) — the Daisy
+> firmware shell that runs the actual synth on hardware is milestone **M6**.
+> The CPU budget, though, has now been measured on real hardware: see
+> `docs/bench/`.
 
 ## Status at a glance
 
@@ -34,6 +36,7 @@ is actually built today, and what is still design-only.
 | **SYNC/COUPLE redesign** | One global SYNC switch (replaces per-part sync toggles), transport phase + rate ladder, zoned COUPLE (texture-only in grid world, grid-gravity zone in free world), VCV panel layout A, CLK/RST wired | ✅ **done** (engine + VCV host; spec `docs/superpowers/specs/2026-07-16-sync-couple-redesign-design.md`) |
 | **M4.10** | Chord layer — COLOR knob, diatonic stacks, voice-leading, live FLOW surface | ✅ done (engine + hosts; hardware placement deferred to the reduction round) |
 | **+ COLOR-MOTION** | MOTION becomes COLOR's third destination — bipolar additive with a zero-gate, density varies per note | ✅ **done** (engine only; no new surface) |
+| **Bench** | Bench firmware — DWT cycle measurement of the engine, nine DaisySP candidates and SRAM-vs-SDRAM buffer access on real hardware | ✅ **done** (`bench/`, results in `docs/bench/`) |
 | **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
@@ -383,6 +386,36 @@ note instead of tracking wherever the knob was last left.
   `demo_density_sweep`) render byte-identical pre- and post-landing;
   `chord_bloom.json` sweeps COLOR to 0.95 at the boot MOD of 1.0 with MOTION
   active, so its reference render was re-cut to the now-breathing chords.
+
+### Bench ✅
+
+Plan: `docs/superpowers/plans/2026-07-18-bench-firmware.md`. `bench/` is a
+standalone Daisy app, never shipped and never linked into `spotykach.bin` —
+it boots the engine alone on a Daisy Seed and reads DWT cycle counts around
+fixed workloads, then prints a Markdown/CSV pair over semihosting. The
+shipping firmware (`main.cpp`, `app.cpp`, `src/`, `engine/`, the root
+Makefile) is untouched by its presence; Step 1 of the bench plan re-proves
+that on every run.
+
+The headline numbers are no longer estimates — they come from a real Daisy
+Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-256da41.md`):
+
+- The full instrument at its worst case (8 voices, COLOR 4-note on both
+  parts, all FX on, high diffusion, echo at max) costs 165 % of the block
+  budget offline and 164 % anchored inside a real audio callback — over
+  budget either way. **The 2×4 architecture does not fit**; anchor mode
+  confirmed this audibly, with the callback unable to keep up and the DAC
+  emitting underrun garbage. The design has to shed voices or FX before M6.
+- The modulation plane alone costs about 33 % of the block budget against
+  the design spec's 4–6 % estimate, and it is a conservative figure — the
+  bench runs the modulators from AXI SRAM, where the firmware's own copy
+  sits in zero-wait DTCMRAM.
+- The grain-read proxy — the access pattern M5's granular engine will lean
+  on — costs about 5.3× in SDRAM against the same reads in SRAM. That is
+  the sampler's exposure, measured before the sampler exists.
+
+Numbers, method and the full nine-candidate DaisySP table live in
+`docs/bench/`; how to run the bench yourself is in `bench/README.md`.
 
 ## Planned
 

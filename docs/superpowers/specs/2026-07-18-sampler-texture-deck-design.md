@@ -244,15 +244,18 @@ gains per-part `fill` columns.
 - **CPU:** 8 grains × 2 parts = 16 interpolated stereo reads + window math
   — expected well under the synth budget on desktop. Measured with the
   host bench; the number goes into the milestone notes as a checkpoint.
-  **Hardware caveat (named honestly):** grain reads are scattered SDRAM
-  accesses that bypass the cache — exactly the SRAM-vs-SDRAM weakness the
-  engine-expansion research surfaced (NIME source). Of all engines the
-  sampler is the most exposed to SDRAM latency; it goes on the benchmark
-  firmware list before the 2×4 CPU budget is committed. Desktop numbers
-  do not transfer. The benchmark must measure the **combined** worst case:
-  a sampler part with DUST high is 8 sampler grains + 8 DUST grains
-  = 16 scattered grain reads per part — and on hardware the FLUX `DeLine`
-  the DUST grains read from presumably lives in SDRAM too.
+  **Hardware caveat (measured):** the bench firmware's grain-read proxy —
+  8 scattered interpolated stereo reads per sample, identical pattern in
+  both regions — costs 5.3× in SDRAM against SRAM
+  (`docs/bench/2026-07-18-256da41.md`), confirming the SRAM-vs-SDRAM
+  weakness the engine-expansion research surfaced (NIME source) as a real
+  cost, not a hypothesis. That figure is a directional floor-risk number
+  from a 64 KB window, not a constant to carry forward: the real deck's
+  window is a multi-second buffer with a different multi-grain access
+  pattern, so it names the exposure the deck's grain count must be
+  budgeted against, not the deck's actual cost. Desktop numbers still do
+  not transfer; the combined worst case (sampler grains + DUST grains, see
+  below) still needs its own measurement once both engines exist.
 
 ## Testing (doctest, TDD as established)
 
