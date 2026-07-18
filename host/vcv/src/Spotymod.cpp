@@ -386,23 +386,13 @@ struct SpkyRing : Widget {
 
 // --- panel text ---------------------------------------------------------------
 // Rack's SVG loader (NanoSVG) ignores <text>, so the faceplate ships with none
-// of its lettering visible. Every label already lives in the generated control
-// table (kParamCtls[].label, ...); we draw it here at runtime with nvgText, plus
-// the section titles/brand. Positions mirror res/gen_panel.py exactly (label
-// baseline = control centre + glyph radius + 2.5 mm), so this matches the SVG
-// preview one-to-one. Font is a stock Rack asset, present in every v2 install.
+// of its lettering visible. Every caption is drawn here with nvgText, straight
+// out of the generated tables: position, anchor, size and colour all come from
+// res/gen_panel.py (PanelCtl::lbl/anchor/lblSize/lblRgb), so the SVG preview and
+// Rack can never drift apart. Font is a stock Rack asset, present in every
+// v2 install -- note it has no bold cut, so the SVG's bold legends render
+// regular here. That is accepted.
 struct PanelText : Widget {
-    // glyph radius per kind -- mirror of GLYPH_R in res/gen_panel.py
-    static float glyphR(int kind) {
-        switch (kind) {
-            case WK_BIGKNOB: case WK_KNOBC: case WK_IN: case WK_OUT: return 4.2f;
-            case WK_SMKNOB:  case WK_KNOBI: return 3.0f;
-            case WK_SW2:     return 3.0f;
-            case WK_LATCH:   case WK_SMBTN: return 2.7f;
-            default:         return 1.7f;
-        }
-    }
-
     void draw(const DrawArgs& args) override {
         std::shared_ptr<Font> font =
             APP->window->loadFont(asset::system("res/fonts/ShareTechMono-Regular.ttf"));
@@ -419,11 +409,18 @@ struct PanelText : Widget {
             Vec p = mm2px(Vec(xmm, ymm));
             nvgText(args.vg, p.x, p.y, s, NULL);
         };
+        auto alignOf = [](unsigned char a) {
+            return a == 1 ? NVG_ALIGN_LEFT : a == 2 ? NVG_ALIGN_RIGHT
+                                                    : NVG_ALIGN_CENTER;
+        };
         auto captions = [&](const PanelCtl* t, size_t n) {
-            for (size_t i = 0; i < n; ++i)
-                if (t[i].label[0])
-                    text(t[i].mm.x, t[i].mm.y + glyphR(t[i].kind) + 2.5f, 2.0f,
-                         col(kColLabel), t[i].label);
+            for (size_t i = 0; i < n; ++i) {
+                if (!t[i].label[0]) continue;
+                nvgTextAlign(args.vg, alignOf(t[i].anchor) | NVG_ALIGN_BASELINE);
+                text(t[i].lbl.x, t[i].lbl.y, t[i].lblSize, col(t[i].lblRgb),
+                     t[i].label);
+            }
+            nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
         };
         captions(kParamCtls,  sizeof(kParamCtls)  / sizeof(kParamCtls[0]));
         captions(kInputCtls,  sizeof(kInputCtls)  / sizeof(kInputCtls[0]));

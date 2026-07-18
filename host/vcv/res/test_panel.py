@@ -85,6 +85,37 @@ def test_panel_size():
     check(approx(g.W, 213.36) and approx(g.Hh, 128.5), "panel is no longer 42HP")
 
 
+def test_label_metadata_exists():
+    """Every labelled control resolves to an absolute label placement."""
+    for c in g.PARAMS + g.INPUTS + g.OUTPUTS:
+        if not c.label:
+            continue
+        x, y, anchor, size, colour = g.label_of(c)
+        check(anchor in ("middle", "start", "end"),
+              f"{c.enum}: bad anchor {anchor!r}")
+        check(size > 0, f"{c.enum}: label size {size}")
+        check(colour.startswith("#"), f"{c.enum}: label colour {colour!r}")
+
+
+def test_label_defaults_match_todays_layout():
+    """The default rule must reproduce the pre-redesign placement exactly."""
+    for c in g.PARAMS + g.INPUTS + g.OUTPUTS:
+        if not c.label or c.lbl is not None:
+            continue
+        x, y, anchor, size, colour = g.label_of(c)
+        check(approx(x, c.x), f"{c.enum}: default label x {x} != {c.x}")
+        check(anchor == "middle", f"{c.enum}: default anchor {anchor!r}")
+        check(colour == g.INK, f"{c.enum}: default colour {colour!r}")
+
+
+def test_header_carries_label_columns():
+    """The C++ table must ship the label placement, not recompute it."""
+    h = g.header()
+    check("XY lbl; unsigned char anchor; float lblSize; unsigned lblRgb;" in h,
+          "PanelCtl has no label placement columns")
+    check(h.count("{RATE_A, WK_BIGKNOB,") == 1, "kParamCtls lost RATE_A")
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

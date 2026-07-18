@@ -62,9 +62,28 @@ WKMAP = {BIGKNOB:"WK_BIGKNOB", KNOBC:"WK_KNOBC", SMKNOB:"WK_SMKNOB",
          KNOBI:"WK_KNOBI", SW2:"WK_SW2", LATCH:"WK_LATCH", SMBTN:"WK_SMBTN",
          IN:"WK_IN", OUT:"WK_OUT", LIGHT:"WK_LIGHT"}
 
+# --- label placement ----------------------------------------------------------
+# Baseline offset below the glyph centre, per kind (spec 2026-07-18 §8). The
+# C++ side no longer knows these numbers -- it reads the resolved position out
+# of the generated table.
+LBL_DY = {BIGKNOB: 7.2, KNOBC: 7.2, SMKNOB: 5.6, KNOBI: 5.6, SW2: 6.6,
+          LATCH: 5.4, SMBTN: 5.4, IN: 6.4, OUT: 6.4, LIGHT: 0.0}
+LBL_SIZE = {IN: 1.8, OUT: 1.8}     # jacks; every other kind uses 1.9
+
+def label_of(c):
+    """(x, y, anchor, size, colour) for a control's caption."""
+    if c.lbl is not None:
+        return c.lbl
+    return (c.x, c.y + LBL_DY[c.kind], "middle", LBL_SIZE.get(c.kind, 1.9), INK)
+
 class Ctl:
     def __init__(self, enum, kind, x, y, label):
         self.enum, self.kind, self.x, self.y, self.label = enum, kind, x, y, label
+        self.r = GLYPH_R[kind]
+        # None -> default placement (centred below the glyph); otherwise an
+        # explicit (x, y, anchor, size, colour) tuple. Radial orbit captions
+        # and white-on-well jack labels set this.
+        self.lbl = None
 
 # geometry of a side ring
 RING_CY   = 37.0
@@ -318,7 +337,6 @@ def svg():
     P.append(f'<circle cx="{mm(CX+15)}" cy="5.9" r="0.9" fill="{COPPER}"/>')
     # glyphs + labels
     for c in PARAMS + INPUTS + OUTPUTS + LIGHTS:
-        c.r = GLYPH_R[c.kind]
         if c.kind in (IN, OUT):
             P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(c.r)}" '
                      f'fill="{GRAPHITE}" stroke="#4a4a40" stroke-width="0.4"/>')
@@ -338,8 +356,10 @@ def svg():
         else:
             P.append(knob_svg(c))
         if c.label:
-            P.append(f'<text x="{mm(c.x)}" y="{mm(c.y+c.r+2.5)}" fill="{INK}" '
-                     f'text-anchor="middle" font-family="monospace" font-size="2.0">{c.label}</text>')
+            lx, ly, anchor, size, colour = label_of(c)
+            P.append(f'<text x="{mm(lx)}" y="{mm(ly)}" fill="{colour}" '
+                     f'text-anchor="{anchor}" font-family="monospace" '
+                     f'font-size="{size}">{c.label}</text>')
     # shared lettering (preview only -- Rack draws these via PanelText)
     for (x, y, size, spacing, col, txt) in TEXTS:
         P.append(f'<text x="{mm(x)}" y="{mm(y)}" fill="{col}" text-anchor="middle" '
@@ -361,7 +381,9 @@ def header():
     L2.append("struct XY { float x, y; };")
     L2.append("enum WidgetKind { WK_BIGKNOB, WK_KNOBC, WK_SMKNOB, WK_KNOBI, "
               "WK_SW2, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };")
-    L2.append("struct PanelCtl { int id; WidgetKind kind; XY mm; const char* label; };")
+    L2.append("struct PanelCtl { int id; WidgetKind kind; XY mm; const char* label; "
+              "XY lbl; unsigned char anchor; float lblSize; unsigned lblRgb; };")
+    L2.append("// anchor: 0 = middle, 1 = start (left-aligned), 2 = end (right-aligned)")
     L2.append("struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; const char* str; };")
     L2.append(f"static constexpr int PART_STRIDE = {PART_STRIDE};")
     L2.append(f"static constexpr float kRingR = {RING_R:.3f}f;      // mm, LED-dot orbit")
@@ -383,10 +405,15 @@ def header():
     emit_enum("OutputId", OUTPUTS, "NUM_OUTPUTS")
     emit_enum("LightId",  LIGHTS,  "NUM_LIGHTS")
 
+    ANCHOR_ID = {"middle": 0, "start": 1, "end": 2}
+
     def emit_table(name, items):
         L2.append(f"static const PanelCtl {name}[] = {{")
         for c in items:
-            L2.append(f'    {{{c.enum}, {WKMAP[c.kind]}, {{{c.x:.3f}f, {c.y:.3f}f}}, "{c.label}"}},')
+            lx, ly, anchor, size, colour = label_of(c)
+            L2.append(f'    {{{c.enum}, {WKMAP[c.kind]}, {{{c.x:.3f}f, {c.y:.3f}f}}, '
+                      f'"{c.label}", {{{lx:.3f}f, {ly:.3f}f}}, {ANCHOR_ID[anchor]}, '
+                      f'{size:.2f}f, {rgb(colour)}}},')
         L2.append("};")
 
     emit_table("kParamCtls",  PARAMS)
