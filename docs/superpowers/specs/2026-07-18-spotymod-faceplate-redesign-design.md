@@ -71,8 +71,14 @@ s = sin a, c = cos a):
 - **All small knobs lose the collar** (bare graphite on paper) — 20+ rings
   per side were visual noise.
 - **MORPH keeps** its split green/copper collar (the bridge signature).
-- Pads keep their accent border; the edge bands, ring letter, and sector
+- ~~Pads keep their accent border~~; the edge bands, ring letter, and sector
   tints carry side identity everywhere else.
+
+**Errata (2026-07-18, after the first Rack look):** the pads lost their accent
+border too. Rack's button widgets are round and sit almost exactly on the
+square key, so the coloured stroke survived only as a halo peeking out around
+each button in the PLAY row — noise of the same kind the collar cull removed.
+The pads are now a plain paper key bed.
 
 ### 4. Group boxes (fieldset style)
 

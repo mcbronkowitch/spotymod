@@ -483,10 +483,14 @@ def svg():
                      f'height="6.0" rx="0.8" fill="{WHITE}" stroke="{INK}" stroke-width="0.35"/>')
             P.append(f'<rect x="{mm(c.x-1.1)}" y="{mm(c.y-2.4)}" width="2.2" '
                      f'height="2.4" rx="0.5" fill="{GRAPHITE}"/>')
-        elif c.kind in (LATCH, SMBTN):   # pads: raised paper keys, side-coloured edge
+        elif c.kind in (LATCH, SMBTN):
+            # Pads: a plain paper key bed, no accent edge. Rack's button widgets
+            # are ROUND and cover the square almost exactly, so a coloured
+            # stroke survived only as a halo peeking out around each button
+            # (spotted in Rack, 2026-07-18) -- side identity is carried by the
+            # edge bands, ring letter and sector tints anyway.
             P.append(f'<rect x="{mm(c.x-c.r)}" y="{mm(c.y-c.r)}" width="{mm(2*c.r)}" '
-                     f'height="{mm(2*c.r)}" rx="1.0" fill="{WHITE}" '
-                     f'stroke="{side_accent(c.x)}" stroke-width="0.35"/>')
+                     f'height="{mm(2*c.r)}" rx="1.0" fill="{WHITE}"/>')
         else:
             P.append(knob_svg(c))
         if c.label:

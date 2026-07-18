@@ -171,17 +171,17 @@
 <circle cx="35.500" cy="103.600" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="35.500" y1="103.600" x2="35.500" y2="101.300" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="35.500" y="109.200" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">STPS</text>
-<rect x="8.800" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#1d6f5f" stroke-width="0.35"/>
+<rect x="8.800" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="11.500" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">ENG</text>
-<rect x="19.300" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#1d6f5f" stroke-width="0.35"/>
+<rect x="19.300" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="22.000" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">GRIT</text>
-<rect x="43.300" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#1d6f5f" stroke-width="0.35"/>
+<rect x="43.300" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="46.000" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">STEP</text>
-<rect x="53.800" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#1d6f5f" stroke-width="0.35"/>
+<rect x="53.800" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="56.500" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">PRIN</text>
-<rect x="64.300" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#1d6f5f" stroke-width="0.35"/>
+<rect x="64.300" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="67.000" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">NEW</text>
-<rect x="74.800" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#1d6f5f" stroke-width="0.35"/>
+<rect x="74.800" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="77.500" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">TRIG</text>
 <circle cx="171.360" cy="10.500" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
 <circle cx="171.360" cy="10.500" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
@@ -242,17 +242,17 @@
 <circle cx="177.860" cy="103.600" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="177.860" y1="103.600" x2="177.860" y2="101.300" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="177.860" y="109.200" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">STPS</text>
-<rect x="199.160" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#b96532" stroke-width="0.35"/>
+<rect x="199.160" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="201.860" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">ENG</text>
-<rect x="188.660" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#b96532" stroke-width="0.35"/>
+<rect x="188.660" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="191.360" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">GRIT</text>
-<rect x="164.660" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#b96532" stroke-width="0.35"/>
+<rect x="164.660" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="167.360" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">STEP</text>
-<rect x="154.160" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#b96532" stroke-width="0.35"/>
+<rect x="154.160" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="156.860" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">PRIN</text>
-<rect x="143.660" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#b96532" stroke-width="0.35"/>
+<rect x="143.660" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="146.360" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">NEW</text>
-<rect x="133.160" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#b96532" stroke-width="0.35"/>
+<rect x="133.160" y="100.900" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="135.860" y="109.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">TRIG</text>
 <path d="M 99.680 16.450 A 5.050 5.050 0 0 0 99.680 26.550" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
 <path d="M 99.680 16.450 A 5.050 5.050 0 0 1 99.680 26.550" fill="none" stroke="#b96532" stroke-width="0.5"/>
@@ -274,12 +274,12 @@
 <circle cx="118.180" cy="56.500" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="118.180" y1="56.500" x2="118.180" y2="54.200" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="118.180" y="62.100" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DRIFT</text>
-<rect x="92.480" y="63.300" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#656056" stroke-width="0.35"/>
+<rect x="92.480" y="63.300" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="95.180" y="71.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SPOT</text>
 <circle cx="106.680" cy="66.000" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="106.680" y1="66.000" x2="106.680" y2="63.700" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="106.680" y="71.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DRIVE</text>
-<rect x="115.480" y="63.300" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#656056" stroke-width="0.35"/>
+<rect x="115.480" y="63.300" width="5.400" height="5.400" rx="1.0" fill="#fffdf7"/>
 <text x="118.180" y="71.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SETL</text>
 <circle cx="95.180" cy="82.500" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="95.180" y1="82.500" x2="95.180" y2="80.200" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
