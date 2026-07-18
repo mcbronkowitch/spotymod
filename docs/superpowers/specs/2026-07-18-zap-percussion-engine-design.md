@@ -37,11 +37,22 @@ strict reinterpretation, zero new controls.
   cross-mod, noise source, 2 AHR envelopes with log↔lin shape morph, plus a
   dedicated fast pitch envelope. Mono buys the CPU headroom for the full
   architecture.
-- Slot selection: **(b) pitch class selects, octave transposes** — the
-  semitone class (C..B) picks the archetype, the octave transposes it
-  (kick → tom, zap → laser melody: Zaps' "melodic percussion"). TUNE
-  transposes globally. Envelope times do NOT scale with transposition —
-  character survives the octave ride.
+- Slot selection: **scale degree selects, octave transposes**
+  (performance-review amendment, 2026-07-18 — supersedes the earlier
+  "chromatic pitch class" decision). The note's *degree in the active
+  scale* picks the archetype in percussion-priority order (root = kick,
+  §3); the octave transposes it (kick → tom, zap → laser melody: Zaps'
+  "melodic percussion"). TUNE transposes globally. Envelope times do NOT
+  scale with transposition — character survives the octave ride.
+  Rationale: the quantizer only passes in-scale classes, so chromatic
+  mapping made an arbitrary, scale-dependent part of the kit unreachable —
+  including, possibly, the kick. Degree mapping guarantees the kick on
+  the root in every scale and turns the scale knob into kit size.
+- Performance invariants (performance review, 2026-07-18): the **home
+  invariant** — MOTION = 0 and DETUNE at a zone start reproduce the pure
+  archetypes bit-exactly, regardless of history; and the **kick
+  reduction** — MELO down collapses the pitch walk onto the root, which
+  is always the kick (§3a).
 - FLOW: **(b) held Hold phase** — the AHR envelopes' H phase sustains until
   the next trigger. The kick becomes a bass tone, the zap a laser drone,
   the snare a noise bed. The drone promise, honored literally.
@@ -86,6 +97,11 @@ surface at test-tone level, voice interior at SYNTH level.
 - Conventions carried over: all parameter smoothing/derivation on the
   96-sample control cadence; `_filt_gain` silence-fade; deterministic
   `Rng` with a fixed seed-derivation path (part index → bank → slot).
+- `IPartEngine` gains one optional method, `set_scale(uint16_t mask12,
+  int root_semis)` (default no-op — `set_chord` precedent): Part forwards
+  the quantizer's active mask + root on change, so ZAP can map a
+  triggered pitch to its scale degree. FREE/CHROM use the chromatic mask
+  (all 12 degrees reachable). Existing engines ignore it.
 - New files: `engine/zap/zap_engine.h/.cpp`, `engine/zap/zap_voice.h/.cpp`,
   `engine/zap/zap_kit.h` (archetype table + scatter ranges).
 
@@ -122,10 +138,25 @@ PitchEnv (fast, fixed shape) → Osc1/Osc2 pitch (the zap sweep)
 amounts, noise mix, Env1/Env2 A/H/R times + shape, Env2 routing, pitch-env
 depth/time, HP base cutoff, base tune, level trim.
 
-**The 12 archetypes** (pitch classes C..B): kick, tom, snare, rim/click,
-clap, closed hat, open hat, low zap, high zap, blip, FM metal (cowbell
-corner), noise sweep. Exact snapshot values are tuning material for the
-listening pass — the slot list is the contract, the numbers are not.
+**The 12 archetypes, in percussion-priority order** (slot index = scale
+degree): **0 kick**, 1 snare, 2 closed hat, 3 open hat, 4 low zap,
+5 blip, 6 clap, 7 tom, 8 rim/click, 9 high zap, 10 FM metal (cowbell
+corner), 11 noise sweep. Exact snapshot values are tuning material for
+the listening pass — the slot list and its order are the contract, the
+numbers are not.
+
+**Degree mapping.** The triggered pitch folds to (degree, octave) against
+the active mask + root (`set_scale`): degree = the note's position among
+the mask's set bits, octave = its octave within the 36-semi contract.
+Consequences, all deliberate:
+
+- **The kick always sits on the root** — every scale, every TUNE.
+- **The scale knob becomes kit size**: pentatonic = a 5-piece core kit
+  (kick/snare/hats/low zap), 7-note scales add blip/clap, CHROM opens all
+  12. An existing knob gains a clear second reading, no new control.
+- Small walk steps move between core sounds, large leaps reach the
+  colors — musically saner than chromatic neighbors.
+- A note that lands off-mask (FREE mode drift) maps to the nearest degree.
 
 **Scatter.** Each parameter carries a per-parameter scatter range in the
 kit table (envelope times scatter wide, level trim barely). A bank seed +
@@ -149,11 +180,36 @@ values reproduce bit-exactly. MOTION at 0 = the kit is stable. SYNTH's
 pan-fan/drift meaning does not apply (mono); MOTION's mod-plane role
 (COLOR target etc.) is untouched.
 
+### 3a. Live performance: the home invariant & the kick reduction
+
+This engine is a live tool first; two guarantees are contract, not
+tuning:
+
+**Home invariant.** Mutation and scatter are *stateless*: both scale
+deterministic offsets, nothing accumulates. Therefore **MOTION = 0 and
+DETUNE at a zone start ⇒ the pure archetypes, bit-exact — always,
+regardless of what was played before.** The way home is two knob moves,
+and it always lands on the same sound. Modulate out, come back: the
+origin is guaranteed, not hoped for.
+
+**Kick reduction.** The phrase generator's pitch walk is centered on the
+root (0.0 = root; Call-Response resolves to it), and low MELO makes the
+walk near-static. With degree 0 = kick, **MELO down collapses the pattern
+onto the kick alone** — at full DENS/GROOVE drive — and MELO up brings
+the kit back. The "strip it down to the kick" gesture live, on an
+existing knob, with zero new machinery.
+
+The live cheat sheet, one meaning per knob: MELO = how many sounds
+(down = kick) · scale = kit size · DETUNE = which kit, how far from
+stock · MOTION = how much each hit wobbles · DECAY/RESO = tight ↔
+ringing.
+
 ### 4. Control mapping — strict reinterpretation
 
 | control | SYNTH meaning | ZAP meaning |
 |---|---|---|
-| PITCH lane | note | pitch class → slot, octave transposes the slot; TUNE global transpose |
+| PITCH lane | note | scale degree → slot (root = kick), octave transposes the slot; TUNE global transpose |
+| MELO / scale select | phrase entropy / scale | (mechanics unchanged) emergent ZAP reading: MELO = how many sounds — down collapses to the kick (§3a); scale = kit size (§3) |
 | TIMBRE lane | morph + t²·DETUNE_MAX | cross-mod macro: 0 = clean single-osc → FM amount rises → above the midpoint AM blends in (organic → metallic → ring-mod chaos) |
 | FILTER lane + FILT | Svf cutoff 60 Hz–14 kHz | high-pass brightness on the per-slot base cutoff (same Hz map); FILT silence-fade invariant unchanged |
 | ATTACK | env attack (% of cycle) | Env1/Env2 attack scale — click transient ↔ swelled hit |
@@ -186,8 +242,10 @@ rows are the contract, the curves are not.
 `trigger_chord(pitches, n)` fires **one** hit whose snapshot is a weighted
 blend of the chord tones' slots:
 
-- Each chord tone maps to (slot, octave) as a single note would. The root
-  dominates; the remaining weight is shared by the other tones. More chord
+- Each chord tone maps to (slot, octave) as a single note would — the
+  chord builder stacks scale degrees, so the tones land on well-defined
+  slots by construction. The root dominates; the remaining weight is
+  shared by the other tones. More chord
   tones (= higher COLOR, denser voicing) pull the sound further from the
   root slot — COLOR becomes a live performance morph without being plumbed
   to the engine at all: the note count and voicing it produces *are* the
@@ -227,9 +285,10 @@ the risk here is nominal.
 
 - Scenario parser: `"zap"`. VCV: engine button cycles
   test-tone → synth → wave → string → zap.
-- `zap_kit.json` — STEP, full kit sequence walking the pitch classes,
-  DETUNE ride across two bank zones, MOTION ramp (mutation audible).
-  Listening + regression anchor.
+- `zap_kit.json` — STEP, kit sequence walking the scale degrees, DETUNE
+  ride across two bank zones, MOTION ramp (mutation audible), then MOTION
+  back to 0 + DETUNE to zone start (the home invariant, audible), ending
+  in a MELO-down kick reduction. Listening + regression anchor.
 - `zap_drone.json` — FLOW, held kick-bass and zap-laser drones, CHOKE
   releases, COLOR sweep morphing the sounding drone.
 - `zap_morph.json` — STEP + chord layer at rising COLOR: root slot pure →
@@ -240,10 +299,15 @@ the risk here is nominal.
 - **Determinism:** same scenario + same seed → bit-identical render on
   desktop and VCV; mutation stream reproducible from (bank, slot, trigger
   count).
-- **Slot map:** 12 pitch classes → 12 distinct snapshots; octave changes
-  transpose pitch only (envelope times byte-identical across octaves).
+- **Slot map:** degree → slot per scale (root = kick in every scale +
+  root; pentatonic reaches exactly slots 0–4, CHROM all 12); octave
+  changes transpose pitch only (envelope times byte-identical across
+  octaves); `set_scale` default no-op leaves existing engines untouched.
+- **Home invariant:** after an arbitrary render history (mutation, bank
+  rides, chords), MOTION = 0 + DETUNE at a zone start renders bit-exact
+  the pure-archetype reference.
 - **Zones:** DETUNE bank boundaries carry hysteresis — a knob parked on an
-  edge never flutters; zone start ≈ scatter zero.
+  edge never flutters; zone start = scatter zero (the invariant above).
 - **Retrigger:** hard cut completes the declick ramp (no discontinuity
   above threshold) before the new slot fires.
 - **FLOW:** hold sustains indefinitely; CHOKE releases click-free and
