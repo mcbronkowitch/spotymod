@@ -35,6 +35,10 @@ public:
     // color-motion-target).
     void set_color(float c) { _color = clampf(c, 0.f, 1.f); }
     int  chord_size() const { return _chord.size(); }
+    // The color actually handed to the ChordBuilder: the knob plus MOTION's
+    // swing (spec 2026-07-18 color-motion-target). Equals the knob when
+    // MOD = 0 or the MOTION target is inactive.
+    float color_eff() const { return _color_eff; }
     void set_detune_cents(float c) { _detune_cents = c; }   // DRIFT tune tap; engine pitch only
     void set_target_active(int slot, bool on) { _active[slot] = on; }
     void set_target_base(int slot, float b)   { _base[slot] = clampf(b, 0.f, 1.f); }
@@ -143,10 +147,25 @@ private:
     // part breathes, it never vanishes (play-test rev 2026-07-17, ear-tunable).
     static constexpr float kLevelFloor = 0.4f;
 
+    // COLOR is a third destination of the MOTION lane (spec 2026-07-18
+    // color-motion-target): density pendles +/-1 zone around the knob, so a
+    // phrase's stabs differ in size. Bipolar and ADDITIVE, so the reach stays
+    // constant across the knob range and a barely-open knob can still rise
+    // into chord territory. Both ear-tunable.
+    //   kColorMod  swing amplitude at MOD = 1; the zones are 0.25 wide, so
+    //              +/-0.2 crosses at most one edge in each direction.
+    //   kColorGate knob travel over which the swing fades in. Below it the
+    //              swing is scaled toward 0, so COLOR = 0 is structurally
+    //              silent (multiplied by zero, not special-cased) and the
+    //              chord layer's bit-identity guarantee survives untouched.
+    static constexpr float kColorMod  = 0.2f;
+    static constexpr float kColorGate = 0.01f;
+
     float _depth = 1.f;
     float _tune = 0.5f;
     float _detune_cents = 0.f;   // DRIFT detune, applied post-quantizer to the engine only
     float _color = 0.f;          // COLOR knob; effective color is computed in process()
+    float _color_eff = 0.f;      // knob + MOTION swing, as last pushed to _chord
     int   _gate_ctr = 0;
     int   _gate_len = 240;   // ~5 ms @ 48k, recomputed in init()
     float _sr = 48000.f;

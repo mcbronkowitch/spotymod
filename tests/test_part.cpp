@@ -385,3 +385,101 @@ TEST_CASE("part: COLOR reaches the chord builder through process(), not the sett
     for (int i = 0; i < 4800; ++i) p.process(l, r);
     CHECK(p.chord_size() == 1);
 }
+
+// --- COLOR as a MOTION target (spec 2026-07-18 color-motion-target) ---
+
+namespace {
+// Run one part for `n` samples, recording the chord size on every PITCH-lane
+// fire. Returns the sizes seen, in order.
+static std::vector<int> chord_sizes_over(Part& p, int n) {
+    std::vector<int> sizes;
+    float l, r;
+    for (int i = 0; i < n; ++i) {
+        p.process(l, r);
+        if (p.lane_fired(LANE_PITCH)) sizes.push_back(p.chord_size());
+    }
+    return sizes;
+}
+} // namespace
+
+TEST_CASE("color-mod: COLOR 0 stays one note whatever MOD and MOTION do") {
+    Part p;
+    p.init(48000.f, 5u);
+    p.set_color(0.f);
+    p.set_depth(1.f);
+    p.set_target_active(LANE_MOTION, true);
+    p.set_step(true, 8);
+    auto sizes = chord_sizes_over(p, 480000);      // 10 s, many MOTION cycles
+    REQUIRE(!sizes.empty());
+    for (int n : sizes) CHECK(n == 1);
+}
+
+TEST_CASE("color-mod: MOD 0 hands the ChordBuilder the knob, exactly") {
+    Part p;
+    p.init(48000.f, 5u);
+    p.set_depth(0.f);
+    p.set_target_active(LANE_MOTION, true);
+    float l, r;
+    for (float knob : {0.f, 0.2f, 0.5f, 0.77f, 1.f}) {
+        p.set_color(knob);
+        for (int i = 0; i < 480; ++i) p.process(l, r);
+        CHECK(p.color_eff() == knob);              // exact, not Approx
+    }
+}
+
+TEST_CASE("color-mod: a barely-open knob reaches up into chords") {
+    Part p;
+    p.init(48000.f, 5u);
+    p.set_color(0.02f);                            // 2% of travel; gate fully open
+    p.set_depth(1.f);
+    p.set_target_active(LANE_MOTION, true);
+    p.set_step(true, 8);
+    auto sizes = chord_sizes_over(p, 480000);
+    REQUIRE(!sizes.empty());
+    int maxn = 0;
+    for (int n : sizes) if (n > maxn) maxn = n;
+    CHECK(maxn >= 2);                              // the swing is additive, not a ceiling
+}
+
+TEST_CASE("color-mod: density varies per note at a mid knob position") {
+    Part p;
+    p.init(48000.f, 5u);
+    p.set_color(0.35f);                            // near the 2/3-note zone edge (0.375)
+    p.set_depth(1.f);
+    p.set_target_active(LANE_MOTION, true);
+    p.set_step(true, 8);
+    auto sizes = chord_sizes_over(p, 480000);
+    REQUIRE(sizes.size() > 4);
+    int mn = sizes[0], mx = sizes[0];
+    for (int n : sizes) { if (n < mn) mn = n; if (n > mx) mx = n; }
+    CHECK(mn < mx);                                // spread, not specific sizes
+}
+
+TEST_CASE("color-mod: an inactive MOTION target modulates nothing") {
+    Part p;
+    p.init(48000.f, 5u);
+    p.set_color(0.5f);
+    p.set_depth(1.f);
+    p.set_target_active(LANE_MOTION, false);
+    float l, r;
+    for (int i = 0; i < 48000; ++i) {
+        p.process(l, r);
+        CHECK(p.color_eff() == 0.5f);              // exact
+    }
+}
+
+TEST_CASE("color-mod: deterministic — same seed, same density sequence") {
+    Part a, b;
+    a.init(48000.f, 7u);
+    b.init(48000.f, 7u);
+    for (Part* p : {&a, &b}) {
+        p->set_color(0.35f);
+        p->set_depth(1.f);
+        p->set_target_active(LANE_MOTION, true);
+        p->set_step(true, 8);
+    }
+    auto sa = chord_sizes_over(a, 240000);
+    auto sb = chord_sizes_over(b, 240000);
+    CHECK(sa == sb);
+    REQUIRE(!sa.empty());
+}

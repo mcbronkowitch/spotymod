@@ -133,7 +133,16 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
 
     // chord layer: refresh the surface every sample (cheap interval apply);
     // full voice-leading build only on a fire
-    _chord.set_color(_color);
+    // COLOR is MOTION's third destination, alongside pan fan and drift (spec
+    // 2026-07-18 color-motion-target). Bipolar additive: the knob is the
+    // centre, MOTION swings +/-kColorMod around it at MOD = 1. The gate makes
+    // COLOR = 0 exactly silent by construction.
+    const float cgate = clampf(_color / kColorGate, 0.f, 1.f);
+    const float cmod  = _active[LANE_MOTION]
+        ? _mod.lane_output(LANE_MOTION) * _depth * kColorMod * cgate
+        : 0.f;
+    _color_eff = clampf(_color + cmod, 0.f, 1.f);
+    _chord.set_color(_color_eff);
     float chord[ChordBuilder::kMaxNotes];
     int nch = _chord.apply(targets[LANE_PITCH], _chord_mask(),
                            _quant.root_semis(), chord);
