@@ -46,3 +46,36 @@ void report_end()
 }
 
 } // namespace bench
+
+namespace {
+// Percent of the block budget in hundredths, printed as a fixed-point pair.
+// Integer maths keeps the output exact and keeps float formatting (and its
+// newlib bulk) out of the binary.
+inline uint32_t pct_x100(uint32_t cyc)
+{
+    return static_cast<uint32_t>((static_cast<uint64_t>(cyc) * 10000ull)
+                                 / bench::kBudgetCycles);
+}
+} // namespace
+
+namespace bench {
+
+void report_row(const Workload& w, const Result& r)
+{
+    if (r.timed_out) {
+        logf("BENCH,%s,%s,TIMEOUT,%lu,,,%08lx\n",
+             w.family, w.name,
+             (unsigned long)r.max_cyc, (unsigned long)r.checksum);
+        return;
+    }
+    const uint32_t pa = pct_x100(r.avg_cyc);
+    const uint32_t pm = pct_x100(r.max_cyc);
+    logf("BENCH,%s,%s,%lu,%lu,%lu.%02lu,%lu.%02lu,%08lx\n",
+         w.family, w.name,
+         (unsigned long)r.avg_cyc, (unsigned long)r.max_cyc,
+         (unsigned long)(pa / 100), (unsigned long)(pa % 100),
+         (unsigned long)(pm / 100), (unsigned long)(pm % 100),
+         (unsigned long)r.checksum);
+}
+
+} // namespace bench

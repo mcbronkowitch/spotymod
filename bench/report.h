@@ -1,5 +1,7 @@
 #pragma once
 
+#include "workload.h"
+
 namespace bench {
 
 // Output leaves over the SWD link the probe already owns (ARM semihosting),
@@ -16,5 +18,7 @@ void logf(const char* fmt, ...);
 // is free-form and ignored by the parser.
 void report_begin(const char* githash);
 void report_end();
+
+void report_row(const Workload& w, const Result& r);
 
 } // namespace bench

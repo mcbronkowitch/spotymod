@@ -26,7 +26,9 @@ C_DEFS += -DBENCH_GIT_HASH=\"$(GIT_HASH)\"
 
 CPP_SOURCES = \
 	main.cpp \
-	report.cpp
+	report.cpp \
+	runner.cpp \
+	workloads_system.cpp
 
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile
