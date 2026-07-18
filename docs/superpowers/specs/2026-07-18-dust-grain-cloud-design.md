@@ -1,18 +1,26 @@
-# DUST — grain cloud + tape freeze on the FLUX echo
+# DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo
 
-**Date:** 2026-07-18
+**Date:** 2026-07-18 (rev 2 — performance/experimental redesign, same day)
 **Status:** design approved, ready for implementation plan
-**Scope:** a per-part granular read stage inside the FLUX block, plus a tape FREEZE. No new audio buffers, no change to GRIT, COMP, reverb, or the master chain.
+**Scope:** a per-part granular read/write stage inside the FLUX block, a character axis (ROT), and a tape FREEZE with erosion. No new audio buffers. No change to GRIT, COMP, reverb, or the master chain.
 
 ## Problem
 
-Clouds-style granular texture is wanted — smearing, freeze/stutter, random scatter — but a Clouds port would be redundant (its reverb/diffusion already exists as ROOM) and too heavy for the remaining Daisy budget. The insight that makes a native version nearly free: **the FLUX tape already holds 5 s of per-part stereo material**. A granulator can run as extra read heads on that existing tape — zero extra sample memory, and echo + grains share one sonic identity ("the tape"), closer to Beads' delay-granular hybrid than to a Clouds copy.
+Clouds-style granular texture is wanted — smearing, freeze/stutter, random scatter — but a Clouds port would be redundant (diffusion/reverb already exists as ROOM) and too heavy for the remaining Daisy budget. And a polite read-only grain cloud is not enough either (rev 1 verdict): this must be a **performance effect played live like the delay**, and a **sound design tool** — like the reverb, dialable from plain delay all the way into territory standard tools don't reach.
 
-Explicitly out of desire (user decision): pitch-shifted grains. In: texture/smear, freeze/stutter, random scatter.
+The insight that makes it nearly free: **the FLUX tape already holds 5 s of per-part stereo material**. Grains are extra read heads — and, at the experimental end, extra *write* heads — on that existing tape. Zero extra sample memory; echo and grains share one sonic identity ("the tape").
+
+Requirements (user decisions):
+- DUST = 0 ⇒ **bit-exact plain delay**, always reachable.
+- Two axes: **how much** grain activity (DUST) vs. **which character** (ROT).
+- Character range: tempo-synced stutter → free scatter → reverse grains → self-eating writeback.
+- FREEZE with two personalities: preserving looper (low ROT) or **eroding loop that decomposes itself** (high ROT).
+- No pitch-shifted grains (reverse is time-reversal, not transposition).
+- No FX-target lane; live play = knobs + freeze gate.
 
 ## Existing infrastructure this reuses
 
-- `engine/fx/flux.h` — `EchoDelay` over `DeLine` ring buffers (240 000 samples = 5 s per channel per part). The write pointer decrements once per sample; a read at constant offset behind it **is** 1× forward playback delayed by that offset.
+- `engine/fx/flux.h` — `EchoDelay` over `DeLine` rings (240 000 samples = 5 s per channel per part). The write pointer decrements once per sample; a read at constant offset behind it **is** 1× forward playback delayed by that offset. `Flux` already receives BPM and knows `_delay_time`.
 - `engine/mod/rng.h` — deterministic xorshift32 `Rng` (bit-reproducible, statistically testable).
 - `engine/util/fast_sin.h` — for the raised-cosine (Hann) grain window.
 - `engine/fx/part_fx.*`, `engine/instrument.*` — per-part FX plumbing and setter forwarding.
@@ -20,117 +28,124 @@ Explicitly out of desire (user decision): pitch-shifted grains. In: texture/smea
 
 ## Design
 
-### 1. Core insight — grains without resampling
+### 1. Grain mechanics — read heads on the tape
 
-A grain never moves relative to the write head: it is a **constant integer offset** behind it. Because the write pointer advances every sample, a constant offset is exactly 1×-speed forward playback (same mechanism as the echo read head). A grain is therefore only:
+A **forward grain** never moves relative to the write head: a constant integer offset behind it is exactly 1×-speed forward playback (same mechanism as the echo head). A **reverse grain** increments its offset by +2 per sample: it recedes through the material at 1× — true time-reversal, no resampling, no pitch change of content playback speed. Both cost 1 integer array read × Hann window × 2 pan multiplies per sample.
 
-- a random integer offset (fixed for its lifetime),
-- an age counter + length (Hann envelope),
-- fixed equal-power pan gains,
-- a source channel choice (reads the L **or** R tape, random per grain — free stereo decorrelation).
+Per grain state: offset (+ per-sample offset delta 0 or +2), age, length, equal-power pan gains, source channel (reads L **or** R tape, random — free stereo decorrelation), reverse flag.
 
-Per grain per sample: 1 array read (no interpolation — offsets are integer) × window × 2 pan multiplies.
+New `engine/fx/dust.h/.cpp`: `DustCloud`, fixed pool of **8 grains** per part (plain structs, no heap). Own `Rng`, fixed distinct per-part seeds ⇒ bit-identical desktop/firmware, testable. Reverse grains clamp so the offset never overruns the tape length within a grain's lifetime.
 
-### 2. DustCloud block (per part, lives inside `Flux`)
+### 2. DUST knob — how much
 
-New `engine/fx/dust.h/.cpp`: `DustCloud` with a fixed pool of **8 grains** (plain structs, no heap).
+`d ∈ 0..1`, per part:
 
-- **Scheduler:** countdown to next grain birth; interval drawn from a range set by the macro value, randomized ±50 %. If no slot is free the birth is dropped (natural density ceiling).
-- **Envelope:** Hann (raised cosine) via `fast_sin` or a small constant LUT — implementation detail for the plan; requirement is click-free grain edges.
-- **Output normalization:** grain sum scaled by `1/sqrt(expected overlap)` so perceived level stays roughly constant across the density range.
-- **Determinism:** own `Rng`, seeded per part with fixed distinct seeds at init. Same input + same settings ⇒ bit-identical output (desktop == firmware, testable).
-- **Tape access:** `DeLine`/`EchoDelay` gain a raw `ReadTap(int offset)` (no filter, no tanh). Minimum offset ~10 ms so a grain never chases the write seam.
+- **d = 0:** dust path skipped entirely — **bit-exact** with today's FLUX.
+- Density: mean grain birth rate rises exponentially (sparse splinters → full 8-voice overlap).
+- Grain length range rises with d (≈ 25–100 ms sparse → 80–400 ms dense).
+- Level: grain sum normalized by `1/sqrt(expected overlap)`.
+- **Head takeover:** above d ≈ 0.7 the echo read head fades (equal-power) to zero at d = 1 — the cloud eats the delay. Feedback keeps recirculating underneath (the tape stays alive; only the *audible* head swaps).
 
-### 3. The DUST macro knob — one curve, whole journey
+### 3. ROT knob — which character
 
-One per-part knob `g ∈ 0..1` drives everything (Clouds' blend philosophy):
+`r ∈ 0..1`, per part, three zones with continuous morphs (all breakpoints are tuning constants in one header block, finalized in the deferred play-test):
 
-| g | character | density (mean birth interval) | spray (max offset) | grain length range |
-|------|----------------------|------------------------------|--------------------|--------------------|
-| 0 | off — path skipped, **bit-exact** with today | — | — | — |
-| ~0.3 | sparse splinters | ~600 ms | ~150 ms behind head | 25–100 ms |
-| ~0.7 | dense cloud joins | ~60 ms | ~2 s | 50–250 ms |
-| 1.0 | cloud takes over | ~30 ms (full overlap) | full 5 s | 80–400 ms |
+**Zone S — synced stutter (r = 0 … ~0.33).**
+Grain births lock to a grid derived from the delay itself: **birth interval = FLUX delay time / 4** (clamped to a sane minimum) — stutter bursts always subdivide the echo, automatic dub polyrhythm with zero extra controls. DUST sets the probability that a grid slot fires (and density stacks bursts). Spray is tight (near the head) → repeat/stutter character. As r rises through the zone, timing jitter grows from 0 to fully random. Like FLUX itself this is duration-synced, not phase-locked to the sequencer (consistent with the existing delay behavior).
 
-- Density and spray map **exponentially**; all endpoint numbers are tuning constants in one header block, finalized in the (deferred) play-test.
-- **Head takeover:** below g ≈ 0.7 the echo read head is untouched; from 0.7 → 1.0 the echo head output fades to zero (equal-power), so at full DUST only the cloud remains — one knob morphs tape echo into granular cloud.
+**Zone F — free scatter (r ≈ 0.33 … 0.66).**
+The classic cloud: free-running stochastic scheduler, spray widens across the zone from ~150 ms up to the full 5 s. Read-only, forward grains. (This is rev 1's whole design, now one zone of three.)
 
-### 4. Signal flow (in `Flux::process`)
+**Zone R — rot (r ≈ 0.66 … 1).**
+Two things ramp together:
+- **Reverse probability** 0 → ~70 %: splinters increasingly play backwards.
+- **Writeback gain** 0 → max: the grain sum is written back onto the tape (see §4) — the cloud smears itself over generations; the delay mutates into a self-eating organism. tanh-bounded, cannot run away.
+
+### 4. Writeback + FREEZE with erosion
+
+`EchoDelay` grows a freeze flag and a writeback input. Per sample, the store becomes:
+
+| state | tape write |
+|---|---|
+| normal, no writeback | `echo_out * fb + in` (unchanged) |
+| normal + writeback (zone R) | `echo_out * fb + in + tanh(grains * wb_gain)` |
+| **frozen**, low ROT | *no store* — pointer still advances (preserving 5 s looper) |
+| **frozen**, zone R (**erosion**) | `line[ptr] = tanh(line[ptr] * wear + tanh(grains * wb_gain))`, `wear` slightly < 1 |
+
+- **Freeze (any ROT):** input and feedback stop being written; the pointer keeps advancing, so echo head and grain taps travel through the frozen material on their own. The echo head becomes a **5 s looper** (RATE only phases it), grains scatter the still image. Dry input keeps passing around FLUX as always.
+- **Erosion (freeze + zone R):** the frozen loop does not preserve — **it decomposes**. Every pass, grains burn themselves into the loop while `wear` slowly abrades what was there. Progressive, irreversible self-granulation: a tape loop wearing out, playable in real time via the ROT knob (pull ROT down mid-erosion to keep what remains). This is the signature feature — no standard tool does this.
+- Unfreeze resumes normal writing; the old/new seam is honest tape aesthetic (write-in crossfade only if the play-test hears a click).
+- Boundedness: every writeback passes `tanh`, erosion additionally decays by `wear` — recirculating energy is intrinsically bounded (tested).
+
+### 5. Signal flow (in `Flux::process`)
 
 ```
 send = sw.process()
-e   = echo.Process(in * send)            // unchanged: bpf → tanh → write(fb)
-gLR = dust.process()                     // reads ReadTap() on both channel tapes
-out += (e * head_gain(g) + gLR) * _mix_lin
+gLR  = dust.process()                   // ReadTap() on both channel tapes, fwd + rev grains
+wb   = tanh(grain_sum * wb_gain)        // 0 outside zone R (and skipped when d == 0)
+e    = echo.Process(in * send, wb)      // store per the §4 table
+out += (e * head_gain(d) + gLR) * _mix_lin
 ```
 
-- Grain sum is added **before** `_mix_lin`: the FLUX (MIX) knob remains the single wet control for everything coming off the tape.
-- Grains do **not** pass the band-pass/tanh and do **not** enter the feedback write (approved approach 1): the cloud is rawer and brighter than the echo — its own character, zero runaway risk. (Generation-smearing still happens indirectly: echo feedback keeps re-writing repeats onto the tape the grains read.)
-- `g == 0` skips the dust path entirely; FLUX off (SoftSwitch idle) skips the whole block — both bit-exact, both free.
-
-### 5. FREEZE — the write head stops storing but keeps moving
-
-`EchoDelay::SetFreeze(bool)`: when frozen, `Process` skips the store **but still advances the write pointer**. Consequences, all for free:
-
-- Echo and grain taps travel through the frozen material on their own — the echo head becomes a **5 s looper** (its read position scans the whole frozen tape once per 5 s; the RATE setting only phases it), the grains scatter the still image.
-- The grain code has **no freeze special-case at all**.
-- The feedback loop is paused (nothing is written); input keeps passing dry around FLUX as always.
-- Unfreeze simply resumes writing; the seam between old and new material is honest tape aesthetic. If the play-test finds it clicky, a short write-in crossfade is the polish, not part of v1.
-
-FREEZE works independently of the DUST knob (echo-looper alone is a feature).
+- Grain sum joins **before** `_mix_lin`: the FLUX (MIX) knob remains the single wet control for everything off the tape.
+- Grain *reads* never pass band-pass/tanh (the cloud is rawer/brighter than the echo — its own voice); only the *writeback* is tanh-bounded.
+- `d == 0` skips the dust path; FLUX off (SoftSwitch idle) skips the whole block — both bit-exact, both free. FREEZE requires FLUX on (it is a tape state).
 
 ### 6. Control surface + modulation policy
 
 Per part (mirrored A/B like the FLUX cluster):
 
-- **`DUST_A/B`** — SMKNOB, the macro knob, in the FX box next to GRIT/COMP (`FX_BOT` gains a third slot; exact x chosen in `gen_panel.py` when laying it out).
-- **`FRZ_A/B`** — LATCH pad (same widget family as ENG/GRIT pads).
-- **`FRZGATE_A/B`** — gate input in the jack strip: latch state **OR** gate high = frozen, so a sequencer can stutter-freeze rhythmically.
+- **`DUST_A/B`** — SMKNOB (amount).
+- **`ROT_A/B`** — SMKNOB (character: sync → free → rot).
+- **`FRZ_A/B`** — LATCH pad (widget family of ENG/GRIT pads).
+- **`FRZGATE_A/B`** — gate input in the jack strip: latch **OR** gate high = frozen ⇒ a sequencer can stutter-freeze rhythmically; held gate + high ROT = performed erosion.
 
-**Patch compatibility (hard requirement):** all new params/inputs are appended at the **end** of their enums in `gen_panel.py` with explicit coordinates — never added to the `part_controls()` template (that would shift part-B/SHARED ids and break existing `.vcv` patches).
+**Patch compatibility (hard requirement):** all new params/inputs appended at the **end** of their enums in `gen_panel.py` with explicit coordinates — never added to the `part_controls()` template (would shift part-B/SHARED ids and break existing `.vcv` patches).
 
-**No FX-target lane** (user decision): DUST is hand-played; rhythmic freezing comes from the gate input, not the internal modulation. The 5-lane == pad-slot structure stays untouched.
+**No FX-target lane** (user decision): DUST/ROT are hand-played; rhythm comes from the sync zone and the freeze gate. The 5-lane == pad-slot structure stays untouched.
 
-**Hardware reducibility note:** worst case on the real panel this is +2 small knobs, +2 pads, +2 jacks. Reduction path if space runs out: one shared FRZ button (pressing both parts) and/or dropping the gate jacks — the engine API (`set_dust(p, g)`, `set_freeze(p, on)`) is per-part regardless, so the panel can merge without engine changes.
+**Hardware reducibility note:** worst case +4 small knobs, +2 pads, +2 jacks across both parts. Reduction ladder if the real panel runs out of space: (1) drop gate jacks, (2) one shared FRZ button, (3) ROT becomes a shared (both-parts) knob, (4) last resort: ROT fixed mid-travel and DUST alone — the engine API is per-part and per-axis regardless, so the panel can merge without engine changes.
 
 ### 7. Engine API + host plumbing
 
-- `Flux::set_dust(float norm)`, `Flux::set_freeze(bool)`; `Flux` owns the `DustCloud` and passes it tap access.
-- `PartFx::set_dust/set_freeze` → `Instrument::set_dust(p, v)/set_freeze(p, on)` (same forwarding pattern as `set_flux_mix`).
-- `host/render/scenario.cpp`: new actions `set_dust`, `set_freeze` (+ a demo scenario, e.g. `dust_cloud.json`).
-- `host/vcv/src/Spotymod.cpp`: read knob/pad/gate → setters; DUST tooltip in percent, FRZ as on/off.
+- `Flux::set_dust(float)`, `Flux::set_rot(float)`, `Flux::set_freeze(bool)`; `Flux` owns the `DustCloud`, passes tap access + delay time (sync grid) + collects writeback.
+- `PartFx` / `Instrument` forwarding in the `set_flux_mix` pattern: `set_dust(p, v)`, `set_rot(p, v)`, `set_freeze(p, on)`.
+- `host/render/scenario.cpp`: actions `set_dust`, `set_rot`, `set_freeze` + demo scenarios (`dust_stutter.json` — sync zone; `dust_erosion.json` — freeze + zone R).
+- `host/vcv/src/Spotymod.cpp`: knobs/pad/gate → setters; DUST tooltip in percent; ROT tooltip naming the zone ("SYNC / FREE / ROT"); FRZ on/off.
 
 ### 8. CPU + memory budget
 
-- **Memory:** ~8 grain structs × 2 parts (< 1 KB). **No new audio buffers** — the entire 5 s × 4-channel cost is already paid by FLUX.
-- **CPU:** worst case 16 active grains total × (1 read + window + 2 mults) per sample, plus a countdown decrement. No transcendentals in the hot path (window via LUT/fast_sin). Estimated well under 1 % on the H750 @ 480 MHz; negligible next to the synth voices.
-- When DUST is 0 and FREEZE off, added cost is two branch checks.
+- **Memory:** ~8 grain structs × 2 parts (< 1 KB). **No new audio buffers.**
+- **CPU:** worst case 16 grains × (1 read + window + 2 mults); reverse costs one extra add. Writeback adds one tanh per part-sample *only in zone R*; erosion one more *only while frozen*. No transcendentals otherwise in the hot path (window via LUT/`fast_sin`). Estimated ≪ 1 % on the H750 @ 480 MHz.
+- DUST = 0 and no freeze: two branch checks.
 
 ## Testing
 
 New `tests/test_dust.cpp` (+ small additions to `tests/test_flux.cpp`):
 
-- **Bypass bit-exactness:** `g = 0`, freeze off ⇒ output identical to pre-DUST FLUX, sample for sample.
-- **Determinism:** two runs, same seed/settings/input ⇒ bit-identical output.
-- **Freeze stops the tape:** with freeze on, buffer contents are unchanged after N samples of loud input, while output (loop + grains) is non-silent; echo output repeats with a 5 s period.
-- **Freeze passthrough:** dry input still reaches the output while frozen.
-- **Click-free grains:** max sample-to-sample delta of the grain sum stays bounded across many births/deaths (envelope integrity).
-- **Level bound:** full-scale input, g = 1 ⇒ grain sum stays within headroom (normalization works).
-- **Scheduler statistics:** measured birth rate for a given g within tolerance of the mapped interval (style of `test_rng.cpp`).
+- **Bypass bit-exactness:** d = 0, freeze off ⇒ output identical to pre-DUST FLUX, sample for sample (any ROT).
+- **Determinism:** same seed/settings/input twice ⇒ bit-identical output.
+- **Sync grid:** in zone S with jitter 0, measured birth intervals == delay_time/4 within tolerance; jitter grows monotonically across the zone.
+- **Reverse grains:** a known transient in the tape appears time-reversed in a reverse grain's output.
+- **Preserving freeze:** freeze + low ROT ⇒ buffer contents unchanged after N loud input samples, output non-silent, echo output repeats with 5 s period; dry input still passes.
+- **Erosion:** freeze + r = 1 ⇒ buffer contents measurably change per pass, RMS remains bounded, and with DUST at 0 the loop only wears (decays) without new grain content.
+- **Writeback boundedness:** full-scale input, d = 1, r = 1, sustained ⇒ tape and output stay within headroom (no runaway).
+- **Click-free grains:** max sample-to-sample delta of the grain sum bounded across many births/deaths (both directions).
+- **Scheduler statistics:** free-zone birth rate for a given d within tolerance of the mapped rate (style of `test_rng.cpp`).
 
 ## Out of scope / deferred
 
-- Rack play-test and listening pass (project convention) — final tuning of all macro-curve endpoints, takeover knee, and normalization there.
+- Rack play-test and listening pass (project convention) — final tuning of all zone breakpoints, curves, `wear`, `wb_gain`, takeover knee, normalization.
 - Unfreeze write-in crossfade — only if the play-test hears a click.
-- Pitch-shifted grains, grain feedback into the tape (approach 2), reverse grains — deliberately not in v1. Approach 2 remains a one-line write-path extension if self-regeneration is ever missed.
+- Pitch-shifted grains, half/double-speed heads, write-head skip chaos (GRIT overlap) — deliberately not in v1.
 - Firmware (M6) wiring — engine code is target-agnostic like the rest of the FX layer.
 
 ## Files touched (anticipated)
 
-- `engine/fx/dust.h`, `engine/fx/dust.cpp` — **new**: `DustCloud` (pool, scheduler, window, macro curve).
-- `engine/fx/flux.h`, `engine/fx/flux.cpp` — `ReadTap`, `SetFreeze`, dust integration in `process`, head-takeover gain.
+- `engine/fx/dust.h`, `engine/fx/dust.cpp` — **new**: `DustCloud` (pool, zones, scheduler, window, reverse, writeback sum).
+- `engine/fx/flux.h`, `engine/fx/flux.cpp` — `ReadTap`, freeze/erosion store, writeback input, dust integration, head takeover.
 - `engine/fx/part_fx.h/.cpp`, `engine/instrument.h/.cpp` — setter forwarding.
-- `host/vcv/res/gen_panel.py` + regenerated `generated_panel.hpp` — `DUST_A/B`, `FRZ_A/B`, `FRZGATE_A/B` appended.
-- `host/vcv/src/Spotymod.cpp` — param config, tooltips, gate OR latch logic.
-- `host/render/scenario.cpp` + `host/render/scenarios/dust_cloud.json` — scenario actions + demo.
+- `host/vcv/res/gen_panel.py` + regenerated `generated_panel.hpp` — `DUST_A/B`, `ROT_A/B`, `FRZ_A/B`, `FRZGATE_A/B` appended.
+- `host/vcv/src/Spotymod.cpp` — param config, zone tooltip, gate OR latch logic.
+- `host/render/scenario.cpp` + `host/render/scenarios/dust_stutter.json`, `dust_erosion.json`.
 - `tests/test_dust.cpp` (new), `tests/test_flux.cpp`.
