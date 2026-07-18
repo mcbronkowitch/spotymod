@@ -22,7 +22,6 @@ C_INCLUDES = -I. -I../engine/ -I../third_party/ -I../lib/DaisySP/Source/
 C_USR_FLAGS = -ffast-math -funroll-loops
 
 GIT_HASH = $(shell git -C .. rev-parse --short HEAD)
-C_DEFS += -DBENCH_GIT_HASH=\"$(GIT_HASH)\"
 
 CPP_SOURCES = \
 	main.cpp \
@@ -48,3 +47,25 @@ CPP_SOURCES = \
 
 SYSTEM_FILES_DIR = $(LIBDAISY_DIR)/core
 include $(SYSTEM_FILES_DIR)/Makefile
+
+# --- git hash header --------------------------------------------------
+# `-DBENCH_GIT_HASH=...` on the compile line is invisible to Make's
+# dependency graph, so a stale build/main.o survives a HEAD move and keeps
+# reporting the old hash (this bit once: a run labelled itself 5555422
+# while HEAD was 0e6eeb5). Emit the hash as a real header instead, and make
+# it a real prerequisite of the one object that uses it.
+#
+# Written via a temp file, promoted only if content differs, so the
+# header's mtime -- and therefore whether main.o rebuilds -- reflects
+# whether the hash actually changed, not merely whether `make` ran.
+C_INCLUDES += -I$(BUILD_DIR)
+
+.PHONY: FORCE
+FORCE:
+
+$(BUILD_DIR)/git_hash.h: FORCE | $(BUILD_DIR)
+	@echo '#define BENCH_GIT_HASH "$(GIT_HASH)"' > $@.tmp
+	@cmp -s $@.tmp $@ 2>/dev/null || mv -f $@.tmp $@
+	@rm -f $@.tmp
+
+$(BUILD_DIR)/main.o: $(BUILD_DIR)/git_hash.h

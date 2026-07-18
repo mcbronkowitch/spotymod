@@ -94,8 +94,38 @@ def by_name(rows):
     return {r["name"]: r for r in rows}
 
 
+def current_head():
+    """git rev-parse --short HEAD for REPO, same abbreviation the firmware
+    embeds (bench/Makefile's git_hash.h uses the identical command)."""
+    return subprocess.run(
+        ["git", "-C", REPO, "rev-parse", "--short", "HEAD"],
+        capture_output=True, text=True, check=True).stdout.strip()
+
+
+def check_hash(header):
+    """Guard against a mislabelled result file. bench/Makefile's
+    git_hash.h rule gives the embedded hash a real dependency edge onto
+    the object that reports it, but that only prevents ONE way this can
+    go stale (an un-rebuilt object). This is the loud, independent
+    host-side check that catches staleness from any source -- a flashed
+    image that predates a `git checkout`, a build directory copied from
+    elsewhere, etc. A mislabelled result file is worse than no result
+    file, so this is an error, not a warning: return False and the caller
+    must abort without writing anything.
+    """
+    embedded = header["githash"]
+    head = current_head()
+    if embedded != head:
+        print("ERROR: firmware reports git hash %r but the working tree's "
+              "HEAD is %r -- the flashed image does not match the code "
+              "you think you're measuring. Writing nothing." % (embedded, head),
+              file=sys.stderr)
+        return False
+    return True
+
+
 def ratio(rows, num, den):
-    """Cycle ratio between two rows, as a printable string."""
+    """Cycle ratio between two rows, as a raw float (or an error string)."""
     d = by_name(rows)
     if num not in d or den not in d:
         return "n/a (row missing)"
@@ -105,7 +135,36 @@ def ratio(rows, num, den):
         return "n/a (TIMEOUT)"
     if b <= 0:
         return "n/a (zero denominator)"
-    return "%.2fx" % (a / b)
+    return a / b
+
+
+def sig2(x):
+    """Format a ratio to 2 significant figures for verdict PROSE only --
+    e.g. 5.28 -> "5.3", 44.33 -> "44", 0.29 -> "0.29". Measured intra-run
+    jitter (~1700 cycles on a 1.5M-cycle workload) and a cross-build layout
+    shift (~7% on a 29K-cycle workload) mean anything past this is noise
+    dressed up as precision. The data tables keep full precision; this
+    helper is not used there."""
+    if not isinstance(x, float):
+        return x  # error string from ratio(), pass through unrounded
+    if x == 0:
+        return "0x"
+    import math
+    exp = math.floor(math.log10(abs(x)))
+    decimals = max(0, 1 - exp)
+    r = round(x, decimals)
+    return ("%dx" % round(r)) if decimals <= 0 else ("%.*fx" % (decimals, r))
+
+
+def pct1(s):
+    """Format a firmware percentage string to whole-number prose precision.
+    The firmware prints hundredths (e.g. "165.08"); verdict prose rounds to
+    a whole number so it doesn't imply resolution the hardware jitter can't
+    support."""
+    try:
+        return "%.0f" % float(s)
+    except ValueError:
+        return s
 
 
 def verdict(rows, anchors):
@@ -120,16 +179,30 @@ def verdict(rows, anchors):
     out.write("## Verdict\n\n")
 
     if worst and worst["avg_cyc"] != "TIMEOUT":
-        offline = worst["pct_max"]
-        anchored = worst_anchor["max_pct"] if worst_anchor else "not anchored"
+        offline = pct1(worst["pct_max"])
+        anchored_raw = worst_anchor["max_pct"] if worst_anchor else None
+        anchored = pct1(anchored_raw) if anchored_raw is not None else "not anchored"
+        try:
+            fits = float(anchored_raw) < 100.0 if anchored_raw is not None else None
+        except ValueError:
+            fits = None
+        if fits is True:
+            conclusion = ("**Conclusion: the 2x4 architecture fits.** The "
+                          "anchored figure is under 100 % of the block budget.")
+        elif fits is False:
+            conclusion = ("**Conclusion: the 2x4 architecture does not fit.** "
+                          "The anchored figure is over 100 % of the block "
+                          "budget, so the design has to shed voices or FX.")
+        else:
+            conclusion = ("**Conclusion: undetermined.** No anchored figure "
+                          "was measured to compare against the 100 % line.")
         out.write(
             "**2x4 budget — go/no-go.** The full instrument at its worst case "
             "(8 voices, COLOR 4-note on both parts, all FX on, high diffusion, "
             "echo at max) costs **%s %% of the block budget offline**, and "
             "**%s %% measured inside a real audio callback**. The anchored "
-            "figure is the one that decides: under 100 %% the 2x4 architecture "
-            "fits, over it the design has to shed voices or FX.\n\n"
-            % (offline, anchored))
+            "figure is the one that decides. %s\n\n"
+            % (offline, anchored, conclusion))
     else:
         out.write("**2x4 budget — NO RESULT.** `instrument_worst` did not "
                   "produce a number. The go/no-go question is unanswered.\n\n")
@@ -143,8 +216,8 @@ def verdict(rows, anchors):
         if r["family"] == "voice" and r["name"] != "morph_osc_bare":
             out.write("- `%s` — %s one real voice (%s a bare oscillator kernel)\n"
                       % (r["name"],
-                         ratio(rows, r["name"], "synth_1_voice"),
-                         ratio(rows, r["name"], "morph_osc_bare")))
+                         sig2(ratio(rows, r["name"], "synth_1_voice")),
+                         sig2(ratio(rows, r["name"], "morph_osc_bare"))))
     out.write("\n")
 
     out.write(
@@ -153,9 +226,17 @@ def verdict(rows, anchors):
         "**%s** in SDRAM against SRAM — this is the M5 texture deck's exposure, "
         "measured before the sampler exists. The Oliverb pair reads **%s**, "
         "and the shortened echo-style streaming walk **%s**.\n\n"
-        % (ratio(rows, "grain_read_sdram", "grain_read_sram"),
-           ratio(rows, "oliverb_sdram", "oliverb_solo_sram"),
-           ratio(rows, "echo_walk_sdram", "echo_walk_sram")))
+        % (sig2(ratio(rows, "grain_read_sdram", "grain_read_sram")),
+           sig2(ratio(rows, "oliverb_sdram", "oliverb_solo_sram")),
+           sig2(ratio(rows, "echo_walk_sdram", "echo_walk_sram"))))
+
+    out.write(
+        "*Figures in this section are quoted to whole percentage points and "
+        "two significant figures for ratios — honest to what this bench can "
+        "actually resolve (intra-run jitter of roughly 1700 cycles on a "
+        "1.5M-cycle workload, and a cross-build layout shift that moved a "
+        "29K-cycle workload by about 7%). The tables below retain full "
+        "measured precision.*\n\n")
     return out.getvalue()
 
 
@@ -186,7 +267,7 @@ def write_results(out_dir, header, rows, anchors, drift):
                      "is explained.\n\n" % drift)
         fh.write(verdict(rows, anchors))
         fh.write("## Offline table\n\n")
-        fh.write("| family | workload | avg cyc | max cyc | avg %% | max %% | checksum |\n")
+        fh.write("| family | workload | avg cyc | max cyc | avg % | max % | checksum |\n")
         fh.write("|---|---|---:|---:|---:|---:|---|\n")
         for r in rows:
             fh.write("| %s | `%s` | %s | %s | %s | %s | `%s` |\n"
@@ -194,7 +275,7 @@ def write_results(out_dir, header, rows, anchors, drift):
                         r["pct_avg"], r["pct_max"], r["checksum"]))
         if anchors:
             fh.write("\n## Anchor mode (real audio callback, CpuLoadMeter)\n\n")
-            fh.write("| workload | avg %% | max %% |\n|---|---:|---:|\n")
+            fh.write("| workload | avg % | max % |\n|---|---:|---:|\n")
             for x in anchors:
                 fh.write("| `%s` | %s | %s |\n"
                          % (x["name"], x["avg_pct"], x["max_pct"]))
@@ -233,6 +314,9 @@ def main():
         if parsed is None:
             print("ERROR: capture completed but held no usable rows",
                   file=sys.stderr)
+            return 2
+        header, _rows, _anchors = parsed
+        if not check_hash(header):
             return 2
         captures.append(parsed)
 
