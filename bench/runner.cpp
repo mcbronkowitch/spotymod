@@ -48,9 +48,9 @@ Result run_workload(const Workload& w)
 
 const Workload* find_workload(const char* name)
 {
-    const Workload* tables[] = { kCoreWorkloads, kVoiceWorkloads, kMemWorkloads, kModWorkloads };
-    const int       counts[] = { kCoreCount,     kVoiceCount,     kMemCount,     kModCount     };
-    for (int t = 0; t < 4; ++t)
+    const Workload* tables[] = { kCoreWorkloads, kVoiceWorkloads, kMemWorkloads, kModWorkloads, kAblWorkloads };
+    const int       counts[] = { kCoreCount,     kVoiceCount,     kMemCount,     kModCount,     kAblCount     };
+    for (int t = 0; t < 5; ++t)
         for (int i = 0; i < counts[t]; ++i)
             if (std::strcmp(tables[t][i].name, name) == 0) return &tables[t][i];
     return nullptr;
