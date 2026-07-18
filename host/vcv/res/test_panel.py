@@ -185,7 +185,7 @@ def test_small_knobs_have_no_collar():
     s = g.svg()
     for enum in ('ATTACK_A', 'REV_SIZE', 'TEMPO', 'TIDE'):
         c = ctl(enum)
-        needle = f'cx="{g.mm(c.x)}" cy="{g.mm(c.y)}" r="{g.mm(c.r + 1.0)}"'
+        needle = f'cx="{g.mm(c.x)}" cy="{g.mm(c.y)}" r="{g.mm(c.r + 0.85)}"'
         check(needle not in s, f"{enum} still draws a collar")
 
 

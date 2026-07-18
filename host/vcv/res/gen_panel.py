@@ -72,13 +72,12 @@ WKMAP = {BIGKNOB:"WK_BIGKNOB", KNOBC:"WK_KNOBC", SMKNOB:"WK_SMKNOB",
 # of the generated table.
 LBL_DY = {BIGKNOB: 7.2, KNOBC: 7.2, SMKNOB: 5.6, KNOBI: 5.6, SW2: 6.6,
           LATCH: 5.4, SMBTN: 5.4, IN: 6.4, OUT: 6.4, LIGHT: 0.0}
-LBL_SIZE = {IN: 1.8, OUT: 1.8}     # jacks; every other kind uses 1.9
 
 def label_of(c):
     """(x, y, anchor, size, colour) for a control's caption."""
     if c.lbl is not None:
         return c.lbl
-    return (c.x, c.y + LBL_DY[c.kind], "middle", LBL_SIZE.get(c.kind, 1.9), INK)
+    return (c.x, c.y + LBL_DY[c.kind], "middle", 1.9, INK)
 
 class Ctl:
     def __init__(self, enum, kind, x, y, label):
@@ -226,6 +225,7 @@ JACK_Y     = 118.4
 JACK_BOX_Y = 112.6
 JACK_BOX_W, JACK_BOX_H = 23.0, 14.4
 JACK_DX    = 5.75            # jack offset from the box's left edge; pitch 11.5
+JACK_LBL_SIZE = 1.8          # jack caption size; every other kind uses 1.9
 
 # (box x, legend, legend colour, dark well?, [(enum, panel label, tooltip)])
 JACK_GROUPS = [
@@ -244,7 +244,7 @@ JACK_GROUPS = [
 def jack(enum, kind, x, label, tip, white):
     c = Ctl(enum, kind, x, JACK_Y, label)
     c.tip = tip
-    c.lbl = (x, JACK_Y + LBL_DY[kind], "middle", 1.8, WHITE if white else INK)
+    c.lbl = (x, JACK_Y + LBL_DY[kind], "middle", JACK_LBL_SIZE, WHITE if white else INK)
     return c
 
 def jack_at(enum):
