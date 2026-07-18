@@ -3,10 +3,6 @@
 <rect x="0" y="0" width="213.360" height="128.500" fill="url(#plate)"/>
 <rect x="0" y="0" width="1.4" height="128.500" fill="#1d6f5f"/>
 <rect x="211.960" y="0" width="1.4" height="128.500" fill="#b96532"/>
-<circle cx="5.080" cy="3.000" r="1.6" fill="#d8d0bf" stroke="#d7cdbb" stroke-width="0.3"/>
-<circle cx="5.080" cy="125.500" r="1.6" fill="#d8d0bf" stroke="#d7cdbb" stroke-width="0.3"/>
-<circle cx="208.280" cy="3.000" r="1.6" fill="#d8d0bf" stroke="#d7cdbb" stroke-width="0.3"/>
-<circle cx="208.280" cy="125.500" r="1.6" fill="#d8d0bf" stroke="#d7cdbb" stroke-width="0.3"/>
 <path d="M 32.766 4.798 A 33.500 33.500 0 0 1 75.316 40.502 L 62.388 39.143 A 20.500 20.500 0 0 0 36.349 17.294 Z" fill="#1d6f5f" opacity="0.07"/>
 <path d="M 73.061 49.549 A 33.500 33.500 0 0 1 44.337 70.418 L 43.430 57.450 A 20.500 20.500 0 0 0 61.007 44.679 Z" fill="#1d6f5f" opacity="0.07"/>
 <path d="M 35.035 69.768 A 33.500 33.500 0 0 1 28.374 6.396 L 33.662 18.272 A 20.500 20.500 0 0 0 37.738 57.052 Z" fill="#1d6f5f" opacity="0.07"/>

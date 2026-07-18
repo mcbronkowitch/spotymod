@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Single source of truth for the Spotymod VCV panel.
 
-Layout mirrors the real Spotykach hardware: two symmetric halves, each built
-around a 32-LED ring with its macro knobs encircling it and its secondary
-functions as a row of small "pads" (buttons) below; a narrow shared center
-strip (interaction + room + master + clock) sits between them.
+Layout (2026-07-18 redesign): two symmetric halves, each built around a 32-LED
+ring with nine macro knobs orbiting it in three meaning-sorted sectors (MOTION /
+TIMBRE / PITCH) and its secondary functions in three fieldset boxes below
+(VOICE | FX, PLAY). A shared centre column of four boxes (BLEND / TIME / DUO /
+ROOM) sits between them, and the ten jacks form five labelled groups along the
+bottom edge. Identity is loosely inherited from the hardware -- the ring plus
+macro orbit and the mirrored A/B split -- but Spotymod is its own instrument
+and no longer reducible to the real panel.
 
 Visual identity comes from the residency devlog ("workbench paper"): a warm
 paper plate with ink lettering and one accent per side -- solder green for
@@ -442,11 +446,6 @@ def svg():
     # the two-colour identity: a solder-green band on A's edge, copper on B's
     P.append(f'<rect x="0" y="0" width="1.4" height="{mm(Hh)}" fill="{GREEN}"/>')
     P.append(f'<rect x="{mm(W-1.4)}" y="0" width="1.4" height="{mm(Hh)}" fill="{COPPER}"/>')
-    # mounting holes
-    for hx in (MM_PER_HP, W - MM_PER_HP):
-        for hy in (3.0, Hh-3.0):
-            P.append(f'<circle cx="{mm(hx)}" cy="{mm(hy)}" r="1.6" '
-                     f'fill="#d8d0bf" stroke="{LINE}" stroke-width="0.3"/>')
     # sector tints behind the orbit (drawn first: everything else sits on top)
     for mir, cx, accent in ((False, RING_CX_A, GREEN), (True, W - RING_CX_A, COPPER)):
         for (name, a0, a1, _cap) in SECTORS:

@@ -360,6 +360,50 @@ def test_header_carries_tooltips():
           "IN_L lost its 'IN L' tooltip while its panel label became 'L'")
 
 
+def test_no_printed_screw_holes():
+    """Rack draws real screw widgets in the corners; the printed circles never
+    lined up with them (spec 2026-07-18, panel furniture)."""
+    check('fill="#d8d0bf"' not in g.svg(), "printed screw-hole circles are back")
+
+
+def test_group_count():
+    """3 part groups x 2 + 4 centre + 5 jack = 15 fieldsets."""
+    check(len(g.GROUPS) == 15, f"{len(g.GROUPS)} groups, want 15")
+    names = sorted(n for (_x, _y, _w, _h, n, _c) in g.GROUPS)
+    check(names == sorted(['VOICE', 'FX', 'PLAY'] * 2 +
+                          ['BLEND', 'TIME', 'DUO', 'ROOM'] +
+                          ['CV A', 'IN', 'CLOCK', 'OUT', 'CV B']),
+          f"unexpected group set: {names}")
+
+
+def test_every_label_is_reachable():
+    """Nothing may be drawn off-plate or under a neighbouring box edge."""
+    for c in g.PARAMS + g.INPUTS + g.OUTPUTS:
+        if not c.label:
+            continue
+        lx, ly, _a, size, _col = g.label_of(c)
+        check(1.0 <= lx <= g.W - 1.0 and 1.0 <= ly <= g.Hh - 1.0,
+              f"{c.enum} label off panel at ({lx:.2f}, {ly:.2f})")
+
+
+def test_config_wires_tip_not_label():
+    """The generated header carries a real tooltip in `tip` (see
+    test_header_carries_tooltips), but a header can be correct while the C++
+    that reads it quietly regresses -- e.g. `configInput(c.id, c.label)`
+    still compiles, still passes every other test here, and only shows up
+    when a human hovers a jack in Rack and sees "L" instead of "IN L". This
+    guard reads the actual C++ source so that regression fails the suite
+    instead of waiting for a human to notice (spec 2026-07-18, Task 6 review)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    cpp_path = os.path.join(here, "..", "src", "Spotymod.cpp")
+    with open(cpp_path) as f:
+        cpp = f.read()
+    check("configInput(c.id, c.tip)" in cpp,
+          "configInput is not wired to c.tip -- jack tooltips will show panel labels")
+    check("configOutput(c.id, c.tip)" in cpp,
+          "configOutput is not wired to c.tip -- jack tooltips will show panel labels")
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
