@@ -58,6 +58,16 @@ Restart Rack and the module appears under the **ton-k** brand
 ("Spotymod" in the module browser). A self-built plugin is unsigned, so Rack may
 note it isn't from the library — it still loads.
 
+**Windows: check where `install` actually copied to.** The SDK builds the
+target path from `$(LOCALAPPDATA)`, and MSYS2/Git-Bash don't export that name
+into the make environment — the variable expands empty and the package lands in
+`C:\Rack2\plugins-win-x64\` instead, with `make` reporting success either way.
+Pass the directory explicitly:
+
+```bash
+make install RACK_USER_DIR="$LOCALAPPDATA/Rack2"
+```
+
 The DaisySP submodule must be present (the engine's FX depend on it):
 
 ```bash
