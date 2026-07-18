@@ -35,4 +35,7 @@ Result run_workload(const Workload& w);
 extern const Workload kCoreWorkloads[];
 extern const int      kCoreCount;
 
+extern const Workload kVoiceWorkloads[];
+extern const int      kVoiceCount;
+
 } // namespace bench

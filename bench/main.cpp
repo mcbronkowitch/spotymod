@@ -42,6 +42,10 @@ int main(void)
         const bench::Workload& w = bench::kCoreWorkloads[i];
         bench::report_row(w, bench::run_workload(w));
     }
+    for (int i = 0; i < bench::kVoiceCount; ++i) {
+        const bench::Workload& w = bench::kVoiceWorkloads[i];
+        bench::report_row(w, bench::run_workload(w));
+    }
     bench::report_end();
 
     while (1) { hw.DelayMs(1000); }
