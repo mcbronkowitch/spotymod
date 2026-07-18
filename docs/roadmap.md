@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-18.
+- **Last updated:** 2026-07-18 (mod-plane decomposition + `fast_sin` cut).
 
 > **Reminder:** the engine and its milestones are still verified only against
 > the desktop offline renderer (unit tests + WAV/CSV render) — the Daisy
@@ -398,18 +398,35 @@ Makefile) is untouched by its presence; Step 1 of the bench plan re-proves
 that on every run.
 
 The headline numbers are no longer estimates — they come from a real Daisy
-Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-7e99b74.md`):
+Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-18-185c488.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 164 % of the block
-  budget offline and 164 % anchored inside a real audio callback — over
+  parts, all FX on, high diffusion, echo at max) costs 156 % of the block
+  budget offline and 156 % anchored inside a real audio callback — over
   budget either way. **The 2×4 architecture does not fit**; anchor mode
   confirmed this audibly, with the callback unable to keep up and the DAC
   emitting underrun garbage. The design has to shed voices or FX before M6.
-- The modulation plane alone costs about 33 % of the block budget against
-  the design spec's 4–6 % estimate, and it is a conservative figure — the
-  bench runs the modulators from AXI SRAM, where the firmware's own copy
-  sits in zero-wait DTCMRAM.
+- The modulation plane was originally measured at about 33 % of the block
+  budget against the design spec's 4–6 % estimate — wrong by roughly six
+  times, and the single most actionable finding in the table. The cause,
+  found by decomposing the plane into per-lane bench rows (plan+spec
+  `docs/superpowers/specs/2026-07-18-mod-plane-optimization-design.md`):
+  `waveforms.h`'s `wave_sine` called libm `std::sin` once per sample per
+  lane, even though the audio path itself had used the cheap `fast_sin`
+  polynomial since M2 — the modulation path had simply never been moved
+  over. Switching it to `fast_sin` brought the plane down to about **26 %**
+  of the block budget. The spec's own prediction (a fall to about 17 %)
+  **fell short** — the sine really was the single biggest line item, but
+  its estimated per-lane cost was too high, so the realized saving came in
+  at about 40 % of what the spec predicted. A smaller residual cost
+  (`fast_sin` itself running closer to ~50 cycles than the ~10–15 its own
+  header claims on this call site) and the ten lanes' own per-sample
+  machinery — independent of any waveform call — now account for most of
+  what is left; see the spec's Outcome section for the full breakdown.
+  The mod plane's output changed deliberately as part of this cut (`fast_sin`
+  is not bit-identical to libm `sin`), so `renders/` byte-identity is no
+  longer treated as a regression gate for it — re-cut references are the
+  accepted price, per the spec's own decision.
 - The grain-read proxy — the access pattern M5's granular engine will lean
   on — costs about 5.3× in SDRAM against the same reads in SRAM. That is
   the sampler's exposure, measured before the sampler exists. **Caveat**

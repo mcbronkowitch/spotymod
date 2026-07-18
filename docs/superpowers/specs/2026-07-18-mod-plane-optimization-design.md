@@ -149,3 +149,72 @@ nothing after, and that is a fine outcome.
 - That the bench's DTCMRAM placement of the modulators, which makes the
   33 % figure conservative, does not also mask the relative ranking of
   the parts.
+
+## Outcome (2026-07-18)
+
+**Prediction, as written above:** ten lanes × ~170 cycles for `sinf` ≈
+1 700 cycles per sample ≈ 52 % of the plane's per-sample cost, so
+`mod_plane_2x_center` should fall from about 33 % to about 17 % once
+`wave_sine` used `fast_sin`.
+
+**It fell short.** `wave_sine` → `fast_sin` landed (commit `185c488`,
+verbatim per Phase 2 cut 1) and `mod_plane_2x_center` fell from 314 713 to
+253 084 cycles — about 33 % to about **26 %** of the 960 000-cycle block
+budget, not to ~17 %. The realized saving is about 6 points of block
+budget, roughly 40 % of the 16 points predicted. The reasoning behind the
+extrapolation held up well — all ten lanes do default to SHAPE 0 (the
+sine segment) as assumed, and 10 × the measured single-lane saving (6 292
+cycles) ≈ 62 920 cycles lines up with the plane's actual saving (61 629
+cycles) within 2 %. What was wrong was the per-call cost estimate: the
+real saving from swapping libm `sinf` for `fast_sin` is about 66 cycles
+per lane per sample, well under half of what the spec assumed.
+
+**Decomposition ranking, post-change** (`docs/bench/2026-07-18-185c488.md`,
+`mod` family):
+
+1. The ten lanes account for essentially the whole plane: two
+   `super_mod_5lanes` banks (126 916 cycles each) ≈ 253 832 cycles, against
+   `mod_plane_2x_center`'s 253 084 — a ~0.3 % gap, consistent with the
+   density-setting difference already documented in the Phase 1 decomposition
+   check, not a measurement mismatch.
+2. Within one bank, a default (SHAPE 0, FLOW) lane is still the single most
+   expensive lane at 25 491 cycles (2.65 % of budget). A residual ~4 907-cycle
+   gap over SHAPE 0.3 (20 584 cycles) remains — evidence that `fast_sin`
+   itself costs closer to ~50 cycles at this call site than the ~10–15
+   cycles its own header comment claims, not a coding error.
+3. STEP mode stays dramatically cheaper than FLOW at the same shape (11 865
+   vs 25 491 cycles, a 53 % cut) — `_compute_raw` really is fire-gated, as
+   Phase 1 assumed.
+4. `SuperModulator` adds no measurable dispatch overhead above its five
+   lanes.
+5. `Center::update` is negligible: 4 831 cycles, 0.50 % of budget, once per
+   block.
+
+**Next-largest item now** is not a single removable call the way the sine
+was: it is the FLOW lane's own per-sample floor — phase advance, slew, and
+output composition — which runs regardless of SHAPE and costs 18 664 cycles
+even at SHAPE 1.0 (pure S&H, `lane_flow_shape10`, no waveform call at all).
+Across ten lanes that floor alone is roughly 186 640 cycles, about 19 % of
+the block budget by itself, against the plane's total of 26 % — it is now
+the dominant cost, not any one function. The only lever against it is
+STEP's existing fire-gating, or the control-rate rework this spec already
+ruled out of scope (STEP must stay sample-accurate; SMOOTH 0's near-passthrough
+slew would become audibly steppy).
+
+The mod plane's output also changed deliberately as part of this cut —
+`fast_sin` is not bit-identical to libm `sin` — so `renders/` byte-identity
+is no longer a regression gate for it, per the Decisions section above.
+
+**Recommendation: no follow-up mod-plane spec.** The plane is down to about
+26 % of budget from 33 %, and the two levers that would move it further are
+both already spent or already out of scope: STEP's fire-gating already
+exists and is lane semantics, not a new cut; the residual sine-adjacent cost
+is a small, already-explained ~4 900-cycle-per-lane remainder, not another
+one-line fix. What is left is the lane state machine's own floor cost, and
+cutting that means the control-rate rework this spec explicitly excluded —
+a lane-semantics redesign, not a follow-up patch. The instrument's real
+problem is elsewhere: `instrument_worst` is still 151 % of budget offline
+with the plane at only 26 % of that total, and zeroing the plane entirely
+would still leave the instrument at roughly 125 % — over budget on its own.
+Further CPU work belongs in a voice-count or FX spec, where the 2×4 gap
+actually lives, not in another cut to the modulation plane.
