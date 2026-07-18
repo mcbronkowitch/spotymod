@@ -38,4 +38,7 @@ extern const int      kCoreCount;
 extern const Workload kVoiceWorkloads[];
 extern const int      kVoiceCount;
 
+extern const Workload kMemWorkloads[];
+extern const int      kMemCount;
+
 } // namespace bench

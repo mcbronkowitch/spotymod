@@ -31,6 +31,7 @@ CPP_SOURCES = \
 	mem.cpp \
 	workloads_system.cpp \
 	workloads_daisysp.cpp \
+	workloads_memory.cpp \
 	../engine/mod/lane.cpp \
 	../engine/mod/super_modulator.cpp \
 	../engine/parts/part.cpp \
