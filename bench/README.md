@@ -1,0 +1,159 @@
+# bench
+
+## What this is
+
+A measurement app that has never shipped and never will. It boots the Daisy
+Seed straight into a cycle-counting harness instead of the spotymod firmware,
+runs a fixed table of workloads, and reports cycle counts and checksums back
+over the debug probe. The shipping firmware is the repo-root `Makefile`,
+`main.cpp`, `app.cpp`/`app.h`, `src/**`, `third_party/**` and `engine/**` —
+none of that is touched by anything under `bench/`. This directory has its
+own `Makefile`, its own `main.cpp`, and links against `alt_sram.lds` only to
+reuse the same BOOT_SRAM placement the real firmware uses, so the timing
+context (SRAM vs SDRAM latency) matches production.
+
+## The one command
+
+```
+python run.py
+```
+
+From `bench/`. This builds the bench firmware, loads it into the Seed's SRAM
+through the debug probe (no bootloader, no flash wear), captures its
+semihosting output **twice** (`--repeat 2` is the default — see "Anchor
+mode's audio" below for what that means out loud), compares the two runs'
+checksums, and writes `../docs/bench/YYYY-MM-DD-<githash>.md` and `.csv`.
+Exit code 0 means both runs completed and a file was written; a checksum
+mismatch between the two runs does **not** stop the file from being
+written — it lands in the `.md` as a warning block instead, because
+determinism is a measured property of this engine, not an assumption.
+
+Useful flags: `--repeat N` (default 2), `--out-dir DIR` (default
+`../docs/bench`), `--build-only`, `--no-build`, `--timeout SECONDS` (default
+600, per run), `--interface CFG` (see below).
+
+## Hardware setup
+
+Only the debug probe's SWD cable is connected — 4 wires (SWDIO, SWCLK, GND,
+3V3 or just GND+SWD if the probe supplies its own power) from the ST-Link to
+the Seed's SWD header. The Seed's own micro-USB port is **not** used for
+anything in the normal flow; the bench never talks over it. If anchor mode
+is going to run (it always does, as part of the family-1 sweep), have
+monitors connected to the Seed's audio out at **low volume** first — see
+below for what you'll actually hear.
+
+## The probe
+
+This desk's probe is an ST-Link V3, and openocd needs `stlink-dap.cfg` to
+get a real DAP out of it — that's `run.py`'s default and the value
+confirmed working in Task 1. Plain `stlink.cfg` auto-selects the older
+`hla_swd` transport, under which `spotykach-sram.cfg`'s
+`transport select dapdirect_swd` line is an error, not a fallback path.
+
+If a different probe is on the desk, the other candidates to try via
+`--interface` are `cmsis-dap.cfg` (CMSIS-DAP probes) and `stlink.cfg`
+(older ST-Link V2/V2-1 hardware, accepting the `hla_swd` limitation). Both
+are untested against this bench.
+
+## Reading the table
+
+- **avg cyc / max cyc** — DWT cycle counter reading for the workload's
+  `process()`, averaged and maxed over the repeated calls in one bench pass.
+- **avg % / max %** — the same, as a percentage of `BUDGET_CYCLES` (960 000
+  cycles: 480 MHz core clock, 96-sample block, 48 kHz). Over 100% means the
+  workload alone would blow the audio block budget.
+- **checksum** — an 8-hex-digit accumulator folded from every sample the
+  workload produced. It exists so the compiler cannot optimise the workload
+  away as dead code, and it is what the `--repeat 2` determinism check
+  compares between runs. A workload whose output legitimately depends on
+  uninitialized memory or wall-clock timing will show up here as drift.
+- **TIMEOUT** — the row's `avg_cyc` field reads the literal string `TIMEOUT`
+  (and `pct_avg`/`pct_max` are empty) when the workload ran past 10× the
+  block budget; the runner aborts it rather than letting one bad workload
+  hang the whole sweep. A `TIMEOUT` row still carries a `max_cyc` and a
+  `checksum` from the point it was cut off.
+
+## Fallbacks
+
+**(a) If the SRAM load ever stops working** (i.e. `spotykach-sram.cfg`'s
+`load_image` / `reset halt` path stops taking): fall back to
+`make program-dfu` from `bench/`, with the usual BOOT-button-then-RESET
+dance to get the Seed into its DFU bootloader. Semihosting still needs
+openocd attached afterwards for `run.py` to read anything — since the board
+is already running the bench image at that point, bring openocd up against
+it and issue `arm semihosting enable` directly (there is no `load_image` or
+`reset halt` step in this path, the board is already executing).
+
+**(b) If semihosting itself proves inadequate** (too slow, or the probe
+setup won't cooperate), the escape hatch is USB-CDC: swap `report.cpp`'s
+`sh_write0` calls for `daisy::Logger<daisy::LOGGER_INTERNAL>`, call
+`StartLog(true)` early in `main()`, connect the Seed's micro-USB as a
+*second* cable alongside the SWD probe, and read the resulting COM port
+from the host with `pyserial` instead of parsing openocd's stdout. This
+path is **untested** — it is written down as the next thing to try, not as
+something that has been made to work.
+
+## The one hard rule
+
+The bench binary requires an attached, running openocd session. Its
+`report.cpp` talks to the host by executing `bkpt 0xAB` (the semihosting
+breakpoint) and blocking for a response; without a debugger serving that
+breakpoint, the very first one halts the core forever. From the outside
+that looks exactly like a hang — no crash, no error, just a Seed that never
+gets anywhere near `BENCH_END`. If a run seems stuck, check that openocd is
+actually attached before assuming the firmware is broken.
+
+## What anchor mode's audio actually proves, and what it does not
+
+Anchor mode re-runs three of the family-1 workloads inside a real audio
+callback and drives `CpuLoadMeter` for the anchored percentages. The DAC
+output during that segment is **not** the workload's audio — it is one
+value per block (`process()`'s return, the same checksum accumulator used
+everywhere else in this bench) held flat across all 96 samples of that
+block. That produces a roughly 500 Hz staircase built out of accumulator
+sums, not a rendering of the reverb tail or the synth voice underneath it.
+
+Consequently **every workload sounds like the same harsh buzz**, and the
+three anchored segments cannot be told apart by ear. This is a
+**non-silence detector**, nothing more: it distinguishes "this callback
+computed something" from "the optimiser deleted this workload as dead
+code." The checksum is the actual anti-dead-code guarantee — it is
+non-zero, it is reproducible across the two repeat runs, and it is
+data-dependent by construction. Do not read the monitor output as a
+listening test, and do not promise anyone they will hear a reverb, a
+synth voice, or anything resembling spotymod's actual sound in this mode.
+
+**Anchor mode's third segment sounds broken on purpose.** `instrument_worst`
+runs at roughly 160% of the block budget offline, so inside the real
+callback it cannot finish before the next block is due; the DAC ends up
+fed underrun garbage for that segment. That is not a bug in the bench — it
+is the offline number, confirmed by ear. The block-count limit built into
+the anchor callback (it stops itself after a fixed number of blocks) is
+what ends that segment; an earlier version of this harness used a
+foreground delay loop to pace itself instead, and because the over-budget
+workload starves the very thread that delay loop needed to run on, that
+version did not stop on its own — it ran for minutes until killed by hand.
+
+Since `--repeat 2` is the default, anchor mode runs **twice** per `run.py`
+invocation — expect two bursts of this harsh buzz, not one, with the
+broken-on-purpose segment inside each.
+
+One more thing the bench does that is easy to miss: it stamps
+`boot_info.version` into the STM32H750's battery-backed backup SRAM and
+does not restore the previous value afterwards. That marks the board as
+having a "v6.1 bootloader present" for any firmware load that checks that
+flag later. This has been judged harmless — it doesn't change what the
+bootloader does — but it was undocumented until now, so future debugging
+of boot-related oddities on this specific board should know the bench is a
+possible source.
+
+## Adding a workload
+
+Add one row to the relevant `kXxxWorkloads[]` table (`workloads_system.cpp`
+for family 1, `workloads_daisysp.cpp` for family 2, `workloads_memory.cpp`
+for family 3) with a family tag, a name, a setup function and a process
+function. Workload **basenames must stay unique across the whole bench**,
+not just within one file's table — libDaisy's Makefile flattens every
+source path with `notdir` when it builds the object list, so two files
+named e.g. `voice.cpp` in different directories would collide at link time
+even though their paths differ.
