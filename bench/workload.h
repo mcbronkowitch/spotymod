@@ -41,6 +41,9 @@ extern const int      kVoiceCount;
 extern const Workload kMemWorkloads[];
 extern const int      kMemCount;
 
+extern const Workload kModWorkloads[];
+extern const int      kModCount;
+
 // Anchor mode re-runs rows the offline tables already define, by name.
 const Workload* find_workload(const char* name);
 
