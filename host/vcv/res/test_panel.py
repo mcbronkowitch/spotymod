@@ -279,7 +279,7 @@ def test_center_group_boxes():
 
 
 def test_center_card_is_gone():
-    check('width="42.000" height="100.000"' not in g.svg(),
+    check('width="42.0" height="100.0"' not in g.svg(),
           "the full-height centre card is still drawn")
 
 
@@ -293,10 +293,13 @@ def test_old_eyebrow_texts_are_gone():
 
 def test_room_is_flush_with_play():
     """Spec §6: ROOM's bottom edge lines up with the PLAY boxes."""
-    room = [gr for gr in g.GROUPS if gr[4] == 'ROOM'][0]
-    play = [gr for gr in g.GROUPS if gr[4] == 'PLAY'][0]
-    check(approx(room[1] + room[3], play[1] + play[3]),
-          f"ROOM ends at {room[1] + room[3]:.2f}, PLAY at {play[1] + play[3]:.2f}")
+    room = next((gr for gr in g.GROUPS if gr[4] == 'ROOM'), None)
+    play = next((gr for gr in g.GROUPS if gr[4] == 'PLAY'), None)
+    check(room is not None, "ROOM group missing from g.GROUPS")
+    check(play is not None, "PLAY group missing from g.GROUPS")
+    if room is not None and play is not None:
+        check(approx(room[1] + room[3], play[1] + play[3]),
+              f"ROOM ends at {room[1] + room[3]:.2f}, PLAY at {play[1] + play[3]:.2f}")
 
 
 def main():
