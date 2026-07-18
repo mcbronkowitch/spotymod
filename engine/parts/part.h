@@ -30,7 +30,10 @@ public:
     void set_tune(float t)  { _tune = clampf(t, 0.f, 1.f); }
     // COLOR (spec 2026-07-17 chord-layer): 0 = single note (bit-identical),
     // sweeps to a 4-note diatonic chord. Live on the FLOW surface.
-    void set_color(float c) { _chord.set_color(clampf(c, 0.f, 1.f)); }
+    // The knob is stored, not pushed: process() combines it with the MOTION
+    // lane and hands the ChordBuilder the effective color (spec 2026-07-18
+    // color-motion-target).
+    void set_color(float c) { _color = clampf(c, 0.f, 1.f); }
     int  chord_size() const { return _chord.size(); }
     void set_detune_cents(float c) { _detune_cents = c; }   // DRIFT tune tap; engine pitch only
     void set_target_active(int slot, bool on) { _active[slot] = on; }
@@ -143,6 +146,7 @@ private:
     float _depth = 1.f;
     float _tune = 0.5f;
     float _detune_cents = 0.f;   // DRIFT detune, applied post-quantizer to the engine only
+    float _color = 0.f;          // COLOR knob; effective color is computed in process()
     int   _gate_ctr = 0;
     int   _gate_len = 240;   // ~5 ms @ 48k, recomputed in init()
     float _sr = 48000.f;

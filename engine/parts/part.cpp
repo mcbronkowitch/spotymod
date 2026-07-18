@@ -133,6 +133,7 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
 
     // chord layer: refresh the surface every sample (cheap interval apply);
     // full voice-leading build only on a fire
+    _chord.set_color(_color);
     float chord[ChordBuilder::kMaxNotes];
     int nch = _chord.apply(targets[LANE_PITCH], _chord_mask(),
                            _quant.root_semis(), chord);

@@ -369,3 +369,19 @@ TEST_CASE("part: COLOR swept and returned to 0 renders like never touched") {
         CHECK(a.pitch_cv() == b.pitch_cv());
     }
 }
+
+TEST_CASE("part: COLOR reaches the chord builder through process(), not the setter") {
+    Part p;
+    p.init(48000.f, 5u);
+    p.set_depth(0.f);                 // MOD = 0: today's-behaviour invariant
+    p.set_color(0.5f);
+    float l, r;
+    for (int i = 0; i < 4800; ++i) p.process(l, r);
+    CHECK(p.chord_size() == 3);       // triad zone, exactly the knob position
+    p.set_color(0.75f);
+    for (int i = 0; i < 4800; ++i) p.process(l, r);
+    CHECK(p.chord_size() == 4);
+    p.set_color(0.f);
+    for (int i = 0; i < 4800; ++i) p.process(l, r);
+    CHECK(p.chord_size() == 1);
+}
