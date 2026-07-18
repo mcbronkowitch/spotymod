@@ -54,7 +54,7 @@ make install    # packages a .vcvplugin and copies it into Rack's user plugin di
 `make install` drops `Spotymod-<version>-<arch>.vcvplugin` into Rack's user dir
 (`%LOCALAPPDATA%\Rack2\plugins-win-x64\` on Windows, `~/.local/share/Rack2/…` /
 `~/Library/Application Support/Rack2/…` elsewhere); Rack unpacks it on launch.
-Restart Rack and the module appears under the **Synthux Academy** brand
+Restart Rack and the module appears under the **ton-k** brand
 ("Spotymod" in the module browser). A self-built plugin is unsigned, so Rack may
 note it isn't from the library — it still loads.
 

@@ -172,8 +172,8 @@ unit and require reinstalling the bootloader, firmware, or both.
 
 ## License & credits
 
-MIT — see [`LICENSE`](LICENSE) (Copyright © 2026 Synthux Academy). Bundled and
-submodule dependencies are documented in [`THIRD_PARTY.md`](THIRD_PARTY.md).
+MIT — see [`LICENSE`](LICENSE) (Copyright © 2026 Synthux Academy, Bastian Tonk).
+Bundled and submodule dependencies are documented in [`THIRD_PARTY.md`](THIRD_PARTY.md).
 Original firmware credits are in [`CREDITS.md`](CREDITS.md).
 
 Built with AI pair-programming — the **HAL 9000** co-author in the git history
