@@ -8,6 +8,12 @@
 <circle cx="208.280" cy="3.000" r="1.6" fill="#d8d0bf" stroke="#d7cdbb" stroke-width="0.3"/>
 <circle cx="208.280" cy="125.500" r="1.6" fill="#d8d0bf" stroke="#d7cdbb" stroke-width="0.3"/>
 <rect x="85.680" y="10.0" width="42.0" height="100.0" rx="2" fill="#ede5d6" stroke="#d7cdbb" stroke-width="0.3"/>
+<path d="M 32.766 4.798 A 33.500 33.500 0 0 1 75.316 40.502 L 62.388 39.143 A 20.500 20.500 0 0 0 36.349 17.294 Z" fill="#1d6f5f" opacity="0.07"/>
+<path d="M 73.061 49.549 A 33.500 33.500 0 0 1 44.337 70.418 L 43.430 57.450 A 20.500 20.500 0 0 0 61.007 44.679 Z" fill="#1d6f5f" opacity="0.07"/>
+<path d="M 35.035 69.768 A 33.500 33.500 0 0 1 28.374 6.396 L 33.662 18.272 A 20.500 20.500 0 0 0 37.738 57.052 Z" fill="#1d6f5f" opacity="0.07"/>
+<path d="M 138.044 40.502 A 33.500 33.500 0 0 1 180.594 4.798 L 177.011 17.294 A 20.500 20.500 0 0 0 150.972 39.143 Z" fill="#b96532" opacity="0.07"/>
+<path d="M 169.023 70.418 A 33.500 33.500 0 0 1 140.299 49.549 L 152.353 44.679 A 20.500 20.500 0 0 0 169.930 57.450 Z" fill="#b96532" opacity="0.07"/>
+<path d="M 184.986 6.396 A 33.500 33.500 0 0 1 178.325 69.768 L 175.622 57.052 A 20.500 20.500 0 0 0 179.698 18.272 Z" fill="#b96532" opacity="0.07"/>
 <circle cx="42.000" cy="37.000" r="18.400" fill="#1d1f1a" stroke="#252721" stroke-width="0.5"/>
 <circle cx="42.000" cy="21.000" r="0.7" fill="#2e6355"/>
 <circle cx="45.121" cy="21.307" r="0.7" fill="#2e6355"/>
@@ -85,68 +91,59 @@
 <circle cx="42.000" cy="10.500" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
 <circle cx="42.000" cy="10.500" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="42.000" y1="10.500" x2="42.000" y2="7.000" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="42.000" y="17.700" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RATE</text>
-<circle cx="60.738" cy="18.262" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
-<circle cx="60.738" cy="18.262" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="60.738" y1="18.262" x2="60.738" y2="14.762" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="60.738" y="25.462" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SHAPE</text>
-<circle cx="68.500" cy="37.000" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
-<circle cx="68.500" cy="37.000" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="68.500" y1="37.000" x2="68.500" y2="33.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="68.500" y="44.200" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DENS</text>
-<circle cx="60.738" cy="55.738" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
-<circle cx="60.738" cy="55.738" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="60.738" y1="55.738" x2="60.738" y2="52.238" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="60.738" y="62.938" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SMTH</text>
-<circle cx="42.000" cy="63.500" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
-<circle cx="42.000" cy="63.500" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="42.000" y1="63.500" x2="42.000" y2="60.000" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="42.000" y="70.700" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RANGE</text>
-<circle cx="23.262" cy="55.738" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
-<circle cx="23.262" cy="55.738" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="23.262" y1="55.738" x2="23.262" y2="52.238" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="23.262" y="62.938" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">MELO</text>
-<circle cx="15.500" cy="37.000" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
-<circle cx="15.500" cy="37.000" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="15.500" y1="37.000" x2="15.500" y2="33.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="15.500" y="44.200" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">MOD</text>
-<circle cx="23.262" cy="18.262" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
-<circle cx="23.262" cy="18.262" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="23.262" y1="18.262" x2="23.262" y2="14.762" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="23.262" y="25.462" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">TUNE</text>
-<circle cx="9.500" cy="76.800" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
+<text x="42.000" y="3.800" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RATE</text>
+<circle cx="64.950" cy="50.250" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
+<circle cx="64.950" cy="50.250" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="64.950" y1="50.250" x2="64.950" y2="46.750" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="71.272" y="56.100" fill="#171713" text-anchor="start" font-family="monospace" font-size="1.9">SHAPE</text>
+<circle cx="59.034" cy="16.700" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
+<circle cx="59.034" cy="16.700" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="59.034" y1="16.700" x2="59.034" y2="13.200" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="63.983" y="10.801" fill="#171713" text-anchor="start" font-family="monospace" font-size="1.9">DENS</text>
+<circle cx="68.097" cy="32.398" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
+<circle cx="68.097" cy="32.398" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="68.097" y1="32.398" x2="68.097" y2="28.898" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="75.680" y="31.761" fill="#171713" text-anchor="start" font-family="monospace" font-size="1.9">SMTH</text>
+<circle cx="32.936" cy="61.902" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
+<circle cx="32.936" cy="61.902" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="32.936" y1="61.902" x2="32.936" y2="58.402" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="30.440" y="70.962" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RANGE</text>
+<circle cx="19.050" cy="50.250" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
+<circle cx="19.050" cy="50.250" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="19.050" y1="50.250" x2="19.050" y2="46.750" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="12.728" y="56.100" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">MELO</text>
+<circle cx="51.064" cy="61.902" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
+<circle cx="51.064" cy="61.902" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="51.064" y1="61.902" x2="51.064" y2="58.402" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="53.560" y="70.962" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">MOD</text>
+<circle cx="15.903" cy="32.398" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
+<circle cx="15.903" cy="32.398" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="15.903" y1="32.398" x2="15.903" y2="28.898" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="8.320" y="31.761" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">TUNE</text>
 <circle cx="9.500" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="9.500" y1="76.800" x2="9.500" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="9.500" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">ATK</text>
-<circle cx="22.500" cy="76.800" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="22.500" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="22.500" y1="76.800" x2="22.500" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="22.500" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DEC</text>
-<circle cx="48.500" cy="76.800" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="48.500" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="48.500" y1="76.800" x2="48.500" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="48.500" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RES</text>
-<circle cx="61.500" cy="76.800" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="61.500" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="61.500" y1="76.800" x2="61.500" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="61.500" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SUB</text>
-<circle cx="74.500" cy="76.800" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="74.500" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="74.500" y1="76.800" x2="74.500" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="74.500" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DTUN</text>
-<circle cx="22.500" cy="88.900" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="22.500" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="22.500" y1="88.900" x2="22.500" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="22.500" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FLUX</text>
-<circle cx="48.500" cy="88.900" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="48.500" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="48.500" y1="88.900" x2="48.500" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="48.500" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">GRIT</text>
-<circle cx="61.500" cy="88.900" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="61.500" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="61.500" y1="88.900" x2="61.500" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="61.500" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">COMP</text>
-<circle cx="74.500" cy="88.900" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="74.500" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="74.500" y1="88.900" x2="74.500" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="74.500" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">STPS</text>
@@ -165,68 +162,59 @@
 <circle cx="171.360" cy="10.500" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
 <circle cx="171.360" cy="10.500" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="171.360" y1="10.500" x2="171.360" y2="7.000" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="171.360" y="17.700" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RATE</text>
-<circle cx="152.622" cy="18.262" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
-<circle cx="152.622" cy="18.262" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="152.622" y1="18.262" x2="152.622" y2="14.762" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="152.622" y="25.462" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SHAPE</text>
-<circle cx="144.860" cy="37.000" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
-<circle cx="144.860" cy="37.000" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="144.860" y1="37.000" x2="144.860" y2="33.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="144.860" y="44.200" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DENS</text>
-<circle cx="152.622" cy="55.738" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
-<circle cx="152.622" cy="55.738" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="152.622" y1="55.738" x2="152.622" y2="52.238" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="152.622" y="62.938" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SMTH</text>
-<circle cx="171.360" cy="63.500" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
-<circle cx="171.360" cy="63.500" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="171.360" y1="63.500" x2="171.360" y2="60.000" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="171.360" y="70.700" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RANGE</text>
-<circle cx="190.098" cy="55.738" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
-<circle cx="190.098" cy="55.738" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="190.098" y1="55.738" x2="190.098" y2="52.238" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="190.098" y="62.938" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">MELO</text>
-<circle cx="197.860" cy="37.000" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
-<circle cx="197.860" cy="37.000" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="197.860" y1="37.000" x2="197.860" y2="33.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="197.860" y="44.200" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">MOD</text>
-<circle cx="190.098" cy="18.262" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
-<circle cx="190.098" cy="18.262" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="190.098" y1="18.262" x2="190.098" y2="14.762" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="190.098" y="25.462" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">TUNE</text>
-<circle cx="203.860" cy="76.800" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
+<text x="171.360" y="3.800" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RATE</text>
+<circle cx="148.410" cy="50.250" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
+<circle cx="148.410" cy="50.250" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="148.410" y1="50.250" x2="148.410" y2="46.750" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="142.088" y="56.100" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">SHAPE</text>
+<circle cx="154.326" cy="16.700" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
+<circle cx="154.326" cy="16.700" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="154.326" y1="16.700" x2="154.326" y2="13.200" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="149.377" y="10.801" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">DENS</text>
+<circle cx="145.263" cy="32.398" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
+<circle cx="145.263" cy="32.398" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="145.263" y1="32.398" x2="145.263" y2="28.898" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="137.680" y="31.761" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">SMTH</text>
+<circle cx="180.424" cy="61.902" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
+<circle cx="180.424" cy="61.902" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="180.424" y1="61.902" x2="180.424" y2="58.402" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="182.920" y="70.962" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RANGE</text>
+<circle cx="194.310" cy="50.250" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
+<circle cx="194.310" cy="50.250" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="194.310" y1="50.250" x2="194.310" y2="46.750" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="200.632" y="56.100" fill="#171713" text-anchor="start" font-family="monospace" font-size="1.9">MELO</text>
+<circle cx="162.296" cy="61.902" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
+<circle cx="162.296" cy="61.902" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="162.296" y1="61.902" x2="162.296" y2="58.402" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="159.800" y="70.962" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">MOD</text>
+<circle cx="197.457" cy="32.398" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
+<circle cx="197.457" cy="32.398" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="197.457" y1="32.398" x2="197.457" y2="28.898" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="205.040" y="31.761" fill="#171713" text-anchor="start" font-family="monospace" font-size="1.9">TUNE</text>
 <circle cx="203.860" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="203.860" y1="76.800" x2="203.860" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="203.860" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">ATK</text>
-<circle cx="190.860" cy="76.800" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="190.860" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="190.860" y1="76.800" x2="190.860" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="190.860" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DEC</text>
-<circle cx="164.860" cy="76.800" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="164.860" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="164.860" y1="76.800" x2="164.860" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="164.860" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RES</text>
-<circle cx="151.860" cy="76.800" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="151.860" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="151.860" y1="76.800" x2="151.860" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="151.860" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SUB</text>
-<circle cx="138.860" cy="76.800" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="138.860" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="138.860" y1="76.800" x2="138.860" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="138.860" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DTUN</text>
-<circle cx="190.860" cy="88.900" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="190.860" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="190.860" y1="88.900" x2="190.860" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="190.860" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FLUX</text>
-<circle cx="164.860" cy="88.900" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="164.860" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="164.860" y1="88.900" x2="164.860" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="164.860" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">GRIT</text>
-<circle cx="151.860" cy="88.900" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="151.860" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="151.860" y1="88.900" x2="151.860" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="151.860" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">COMP</text>
-<circle cx="138.860" cy="88.900" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="138.860" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="138.860" y1="88.900" x2="138.860" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="138.860" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">STPS</text>
@@ -250,98 +238,78 @@
 <rect x="94.480" y="35.000" width="3.4" height="6.0" rx="0.8" fill="#fffdf7" stroke="#171713" stroke-width="0.35"/>
 <rect x="95.080" y="35.600" width="2.2" height="2.4" rx="0.5" fill="#252721"/>
 <text x="96.180" y="44.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SYNC</text>
-<circle cx="106.680" cy="38.000" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="106.680" cy="38.000" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="106.680" y1="38.000" x2="106.680" y2="35.700" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="106.680" y="43.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">TEMPO</text>
-<circle cx="117.180" cy="38.000" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="117.180" cy="38.000" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="117.180" y1="38.000" x2="117.180" y2="35.700" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="117.180" y="43.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">COUPL</text>
-<circle cx="96.180" cy="51.000" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="96.180" cy="51.000" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="96.180" y1="51.000" x2="96.180" y2="48.700" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="96.180" y="56.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SCALE</text>
-<circle cx="117.180" cy="51.000" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="117.180" cy="51.000" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="117.180" y1="51.000" x2="117.180" y2="48.700" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="117.180" y="56.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DRIFT</text>
 <rect x="93.480" y="59.300" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#656056" stroke-width="0.35"/>
 <text x="96.180" y="67.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SPOT</text>
-<circle cx="106.680" cy="62.000" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="106.680" cy="62.000" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="106.680" y1="62.000" x2="106.680" y2="59.700" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="106.680" y="67.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DRIVE</text>
 <rect x="114.480" y="59.300" width="5.400" height="5.400" rx="1.0" fill="#fffdf7" stroke="#656056" stroke-width="0.35"/>
 <text x="117.180" y="67.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SETL</text>
-<circle cx="96.180" cy="76.800" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="96.180" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="96.180" y1="76.800" x2="96.180" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="96.180" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SIZE</text>
-<circle cx="117.180" cy="76.800" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="117.180" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="117.180" y1="76.800" x2="117.180" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="117.180" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DECAY</text>
-<circle cx="106.680" cy="82.850" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="106.680" cy="82.850" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="106.680" y1="82.850" x2="106.680" y2="80.550" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="106.680" y="88.450" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">MIX</text>
-<circle cx="96.180" cy="88.900" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="96.180" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="96.180" y1="88.900" x2="96.180" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="96.180" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">TONE</text>
-<circle cx="117.180" cy="88.900" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="117.180" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="117.180" y1="88.900" x2="117.180" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="117.180" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DIFF</text>
-<circle cx="96.180" cy="102.800" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="96.180" cy="102.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="96.180" y1="102.800" x2="96.180" y2="100.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="96.180" y="108.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SMEAR</text>
-<circle cx="117.180" cy="102.800" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="117.180" cy="102.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="117.180" y1="102.800" x2="117.180" y2="100.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="117.180" y="108.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">WOBL</text>
-<circle cx="106.680" cy="51.000" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="106.680" cy="51.000" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="106.680" y1="51.000" x2="106.680" y2="48.700" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="106.680" y="56.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">CHOKE</text>
-<circle cx="35.500" cy="76.800" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="35.500" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="35.500" y1="76.800" x2="35.500" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="35.500" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FILT</text>
-<circle cx="177.860" cy="76.800" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="177.860" cy="76.800" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="177.860" y1="76.800" x2="177.860" y2="74.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="177.860" y="82.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FILT</text>
-<circle cx="117.180" cy="22.000" r="4.000" fill="none" stroke="#656056" stroke-width="0.45"/>
 <circle cx="117.180" cy="22.000" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="117.180" y1="22.000" x2="117.180" y2="19.700" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="117.180" y="27.600" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">TIDE</text>
-<circle cx="9.500" cy="88.900" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="9.500" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="9.500" y1="88.900" x2="9.500" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="9.500" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FRATE</text>
-<circle cx="203.860" cy="88.900" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="203.860" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="203.860" y1="88.900" x2="203.860" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="203.860" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FRATE</text>
-<circle cx="35.500" cy="88.900" r="4.000" fill="none" stroke="#1d6f5f" stroke-width="0.45"/>
 <circle cx="35.500" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="35.500" y1="88.900" x2="35.500" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="35.500" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FFB</text>
-<circle cx="177.860" cy="88.900" r="4.000" fill="none" stroke="#b96532" stroke-width="0.45"/>
 <circle cx="177.860" cy="88.900" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="177.860" y1="88.900" x2="177.860" y2="86.600" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="177.860" y="94.500" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FFB</text>
-<circle cx="76.000" cy="14.000" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
-<circle cx="76.000" cy="14.000" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="76.000" y1="14.000" x2="76.000" y2="10.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="76.000" y="21.200" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">COLOR</text>
-<circle cx="137.360" cy="14.000" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
-<circle cx="137.360" cy="14.000" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
-<line x1="137.360" y1="14.000" x2="137.360" y2="10.500" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="137.360" y="21.200" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">COLOR</text>
+<circle cx="24.966" cy="16.700" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
+<circle cx="24.966" cy="16.700" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="24.966" y1="16.700" x2="24.966" y2="13.200" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="20.017" y="10.801" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">COLOR</text>
+<circle cx="188.394" cy="16.700" r="5.050" fill="none" stroke="#b96532" stroke-width="0.5"/>
+<circle cx="188.394" cy="16.700" r="4.200" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
+<line x1="188.394" y1="16.700" x2="188.394" y2="13.200" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
+<text x="193.343" y="10.801" fill="#171713" text-anchor="start" font-family="monospace" font-size="1.9">COLOR</text>
 <circle cx="56.302" cy="118.000" r="4.200" fill="#252721" stroke="#4a4a40" stroke-width="0.4"/>
 <circle cx="56.302" cy="118.000" r="1.3" fill="#0e0e0c"/>
 <text x="56.302" y="124.400" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.8">IN L</text>
@@ -379,4 +347,10 @@
 <text x="106.680" y="32.200" fill="#656056" text-anchor="middle" font-family="monospace" font-size="2.2" letter-spacing="0.5" font-weight="bold">TIME</text>
 <text x="106.680" y="70.000" fill="#656056" text-anchor="middle" font-family="monospace" font-size="2.2" letter-spacing="0.5" font-weight="bold">ROOM</text>
 <text x="106.680" y="7.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="3.6" letter-spacing="0.9" font-weight="bold">SPOTYMOD</text>
+<text x="74.000" y="8.200" fill="#1d6f5f" text-anchor="middle" font-family="monospace" font-size="1.7" letter-spacing="0.3" font-weight="bold">MOTION</text>
+<text x="74.000" y="67.600" fill="#1d6f5f" text-anchor="middle" font-family="monospace" font-size="1.7" letter-spacing="0.3" font-weight="bold">TIMBRE</text>
+<text x="11.000" y="8.200" fill="#1d6f5f" text-anchor="middle" font-family="monospace" font-size="1.7" letter-spacing="0.3" font-weight="bold">PITCH</text>
+<text x="139.360" y="8.200" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.7" letter-spacing="0.3" font-weight="bold">MOTION</text>
+<text x="139.360" y="67.600" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.7" letter-spacing="0.3" font-weight="bold">TIMBRE</text>
+<text x="202.360" y="8.200" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.7" letter-spacing="0.3" font-weight="bold">PITCH</text>
 </svg>

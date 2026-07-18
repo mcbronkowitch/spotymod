@@ -91,9 +91,35 @@ RING_R    = 16.0       # LED dot radius
 KNOB_R    = 26.5       # macro-knob orbit radius
 RING_CX_A = 42.0       # left ring center; B is mirrored (W - x)
 
-def orbit(cx, cy, r, i, n, start_deg=0.0):
-    a = math.radians(start_deg + 360.0 * i / n)
-    return (cx + r * math.sin(a), cy - r * math.cos(a))
+# Sector orbit (spec 2026-07-18 §1): 9 positions at 40 deg pitch, sorted by
+# meaning -- MOTION, then TIMBRE, then PITCH. 0 deg = top, clockwise on part A;
+# part B mirrors x, which flips the sweep direction on screen.
+ORBIT_ANG = {"RATE": 0.0, "DENSITY": 40.0, "SMOOTH": 80.0, "SHAPE": 120.0,
+             "MOD": 160.0, "RANGE": 200.0, "MELODY": 240.0, "TUNE": 280.0,
+             "COLOR": 320.0}
+
+# (caption, start angle, end angle, part-A caption position)
+SECTORS = [("MOTION", -16.0,  96.0, (74.0,  8.2)),
+           ("TIMBRE", 112.0, 176.0, (74.0, 67.6)),
+           ("PITCH",  192.0, 336.0, (11.0,  8.2))]
+
+def orbit(cx, cy, r, ang_deg, mir=False):
+    a = math.radians(ang_deg)
+    s = math.sin(a)
+    return (cx + (-s if mir else s) * r, cy - r * math.cos(a))
+
+def orbit_label(cx, cy, ang_deg, mir):
+    """Caption radially OUTSIDE the knob, so nothing ever lands between the
+    knob and the LED ring (spec 2026-07-18 §2)."""
+    a = math.radians(ang_deg)
+    s, c = math.sin(a), math.cos(a)
+    r = 33.8 if c < -0.38 else (33.2 if (abs(s) < 0.38 and c > 0.38) else 34.2)
+    dy = 2.2 if c < -0.38 else (0.0 if c > 0.38 else 0.7)
+    anchor = "start" if s > 0.38 else ("end" if s < -0.38 else "middle")
+    if mir:
+        s = -s
+        anchor = {"start": "end", "end": "start", "middle": "middle"}[anchor]
+    return (cx + r * s, cy - r * c + dy, anchor, 1.9, INK)
 
 # voice row x slots (6 @ 13 mm pitch, centred on the ring axis x = 42);
 # slot 2 = FILT, appended at the END of PARAMS (never in the template --
@@ -101,44 +127,53 @@ def orbit(cx, cy, r, i, n, start_deg=0.0):
 VOICE_X = [9.5, 22.5, 35.5, 48.5, 61.5, 74.5]
 
 # --- per-part control template (ORDER defines enum order; identical A/B) ------
-# Returns Ctl list with LEFT-side coordinates. Mirror for B by x -> W-x.
-def part_controls():
-    cx = RING_CX_A
+# Returns Ctl list with per-part coordinates (mirrored for B when mir=True).
+def part_controls(mir=False):
+    cx = W - RING_CX_A if mir else RING_CX_A
+    def fx(x): return W - x if mir else x
     out = []
-    # 8 macro knobs encircling the ring
+    # 8 of the 9 orbit knobs (COLOR is appended at the end of PARAMS, see below)
     macros = [("RATE","RATE"),("SHAPE","SHAPE"),("DENSITY","DENS"),("SMOOTH","SMTH"),
               ("RANGE","RANGE"),("MELODY","MELO"),("MOD","MOD"),("TUNE","TUNE")]
-    for i,(enum,lbl) in enumerate(macros):
-        x,y = orbit(cx, RING_CY, KNOB_R, i, 8, start_deg=0.0)
-        out.append(Ctl(enum, KNOBC if enum=="MELODY" else BIGKNOB, x, y, lbl))
+    for enum, lbl in macros:
+        ang = ORBIT_ANG[enum]
+        x, y = orbit(cx, RING_CY, KNOB_R, ang, mir)
+        c = Ctl(enum, KNOBC if enum == "MELODY" else BIGKNOB, x, y, lbl)
+        c.lbl = orbit_label(cx, RING_CY, ang, mir)
+        out.append(c)
     # voice + fx rows (small), centred on the ring axis. Vertically the two
     # rows sit with equal 3.6 mm gaps in the band between the orbit's bottom
     # label (RANGE baseline, y 70.2) and the pad backplate top (y 98.1).
     for i,(enum,lbl) in zip([0,1,3,4,5],
                             [("ATTACK","ATK"),("DECAY","DEC"),("RES","RES"),
                              ("SUB","SUB"),("DETUNE","DTUN")]):
-        out.append(Ctl(enum, SMKNOB, VOICE_X[i], 76.8, lbl))
+        out.append(Ctl(enum, SMKNOB, fx(VOICE_X[i]), 76.8, lbl))
     # fx row: the FLUX delay cluster (RATE . MIX . FB) sits together on the
     # left. RATE (x 9.5) and FB (x 35.5) are appended in PARAMS for patch-id
     # stability; MIX stays at 22.5, GRIT/COMP/STEPS fill 48.5/61.5/74.5.
     # The append ORDER (FLUX, GRIT, COMP, STEPS) is unchanged, so PART_STRIDE
     # and every param id stay put -- only the x coordinates move.
-    out.append(Ctl("FLUX", SMKNOB, 22.5, 88.9, "FLUX"))   # delay MIX
+    out.append(Ctl("FLUX", SMKNOB, fx(22.5), 88.9, "FLUX"))   # delay MIX
     for i,(enum,lbl) in enumerate([("GRIT","GRIT"),("COMP","COMP")]):
-        out.append(Ctl(enum, SMKNOB, 48.5 + i*13.0, 88.9, lbl))
-    out.append(Ctl("STEPS", KNOBI, 74.5, 88.9, "STPS"))
+        out.append(Ctl(enum, SMKNOB, fx(48.5 + i*13.0), 88.9, lbl))
+    out.append(Ctl("STEPS", KNOBI, fx(74.5), 88.9, "STPS"))
     pads = [("ENGINE",LATCH,"ENG"),("GRITMODE",LATCH,"GRIT"),
             ("STEP",LATCH,"STEP"),("PRINCIPLE",SMBTN,"PRIN"),
             ("NEWPHRASE",SMBTN,"NEW"),("TRIGGER",SMBTN,"TRIG")]
     for i,(enum,kind,lbl) in enumerate(pads):
-        out.append(Ctl(enum, kind, 15.75 + i*10.5, 102.8, lbl))
+        out.append(Ctl(enum, kind, fx(15.75 + i*10.5), 102.8, lbl))
     return out
 
-def mirror(ctls):
-    return [Ctl(c.enum, c.kind, W - c.x, c.y, c.label) for c in ctls]
+def part(suffix, mir):
+    """Same call, same order, mirrored x -- so PART_STRIDE and every param id
+    stay put no matter how the coordinates move."""
+    out = part_controls(mir)
+    for c in out:
+        c.enum += suffix
+    return out
 
-PART_A = [Ctl(c.enum + "_A", c.kind, c.x, c.y, c.label) for c in part_controls()]
-PART_B = [Ctl(c.enum + "_B", c.kind, c.x, c.y, c.label) for c in mirror(part_controls())]
+PART_A = part("_A", False)
+PART_B = part("_B", True)
 PART_STRIDE = len(PART_A)
 
 # --- shared center strip ------------------------------------------------------
@@ -175,6 +210,14 @@ SHARED = [
     Ctl("CHOKE",  SMKNOB, CX,  51.0, "CHOKE"),
 ]
 
+def color_ctl(suffix, mir):
+    cx = W - RING_CX_A if mir else RING_CX_A
+    ang = ORBIT_ANG["COLOR"]
+    x, y = orbit(cx, RING_CY, KNOB_R, ang, mir)
+    c = Ctl("COLOR" + suffix, BIGKNOB, x, y, "COLOR")
+    c.lbl = orbit_label(cx, RING_CY, ang, mir)
+    return c
+
 PARAMS = PART_A + PART_B + SHARED + [
     # FILT: bipolar cutoff trim (spec 2026-07-17). Appended LAST like CHOKE so
     # existing .vcv patches keep their param ids; coordinates put it in the
@@ -195,11 +238,11 @@ PARAMS = PART_A + PART_B + SHARED + [
     Ctl("FLUXRATE_B", SMKNOB, W - 9.5,   88.9, "FRATE"),
     Ctl("FLUXFB_A",   SMKNOB, 35.5,      88.9, "FFB"),
     Ctl("FLUXFB_B",   SMKNOB, W - 35.5,  88.9, "FFB"),
-    # COLOR: chord density/color per part (spec 2026-07-17 chord-layer).
-    # Appended LAST like FILT/TIDE/FLUX* so existing patches keep their ids;
-    # placed in the free corner between the macro orbit and the center strip.
-    Ctl("COLOR_A", BIGKNOB, 76.0, 14.0, "COLOR"),
-    Ctl("COLOR_B", BIGKNOB, W - 76.0, 14.0, "COLOR"),
+    # COLOR: chord density/colour per part (spec 2026-07-17 chord-layer), a full
+    # orbit member since the 2026-07-18 redesign -- it is pitch material, so it
+    # sits in the PITCH sector. Still appended LAST: order defines the param id.
+    color_ctl("_A", False),
+    color_ctl("_B", True),
 ]
 
 # --- inputs / outputs / lights ------------------------------------------------
@@ -239,6 +282,11 @@ TEXTS = [
     (CX,            32.2,          2.2, 0.5, MUTED,      "TIME"),
     (CX,            70.0,          2.2, 0.5, MUTED,      "ROOM"),
     (CX,            7.0,           3.6, 0.9, INK,        "SPOTYMOD"),  # top brand
+] + [
+    # sector captions, tucked into the free panel corners (spec §1)
+    (W - cx if mir else cx, cy, 1.7, 0.3, COPPER if mir else GREEN, name)
+    for mir in (False, True)
+    for (name, _a0, _a1, (cx, cy)) in SECTORS
 ]
 
 # =============================================================================
@@ -272,23 +320,41 @@ def knob_svg(c):
     P = []
     big = c.kind in (BIGKNOB, KNOBC)
     accent = side_accent(c.x)
-    collar_r = c.r + (0.85 if big else 1.0)
-    collar_w = 0.5 if big else 0.45
     if c.enum == "MORPH":  # signature: the bridge knob wears both colours
+        collar_r = c.r + 0.85
         for (col, sweep) in ((GREEN, 0), (COPPER, 1)):
             P.append(f'<path d="M {mm(c.x)} {mm(c.y-collar_r)} '
                      f'A {mm(collar_r)} {mm(collar_r)} 0 0 {sweep} '
                      f'{mm(c.x)} {mm(c.y+collar_r)}" fill="none" '
-                     f'stroke="{col}" stroke-width="{collar_w}"/>')
-    else:
-        P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(collar_r)}" '
-                 f'fill="none" stroke="{accent}" stroke-width="{collar_w}"/>')
+                     f'stroke="{col}" stroke-width="0.5"/>')
+    elif big:
+        # Only the orbit keeps its collar -- it marks the performance layer.
+        # 20+ rings per side on the small pots were noise (spec §3).
+        P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(c.r + 0.85)}" '
+                 f'fill="none" stroke="{accent}" stroke-width="0.5"/>')
     P.append(f'<circle cx="{mm(c.x)}" cy="{mm(c.y)}" r="{mm(c.r)}" '
              f'fill="url(#knobCap)" stroke="{GRAPHITE}" stroke-width="0.3"/>')
     P.append(f'<line x1="{mm(c.x)}" y1="{mm(c.y)}" x2="{mm(c.x)}" '
              f'y2="{mm(c.y-c.r+0.7)}" stroke="{WHITE}" stroke-width="0.5" '
              f'stroke-linecap="round"/>')
     return "\n".join(P)
+
+def wedge_svg(cx, a0, a1, colour, mir):
+    """One tinted sector segment behind the orbit knobs: an annulus slice
+    between r 20.5 and 33.5 mm (spec 2026-07-18 §1)."""
+    R_OUT, R_IN = 33.5, 20.5
+    if mir:
+        a0, a1 = a1, a0          # keep the on-screen sweep direction
+    def pt(r, a):
+        rad = math.radians(a)
+        s = math.sin(rad)
+        return (cx + (-s if mir else s) * r, RING_CY - r * math.cos(rad))
+    laf = 1 if abs(a1 - a0) > 180.0 else 0
+    ox0, oy0 = pt(R_OUT, a0); ox1, oy1 = pt(R_OUT, a1)
+    ix1, iy1 = pt(R_IN,  a1); ix0, iy0 = pt(R_IN,  a0)
+    return (f'<path d="M {mm(ox0)} {mm(oy0)} A {mm(R_OUT)} {mm(R_OUT)} 0 {laf} 1 '
+            f'{mm(ox1)} {mm(oy1)} L {mm(ix1)} {mm(iy1)} A {mm(R_IN)} {mm(R_IN)} '
+            f'0 {laf} 0 {mm(ix0)} {mm(iy0)} Z" fill="{colour}" opacity="0.07"/>')
 
 def svg():
     P = []
@@ -318,6 +384,10 @@ def svg():
     # jack strip lives below it on the bare bottom edge.
     P.append(f'<rect x="{mm(CX-21)}" y="10.0" width="42.0" height="100.0" rx="2" '
              f'fill="{PAPER_DEEP}" stroke="{LINE}" stroke-width="0.3"/>')
+    # sector tints behind the orbit (drawn first: everything else sits on top)
+    for mir, cx, accent in ((False, RING_CX_A, GREEN), (True, W - RING_CX_A, COPPER)):
+        for (name, a0, a1, _cap) in SECTORS:
+            P.append(wedge_svg(cx, a0, a1, accent, mir))
     # two rings (dark well + dim track; the live SpkyRing widget lights them)
     P.append(ring_svg(RING_CX_A, GREEN_DIM))
     P.append(ring_svg(W - RING_CX_A, COPPER_DIM))
