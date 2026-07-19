@@ -93,6 +93,34 @@ float Part::max_voice_env() const {
     return m;
 }
 
+// Everything the engine reads at its own control tick: the five lane targets,
+// the quantized pitch, the chord surface. Task 4 gates this behind a
+// 96-sample raster; until then it runs per sample and the output is
+// bit-identical to the pre-extraction code.
+void Part::_control_tick() {
+    for (int i = 0; i < LANE_COUNT; ++i) _tg[i] = target_raw(i);
+    _tg[LANE_PITCH] = _quant.process(pitch_pre_quant());
+    _pitch_q = _tg[LANE_PITCH];                              // clean, drives pitch_cv()
+    _tg[LANE_PITCH] = clampf(_pitch_q + _detune_cents * (1.f / 3600.f), 0.f, 1.f);
+
+    // chord layer: refresh the surface every tick (cheap interval apply);
+    // full voice-leading build only on a fire
+    // COLOR is MOTION's third destination, alongside pan fan and drift (spec
+    // 2026-07-18 color-motion-target). Bipolar additive: the knob is the
+    // centre, MOTION swings +/-kColorMod around it at MOD = 1. The gate makes
+    // COLOR = 0 exactly silent by construction.
+    const float cgate = clampf(_color / kColorGate, 0.f, 1.f);
+    const float cmod  = _active[LANE_MOTION]
+        ? _mod.lane_output(LANE_MOTION) * _depth * kColorMod * cgate
+        : 0.f;
+    _color_eff = clampf(_color + cmod, 0.f, 1.f);
+    _chord.set_color(_color_eff);
+    float chord[ChordBuilder::kMaxNotes];
+    const int nch = _chord.apply(_tg[LANE_PITCH], _chord_mask(),
+                                 _quant.root_semis(), chord);
+    _engine->set_chord(chord, nch);
+}
+
 void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     _mod.process();
 
@@ -117,39 +145,21 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
         _engine->set_cycle(1.f / hz);
     }
 
-    if (_mod.lane_fired(LANE_PITCH)) {
+    const bool fired = _mod.lane_fired(LANE_PITCH);
+    if (fired) {
         _note_suppressed = _inhibit;
         if (!_inhibit) _gate_ctr = _gate_len;
     }
     if (_gate_ctr > 0) --_gate_ctr;
 
-    float targets[LANE_COUNT];
-    for (int i = 0; i < LANE_COUNT; ++i) targets[i] = target_raw(i);
-    targets[LANE_PITCH] = _quant.process(pitch_pre_quant());
-    _pitch_q = targets[LANE_PITCH];                              // clean, drives pitch_cv()
-    targets[LANE_PITCH] = clampf(_pitch_q + _detune_cents * (1.f / 3600.f), 0.f, 1.f);
+    _control_tick();
 
-    _engine->set_targets(targets, _tune);
+    _engine->set_targets(_tg, _tune);
 
-    // chord layer: refresh the surface every sample (cheap interval apply);
-    // full voice-leading build only on a fire
-    // COLOR is MOTION's third destination, alongside pan fan and drift (spec
-    // 2026-07-18 color-motion-target). Bipolar additive: the knob is the
-    // centre, MOTION swings +/-kColorMod around it at MOD = 1. The gate makes
-    // COLOR = 0 exactly silent by construction.
-    const float cgate = clampf(_color / kColorGate, 0.f, 1.f);
-    const float cmod  = _active[LANE_MOTION]
-        ? _mod.lane_output(LANE_MOTION) * _depth * kColorMod * cgate
-        : 0.f;
-    _color_eff = clampf(_color + cmod, 0.f, 1.f);
-    _chord.set_color(_color_eff);
-    float chord[ChordBuilder::kMaxNotes];
-    int nch = _chord.apply(targets[LANE_PITCH], _chord_mask(),
-                           _quant.root_semis(), chord);
-    _engine->set_chord(chord, nch);
-    if (_mod.lane_fired(LANE_PITCH) && !_note_suppressed) {
-        nch = _chord.build(targets[LANE_PITCH], _chord_mask(),
-                           _quant.root_semis(), chord);
+    if (fired && !_note_suppressed) {
+        float chord[ChordBuilder::kMaxNotes];
+        const int nch = _chord.build(_tg[LANE_PITCH], _chord_mask(),
+                                     _quant.root_semis(), chord);
         _engine->trigger_chord(chord, nch);
     }
     _engine->process(outL, outR);

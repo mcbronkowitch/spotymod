@@ -127,6 +127,16 @@ private:
         return e == ENGINE_SYNTH ? static_cast<IPartEngine*>(&_synth)
                                  : static_cast<IPartEngine*>(&_tone);
     }
+
+    // Rasterable half of process(): everything the engine consumes at its own
+    // control tick. Task 1 calls it per sample; the raster arrives in Task 4.
+    void _control_tick();
+
+    // Target cache: _control_tick() fills it, process() pushes it to the
+    // engine. Boot values mirror SynthEngine::_targets so a push before the
+    // first tick cannot hand the engine garbage.
+    float _tg[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 0.8f };
+
     PartFx         _fx;
 
     // Modulation first is the shipped state (spec 2026-07-17 boot-targets):
