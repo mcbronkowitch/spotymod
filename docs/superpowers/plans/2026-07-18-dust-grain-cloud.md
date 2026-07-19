@@ -1,20 +1,33 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo — Implementation Plan
 
-> **⛔ DO NOT EXECUTE THIS PLAN (2026-07-19, measured).** The design spec's CPU
-> estimate ("≪ 1 %") is wrong: the 16-grain cloud measures **18.54 % of block
-> budget**, 21.48 % with erosion engaged, against **2.3 points of margin**
-> (`docs/bench/2026-07-19-12f05ce.md`, `dust` family). Halving the pool to 8
-> grains gives 9.31 % — still four times the margin.
+> **⛔ DO NOT EXECUTE THIS PLAN (2026-07-19, measured twice).** The design
+> spec's CPU estimate ("≪ 1 %") is wrong. Measured and then optimized
+> (`docs/bench/2026-07-19-dccb8a3.md`, `dust` family): **11.1 % of block budget
+> at 16 grains, 6.2 % at 8**, against **~2.1 points of margin**. DUST is
+> blocked on headroom, not on design.
 >
-> Two corrections to carry into the eventual implementation, both against
-> earlier guesses in this repo: grain reads are **not** expensive scattered
-> SDRAM accesses (a grain is a linearly-walking read head, and the prefetcher
-> handles it — `dust_8_full` beats `grain_read_sdram` by 45 % at equal grain
-> count), and the bounded-spray fix an earlier revision proposed buys about one
-> point, so **§3 zone F keeps its full 5 s reach**. The cost is per-grain
-> arithmetic, ~116 cycles/grain/sample, and Task 1's `DustCloud` must avoid the
-> per-sample `age / length` division the bench proxy uses. See design spec §8,
-> rev 5.
+> **Three things this plan must change before it is executed:**
+>
+> 1. **Task 1's `DustCloud` must use the optimized grain loop**, not the
+>    obvious one. Measured −35 %: no per-sample `age / length` division (step a
+>    window index by an increment fixed at birth); no per-sample
+>    `hann_value_at()` call (`hann_curve()` is a function-local static, so every
+>    call pays a thread-safe-init guard — hoist the table pointer out of the
+>    block loop); no per-sample `(write + offset) & mask` or L/R select (keep an
+>    absolute read index stepped by `delta − 1`, resolve the tape pointer at
+>    birth). Reference implementation: `proc_dust_opt` in
+>    `bench/workloads_dust.cpp`.
+> 2. **The pool is 8 grains total, not 8 per part**, unless a re-measure at
+>    integration time shows the margin can carry 16. This halves zone F's
+>    maximum overlap and is a musical decision, not only a budget one — §2's
+>    "full 8-voice overlap" is what it trades on.
+> 3. **§3 zone F keeps its full 5 s reach.** An earlier revision proposed
+>    bounding the spray to save cache misses; measured, that buys about one
+>    point, because a grain is a linearly-walking read head and the prefetcher
+>    handles it — `dust_8_full` beats `grain_read_sdram` by 45 % at equal grain
+>    count. There are no scattered-access savings to chase here.
+>
+> See design spec §8, rev 6.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

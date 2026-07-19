@@ -1,13 +1,14 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo
 
 **Date:** 2026-07-18 (rev 3 — control surface reduced to what the hardware will
-actually have, same day); **rev 5 2026-07-19 — CPU budget MEASURED, §8**
-**Status:** design approved, **implementation BLOCKED on budget.** The plan
-(`docs/superpowers/plans/2026-07-18-dust-grain-cloud.md`) is written and must
-not be executed: measured cost is **18.5 points of block budget** (21.5 with
-erosion) against **2.3 points of margin**. The design's premise survived — no
-new buffers, grain reads nearly free — but the per-grain arithmetic needs an
-optimization pass and headroom must come from elsewhere first. See §8.
+actually have, same day); **rev 6 2026-07-19 — CPU budget MEASURED + optimized, §8**
+**Status:** design approved, **implementation BLOCKED on budget** — but the
+number is now known and the shape of the fix with it. Optimized cost is **11.1
+points at 16 grains, 6.2 at 8** against **~2.1 points of margin**. DUST ships
+when headroom exists (the global voice cap 8→5 is the candidate, ~13 points as
+a ceiling), and it ships at 8 grains unless a re-measure says otherwise. The
+per-grain optimizations are specified in §8 and must go into `DustCloud` when
+the plan is eventually executed. See §8.
 **Scope:** a per-part granular read/write stage inside the FLUX block, a character axis (ROT), and a tape FREEZE with erosion. No new audio buffers. No change to GRIT, COMP, reverb, or the master chain.
 
 ## Problem
@@ -131,13 +132,15 @@ change.
 
 ### 8. CPU + memory budget
 
-> **Rev 5 (2026-07-19) — measured on hardware.** The original estimate here
-> read "≪ 1 %"; the real figure is **18.54 % of block budget** for the specified
-> 16-grain cloud, 21.48 % with erosion engaged. The rev-4 correction that caught
-> the error guessed 24–35 points on a cache-miss argument and was itself wrong —
-> **on the number and, more importantly, on the mechanism**: grain reads turn out
-> to be nearly free, and the bounded-spray fix rev 4 proposed buys about one
-> point. The cost is per-grain arithmetic. Full findings below.
+> **Rev 6 (2026-07-19) — measured, then optimized and re-measured.** The
+> original estimate here read "≪ 1 %". The specified 16-grain cloud measures
+> **17.2 % of block budget** naive and **11.1 % after an optimization pass**
+> (13.3 % with erosion); at 8 grains, **6.2 %**. The rev-4 correction that caught
+> the original error guessed 24–35 points on a cache-miss argument and was itself
+> wrong — **on the number and, more importantly, on the mechanism**: grain reads
+> are nearly free, and the bounded-spray fix rev 4 proposed buys about one point.
+> The cost is per-grain arithmetic, and a third of it came off. Findings below;
+> the live decision is now the **pool size**, not the spray.
 
 - **Memory:** ~8 grain structs × 2 parts (< 1 KB). **No new audio buffers.** —
   this part of the original estimate stands and is the design's real strength.
@@ -199,30 +202,69 @@ writeback adds 1.4 points over plain, erosion 2.9. Reverse grains cost nothing
 measurable (17.91 vs 18.54, inside the noise) — the +2 stride is as
 prefetch-friendly as +1.
 
-**Where that leaves the feature.** The instrument sits at **97.60 % offline /
-98.07 % anchored** with 2.3 points of margin (same run). DUST as specified adds
-18.5 points, 21.5 with erosion engaged — call it **~119 %**. It does not fit.
-Nor does it fit at half the pool: 8 grains total is 9.3 points, still four times
-the available margin. The honest position is that DUST needs *both* a per-grain
-optimization pass *and* headroom bought elsewhere (the global voice cap 8→5 is
-~13 points, itself a ceiling), and that neither number exists yet.
+**Finding 5 — the optimization pass returns 35 %, measured**
+(`docs/bench/2026-07-19-dccb8a3.md`, three `*_opt` rows measured in the *same
+run* as the naive ones, which held their checksums exactly — the layout did not
+shift, so the comparison is clean):
 
-What did survive contact with the probe is the design's premise: **no new audio
-buffers, < 1 KB of state, and grain reads that cost almost nothing.** The
-expensive part is per-grain arithmetic in a loop nobody has optimized yet, which
-is the more tractable kind of problem to have.
+| row | avg % | max % | vs naive (avg) |
+|---|---:|---:|---:|
+| `dust_16_opt` | **11.13** | 13.35 | −35.3 % |
+| `dust_8_opt` | 6.16 | 6.93 | −31.0 % |
+| `dust_16_opt_erode` | 13.29 | 15.02 | −33.3 % |
+
+Three costs were removed without changing what a grain is: the per-sample
+`age / length` division became a window index stepped by an increment fixed at
+birth; `hann_value_at`'s out-of-line call — whose `hann_curve()` is a
+**function-local static, so every call paid a thread-safe-init guard check** —
+became a table pointer hoisted out of the block loop; and the per-sample
+`(g_write + offset) & mask` plus L/R select became an absolute read index
+stepped by `(delta − 1)` with the tape pointer resolved at birth.
+
+**107.6 → 69.6 cycles per grain per sample.** Decomposed, the optimized cloud is
+**62 cycles per grain per sample marginal plus 1.2 points fixed** (the tape
+store stream and loop overhead, now a visible share because the grains got
+cheap), and **erosion adds 2.16 points as a per-sample, not per-grain, cost**.
+That decomposition is what lets the pool size be priced without another run.
+
+**Where that leaves the feature.** The instrument sits at **97.83–97.98 %
+anchored max** with ~2.1 points of margin (same run). Against that:
+
+| configuration | cost | verdict |
+|---|---:|---|
+| 16 grains, optimized | 11.1 avg / 13.4 max | does not fit, even with the voice cap |
+| 16 grains + erosion | 13.3 / 15.0 | does not fit |
+| **8 grains, optimized** | **6.2 / 6.9** | fits *only* with headroom bought elsewhere |
+| 8 grains + erosion | ~8.3 (projected) | as above |
+
+The global voice cap 8→5 is worth ~13 points as a ceiling — and per the FLUX
+precedent (5.80 predicted solo, 3.56 returned in context) the in-context return
+could be nearer 8. **8 grains plus the voice cap fits with room to spare;
+16 grains plus the voice cap lands at the edge with no margin at all.** So the
+pool constant in §1 is the live design decision, and it is a musical one: 4
+grains per part instead of 8 halves the maximum overlap density, which is
+exactly what zone F's "full 8-voice overlap" (§2) trades on.
+
+What survived contact with the probe is the design's premise: **no new audio
+buffers, < 1 KB of state, and grain reads that cost almost nothing.**
 
 **The `dust` bench family** (`bench/workloads_dust.cpp`) stays in the tree as
-the measuring instrument for that work: `dust_16_full` is the headline,
-`dust_8_full` proves linearity in pool size, `dust_16_wb` / `dust_16_erode`
-price the zone-R and freeze paths, `dust_16_rev` the reverse stride. The two
-window rows have done their job and can go if the table gets crowded.
+the measuring instrument: `dust_16_opt` is the headline, `dust_8_opt` prices the
+pool decision, `dust_16_opt_erode` the freeze path. The naive rows stay as the
+baseline the optimization is measured against, and the two window rows have done
+their job and can go if the table gets crowded.
 
-**Decision rule, revised.** Re-measure after a per-grain optimization pass. If
-`dust_16_full` lands near or under the margin that exists at that time, DUST
-ships at 16 grains; if it lands in the high single digits, it ships at 8 and
-§1's pool constant changes. Cost is linear in the pool, which is the one thing
-here that is now proven rather than argued.
+**A measurement note for whoever runs this next:** `dust_16_full`'s *avg* held
+to within 200 cycles across the 12f05ce and dccb8a3 builds (165 100 → 165 252)
+while its *max* moved 6 % (178 053 → 188 764). For these component rows compare
+**avg across runs and max within a run** — the max carries the cross-build
+icache layout shift this bench has seen before. `instrument_worst`'s max stays
+the gate; that is a different, much larger row.
+
+**Decision rule, settled.** DUST is unblocked when headroom exists for it —
+today it does not. When it does, it ships at **8 grains** unless a re-measure
+shows the margin can carry 16. The pool constant is the knob; cost is
+near-linear in it, which is now proven rather than argued.
 
 ## Testing
 
