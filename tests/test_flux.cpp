@@ -359,6 +359,10 @@ TEST_CASE("deline: N samples behind the head reads the sample written N steps ag
 TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
     static float ref_l[Flux::kMaxSamples], ref_r[Flux::kMaxSamples];
     static float dut_l[Flux::kMaxSamples], dut_r[Flux::kMaxSamples];
+    // Dummy tape for the standalone DustCloud probe below -- content never
+    // matters (the mechanisms under test are gain and grain count, not
+    // waveform), only that it is a valid kMaxSamples/mask-contract buffer.
+    static float probe_l[Flux::kMaxSamples], probe_r[Flux::kMaxSamples];
     for (float rot : {0.0f, 0.33f, 0.5f, 0.9f, 1.0f}) {
         Flux ref, dut;
         ref.init(48000.f, ref_l, ref_r);
@@ -372,6 +376,37 @@ TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
         }
         dut.set_dust(0.f);
         dut.set_rot(rot);
+
+        // Mechanism 1 -- the head-takeover gain must be exactly unity at
+        // DUST = 0. This is what makes "(e_l * hg + gl) * mix" collapse to
+        // "e_l * mix" in Flux::process; Flux's own bypass branch means
+        // head_gain() is never even read at DUST = 0, so a retuned knee
+        // (e.g. 0.999 instead of 1.0) would silently pass the per-sample
+        // output comparison below. Probed on a standalone DustCloud -- the
+        // same class Flux wires in -- since Flux exposes no accessor for it.
+        DustCloud probe;
+        probe.init(48000.f, 1u);
+        probe.set_dust(0.f);
+        probe.set_rot(rot);
+        probe.set_delay_time(dut.delay_time());
+        REQUIRE(probe.head_gain() == 1.0f);
+
+        // Mechanism 2 -- no grain may ever go alive at DUST = 0. Called
+        // directly on the probe (not through Flux::process) because Flux's
+        // "!_dust.active()" bypass ALSO stops DustCloud::process() from ever
+        // running at DUST = 0 -- that outer guard would otherwise mask the
+        // loss of DustCloud's own internal "_dust <= 0" guard, since neither
+        // ref nor dut would call into DustCloud at all either way.
+        const TapeTap probe_tap{probe_l, probe_r, 0,
+                                 static_cast<int32_t>(Flux::kMaxSamples) - 1};
+        int max_active = 0;
+        for (int i = 0; i < 120000; ++i) {
+            float gl = 0.f, gr = 0.f;
+            probe.process(probe_tap, gl, gr);
+            max_active = std::max(max_active, probe.active_grains());
+        }
+        REQUIRE(max_active == 0);
+
         for (int i = 0; i < 120000; ++i) {
             const float s = std::sin(0.011f * i) * 0.5f;
             float al = s, ar = s, bl = s, br = s;
@@ -380,6 +415,15 @@ TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
             REQUIRE(al == bl);
             REQUIRE(ar == br);
         }
+
+        // Bit-exactness is a claim about what lands on the tape, not only
+        // about the returned sample -- a divergent store could hide behind
+        // identical output for many samples before a read finally exposes
+        // it. Compare the two instances' delay-line contents directly (the
+        // exact buffers passed into init() above -- what EchoDelay::line()
+        // would return).
+        REQUIRE(std::memcmp(ref_l, dut_l, sizeof(ref_l)) == 0);
+        REQUIRE(std::memcmp(ref_r, dut_r, sizeof(ref_r)) == 0);
     }
 }
 
