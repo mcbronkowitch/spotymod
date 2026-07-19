@@ -105,8 +105,14 @@ struct SineTape {
     // a multiple of that, so a plain "100 Hz" tape would leave a residual
     // phase jump at every wrap -- a seam artifact with nothing to do with
     // DustCloud that would contaminate the click test. Using a power-of-two
-    // period instead (512 samples, i.e. 93.75 Hz) keeps the tape genuinely
-    // seamless.
+    // period instead (512 samples, i.e. 93.75 Hz) keeps the wrap point
+    // mathematically exact -- it is NOT, however, genuinely seamless in
+    // practice: `sin()` is evaluated from a per-sample float phase
+    // (TWO_PI * freq_hz * i / sr, i up to kSize - 1), and accumulated float
+    // rounding over 65536 samples still leaves the two sides of the wrap
+    // ~1e-4 apart. Harmless here -- the click assertion below is 0.3, three
+    // orders of magnitude above that residual -- but "genuinely seamless"
+    // overstates it.
     static constexpr int32_t kSize = 65536;
     static_assert((kSize & (kSize - 1)) == 0, "kSize must be a power of two");
     static constexpr int32_t kPeriod = 512;
@@ -378,9 +384,31 @@ TEST_CASE("dust: zone S with no jitter births on the delay/4 grid") {
 }
 
 TEST_CASE("dust: zone S jitter grows across the zone") {
-    // spread() reports, in samples, the largest observed birth-to-birth gap
-    // deviation from a whole multiple of the 6000-sample grid -- i.e. the
-    // largest single-slot jitter offset actually realised in this run.
+    // spread() does NOT report "the largest single-slot jitter offset
+    // actually realised", despite what an earlier version of this comment
+    // claimed. birth_indices() only counts a birth where the summed output
+    // returns fully to silence first, and _schedule() redraws a fresh jitter
+    // offset on EVERY grid tick -- including ticks whose slot declines to
+    // fire (fire_prob = 0.35 here, so most measured gaps span several grid
+    // periods, each with its own independent jitter draw). What spread()
+    // actually measures is the ACCUMULATED jitter of however many slots
+    // elapsed between two births, folded into [0, 3000] by `% 6000` and the
+    // `gap > 3000 ? 6000 - gap : gap` step below -- not a single slot's
+    // offset. The per-slot ceiling derived further down in this function
+    // (2727.3 samples at rot = 0.30) is a real bound on _schedule()'s own
+    // per-tick draw, but it is NOT the ceiling of what this test measures:
+    // the modulo fold makes 3000 the ceiling of the MEASURED quantity
+    // regardless of the true per-slot range, by aliasing.
+    //
+    // Concretely: doubling dust.cpp's per-slot jitter range (_jitter * 0.5f
+    // -> _jitter * 1.0f in _schedule(), pushing the true per-slot ceiling
+    // from 2727.3 to 5454.5 -- well outside spec §3's intended range of a
+    // full grid period) still folds under 3000 here and passes every
+    // assertion below. Confirmed by hand: this test does NOT catch that
+    // mutation. What it DOES still pin, honestly: jitter grows monotonically
+    // across the zone, and it is exactly zero when rot locks the grid --
+    // r00 == 0.0 is the one number here that is genuinely exact, not
+    // aliased, because with _jitter == 0 there is nothing to fold in.
     auto spread = [](float rot) {
         const auto b = birth_indices(rot, 0.35f, 0.5f, 480000);
         if (b.size() < 8) return 0.0;

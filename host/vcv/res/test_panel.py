@@ -74,6 +74,22 @@ def test_dust_params():
         check(ids[e] >= 2 * g.PART_STRIDE, f"{e} must be appended, not templated")
 
 
+def test_dust_rot_kind():
+    """DUST/ROT must render as the small knob (GLYPH_R[SMKNOB] = 3.0 mm), not
+    the big knob (GLYPH_R[BIGKNOB] = 4.2 mm) -- a SMKNOB->BIGKNOB typo grows
+    the glyph radius by 1.2 mm and still clears test_no_overlap's minimum
+    spacing in the FX row by 0.43 mm, so it would ship silently without a kind
+    pin of its own. Same idiom as test_header_carries_label_columns's
+    RATE_A/WK_BIGKNOB check -- read the actual generated header string, not
+    g.PARAMS' in-memory `.kind`, so a generator bug that diverges the two
+    still fails here (two previous panel guards on this project asserted
+    against strings the generator never emits and were vacuous on arrival)."""
+    h = g.header()
+    for enum in ("DUST_A", "DUST_B", "ROT_A", "ROT_B"):
+        check(h.count(f"{{{enum}, WK_SMKNOB,") == 1,
+              f"{enum} is not WK_SMKNOB in the generated header")
+
+
 def test_no_overlap():
     """No two glyphs may touch -- Rack widgets would steal each other's clicks."""
     all_c = g.PARAMS + g.INPUTS + g.OUTPUTS
