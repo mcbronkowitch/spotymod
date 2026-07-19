@@ -67,8 +67,56 @@ New `engine/fx/dust.h/.cpp`: `DustCloud`, fixed pool of **8 grains** per part (p
 
 `r ∈ 0..1`, per part, three zones with continuous morphs (all breakpoints are tuning constants in one header block, finalized in the deferred play-test):
 
-**Zone S — synced stutter (r = 0 … ~0.33).**
-Grain births lock to a grid derived from the delay itself: **birth interval = FLUX delay time / 4** (clamped to a sane minimum) — stutter bursts always subdivide the echo, automatic dub polyrhythm with zero extra controls. DUST sets the probability that a grid slot fires (and density stacks bursts). Spray is tight (near the head) → repeat/stutter character. As r rises through the zone, timing jitter grows from 0 to fully random. Like FLUX itself this is duration-synced, not phase-locked to the sequencer (consistent with the existing delay behavior).
+**Zone S — beat repeat (r = 0 … ~0.33).** *(Rebuilt 2026-07-19 rev 7 after the
+Phase A listen. The original design is preserved at the end of this section
+together with the measurement that killed it.)*
+
+Zone S is a **beat repeat**, not a cloud with grid-flavoured births. Three
+properties define it, and each replaces a specific thing that made the first
+version sound, in the user's words, "like a broken delay":
+
+- **Anchored replay.** On every beat edge the cloud latches the write head's
+  *absolute* tape index as `_anchor`. Every grain in that beat is born at
+  `_anchor + len × rate` and walks forward to `_anchor`, so every grain in the
+  beat replays **the same slice**. This is the load-bearing change: a birth
+  offset measured *relative to the moving write head* holds a constant age and
+  therefore reproduces a delay tap, no matter how its births are scheduled. Only
+  an absolute anchor repeats.
+- **Phase lock.** The grid is `beat / 2ⁿ`, phase-reset on the beat edge from
+  `Center::transport()`, not derived from the FLUX delay time. Duration sync
+  fixes the *period* and leaves the *phase* free, which is audible as "off grid"
+  even when SYNC is on. Resolution is the 96-sample control tick (2 ms at
+  48 kHz), below the threshold where rhythmic placement reads as late.
+- **Deterministic firing.** Every slot fires. DUST selects the subdivision
+  n ∈ {1,2,3,4} ⇒ **2, 4, 8, 16 slots per beat**, and above d ≈ 0.5 adds a
+  second grain per slot at `rate = 2` (octave up — an integer read step, so it
+  costs nothing and no interpolation). Grain length = one slot.
+
+DUST in zone S therefore reads as *rhythmic* density (subdivision + octave),
+not as *stochastic* density. `_fire_prob` and `_burst` do not apply here.
+
+n = 0 (one slot per beat) is deliberately **not** reachable: a single slot per
+beat replaying the previous beat is a one-beat delay, which is the very thing
+this zone must not be.
+
+ROT across the zone still grows timing jitter 0 → 1, which now reads as the
+repeat loosening off the grid rather than as the grid never having existed.
+
+**Envelope.** The Hann window is trapezoid-gated in this zone: sin² ramps over a
+short fixed fade, held flat between them. A full-length Hann over a 125 ms slot
+puts a 62 ms attack on every repeat and washes out exactly the transient that
+makes a repeat legible as rhythm.
+
+> **Superseded (rev 1–6):** births locked to `FLUX delay time / 4`, DUST setting
+> the probability a slot fires, spray tight at 50 ms near the head, "duration-
+> synced, not phase-locked to the sequencer". Measured in the Phase A listen: at
+> 50 ms spray with 1× forward playback, a grain holds a constant offset behind
+> the write head and so reads *live* material as a 1–50 ms tap — the cloud
+> doubled the input under an amplitude envelope instead of repeating anything.
+> With no phase reference and probabilistic slot firing on top, no arrangement
+> of that design could have produced rhythm. The whole-branch review had already
+> flagged the doubling as misattribution warning #2 in the listening brief; the
+> listen confirmed it dominates the zone.
 
 **Zone F — free scatter (r ≈ 0.33 … 0.66).**
 The classic cloud: free-running stochastic scheduler, spray widens across the zone from ~150 ms up to the full 5 s. Read-only, forward grains. (This is rev 1's whole design, now one zone of three.)
@@ -135,7 +183,15 @@ change.
 
 ### 7. Engine API + host plumbing
 
-- `Flux::set_dust(float)`, `Flux::set_rot(float)`, `Flux::set_freeze(bool)`; `Flux` owns the `DustCloud`, passes tap access + delay time (sync grid) + collects writeback.
+- `Flux::set_dust(float)`, `Flux::set_rot(float)`, `Flux::set_freeze(bool)`; `Flux` owns the `DustCloud`, passes tap access + delay time (zones F/R) + collects writeback.
+- **Beat plumbing (rev 7).** Zone S needs a phase reference the FX chain does not
+  currently have. `Center` already owns a `Transport` with a `double` beat
+  accumulator and `beat_phase()`; it gains a beat-edge detector at the control
+  tick, and `Instrument` forwards the edge plus the current beat length in
+  samples down the existing `set_flux_*` forwarding path to
+  `DustCloud::sync_beat(float beat_samples)`. Control-rate only — nothing new in
+  the per-sample path. When no host clock is running the transport still advances
+  on its internal BPM, so zone S is never without a grid.
 - `PartFx` / `Instrument` forwarding in the `set_flux_mix` pattern: `set_dust(p, v)`, `set_rot(p, v)`, `set_freeze(p, on)`.
 - `host/render/scenario.cpp`: actions `set_dust`, `set_rot`, `set_freeze` + demo scenarios (`dust_stutter.json` — sync zone; `dust_erosion.json` — freeze + zone R).
 - `host/vcv/src/Spotymod.cpp`: knobs/pad → setters; DUST tooltip in percent; ROT tooltip naming the zone ("SYNC / FREE / ROT"); FRZ read as a level (the latch state *is* the freeze state), and the old manual-trigger wiring removed.
@@ -344,7 +400,9 @@ New `tests/test_dust.cpp` (+ small additions to `tests/test_flux.cpp`):
 
 - **Bypass bit-exactness:** d = 0, freeze off ⇒ output identical to pre-DUST FLUX, sample for sample (any ROT).
 - **Determinism:** same seed/settings/input twice ⇒ bit-identical output.
-- **Sync grid:** in zone S with jitter 0, measured birth intervals == delay_time/4 within tolerance; jitter grows monotonically across the zone.
+- **Beat grid (rev 7):** in zone S with jitter 0, measured birth intervals == `beat_samples / 2ⁿ` for each DUST subdivision, and the first birth after a beat edge lands within one control tick of that edge (the phase-lock claim); jitter grows monotonically across the zone.
+- **Anchored replay (rev 7):** the load-bearing property, and the one the old design silently failed. Write a tape where every slot carries a *distinguishable* marker, then assert successive grains within one beat emit the **same** samples — not merely that grains are periodic. A test that only checks birth timing passes against the doubling bug.
+- **Octave layer (rev 7):** above the octave threshold a slot's second grain traverses `2 × len` of tape in `len` samples, and both grains end at `_anchor`.
 - **Reverse grains:** a known transient in the tape appears time-reversed in a reverse grain's output.
 - **Preserving freeze:** freeze + low ROT ⇒ buffer contents unchanged after N loud input samples, output non-silent, echo output repeats with 5 s period; dry input still passes.
 - **Erosion:** freeze + r = 1 ⇒ buffer contents measurably change per pass, RMS remains bounded, and with DUST at 0 the loop only wears (decays) without new grain content.

@@ -169,6 +169,28 @@ asked for, so it has to be in the room before the question can be asked.
 > instrument can do — the echo head plays from a fixed offset, ROOM diffuses
 > the present, grains reach across the whole 5 s of tape history.
 
+### Phase A2 — zone S rebuilt as a beat repeat *(added 2026-07-19 rev 7)*
+**Tasks 11 → 12**
+
+The Phase A listen returned a verdict on zone S, not on the feature: *"even
+synced they are somehow off grid and sound odd — more like a broken delay. Not
+worth the cost for that."* Diagnosis and the resulting redesign are in spec §3
+(zone S, rev 7) with the superseded design preserved beneath it. Three causes,
+all structural rather than tuning:
+
+1. a 50 ms spray with 1× forward playback holds a **constant offset behind the
+   write head**, which is a delay tap on live material — the zone doubled the
+   input instead of repeating anything;
+2. `_grid_countdown` free-ran with **no phase reference** — SYNC fixed the
+   period and left the phase arbitrary;
+3. `_fire_prob = d` dropped grid slots **at random**, which is arrhythmia by
+   construction.
+
+Phase A2 re-enters the same Phase A gate afterwards (G1, G3(a) especially).
+**If zone S still does not play after this, the answer is the one the phase was
+built to get** — the cost stands and the feature is cut, rather than being tuned
+further.
+
 ### Phase B — the character axis, one audible increment at a time
 **Task 4 (reverse) → Task 5 (writeback)**
 
@@ -2369,6 +2391,164 @@ Expected: PASS — whole suite.
 ```bash
 git add host/vcv/src/Spotymod.cpp
 git commit -m "spotymod: DUST/ROT knobs with zone tooltips, FRZ latch, drop manual trigger"
+```
+
+---
+
+### Task 11: Beat plumbing — transport edge to `DustCloud`
+
+Zone S needs a phase reference. `Center` owns a `Transport` with a `double` beat
+accumulator; `Center::update()` already calls `_transport.tick()`
+(`engine/center/center.cpp:73`). Everything here is **control rate only** — do
+not add anything to the per-sample path.
+
+**`engine/center/center.h/.cpp`.** Detect the beat edge where `tick()` is
+called: keep the pre-tick `beat_phase()`, and after ticking, an edge is
+`phase < prev_phase` (the accumulator wrapped past an integer beat). Expose:
+
+```cpp
+bool  beat_edge()    const { return _beat_edge; }     // true for one control tick
+float beat_samples() const { return 60.f / _transport.bpm() * _sr; }
+```
+
+`_beat_edge` is set every tick (true or false), never latched across ticks.
+`clock_pulse()` snaps `_beats` to the nearest beat and can therefore move the
+phase *backwards* across a tick — that also reads as an edge, which is correct:
+an external clock pulse **is** a downbeat. Do not try to suppress it.
+
+**Forwarding**, in the existing `set_flux_mix` pattern:
+`Instrument::sync_beat` → `PartFx::sync_beat` → `Flux::sync_beat` →
+`DustCloud::sync_beat(float beat_samples)`. In `Instrument::process`, directly
+after the `_center.update(...)` call:
+
+```cpp
+if (_center.beat_edge()) {
+    const float bs = _center.beat_samples();
+    _parts[PART_A].fx().sync_beat(bs);
+    _parts[PART_B].fx().sync_beat(bs);
+}
+```
+
+**`DustCloud::sync_beat(float beat_samples)`** stores `_beat_samples`, calls
+`_remap()`, and sets `_beat_pending = true`. It must **not** latch the anchor
+itself: the anchor is a tape index and the tape is only reachable inside
+`process()`, so the flag is consumed there on the next sample.
+
+**Tests** (`tests/test_center.cpp`, or `test_instrument.cpp` if that is where
+transport coverage already lives): at 120 BPM and 48 kHz, `beat_edge()` is true
+exactly once per 0.5 s of processing, and `beat_samples()` == 24000 ± 1. A
+`clock_pulse()` mid-beat produces an edge on the following tick.
+
+**Falsify:** break the comparison to `phase > prev_phase` and confirm the
+once-per-beat test fails. An edge test that passes with the comparison inverted
+is counting ticks, not edges.
+
+```
+git commit -m "center/dust: beat edge + beat length forwarded to the grain cloud"
+```
+
+---
+
+### Task 12: Zone S rebuilt as a beat repeat
+
+Spec §3 zone S rev 7. Read the superseded block beneath it — the three causes
+named there are what this task removes. All new constants go in the existing
+`dust_tuning` block.
+
+**Tuning constants.**
+
+```cpp
+constexpr float kOctaveThresh = 0.5f;    // DUST above this adds the 2x layer
+constexpr float kSlotFadeS    = 0.003f;  // 3 ms trapezoid edge, zone S only
+```
+
+**Envelope — trapezoid gate.** `Grain` gains `int32_t hold = 0`. In the
+per-sample loop, replace the fold with:
+
+```cpp
+g.widx += g.wstep;
+if (g.widx > 191.f) {
+    if (g.hold > 0) { g.widx = 191.f; --g.hold; }   // flat top
+    else { g.widx = 382.f - g.widx; g.wstep = -g.wstep; }
+}
+```
+
+Zones F and R set `hold = 0` and are then **bit-identical to today** — assert
+that, it is the cheapest guard against this task leaking into the other zones.
+Zone S sets `wstep = 191.f / fade` and `hold = len - 2 * fade`, with
+`fade = min(kSlotFadeS * _sr, len / 2)` and `fade >= 1`.
+
+**Mapping** in `_remap()`, zone S branch (`_fire_prob`, `_burst` and the 50 ms
+`kSpraySync` no longer apply here — delete their zone-S assignments):
+
+```cpp
+_subdiv = 1 + (int)(_dust * 3.999f);        // 1..4  =>  2,4,8,16 slots/beat
+_octave = _dust >= kOctaveThresh;
+_jitter = u;                                 // unchanged, ROT across the zone
+```
+
+Grid comes from the **beat**, not the delay time:
+`_grid_period = (int32_t)(_beat_samples / (float)(1 << _subdiv))`, clamped to
+`>= kGridMinS * _sr`. Zones F and R keep `set_delay_time()` exactly as today.
+n = 0 is unreachable by construction — see the spec on why one slot per beat is
+a one-beat delay, which is precisely what this zone must not be.
+
+**Scheduling** in `_schedule()`, zone S branch:
+
+```cpp
+if (_beat_pending) {              // consume the edge; latch the slice
+    _beat_pending = false;
+    _anchor = tape.write_ptr;
+    _grid_countdown = 1;          // first slot fires on this sample
+}
+if (_grid_period < 1) return;
+if (--_grid_countdown > 0) return;
+_grid_countdown = _grid_period;
+if (_jitter > 0.f) { /* unchanged jitter on the countdown */ }
+_spawn_anchored(tape, 1);
+if (_octave) _spawn_anchored(tape, 2);
+```
+
+**`_spawn_anchored(const TapeTap& tape, int rate)`** — the load-bearing part.
+The write head decrements, so index `_anchor + k` is `k` samples older than the
+anchor. A grain starts `len * rate` behind the anchor and steps `-rate`, so it
+walks **forward in time** and ends exactly at `_anchor`:
+
+```cpp
+g.len     = _grid_period < 8 ? 8 : _grid_period;
+g.rd_step = -rate;
+int32_t back = g.len * rate;
+if (back > tape.size() - 4) back = tape.size() - 4;
+g.rd = (_anchor + back) & tape.mask;
+```
+
+Every grain in the beat is born from the same `_anchor`, so they replay **the
+same slice** — that is what makes this a repeat rather than a delay. Pan, source
+channel and the pool-full drop are unchanged from `_spawn()`.
+
+**Tests** (`tests/test_dust.cpp`). The old zone-S timing tests assert the
+superseded `delay_time / 4` grid; replace them, do not extend them.
+
+- **Anchored replay — the one that matters.** Fill the tape so each slot carries
+  a distinguishable marker, run one beat at a fixed subdivision with jitter 0,
+  and assert successive grains within the beat emit the **same** sample
+  sequence. *A test that only checks birth periodicity passes against the
+  doubling bug this task exists to remove* — periodicity is not the claim.
+- **Phase lock:** the first birth after `sync_beat()` lands within one control
+  tick (96 samples) of the edge.
+- **Subdivision:** for DUST in each quartile, births per beat == 2, 4, 8, 16.
+- **Octave layer:** above `kOctaveThresh` a slot spawns two grains; the second
+  traverses `2 * len` of tape in `len` samples and both end at `_anchor`.
+- **Zones F/R unchanged:** with `hold == 0`, output is bit-identical to the
+  pre-task build for the same seed and input.
+
+**Falsify each of these** (mutation testing, per the plan's global constraints):
+in particular, change `_anchor` back to `tape.write_ptr` *at spawn time* rather
+than at the beat edge and confirm the replay test fails. That mutation is
+exactly the old bug; if the test survives it, the test is worthless.
+
+```
+git commit -m "dust: zone S is a beat repeat -- anchored replay, phase lock, octave layer"
 ```
 
 ---
