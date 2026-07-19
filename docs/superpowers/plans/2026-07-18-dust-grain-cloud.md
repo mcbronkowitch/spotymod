@@ -57,7 +57,7 @@
 ## Global Constraints
 
 - **DUST = 0 and freeze off ⇒ bit-exact** with today's FLUX, sample for sample, at any ROT. Guard it with a branch, never with `+ 0.f`.
-- **No new audio buffers.** Grain memory is the existing `Flux::kMaxSamples = 240000` per channel per part.
+- **No new audio buffers.** Grain memory is the existing `Flux::kMaxSamples` per channel per part — **262144 samples (≈5.46 s)**, not the 240000/5.0 s this plan and the spec were written against: `7e9f924` raised it to a power of two so the ring index wraps by AND mask. Always use the symbol, never a literal, and never assume exactly 5 s.
 - **No pitch-shifted grains.** Reverse is time-reversal via `offset += 2`, not resampling.
 - **Determinism:** `spky::Rng` only, fixed distinct per-part seeds, no time seeding, no `Math.random`-equivalents. Desktop and firmware output must be bit-identical.
 - **No heap, no virtuals, no `std::function` in the audio path.** Plain structs, fixed pools.
@@ -288,7 +288,7 @@ TEST_CASE("echo: frozen with wear < 1 decays the loop, bounded") {
     const double before = rms();
     e.set_freeze(true);
     e.set_wear(1.f - 4.0e-6f);
-    for (int i = 0; i < 240000; ++i) e.Process(1.f);   // one full 5 s pass
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) e.Process(1.f);   // one full pass
     const double after = rms();
 
     CHECK(after < before);          // it eroded
@@ -315,7 +315,7 @@ TEST_CASE("echo: writeback stays bounded under sustained full scale") {
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cd /c/Users/bernd/Documents/AI/Spotykach && source env.sh && cmake --build build`
-Expected: FAIL to compile — `'line': is not a member of 'spky::EchoDelay<240000>'` (and the same for `write_ptr`, `set_freeze`, `set_wear`, and the two-arg `Process`).
+Expected: FAIL to compile — `'line': is not a member of 'spky::EchoDelay<262144>'` (and the same for `write_ptr`, `set_freeze`, `set_wear`, and the two-arg `Process`).
 
 - [ ] **Step 3: Add the `DeLine` primitives**
 
@@ -508,7 +508,7 @@ TEST_CASE("dust: grain sum is click-free across births and deaths") {
     d.set_rot(0.5f);
     d.set_delay_time(0.5f);
     float prev = 0.f, max_step = 0.f;
-    for (int i = 0; i < 240000; ++i) {
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {
         float gl = 0.f, gr = 0.f;
         d.process(t.tap(), gl, gr);
         if (i > 0) max_step = std::max(max_step, std::fabs(gl - prev));
@@ -1282,7 +1282,7 @@ TEST_CASE("flux: dust makes sound and the head fades at the top") {
     f.set_rot(0.5f);
     CHECK(f.dust_active());
     float peak = 0.f;
-    for (int i = 0; i < 240000; ++i) {
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {
         const float s = std::sin(0.01f * i) * 0.4f;
         float l = s, r = s;
         f.process(l, r);
@@ -1454,13 +1454,13 @@ TEST_CASE("flux: freeze at low rot preserves the loop and keeps playing") {
     std::memcpy(snap, bl, sizeof(snap));
 
     double out_sum_sq = 0.0;
-    for (int i = 0; i < 240000; ++i) {         // one full pass, loud input
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {   // one full pass, loud input
         float l = 0.8f, r = 0.8f;
         f.process(l, r);
         out_sum_sq += (double)(l - 0.8f) * (double)(l - 0.8f);
     }
     CHECK(std::memcmp(snap, bl, sizeof(snap)) == 0);   // nothing was written
-    CHECK(std::sqrt(out_sum_sq / 240000.0) > 1e-4);    // but it still sounds
+    CHECK(std::sqrt(out_sum_sq / (double)Flux::kMaxSamples) > 1e-4);  // but it still sounds
 }
 
 TEST_CASE("flux: the frozen echo head is a 5 s looper") {
@@ -1482,7 +1482,7 @@ TEST_CASE("flux: the frozen echo head is a 5 s looper") {
     f.set_freeze(true);
 
     // Nothing is written, the pointer keeps advancing, so the head traverses
-    // the whole 240000-sample tape and repeats. The band-pass is IIR, so let
+    // the whole kMaxSamples-long tape and repeats. The band-pass is IIR, so let
     // two passes settle, then compare the next two sample for sample.
     const int kPeriod = (int)Flux::kMaxSamples;
     for (int i = 0; i < 2 * kPeriod; ++i) { float l = 0.f, r = 0.f; f.process(l, r); }
@@ -1544,7 +1544,7 @@ TEST_CASE("flux: freeze in zone R erodes the loop, bounded") {
     const double before = tape_rms();
 
     f.set_freeze(true);
-    for (int i = 0; i < 240000; ++i) {         // one full pass
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {   // one full pass
         float l = 0.f, r = 0.f;
         f.process(l, r);
         REQUIRE(std::isfinite(l));
@@ -1580,7 +1580,7 @@ TEST_CASE("flux: erosion with dust 0 only wears, adds nothing") {
     };
     const double before = tape_rms();
     f.set_freeze(true);
-    for (int i = 0; i < 240000; ++i) {
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {
         float l = 0.f, r = 0.f;
         f.process(l, r);
     }

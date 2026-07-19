@@ -27,7 +27,7 @@ Requirements (user decisions):
 
 ## Existing infrastructure this reuses
 
-- `engine/fx/flux.h` — `EchoDelay` over `DeLine` rings (240 000 samples = 5 s per channel per part). The write pointer decrements once per sample; a read at constant offset behind it **is** 1× forward playback delayed by that offset. `Flux` already receives BPM and knows `_delay_time`.
+- `engine/fx/flux.h` — `EchoDelay` over `DeLine` rings (`kMaxSamples` = **262 144 samples ≈ 5.46 s** per channel per part; this spec was written against the older 240 000 / 5.0 s figure, raised to a power of two by `7e9f924` so the ring index wraps by AND mask — the "5 s" quoted elsewhere in this document is approximate, and code must use the symbol). The write pointer decrements once per sample; a read at constant offset behind it **is** 1× forward playback delayed by that offset. `Flux` already receives BPM and knows `_delay_time`.
 - `engine/mod/rng.h` — deterministic xorshift32 `Rng` (bit-reproducible, statistically testable).
 - `engine/fx/fx_util.h` — `hann_value_at()`, the existing 192-entry table. It is `sin²(π/2·x)`, so folding a grain's age about its midpoint yields **exactly** `sin²(π·age)` — a true Hann grain window with no new table and no `fast_sin` call. (`engine/util/fast_sin.h` is still used, but for the equal-power pan, matching the `Voice::update_control` idiom.)
 - `engine/fx/part_fx.*`, `engine/instrument.*` — per-part FX plumbing and setter forwarding.
