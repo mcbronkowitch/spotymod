@@ -40,6 +40,11 @@
 //    which is what makes the Doppler warp audible as a ride, not a blip
 //  - Clear() added: empties buffer + loop filter state, params survive
 //    (backs the engine's M4.8 dry/wet clear-on-sleep bypass)
+//  - CPU cut (2026-07-19): the 8 random line LFOs advance on the same /32
+//    raster the engine's two cosine LFOs already used (slope x32 keeps the
+//    modulation speed); the 4 input diffusers and the 2 static loop APs
+//    read with linear interpolation, Hermite stays on the 2 tail delays and
+//    the 2 wobble-modulated loop APs (the audible pitch-wobble path)
 #ifndef CLOUDS_DSP_FX_OLIVERB_H_
 #define CLOUDS_DSP_FX_OLIVERB_H_
 
@@ -75,6 +80,8 @@ class Oliverb {
     lp_decay_1_ = lp_decay_2_ = 0.0f;
     hp_decay_1_ = hp_decay_2_ = 0.0f;
     for (int i = 0; i < 9; ++i) lfo_[i].Init(&rng_);
+    for (int i = 0; i < 9; ++i) lfo_val_[i] = 0.0f;
+    lfo_tick_ = 0;   // (tick & 31) == 0 on the first sample: values land before use
     Prepare();
   }
 
@@ -84,7 +91,8 @@ class Oliverb {
     float slope = mod_rate_ * mod_rate_;
     slope *= slope * slope;
     slope /= 300.0f;   // upstream /200 at 32 kHz; x1.5 more ticks per second
-    for (int i = 0; i < 9; ++i) lfo_[i].set_slope(slope);
+    // x kLfoDecim: Next() runs 1-in-32 samples now, same modulation speed
+    for (int i = 0; i < 9; ++i) lfo_[i].set_slope(slope * (float)kLfoDecim);
   }
 
   // Spotykach port addition: empty the room without touching parameters —
@@ -134,19 +142,36 @@ class Oliverb {
     // Smooth size to avoid delay glitches; slow on purpose (Doppler ride).
     ONE_POLE(smooth_size_, size_, 0.0002f);
 
-#define OLIVERB_INTERPOLATE_LFO(del, lfo, gain, amt)         \
+    // Random line LFOs on the /32 raster (the engine's cosine LFOs already
+    // decimate this way in Start()); slopes carry the x32 in Prepare().
+    if ((lfo_tick_ & (kLfoDecim - 1)) == 0)
+      for (int i = 1; i < 9; ++i) lfo_val_[i] = lfo_[i].Next();
+    ++lfo_tick_;
+
+// Hermite read: the audible pitch-wobble path (tail delays + modded loop APs)
+#define OLIVERB_INTERPOLATE_LFO(del, lv, gain, amt)          \
     {                                                        \
       float offset = (del.length - 1) * smooth_size_;        \
-      offset += lfo.Next() * (amt);                          \
+      offset += (lv) * (amt);                                \
       CONSTRAIN(offset, 1.0f, del.length - 1);               \
       c.InterpolateHermite(del, offset, gain);               \
+    }
+
+// Linear read: input diffusers — the smear offsets are small and the signal
+// is immediately re-diffused, so 2-point interpolation is enough there
+#define OLIVERB_INTERPOLATE_LFO_LIN(del, lv, gain, amt)      \
+    {                                                        \
+      float offset = (del.length - 1) * smooth_size_;        \
+      offset += (lv) * (amt);                                \
+      CONSTRAIN(offset, 1.0f, del.length - 1);               \
+      c.Interpolate(del, offset, gain);                      \
     }
 
 #define OLIVERB_INTERPOLATE(del, gain)                       \
     {                                                        \
       float offset = (del.length - 1) * smooth_size_;        \
       CONSTRAIN(offset, 1.0f, del.length - 1);               \
-      c.InterpolateHermite(del, offset, gain);               \
+      c.Interpolate(del, offset, gain);                      \
     }
 
     // Smear AP1 inside the loop.
@@ -155,24 +180,24 @@ class Oliverb {
 
     c.Read(*left + *right, input_gain_);
     // Diffuse through 4 allpasses.
-    OLIVERB_INTERPOLATE_LFO(ap1, lfo_[1], kap, diffuser_mod_amount_);
+    OLIVERB_INTERPOLATE_LFO_LIN(ap1, lfo_val_[1], kap, diffuser_mod_amount_);
     c.WriteAllPass(ap1, -kap);
-    OLIVERB_INTERPOLATE_LFO(ap2, lfo_[2], kap, diffuser_mod_amount_);
+    OLIVERB_INTERPOLATE_LFO_LIN(ap2, lfo_val_[2], kap, diffuser_mod_amount_);
     c.WriteAllPass(ap2, -kap);
-    OLIVERB_INTERPOLATE_LFO(ap3, lfo_[3], kap, diffuser_mod_amount_);
+    OLIVERB_INTERPOLATE_LFO_LIN(ap3, lfo_val_[3], kap, diffuser_mod_amount_);
     c.WriteAllPass(ap3, -kap);
-    OLIVERB_INTERPOLATE_LFO(ap4, lfo_[4], kap, diffuser_mod_amount_);
+    OLIVERB_INTERPOLATE_LFO_LIN(ap4, lfo_val_[4], kap, diffuser_mod_amount_);
     c.WriteAllPass(ap4, -kap);
 
     float apout;
     c.Write(apout);
 
     // Main reverb loop, branch 1.
-    OLIVERB_INTERPOLATE_LFO(del2, lfo_[5], decay_, mod_amount_);
+    OLIVERB_INTERPOLATE_LFO(del2, lfo_val_[5], decay_, mod_amount_);
     c.Lp(lp_1, lp_);
     c.Hp(hp_1, hp_);
     c.SoftLimit();
-    OLIVERB_INTERPOLATE_LFO(dap1a, lfo_[6], -kap, mod_amount_);
+    OLIVERB_INTERPOLATE_LFO(dap1a, lfo_val_[6], -kap, mod_amount_);
     c.WriteAllPass(dap1a, kap);
     OLIVERB_INTERPOLATE(dap1b, kap);
     c.WriteAllPass(dap1b, -kap);
@@ -182,11 +207,11 @@ class Oliverb {
     c.Load(apout);
 
     // Main reverb loop, branch 2.
-    OLIVERB_INTERPOLATE_LFO(del1, lfo_[7], decay_, mod_amount_);
+    OLIVERB_INTERPOLATE_LFO(del1, lfo_val_[7], decay_, mod_amount_);
     c.Lp(lp_2, lp_);
     c.Hp(hp_2, hp_);
     c.SoftLimit();
-    OLIVERB_INTERPOLATE_LFO(dap2a, lfo_[8], kap, mod_amount_);
+    OLIVERB_INTERPOLATE_LFO(dap2a, lfo_val_[8], kap, mod_amount_);
     c.WriteAllPass(dap2a, -kap);
     OLIVERB_INTERPOLATE(dap2b, -kap);
     c.WriteAllPass(dap2b, kap);
@@ -194,6 +219,7 @@ class Oliverb {
     c.Write(*right, 0.0f);
 
 #undef OLIVERB_INTERPOLATE_LFO
+#undef OLIVERB_INTERPOLATE_LFO_LIN
 #undef OLIVERB_INTERPOLATE
 
     lp_decay_1_ = lp_1;
@@ -216,6 +242,8 @@ class Oliverb {
   inline void set_mod_rate(float mod_rate) { mod_rate_ = mod_rate; }
 
  private:
+  enum { kLfoDecim = 32 };   // random-LFO raster, matches FxEngine::Start()
+
   typedef FxEngine<kBufferSize, FORMAT_32_BIT> E;
   E engine_;
 
@@ -236,6 +264,8 @@ class Oliverb {
   float hp_decay_2_;
 
   RandomOscillator lfo_[9];
+  float lfo_val_[9];     // values held between /32 raster ticks
+  int32_t lfo_tick_;
 
   DISALLOW_COPY_AND_ASSIGN(Oliverb);
 };
