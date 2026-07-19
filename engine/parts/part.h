@@ -139,6 +139,11 @@ private:
     // per-sample code delivered. After a set_engine swap the engine's counter
     // is offset (it did not run while inactive), so it may read a target up
     // to one interval stale for one interval; the fade is at zero there.
+    // This alignment claim is about SynthEngine specifically -- TestToneEngine
+    // has no control tick at all and reads t[LANE_PITCH] every sample, so
+    // under this raster its pitch becomes a 96-sample staircase too. That is
+    // acceptable (it is a diagnostic engine, not the audio path), just not
+    // "aligned" in the sense the rest of this comment describes.
     int _ctrl_ctr = 0;
 
     // Target cache: _control_tick() fills it, process() pushes it to the

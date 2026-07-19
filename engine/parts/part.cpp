@@ -156,7 +156,26 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     // Raster, plus an event refresh: a PITCH fire samples the lane at that
     // exact sample, so a tick-stale pitch is not "late", it is the wrong
     // note. The refresh deliberately does not re-phase _ctrl_ctr -- the
-    // alignment with the engine's own tick is the point.
+    // alignment with the engine's own tick is the point. The two branches
+    // are mutually exclusive (else if, not a second if) because
+    // _control_tick() is not idempotent -- it advances Quantizer::process's
+    // slew and re-evaluates ChordBuilder::set_color's zone hysteresis -- so
+    // a sample that is both a raster tick and a fire must call it once, not
+    // twice, or the glide double-steps.
+    //
+    // Two consequences worth knowing about, neither a bug:
+    // - A fire refresh is an extra Quantizer::process call one sample after
+    //   a raster tick. Since Task 3 recalibrated the slew to count *calls*
+    //   (a call now spans 96 samples), that refresh advances the glide by a
+    //   full tick's worth. Bounded at one extra step per note and probably
+    //   desirable, but not something the next reader should have to
+    //   rediscover.
+    // - The fire refresh only covers lane_fired(LANE_PITCH). SynthEngine's
+    //   _auto_pending drone promise (synth_engine.cpp:243-245) also reads
+    //   the chord surface, and a set_flow/set_hold transition landing
+    //   mid-interval triggers against a surface up to 95 samples (~2 ms)
+    //   stale. Musically negligible for rare knob transitions -- this is an
+    //   accepted asymmetry, not something to fix here.
     if (_ctrl_ctr == 0) {
         _ctrl_ctr = SynthEngine::kCtrlInterval;
         _control_tick();

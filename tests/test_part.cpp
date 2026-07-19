@@ -499,17 +499,28 @@ TEST_CASE("part: targets reach the engine on the 96-sample raster") {
     p.mod().set_smooth(0.f);
     p.mod().set_rate(0.9f);
 
+    // Pin both the interval and the phase: every sample where pitch_cv()
+    // changes must be either a raster tick (index % kCtrlInterval == 0) or a
+    // sample where the PITCH lane fired (the event refresh legitimately
+    // updates off-raster). This is what actually ties Part's counter to
+    // SynthEngine's -- a bare change-count bound would pass under a
+    // regressed raster interval too.
     float l, r;
     int changes = 0;
+    bool any_change = false;
     float prev = p.pitch_cv();
     for (int i = 0; i < 96 * 20; ++i) {
         p.process(l, r);
         const float now = p.pitch_cv();
-        if (now != prev) ++changes;
+        if (now != prev) {
+            ++changes;
+            any_change = true;
+            const bool on_raster = (i % SynthEngine::kCtrlInterval) == 0;
+            const bool on_fire = p.lane_fired(LANE_PITCH);
+            CHECK((on_raster || on_fire));
+        }
         prev = now;
     }
-    // 20 intervals -> at most ~20 steps (plus any fire-driven refresh).
-    // Per-sample evaluation would give hundreds.
+    CHECK(any_change);
     CHECK(changes > 0);
-    CHECK(changes < 60);
 }
