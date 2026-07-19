@@ -6,6 +6,7 @@
 #include "Utility/dsp.h"
 #include "fx/fx_util.h"
 #include "mod/divisions.h"
+#include "util/fast_tanh.h"
 
 namespace spky {
 
@@ -116,8 +117,12 @@ public:
         delay_line_.SetDelay(delay_samples);
         float out = delay_line_.Read();
         out = bpf_.Process(out);
-        out = std::tanh(out);   // tape-warm limiter: transparent near unity,
-                                // bounded self-oscillation above it (bloom)
+        out = fast_tanh(out);   // tape-warm limiter: transparent near unity,
+                                // bounded self-oscillation above it (bloom).
+                                // The bound is now a hard clamp at |x| >= 3.65
+                                // rather than tanh's asymptote -- feedback runs
+                                // to 1.2, so |y| <= 1 is what keeps this loop
+                                // stable (util/fast_tanh.h).
         delay_line_.Write(out * feedback_ + in);
         return out;
     }
