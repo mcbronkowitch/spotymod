@@ -667,7 +667,7 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
     int  since_switch = 0;
     int  first_active_abs_i = -1;
     bool tick_mismatch = false;
-    bool off_tick_divergence = false;
+    bool off_tick_exact_mismatch = false;
 
     for (int i = 0; i < 96 * 30; ++i) {
         const int abs_i = i + 1;                // +1 for the warm-up sample above
@@ -689,8 +689,20 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
         const float d = std::fabs(l - sl);
         if (at_tick) {
             if (d > 1e-4f) tick_mismatch = true;
-        } else if (d > 0.02f) {
-            off_tick_divergence = true;
+        } else {
+            // Bit-exact, not a tolerance: target_raw(LANE_LEVEL) is a pure,
+            // side-effect-free read (part.cpp: target_raw() is const, only
+            // combines already-held state), so the "live" value fed to the
+            // shadow is the exact same float Part's own _control_tick() read
+            // when it last pushed -- both engines then run an identical,
+            // phase-locked PITCH oscillator, so l and sl must be bit-for-bit
+            // identical at every sample of the hold, not just at the tick.
+            // Any per-sample leak into the LEVEL push -- e.g. a stray write
+            // that bypasses the raster -- would perturb l here while sl
+            // (fed the still-correctly-held live value) stayed put, so this
+            // is independent information from tick_mismatch above, which
+            // only ever samples the instant right after a fresh push.
+            if (l != sl) off_tick_exact_mismatch = true;
         }
     }
 
@@ -707,12 +719,15 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
     CHECK_FALSE(tick_mismatch);
     // Task 4 (spec 2026-07-19 mod-plane-control-rate) moved LANE_LEVEL --
     // a texture lane -- onto the same 96-sample tick() raster as Part's own
-    // push cache, and the two rasters are phase-locked. So target_raw()
-    // itself no longer moves between ticks for a texture lane: the "live"
-    // shadow input now changes in lockstep with Part's cache, not every
-    // sample. The old sanity check (the streams must pull apart somewhere
-    // off-tick, or the tick-agreement check above would be vacuous) no
-    // longer holds for a texture lane and is expected to invert -- there is
-    // no off-tick divergence left to find.
-    CHECK_FALSE(off_tick_divergence);
+    // push cache, phase-locked to it. That makes the old "the streams must
+    // pull apart somewhere off-tick" divergence check a strictly laxer
+    // restatement of tick_mismatch above (both would now trivially pass
+    // together) -- it carries no information of its own. Assert the
+    // Part-specific guarantee this test exists for instead: Part's
+    // raster-held push is bit-exact against the live-fed shadow for the
+    // WHOLE hold, not merely close-enough at the instant it refreshes. If
+    // any per-sample path ever leaked into the LEVEL push again, l would
+    // drift off sl between ticks and this fails; a laxer tolerance (or the
+    // old, inverted divergence check) would not have caught it.
+    CHECK_FALSE(off_tick_exact_mismatch);
 }
