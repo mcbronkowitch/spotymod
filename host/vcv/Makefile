@@ -38,6 +38,7 @@ SOURCES += \
 	$(REPO)/engine/center/center.cpp \
 	$(REPO)/engine/fx/grit.cpp \
 	$(REPO)/engine/fx/flux.cpp \
+	$(REPO)/engine/fx/dust.cpp \
 	$(REPO)/engine/fx/reverb.cpp \
 	$(REPO)/engine/fx/part_fx.cpp \
 	$(REPO)/engine/fx/comp.cpp \
