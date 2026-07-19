@@ -483,3 +483,33 @@ TEST_CASE("color-mod: deterministic — same seed, same density sequence") {
     CHECK(sa == sb);
     REQUIRE(!sa.empty());
 }
+
+TEST_CASE("part: targets reach the engine on the 96-sample raster") {
+    // The quantized pitch is recomputed at the control tick and held between
+    // ticks. pitch_cv() reads _pitch_q, so it must be a staircase with 96-
+    // sample treads -- not a fresh value every sample.
+    Part p;
+    p.init(48000.f, 3u);
+    p.set_target_active(LANE_PITCH, true);
+    p.set_target_base(LANE_PITCH, 0.5f);
+    p.set_target_depth(LANE_PITCH, 1.f);
+    p.set_depth(1.f);
+    p.quant().set_mode(QuantMode::Free);    // no grid, so any change shows
+    p.mod().set_range(1.f);
+    p.mod().set_smooth(0.f);
+    p.mod().set_rate(0.9f);
+
+    float l, r;
+    int changes = 0;
+    float prev = p.pitch_cv();
+    for (int i = 0; i < 96 * 20; ++i) {
+        p.process(l, r);
+        const float now = p.pitch_cv();
+        if (now != prev) ++changes;
+        prev = now;
+    }
+    // 20 intervals -> at most ~20 steps (plus any fire-driven refresh).
+    // Per-sample evaluation would give hundreds.
+    CHECK(changes > 0);
+    CHECK(changes < 60);
+}

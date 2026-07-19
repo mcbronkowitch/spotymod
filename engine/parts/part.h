@@ -132,6 +132,15 @@ private:
     // control tick. Task 1 calls it per sample; the raster arrives in Task 4.
     void _control_tick();
 
+    // Control raster. Phase-aligned with SynthEngine's own _ctrl_ctr by
+    // construction: both init to 0, both advance once per Part::process, so
+    // both fire on samples 0, 96, 192 -- and _control_tick() runs before
+    // _engine->process() within that sample, which is the order the
+    // per-sample code delivered. After a set_engine swap the engine's counter
+    // is offset (it did not run while inactive), so it may read a target up
+    // to one interval stale for one interval; the fade is at zero there.
+    int _ctrl_ctr = 0;
+
     // Target cache: _control_tick() fills it, process() pushes it to the
     // engine. Boot values mirror SynthEngine::_targets so a push before the
     // first tick cannot hand the engine garbage.

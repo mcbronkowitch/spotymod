@@ -24,7 +24,8 @@ void Part::init(float sample_rate, uint32_t seed_base,
     _gate_ctr = 0;
     _inhibit = false;
     _note_suppressed = false;
-    _quant.init(sample_rate);                   // boots Dorian / SCALE / root 0
+    _ctrl_ctr = 0;                              // first process() runs a tick
+    _quant.init(sample_rate, SynthEngine::kCtrlInterval);   // slew in ticks
     _pitch_q = _quant.process(pitch_pre_quant());
     _chord.init();
 }
@@ -152,7 +153,19 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     }
     if (_gate_ctr > 0) --_gate_ctr;
 
-    _control_tick();
+    // Raster, plus an event refresh: a PITCH fire samples the lane at that
+    // exact sample, so a tick-stale pitch is not "late", it is the wrong
+    // note. The refresh deliberately does not re-phase _ctrl_ctr -- the
+    // alignment with the engine's own tick is the point.
+    if (_ctrl_ctr == 0) {
+        _ctrl_ctr = SynthEngine::kCtrlInterval;
+        _control_tick();
+    } else if (fired) {
+        _control_tick();
+    }
+    --_ctrl_ctr;
+
+    _tg[LANE_LEVEL] = target_raw(LANE_LEVEL);   // per-sample engine consumer
 
     _engine->set_targets(_tg, _tune);
 
