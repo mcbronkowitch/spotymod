@@ -155,16 +155,128 @@ float proc_dust()
     return acc;
 }
 
+// --- optimized grain loop ---------------------------------------------------
+// The rows above measure ~116 cycles per grain per sample, far more than "1
+// read + window + 2 mults" justifies. Three costs in that loop are removable
+// without changing what a grain IS:
+//
+//   1. `age / length` -- a float division per grain per sample. Replaced by a
+//      window index stepped by an increment computed once at birth.
+//   2. `hann_value_at()` -- an out-of-line call whose `hann_curve()` is a
+//      function-local static, so every call pays a thread-safe-init guard
+//      check before it can even index the table. The table pointer is hoisted
+//      out of the block loop instead.
+//   3. `(g_write + offset) & mask` and the L/R tape select, both per sample.
+//      The read index is kept absolute and stepped by (delta - 1) -- the write
+//      head moves -1 while the grain offset moves +delta -- and the tape
+//      pointer is resolved at birth.
+//
+// A DEDICATED struct, not the one above: the naive rows must keep their exact
+// layout so their numbers stay comparable to the 12f05ce run. The optimized
+// rows carry their own state and their own checksum -- the two loops quantize
+// the window differently and are NOT bit-comparable to each other. That is
+// fine; this measures cost, not identity.
+
+struct GrainOpt {
+    const float* tape;
+    int32_t rd;          // absolute read index, already masked
+    int32_t rd_step;     // delta - 1
+    int32_t age;
+    int32_t length;
+    float   widx;        // 0..191 into the Hann table, folded by sign flip
+    float   wstep;
+    float   pan_l;
+    float   pan_r;
+};
+
+GrainOpt g_opt[kMaxGrains];
+
+void spawn_opt(GrainOpt& gr)
+{
+    gr.length = 1200 + static_cast<int32_t>(next_unipolar() * 18000.f);
+    const float reach = g_spray - static_cast<float>(gr.length) * 2.f;
+    const int32_t offset = gr.length * 2
+        + static_cast<int32_t>(next_unipolar() * (reach > 0.f ? reach : 1.f));
+    gr.rd      = (g_write + offset) & kTapeMask;
+    gr.rd_step = (g_reverse ? 2 : 0) - 1;
+    gr.age     = 0;
+    gr.tape    = (next_rng() & 1u) ? g_tape_r : g_tape_l;
+    gr.widx    = 0.f;
+    gr.wstep   = 382.f / static_cast<float>(gr.length);   // 0->191 over half
+    const float p = next_unipolar();
+    gr.pan_l   = std::sqrt(1.f - p);
+    gr.pan_r   = std::sqrt(p);
+}
+
+void setup_opt_common()
+{
+    setup_common();
+    g_rng = 0x9E3779B9u;
+    for (int i = 0; i < kMaxGrains; ++i) {
+        spawn_opt(g_opt[i]);
+        g_opt[i].age  = static_cast<int32_t>(next_unipolar() * static_cast<float>(g_opt[i].length));
+        g_opt[i].widx = static_cast<float>(g_opt[i].age) * g_opt[i].wstep;
+        if (g_opt[i].widx > 191.f) { g_opt[i].widx = 382.f - g_opt[i].widx; g_opt[i].wstep = -g_opt[i].wstep; }
+    }
+}
+
+void setup_16_opt()       { g_grain_count = 16; g_spray = kSpray5s; g_reverse = false; g_writeback = false; g_erode = false; setup_opt_common(); }
+void setup_8_opt()        { g_grain_count = 8;  g_spray = kSpray5s; g_reverse = false; g_writeback = false; g_erode = false; setup_opt_common(); }
+void setup_16_opt_erode() { g_grain_count = 16; g_spray = kSpray5s; g_reverse = false; g_writeback = true;  g_erode = true;  setup_opt_common(); }
+
+float proc_dust_opt()
+{
+    const float* in = test_input();
+    const float* curve = hann_curve().data();      // hoisted: no guard per grain
+    const int    n = g_grain_count;
+    float acc = 0.f;
+    for (size_t s = 0; s < kBlock; ++s) {
+        float sum_l = 0.f, sum_r = 0.f;
+        for (int i = 0; i < n; ++i) {
+            GrainOpt& gr = g_opt[i];
+            int wi = static_cast<int>(gr.widx);
+            if (wi > 190) wi = 190;
+            if (wi < 0)   wi = 0;
+            const float f = gr.widx - static_cast<float>(wi);
+            const float w = curve[wi] + (curve[wi + 1] - curve[wi]) * f;
+            const float v = gr.tape[gr.rd] * w;
+            sum_l += v * gr.pan_l;
+            sum_r += v * gr.pan_r;
+            gr.rd    = (gr.rd + gr.rd_step) & kTapeMask;
+            gr.widx += gr.wstep;
+            if (gr.widx > 191.f) { gr.widx = 382.f - gr.widx; gr.wstep = -gr.wstep; }
+            if (++gr.age >= gr.length) spawn_opt(gr);
+        }
+        float wr_l = in[s], wr_r = in[s] * 0.9f;
+        if (g_writeback) {
+            wr_l += fast_tanh(sum_l * 0.5f);
+            wr_r += fast_tanh(sum_r * 0.5f);
+        }
+        if (g_erode) {
+            wr_l = fast_tanh(g_tape_l[g_write] * 0.995f + wr_l);
+            wr_r = fast_tanh(g_tape_r[g_write] * 0.995f + wr_r);
+        }
+        g_tape_l[g_write] = wr_l;
+        g_tape_r[g_write] = wr_r;
+        g_write = (g_write - 1) & kTapeMask;
+        acc += sum_l + sum_r;
+    }
+    return acc;
+}
+
 } // namespace
 
 const Workload kDustWorkloads[] = {
-    { "dust", "dust_16_full",  setup_16_full,  proc_dust },
-    { "dust", "dust_16_win05", setup_16_win05, proc_dust },
-    { "dust", "dust_16_win01", setup_16_win01, proc_dust },
-    { "dust", "dust_8_full",   setup_8_full,   proc_dust },
-    { "dust", "dust_16_rev",   setup_16_rev,   proc_dust },
-    { "dust", "dust_16_wb",    setup_16_wb,    proc_dust },
-    { "dust", "dust_16_erode", setup_16_erode, proc_dust },
+    { "dust", "dust_16_full",     setup_16_full,     proc_dust     },
+    { "dust", "dust_16_win05",    setup_16_win05,    proc_dust     },
+    { "dust", "dust_16_win01",    setup_16_win01,    proc_dust     },
+    { "dust", "dust_8_full",      setup_8_full,      proc_dust     },
+    { "dust", "dust_16_rev",      setup_16_rev,      proc_dust     },
+    { "dust", "dust_16_wb",       setup_16_wb,       proc_dust     },
+    { "dust", "dust_16_erode",    setup_16_erode,    proc_dust     },
+    { "dust", "dust_16_opt",      setup_16_opt,      proc_dust_opt },
+    { "dust", "dust_8_opt",       setup_8_opt,       proc_dust_opt },
+    { "dust", "dust_16_opt_erode",setup_16_opt_erode,proc_dust_opt },
 };
 const int kDustCount = sizeof(kDustWorkloads) / sizeof(kDustWorkloads[0]);
 
