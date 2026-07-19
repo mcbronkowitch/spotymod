@@ -15,6 +15,7 @@ void DustCloud::init(float sample_rate, uint32_t seed) {
     _norm = 1.f;
     _norm_coef = 1.f - std::exp(-1.f / (kNormSmoothS * _sr));
     _active_grains = 0;
+    _curve = hann_curve().data();
     _remap();
 }
 
@@ -100,9 +101,14 @@ void DustCloud::_spawn(const TapeTap& tape) {
         g.age = 0;
 
         const bool right = (_rng.next_u32() & 1u) != 0u;   // free stereo decorrelation
-        // delta: 0 = forward, +2 = reverse (1x backwards). Task 2 is forward-
-        // only (reverse grains are Task 4); this stays inert (_rev_prob == 0)
-        // outside zone R, which this task does not exercise.
+        // delta: 0 = forward, +2 = reverse (1x backwards). Task 2's SCOPE is
+        // forward-only (reverse grains are Task 4) but this path is NOT dead:
+        // _rev_prob is 0 outside zone R (ROT <= kZoneFEnd) but becomes > 0
+        // inside it, and nothing stops a caller from reaching zone R with
+        // Task 2 alone. So reverse grains are functional here whenever
+        // ROT > 0.66 -- just unspecified and untested until Task 4 gives them
+        // a real design (spray range, tape-overrun behaviour, etc. are only
+        // sanity-clamped below, not tuned).
         const int32_t delta = (_rng.next_unipolar() < _rev_prob) ? 2 : 0;
         g.rd_step = delta - 1;
 
@@ -116,12 +122,10 @@ void DustCloud::_spawn(const TapeTap& tape) {
         if (offset > max_off) offset = max_off;
 
         // Resolve the absolute read index once, at birth: (write_ptr +
-        // offset), wrapped into [0, size). `size` is a runtime value (not
-        // assumed to be a power of two), so this wrap is a modulo — but it
-        // runs once per grain birth, not once per sample.
-        int32_t idx = (tape.write_ptr + offset) % tape.size;
-        if (idx < 0) idx += tape.size;
-        g.rd = idx;
+        // offset), wrapped into [0, size) with the AND mask TapeTap's
+        // power-of-two contract guarantees is exact (write_ptr and offset are
+        // both non-negative here, so this needs no extra branch either).
+        g.rd = (tape.write_ptr + offset) & tape.mask;
         g.tape = right ? tape.r : tape.l;
 
         const float pan = _rng.next_bipolar();
@@ -151,7 +155,7 @@ float DustCloud::process(const TapeTap& tape, float& gl, float& gr) {
 
     _schedule(tape);
 
-    const float* curve = hann_curve().data();   // hoisted: no guard per grain
+    const float* curve = _curve;   // cached in init(): no per-sample statics guard
     float sl = 0.f, sr = 0.f;
     int active = 0;
     for (int i = 0; i < kGrains; ++i) {
@@ -169,14 +173,10 @@ float DustCloud::process(const TapeTap& tape, float& gl, float& gr) {
         sl += s * g.gl;
         sr += s * g.gr;
 
-        // Branch-based wrap, not `% tape.size` and not `& mask`: `rd_step` is
-        // always +-1 here (forward-only grains), so a two-way clamp is exact
-        // and division-free for ANY `size` — unlike an AND mask, which is only
-        // correct when size is a power of two (true in production, false for
-        // this file's own FakeTape test fixture).
-        g.rd += g.rd_step;
-        if (g.rd < 0) g.rd += tape.size;
-        else if (g.rd >= tape.size) g.rd -= tape.size;
+        // Single AND wrap, matching bench/workloads_dust.cpp proc_dust_opt:
+        // TapeTap::size is a power-of-two contract now (see fx/dust.h), so
+        // there is no longer a runtime case where a mask would be wrong.
+        g.rd = (g.rd + g.rd_step) & tape.mask;
 
         g.widx += g.wstep;
         if (g.widx > 191.f) { g.widx = 382.f - g.widx; g.wstep = -g.wstep; }

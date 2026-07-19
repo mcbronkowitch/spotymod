@@ -1,4 +1,5 @@
 #pragma once
+#include <cassert>
 #include <cstdint>
 #include "fx/fx_util.h"
 #include "mod/rng.h"
@@ -41,20 +42,31 @@ constexpr float kWearRate   = 4.0e-6f;  // per-sample erosion at r = 1
 constexpr float kTakeoverKnee = 0.70f;  // DUST above this fades the echo head
 }
 
-// A read-only view of one part's stereo tape at this sample. POD by design:
-// no ownership, no virtuals, and tests can build one over a plain array.
-// `size` is a runtime value (not assumed to be a power of two — tests build
-// this over arbitrary-sized arenas), so wraps here use `%`, not an AND mask.
+// A read-only view of one part's stereo tape at this sample. No ownership, no
+// virtuals, and tests can build one over a plain array. `size` carries a
+// power-of-two CONTRACT (mirroring DeLine/EchoDelay: production's FLUX tape is
+// 262144 = Flux::kMaxSamples, already a power of two) so every wrap in the hot
+// grain loop is a single AND against `mask`, never a divide. The constructor
+// derives `mask` from `size` and, in debug builds, asserts the contract holds
+// — callers only ever set `size`.
 struct TapeTap {
     const float* l = nullptr;
     const float* r = nullptr;
     int32_t write_ptr = 0;
-    int32_t size = 0;
+    int32_t size = 0;   // must be a power of two; mask below is size - 1
+    int32_t mask = 0;
+
+    TapeTap() = default;
+    TapeTap(const float* l_, const float* r_, int32_t write_ptr_, int32_t size_)
+        : l(l_), r(r_), write_ptr(write_ptr_), size(size_), mask(size_ - 1) {
+        assert(size_ > 0 && (size_ & (size_ - 1)) == 0 &&
+               "TapeTap::size must be a power of two");
+    }
 
     // `offset` is samples BEHIND the write head; the head decrements, so a
     // constant offset is exactly 1x forward playback.
     float read(bool right, int32_t offset) const {
-        int32_t i = (write_ptr + offset) % size;
+        int32_t i = (write_ptr + offset) & mask;
         return (right ? r : l)[i];
     }
 };
@@ -121,6 +133,15 @@ private:
 
     Grain _g[kGrains];
     Rng   _rng;
+
+    // Hann table pointer, resolved once in init() rather than once per sample
+    // in process(): hann_curve() returns a function-local static, so calling
+    // it from the per-sample entry point pays that init guard ~48x more often
+    // than the block-hoisted form the feature's CPU budget was measured on
+    // (bench/workloads_dust.cpp proc_dust_opt hoists it out of the block loop;
+    // process() here has no block loop of its own, so the member is the
+    // per-sample equivalent of that hoist).
+    const float* _curve = nullptr;
 
     float _sr = 48000.f;
     float _dust = 0.f;
