@@ -18,8 +18,10 @@
 >
 > So: **build it for VCV, where there is no 960 000-cycle budget, play it, and
 > only then decide whether it earns its cost on hardware.** The phases below
-> reach a playable Rack build as early as the architecture allows, then add one
-> audible thing at a time.
+> reach a playable Rack build at the earliest point where the listening
+> question is **meaningful** — which is not the earliest point one compiles:
+> zone F alone is rev 1, already rejected on paper, so Phase A carries the
+> stutter grid too. After that, one audible thing at a time.
 >
 > **Three corrections that stand regardless of order:**
 >
@@ -102,32 +104,80 @@ behind that fixed interface. Task 6 therefore compiles and runs directly after
 Task 2, with ROT inert and the writeback returning 0.
 
 ### Phase A — the first playable cloud
-**Tasks 1 → 2 → 6 → 8a (forwarding only) → 9 (DUST + ROT knobs only) → 10**
+**Tasks 1 → 2 → 3 → 6 → 8a (forwarding only) → 9 (DUST + ROT knobs only) → 10**
 
-Zone F alone: free-running stochastic scheduler, forward read-only grains. No
-stutter grid, no reverse, no writeback, no freeze. **Leave `TRIGGER_A/B` alone
-in this phase** — the FRZ pad replaces it in Phase C, and until freeze exists
-that swap would only install a dead control.
+Zones S and F — the synced stutter grid *and* the free scatter — with forward
+read-only grains and the head takeover. No reverse, no writeback, no freeze.
+**Leave `TRIGGER_A/B` alone in this phase**: the FRZ pad replaces it in Phase C,
+and until freeze exists that swap would only install a dead control.
 
-> **LISTEN — the go/no-go for everything after it.** Is a grain cloud reading
-> the echo tape interesting at all? Specifically: does it sound like *the same
-> instrument* (the spec's premise — echo and grains share one sonic identity),
-> or like a second effect bolted on? Sweep DUST 0 → 1 with the delay running:
-> does the head takeover above ~0.7 read as the cloud *eating* the delay, or
-> as a crossfade between two unrelated things? **If this phase is dull, stop
-> here** — the remaining phases add character to something that has none.
+**Why zone S is in the first phase.** Zone F alone *is* rev 1 of this design —
+the read-only cloud the spec's own Problem section already rejected: *"a polite
+read-only grain cloud is not enough either (rev 1 verdict): this must be a
+performance effect played live like the delay."* A first listen limited to
+zone F would therefore be re-confirming a verdict that has already been
+reached, and a dull result would mean nothing. Zone S is what the rev-1 verdict
+asked for, so it has to be in the room before the question can be asked.
+
+> **LISTEN — the Phase A gate.** The criterion is the spec's own: **"a
+> performance effect played live like the delay."** Not "does it sound nice" —
+> *can you play it?*
+>
+> Setup: a patch you actually like, FLUX running and audible, SYNC on, hands on
+> DUST and ROT, monitors low. The mechanical properties (DUST = 0 bit-exact, no
+> clicks across births and deaths) are unit tests and are deliberately **not**
+> part of the listen.
+>
+> **G1 — the blind sweep.** Without looking at the screen, DUST 0 → 1 → 0,
+> slowly, while the music runs.
+> *Pass:* every position is usable; 0 returns exactly the old delay; no level
+> jump. *Fail:* a dead range, a cliff into noise, a level jump, or a setting
+> you cannot get back from.
+>
+> **G2 — the character travel.** DUST parked where G1 felt best. ROT 0 → 0.66,
+> slowly.
+> *Pass:* reads as travelling — stutter tightening, loosening, opening into
+> scatter. *Fail:* an audible seam at 0.33, or two modes with nothing between.
+>
+> **G3(a) — the stutter fill.** On purpose and without looking, land a rhythmic
+> stutter that locks to the delay.
+> *Pass:* repeatable. *Fail:* reachable only by hunting.
+>
+> **G3(b) — the reach into the past.** On purpose, pull back material
+> **audibly older than the delay time** — a fragment from several seconds ago,
+> into the running part.
+> *Pass:* identifiably older material appears, and you can steer roughly *how
+> far* back it reaches. *Fail:* everything smears into texture where old and
+> new are indistinguishable.
+>
+> **Stop rules — which failure means what:**
+>
+> | | decides |
+> |---|---|
+> | **G1 fails** | **STOP.** Not performable; no later phase repairs that. |
+> | **G3(a) fails** | **STOP.** Same — the rev-1 verdict stands. |
+> | G2 fails | Tuning only. The zone breakpoints are constants in one block (`dust_tuning`). Record the setting and continue. |
+> | G3(b) fails | **Zone F is cut, not DUST.** If the free scatter cannot be told apart from ROOM's wash, zone F earns nothing that already-shipped code does not — collapse the design to zones S and R, which simplifies the scheduler and returns budget. Continue with that change noted. |
+>
+> The split is the point: **G1 and G3(a) ask whether this is an instrument
+> control. G2 and G3(b) only ask whether the numbers and the zone map are
+> right.** Only the first two may end the project.
+>
+> Why not a "diffuse wash" target: ROOM already does wash, with DIFF and SMEAR.
+> A target DUST shares with shipped code cannot show whether DUST is worth its
+> cost. Time-reach is the one thing in Phase A that nothing else in the
+> instrument can do — the echo head plays from a fixed offset, ROOM diffuses
+> the present, grains reach across the whole 5 s of tape history.
 
 ### Phase B — the character axis, one audible increment at a time
-**Task 3 (zone S stutter) → Task 4 (reverse) → Task 5 (writeback)**
+**Task 4 (reverse) → Task 5 (writeback)**
 
 Rebuild the plugin after each task; each answers its own question.
 
-> **LISTEN, per task.** *Zone S:* does birth-interval = delay-time / 4 give the
-> automatic dub polyrhythm §3 claims, and does jitter growing across the zone
-> read as loosening rather than as breakage? *Reverse:* do backwards splinters
-> sound like time-reversal or like glitches? *Writeback:* does the tape
-> mutating over generations stay musical as it compounds, or does it just turn
-> to mud — and does `kWbGainMax = 0.60` want to be smaller?
+> **LISTEN, per task.** *Reverse:* do backwards splinters sound like
+> time-reversal, or like glitches? *Writeback:* does the tape mutating over
+> generations stay musical as it compounds, or does it just turn to mud — and
+> does `kWbGainMax = 0.60` want to be smaller?
 
 ### Phase C — the signature feature
 **Task 7 (freeze + erosion) + the FRZ pad half of Tasks 9/10**
