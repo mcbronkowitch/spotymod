@@ -248,10 +248,12 @@ is gain-riding arithmetic that has nothing to do with `tanh`. The estimate
 attributed to the nonlinearity work that was never the nonlinearity's.
 
 The correct way to record this is that the ablation was **right about rank order
-and wrong about magnitude** — `EchoDelay` really was the bigger of the two, by
-about 3.8× as predicted, but both absolute figures were high. The cut cleared
-the gate because only ~4 points stood between the baseline and budget, not
-because the estimate was good.
+and wrong about magnitude** — `EchoDelay` really was the bigger of the two, but
+the ratio between them did not hold: realized ~3.8× (5.80 : 1.53) against a
+predicted ~2.7× (8 : 3), about 42 % wider than the ceiling implied, and both
+absolute figures were high besides. The cut cleared the gate because only ~4
+points stood between the baseline and budget, not because the estimate was
+good.
 
 Two secondary rows show the kernel-level effect plainly, unmixed with the rest
 of the instrument: `echo_short_sram` fell 21 154 → 8 752 cycles (−58.6 %) and
@@ -308,10 +310,15 @@ again:
 ### Where this leaves the budget
 
 The 2×4 architecture fits, on this worst case, with **4.2 points of margin** on
-the anchored max. `bench/report.cpp` now emits *"the 2×4 architecture fits"* on
-its own, which is the first time it has done so. That is a real milestone and it
-is also a thin one: the margin is smaller than the 5.8 points this cut returned
-from its larger site, so a single unbudgeted feature can spend it. The remaining
+the anchored max — and "this worst case" is a specific one: `instrument_worst`
+runs GRIT in Drive mode on both parts, not Reduce. Reduce costs 25 051 cycles
+against Drive's 14 628 (2.60 % vs 1.52 % of budget per part), a delta of 1.08
+points per part, ~2.2 points across both parts — close to half of the new
+margin, if the worst case were ever redefined to use it. `bench/report.cpp` now
+emits *"the 2×4 architecture fits"* on its own, which is the first time it has
+done so. That is a real milestone and it is also a thin one: the margin is
+smaller than the 5.8 points this cut returned from its larger site, so a single
+unbudgeted feature can spend it. The remaining
 ranked candidates (`PartFx` rev-send `std::sin` → `fast_sin`, ≈1–2 points; the
 double pitch quantization in `Part::process`) are no longer needed to clear the
 gate and should be held as margin rather than spent.

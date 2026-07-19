@@ -401,18 +401,26 @@ The headline numbers are no longer estimates — they come from a real Daisy
 Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-87f3538.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 91 % (avg) /
-  96 % (max) of the block budget offline and 91 % (avg) /
-  96 % (max) anchored inside a real audio callback. **The max is under budget
-  for the first time, and the max is the gate** — so the bench now emits *"the
-  2×4 architecture fits"* on its own. Four optimization passes have taken ~60
-  points off the anchored max, from 156 %. The margin is **4.2 points**, which
-  is thinner than the saving the last cut returned from its larger call site:
-  one unbudgeted feature can spend it. The newest pass is the **fast-tanh cut**
-  (spec `docs/superpowers/specs/2026-07-19-fast-tanh-design.md`), worth
-  **8.1 points** on the anchored max (103.89 % → 95.77 %) against a predicted
-  ~11 — **it underdelivered, and cleared the gate only because just ~4 points
-  stood in the way.** Before it, the **mod-plane control-rate cut**
+  parts, all FX on, high diffusion, echo at max, GRIT in Drive mode on both
+  parts — GRIT Reduce runs ~2.2 points higher and is not the case this number
+  covers) costs 91 % (avg) / 96 % (max) of the block budget offline and 91 %
+  (avg) / 96 % (max) anchored inside a real audio callback. **The max is under
+  budget for the first time, and the max is the gate** — so the bench now
+  emits *"the 2×4 architecture fits"* on its own. Four optimization passes
+  have taken ~60 points off the anchored max, from 156 %. The margin is
+  **4.2 points**, which is thinner than the saving the last cut returned from
+  its larger call site: one unbudgeted feature can spend it — GRIT Reduce
+  alone would eat close to half of it. The newest pass is the **fast-tanh
+  cut** (spec `docs/superpowers/specs/2026-07-19-fast-tanh-design.md`), worth
+  **8.1 points** on the anchored max (103.89 % → 95.77 %; the committed
+  baseline report's reading — the spec's own Context section quotes 104.06 %
+  from the same run's second capture repeat, reconciled in the spec's
+  Outcome) against a predicted ~11 — **it underdelivered, and cleared the
+  gate only because just ~4 points stood in the way.** The cut's audio is not
+  yet evaluated: the merge to `main` stays gated on a listening pass, and the
+  specific thing to listen for is the echo bloom at maximum feedback, where
+  the new hard clamp caps the limit cycle marginally harder than `tanh`'s
+  asymptote did. Before it, the **mod-plane control-rate cut**
   (`docs/superpowers/plans/2026-07-19-mod-plane-control-rate.md`), worth
   **~19 points** against a predicted 17–19: the plane fell 253 254 → 56 667
   cycles (−77.6 %), far past the spec's own expectation. Before it, on the
