@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-19 (fast tanh in the echo loop and the master limiter, measured at `87f3538`; worst case 104 % -> 96 % anchored max — **under budget for the first time, gate and all**).
+- **Last updated:** 2026-07-19 (fast tanh in the echo loop and the master limiter, plus a bound-correctness fix; measured at `6e38090`; worst case 104 % -> 98 % anchored max — **under budget for the first time, gate and all**, with 2.3 points of margin).
 
 > **Reminder:** the engine and its milestones are still verified only against
 > the desktop offline renderer (unit tests + WAV/CSV render) — the Daisy
@@ -398,25 +398,31 @@ Makefile) is untouched by its presence; Step 1 of the bench plan re-proves
 that on every run.
 
 The headline numbers are no longer estimates — they come from a real Daisy
-Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-87f3538.md`):
+Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-6e38090.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
   parts, all FX on, high diffusion, echo at max, GRIT in Drive mode on both
   parts — GRIT Reduce runs ~2.2 points higher and is not the case this number
-  covers) costs 91 % (avg) / 96 % (max) of the block budget offline and 91 %
-  (avg) / 96 % (max) anchored inside a real audio callback. **The max is under
+  covers) costs 92 % (avg) / 98 % (max) of the block budget offline and 93 %
+  (avg) / 98 % (max) anchored inside a real audio callback. **The max is under
   budget for the first time, and the max is the gate** — so the bench now
   emits *"the 2×4 architecture fits"* on its own. Four optimization passes
-  have taken ~60 points off the anchored max, from 156 %. The margin is
-  **4.2 points**, which is thinner than the saving the last cut returned from
-  its larger call site: one unbudgeted feature can spend it — GRIT Reduce
-  alone would eat close to half of it. The newest pass is the **fast-tanh
+  have taken ~58 points off the anchored max, from 156 %. The margin is
+  **2.3 points**, far thinner than the saving the last cut returned from its
+  larger call site: one unbudgeted feature can spend all of it — GRIT Reduce
+  alone would eat almost the whole of it. The newest pass is the **fast-tanh
   cut** (spec `docs/superpowers/specs/2026-07-19-fast-tanh-design.md`), worth
-  **8.1 points** on the anchored max (103.89 % → 95.77 %; the committed
-  baseline report's reading — the spec's own Context section quotes 104.06 %
-  from the same run's second capture repeat, reconciled in the spec's
-  Outcome) against a predicted ~11 — **it underdelivered, and cleared the
-  gate only because just ~4 points stood in the way.** The cut's audio is not
+  **8.1 points** on the anchored max as first measured at `87f3538`
+  (103.89 % → 95.77 %; the committed baseline report's reading — the spec's
+  own Context section quotes 104.06 % from the same run's second capture
+  repeat, reconciled in the spec's Outcome) against a predicted ~11 — **it
+  underdelivered, and cleared the gate only because just ~4 points stood in
+  the way.** A follow-up correctness fix then gave **1.9 points back**: the
+  `|fast_tanh| ≤ 1` bound the design rests on turned out not to hold (the
+  clamp constant sat 4.1e-7 above the true root, and the guard test's grid was
+  8.6× wider than the violation band), so the bound is now enforced on the
+  return value instead of the threshold. That is why the shipped figure is
+  97.69 % and not 95.77 %. The cut's audio is not
   yet evaluated: the merge to `main` stays gated on a listening pass, and there
   are two specific things to listen for: the echo bloom at maximum feedback,
   where the new hard clamp caps the limit cycle marginally harder than

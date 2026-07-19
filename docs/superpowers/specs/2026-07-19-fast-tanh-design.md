@@ -205,9 +205,20 @@ attribution flagged in the roadmap at no extra cost.
 
 ## Outcome (2026-07-19)
 
+**The shipped figure is `6e38090`: anchored max 97.69 %.** The gate cleared —
+under 100 % for the first time — but the number below the fold is not the one
+this section originally recorded, and the difference is worth reading before the
+tables. The cut was first measured at `87f3538` at **95.77 %**; a subsequent
+correctness fix to `fast_tanh` (see *The bound fix and what it cost*) gave back
+1.9 of those points. Both measurements are real; `87f3538` is simply not what
+ships.
+
+The analysis that follows is written against the `87f3538` run, because that is
+the run that isolates what the *cut* bought. The bound fix is a separate,
+later change and is accounted for separately.
+
 **Measured at `87f3538`** on a clean tree (`docs/bench/2026-07-19-87f3538.md`),
-against the `94468af` baseline. **The gate cleared: `instrument_worst` anchored
-max is 95.77 %, under 100 % for the first time.**
+against the `94468af` baseline.
 
 | `instrument_worst` | `94468af` | `87f3538` | delta |
 |---|---:|---:|---:|
@@ -226,7 +237,9 @@ build still fits, though: this same document's re-baselined `abl` family
 below puts this run pair's cross-build noise floor on solo rows at ~2 %
 (`oliverb_solo_sram` moved −2.1 % with no reverb code change, in-context
 reverb swung ~10 %) — at ~2 % of the 95.77 reading that is ~1.9 points,
-roughly 2× the noise against the 4.2-point margin, not forty.
+roughly 2× the noise against the 4.2-point margin this run showed, not forty.
+(Against the shipped `6e38090` margin of 2.3 points the cross-build band is
+larger than the margin itself — see *The bound fix and what it cost*.)
 
 One bookkeeping note on the baseline: this spec's Context section quotes the
 `94468af` anchored pair as 97.60 / 104.06, while the committed bench report
@@ -319,18 +332,68 @@ again:
   layout noise. Any future prediction built on an `inst_worst_no*` difference
   should be quoted with that band, not to the cycle.
 
+### The bound fix and what it cost
+
+The final whole-branch review found that `|fast_tanh(x)| ≤ 1` — the property
+three sections above call load-bearing — **was false**. The clamp constant
+`3.646739f` sits 4.1e-7 *above* the true root (3.6467385950), leaving a
+9.3e-6-wide band of floats just below the threshold where the raw rational form
+evaluates up to 1.19e-7 over 1.0. Worse, the guard test could not have found it:
+its uniform sweep steps 8e-5, 8.6× wider than the band, so zero sweep points
+land inside. The "Verified: `max|f| = 1.0000000000` over the sweep" claim this
+document previously made was a grid artifact, not a measurement.
+
+`deb796f` enforces the bound on the **return value** instead of the threshold,
+so it holds regardless of the constant's rounding, FMA contraction under
+`-ffast-math`, or the target's division semantics — a constant validated on
+desktop clang/x86 does not carry to the M7. Verified by exhaustive float32
+enumeration over [0, 8) in both signs, under `-O2` and `-O2 -ffast-math`: zero
+violations.
+
+**It cost 1.9 points**, against an estimate of 0.08:
+
+| `instrument_worst` anchored | `87f3538` | `6e38090` | delta |
+|---|---:|---:|---:|
+| avg | 90.91 % | 92.67 % | +1.76 pts |
+| **max** | **95.77 %** | **97.69 %** | **+1.92 pts** |
+
+This is not cross-build noise, and the row pattern proves it: rows that do not
+call `fast_tanh` are flat (`synth_4_voices` 0.0 %, `oliverb_solo_sram` −0.1 %,
+`fx_none` −1.3 %) while every row that does rose — `echo_short_sram` +16.5 %,
+`limiter_driven` +8.3 %, `fx_flux_sdram` +6.2 %, `instrument_worst` +2.0 %
+offline and anchored alike.
+
+The mechanism is not branches: disassembling for `cortex-m7 -O3 -ffast-math`
+shows the clamp compiled branchless, as `vmaxnm.f32` + `vminnm.f32`, two
+instructions. The likeliest explanation is register pressure — two more live
+constants inside a loop that already holds the delay line and the band-pass
+state, paying for spills rather than for the compare itself. That was not
+chased further: the alternative (lowering the threshold below the root and
+dropping the clamp) trades a guaranteed bound for a ~5e-6 join step in a
+saturator nobody has listened to yet, which is the worse bargain.
+
+A related caveat found while verifying the fix, recorded because the contract
+overstates itself: **monotonicity holds only to within float rounding.** 0.44 %
+of adjacent float32 pairs decrease, the largest by 3.6e-7 (~6 ULP), the first at
+x = 0.0019 — ordinary rounding noise in a float division, 3800× below the
+function's own 1.36e-3 approximation error, and zero decreasing steps on a 1e-4
+grid. `std::tanh` behaves the same way. Nothing folds; the word "monotonic"
+simply cannot mean bit-exact ordering for a function of this shape.
+
 ### Where this leaves the budget
 
-The 2×4 architecture fits, on this worst case, with **4.2 points of margin** on
-the anchored max — and "this worst case" is a specific one: `instrument_worst`
+The 2×4 architecture fits, on this worst case, with **2.3 points of margin** on
+the anchored max at `6e38090` (it was 4.2 before the bound fix) — and "this
+worst case" is a specific one: `instrument_worst`
 runs GRIT in Drive mode on both parts, not Reduce. Reduce costs 25 051 cycles
 against Drive's 14 628 (2.60 % vs 1.52 % of budget per part), a delta of 1.08
-points per part, ~2.2 points across both parts — close to half of the new
-margin, if the worst case were ever redefined to use it. `bench/report.cpp` now
-emits *"the 2×4 architecture fits"* on its own, which is the first time it has
-done so. That is a real milestone and it is also a thin one: the margin is
-smaller than the 5.8 points this cut returned from its larger site, so a single
-unbudgeted feature can spend it. The remaining
+points per part, **~2.2 points across both parts — which is almost the entire
+2.3-point margin.** Redefining the worst case to use Reduce would put the
+instrument back at the edge of the budget. `bench/report.cpp` now emits *"the
+2×4 architecture fits"* on its own, which is the first time it has done so. That
+is a real milestone and it is a thin one: the margin is well under half the 5.8
+points this cut returned from its larger site, and a single unbudgeted feature
+can spend all of it. The remaining
 ranked candidates (`PartFx` rev-send `std::sin` → `fast_sin`, ≈1–2 points; the
 double pitch quantization in `Part::process`) are no longer needed to clear the
 gate and should be held as margin rather than spent.
