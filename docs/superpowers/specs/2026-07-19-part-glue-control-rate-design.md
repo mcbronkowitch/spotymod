@@ -55,7 +55,7 @@ fire timing, and that is answered with an event, not a finer raster.
 - **The engine's output may change.** The instrument is pre-release; no
   compatibility constraint applies. Bit-identity is used below as a *test
   instrument*, never as a product promise.
-- **The raster belongs to `Instrument`.** Not a private counter per `Part`.
+- **The raster belongs to `Part`.** Revised during planning — see below.
 - **The fire path stays event-driven** even though nothing forces it. A
   pitch frozen at the control tick is not "2 ms late" under FLOW with
   `SMOOTH = 0` — it is the wrong note, because the lane's step lands exactly
@@ -68,23 +68,33 @@ fire timing, and that is answered with an event, not a finer raster.
 
 ### Raster ownership
 
-`Instrument::process` already carries `_ctrl_ctr` at 96 samples driving
-`Center::update` (`instrument.cpp:59`). `Part` gains a `control_tick()`
-called from inside that same `if (_ctrl_ctr == 0)` block, **before**
-`_parts[..].process()`.
+**`Part` owns the counter.** The brainstorm settled on `Instrument` owning
+it; planning overturned that, and the reason is worth recording.
 
-Phase alignment is then structural, not accidental. Both existing counters
-fire on samples 0, 96, 192: `Instrument`'s tests `== 0` before decrementing,
-`SynthEngine`'s tests `--_ctrl_ctr <= 0` from an init value of 0. Within
-sample 0 the order becomes: instrument tick → `Part::control_tick` (targets
-computed, `set_chord` pushed) → `part.process` → `engine->process` → engine
-tick reads. That is exactly what the per-sample code delivers today at that
-sample, which is what makes Step 1's gate provable.
+`Instrument` cannot own it. 35 test cases across `test_part.cpp`,
+`test_choke.cpp`, `test_mod_tide.cpp` and `test_center.cpp` construct a
+`Part` standalone and call `process()` directly, with no `Instrument` in
+sight. The `part_glue_flow` bench row does the same. A tick owned by
+`Instrument` leaves every one of those callers with targets that never
+update.
 
-A fourth private counter in `Part` is the point where the pattern breaks —
-`SynthEngine`, `Reverb` and `Instrument` each already own one, and their
-alignment is currently implicit. Routing through `Instrument` makes it
-explicit.
+`Part` is also the correct owner on the merits, not merely the workable one.
+The counter has to align with **`SynthEngine`'s** tick, and that engine
+belongs 1:1 to a `Part`; `Instrument`'s counter drives `Center`, a different
+axis. A `Part`-owned counter is phase-aligned by construction, because
+`_engine->process()` runs exactly once per `Part::process()`. Both init to
+0 and fire on samples 0, 96, 192 — `SynthEngine` tests `--_ctrl_ctr <= 0`
+(`synth_engine.cpp:247`), `Part` tests `== 0` before decrementing. Within a
+tick sample the order is: `control_tick` (targets computed, `set_chord`
+pushed) → `_engine->process()` → engine tick reads. Exactly what the
+per-sample code delivers at that sample, which is what makes Step 1's gate
+provable.
+
+**Known bounded divergence:** after a `set_engine` swap, `SynthEngine`'s
+counter is offset against `Part`'s, because it did not run while that engine
+was inactive. The engine then reads a target up to 96 samples stale for one
+interval. The engine fade is at zero across that window. Documented, not
+fixed.
 
 ### Three paths through `Part::process`
 
@@ -189,10 +199,13 @@ arithmetic does not.
 | No regression elsewhere | existing unit-test suite |
 | Step 2 audible cost | listening pass |
 
-`part_glue_flow` runs its `Part` standalone, outside `Instrument`, so the
-bench harness has to drive `control_tick()` itself on the same 96-sample
-raster the instrument uses. Without that the row measures a `Part` whose
-targets never update, and the saving reads as larger than it is.
+`part_glue_flow` runs its `Part` standalone, outside `Instrument`. Because
+the counter lives in `Part`, the row needs no harness change and measures
+the real rastered cost — this was the deciding argument for the ownership
+revision above.
+
+The bench run needs the Daisy Seed attached (`python bench/run.py`), so it
+is a human step, not something the implementation tasks can self-serve.
 
 ## Out of scope
 
