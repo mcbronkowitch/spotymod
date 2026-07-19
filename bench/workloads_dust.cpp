@@ -43,7 +43,12 @@ using namespace spky;
 constexpr size_t kTapeFrames = 262144;              // EchoDelay<kMaxSamples>
 constexpr int32_t kTapeMask  = static_cast<int32_t>(kTapeFrames) - 1;
 constexpr int    kMaxGrains  = 16;                  // 8 per part, 2 parts
-constexpr float  kSpray5s    = 240000.f;            // the full 5 s tape
+constexpr float  kSpray5s    = static_cast<float>(kTapeFrames);  // the full
+                                     // tape reach (262144 samples, ~5.46 s @
+                                     // 48 kHz) — previously a bare 240000.f
+                                     // (91.5 % of the tape), the same "5 s"
+                                     // mistake fx/dust.cpp's tape_max_s made
+                                     // (design spec §8 Finding 1)
 constexpr float  kSpray05s   = 24000.f;             // 0.5 s
 constexpr float  kSpray01s   = 4800.f;              // 0.1 s
 

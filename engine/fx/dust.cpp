@@ -28,7 +28,25 @@ void DustCloud::init(float sample_rate, uint32_t seed) {
     _remap();
 }
 
-void DustCloud::set_dust(float d) { _dust = clampf(d, 0.f, 1.f); _remap(); }
+void DustCloud::set_dust(float d) {
+    d = clampf(d, 0.f, 1.f);
+    // DUST returning to 0 must clear the pool, not merely stop advancing it:
+    // process() early-returns at "_dust <= 0" BEFORE the grain loop, so every
+    // `alive` grain would otherwise freeze exactly where it is -- alive, age,
+    // absolute rd index and all -- and resume from that frozen state whenever
+    // DUST next leaves zero, arbitrarily later, with the write head somewhere
+    // else entirely. Callers (Flux::set_dust) already guard unchanged values
+    // (I3), so a call here that actually changes `_dust` IS a real transition,
+    // and comparing against the value being overwritten below is enough to
+    // detect the 1 -> 0 edge without any extra state.
+    if (_dust > 0.f && d <= 0.f) {
+        for (int i = 0; i < kGrains; ++i) _g[i].alive = false;
+        _norm = 1.f;
+        _grid_countdown = 1;
+    }
+    _dust = d;
+    _remap();
+}
 void DustCloud::set_rot(float r)  { _rot  = clampf(r, 0.f, 1.f); _remap(); }
 
 void DustCloud::set_delay_time(float s) {
@@ -63,8 +81,13 @@ void DustCloud::_remap() {
 
     // --- ROT: zone + within-zone morph -------------------------------------
     const float r = _rot;
-    const float tape_max_s = 5.f;   // the FLUX tape (~5.46 s); spray target only —
-                                     // _spawn() clamps against the real tape.size()
+    const float tape_max_s = (float)Flux::kMaxSamples / _sr;   // the FLUX
+                                     // tape's actual length (~5.46 s @ 48 kHz),
+                                     // not a bare 5.f (that literal used to
+                                     // cover only 91.5 % of the real tape —
+                                     // see design spec §8 Finding 1). Spray
+                                     // target only — _spawn() clamps against
+                                     // the real tape.size() regardless.
     if (r < kZoneSEnd) {                                // zone S — synced stutter
         _zone = 0;
         const float u = r / kZoneSEnd;

@@ -177,12 +177,19 @@ number.**
 | `dust_16_wb` | 18.67 | 19.95 |
 | `dust_16_erode` | 19.91 | 21.48 |
 
-**Finding 1 — the spray window buys nothing. Hypothesis refuted.** Full 5 s
-spray costs 18.54 %, a 0.5 s window 17.43 %, a 0.1 s window 17.65 % — the
-narrowest is *worse* than the middle one, so the whole spread is noise around
-roughly one point. A 0.1 s window is 19 KB and fits the 32 KB D-cache outright;
-if misses drove the cost, that row would have collapsed. It did not. **§3 zone
-F keeps its full 5 s reach — there was never anything to buy by giving it up.**
+**Finding 1 — the spray window buys nothing. Hypothesis refuted.** The widest
+row measured, `dust_16_full`, sprays 240 000 of the tape's 262 144 samples —
+**91.5 % of the tape** (`Flux::kMaxSamples`, ~5.46 s @ 48 kHz), not the "full
+5 s" this row and its bench constant were labelled at the time; both were a
+bare literal that undercounted the real buffer, fixed 2026-07-19 alongside
+`fx/dust.cpp`'s equivalent `tape_max_s` mistake. That row costs 18.54 %, a
+0.5 s window 17.43 %, a 0.1 s window 17.65 % — the narrowest is *worse* than
+the middle one, so the whole spread is noise around roughly one point. A 0.1 s
+window is 19 KB and fits the 32 KB D-cache outright; if misses drove the cost,
+that row would have collapsed. It did not. **§3 zone F keeps its full tape
+reach (~5.46 s) — there was never anything to buy by giving it up, and the
+91.5 %-vs-100 % gap in what was actually measured does not change that: the
+narrowest row here already refutes the hypothesis on its own.**
 
 **Finding 2 — grain reads are nearly free, and `grain_read_sdram` was a bad
 proxy.** `dust_8_full` (9.31 %) costs **45 % less** than `grain_read_sdram`
