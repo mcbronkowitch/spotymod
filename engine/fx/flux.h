@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cmath>
 #include "Utility/dsp.h"
+#include "fx/dust.h"
 #include "fx/fx_util.h"
 #include "mod/divisions.h"
 #include "util/fast_tanh.h"
@@ -205,6 +206,9 @@ public:
     float delay_time() const { return _delay_time; }   // seconds, clamped (test/meter)
     void set_feedback(float norm);                       // 0 .. 1.2 (tanh-bounded bloom)
     void set_mix(float norm);                            // -40 .. 0 dBFS
+    void set_dust(float norm);                           // 0 .. 1 grain amount
+    void set_rot(float norm);                            // 0 .. 1 character
+    bool dust_active() const { return _dust.active(); }
     void process(float& l, float& r);
 
 private:
@@ -212,6 +216,7 @@ private:
 
     EchoDelay<kMaxSamples> _echo_l;
     EchoDelay<kMaxSamples> _echo_r;
+    DustCloud _dust;
     SoftSwitch _sw;
     float _mix_lin = 0.f;
     bool _buf_ok = false;

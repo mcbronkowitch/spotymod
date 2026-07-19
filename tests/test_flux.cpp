@@ -356,6 +356,78 @@ TEST_CASE("deline: N samples behind the head reads the sample written N steps ag
     }
 }
 
+TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
+    static float ref_l[Flux::kMaxSamples], ref_r[Flux::kMaxSamples];
+    static float dut_l[Flux::kMaxSamples], dut_r[Flux::kMaxSamples];
+    for (float rot : {0.0f, 0.33f, 0.5f, 0.9f, 1.0f}) {
+        Flux ref, dut;
+        ref.init(48000.f, ref_l, ref_r);
+        dut.init(48000.f, dut_l, dut_r);
+        for (Flux* f : {&ref, &dut}) {
+            f->set_on(true, true);
+            f->set_bpm(120.f);
+            f->set_rate(3);
+            f->set_feedback(0.6f);
+            f->set_mix(0.8f);
+        }
+        dut.set_dust(0.f);
+        dut.set_rot(rot);
+        for (int i = 0; i < 120000; ++i) {
+            const float s = std::sin(0.011f * i) * 0.5f;
+            float al = s, ar = s, bl = s, br = s;
+            ref.process(al, ar);
+            dut.process(bl, br);
+            REQUIRE(al == bl);
+            REQUIRE(ar == br);
+        }
+    }
+}
+
+TEST_CASE("flux: dust makes sound and the head fades at the top") {
+    static float bl[Flux::kMaxSamples], br[Flux::kMaxSamples];
+    Flux f;
+    f.init(48000.f, bl, br);
+    f.set_on(true, true);
+    f.set_bpm(120.f);
+    f.set_rate(3);
+    f.set_feedback(0.5f);
+    f.set_mix(1.f);
+    f.set_dust(0.9f);
+    f.set_rot(0.5f);
+    CHECK(f.dust_active());
+    float peak = 0.f;
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {
+        const float s = std::sin(0.01f * i) * 0.4f;
+        float l = s, r = s;
+        f.process(l, r);
+        peak = std::max(peak, std::fabs(l));
+        REQUIRE(std::isfinite(l));
+    }
+    CHECK(peak > 0.01f);
+    CHECK(peak < 4.f);
+}
+
+TEST_CASE("flux: dust at full recirculates without running away") {
+    static float bl[Flux::kMaxSamples], br[Flux::kMaxSamples];
+    Flux f;
+    f.init(48000.f, bl, br);
+    f.set_on(true, true);
+    f.set_bpm(120.f);
+    f.set_rate(6);
+    f.set_feedback(1.f);       // 1.2 coefficient — self-oscillating
+    f.set_mix(1.f);
+    f.set_dust(1.f);
+    f.set_rot(1.f);            // zone R: writeback active
+    float peak = 0.f;
+    for (int i = 0; i < 480000; ++i) {   // 10 s
+        float l = 1.f, r = 1.f;          // sustained full scale
+        f.process(l, r);
+        peak = std::max(peak, std::fabs(l));
+        REQUIRE(std::isfinite(l));
+    }
+    CHECK(peak < 8.f);
+}
+
 TEST_CASE("flux slice: norm endpoints hit 1/2 and 1/32") {
     CHECK(kFluxRateCount == 12);
     CHECK(kFluxRateOffset == 5);
