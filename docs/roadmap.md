@@ -483,7 +483,10 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-c7f6a73.md`):
   (`fast_sin` itself running closer to ~50 cycles than the ~10–15 its own
   header claims on this call site) and the ten lanes' own per-sample
   machinery — independent of any waveform call — now account for most of
-  what is left; see the spec's Outcome section for the full breakdown.
+  what is left; see the spec's Outcome section for the full breakdown —
+  DONE 2026-07-19 (texture lanes on the 96er raster, spec
+  2026-07-19-mod-plane-control-rate-design.md; measured saving pending the
+  next hardware bench).
   The mod plane's output changed deliberately as part of this cut (`fast_sin`
   is not bit-identical to libm `sin`), so `renders/` byte-identity is no
   longer treated as a regression gate for it — re-cut references are the
