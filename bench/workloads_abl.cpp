@@ -192,15 +192,26 @@ float proc_lim()
 // isolated 77k into memory tax (sdram − sram) and compute (bpf + tanh +
 // per-sample SetDelay; cross-check the tanh share against micro_tanhf).
 // One shipping FLUX = 2 channels; the full instrument runs 2 parts = x4.
+//
+// NOT COMPARABLE TO THE 9be5df9 RUN. `perf(flux): one shared delay-time slew
+// for both channels` moved the delay-time one-pole out of EchoDelay and into
+// Flux, which now hands the smoothed length in as `delay_samples`; SetLagTime
+// and SetDelayTime no longer exist. These two rows therefore no longer carry
+// the per-sample slew they carried before, and read lower by that amount. The
+// row still measures bpf + tanh + per-sample SetDelay as the comment above
+// says — only the fonepole is gone. Whoever next re-defines these rows should
+// decide whether the bench should reproduce Flux's slew itself; until then,
+// do not diff echo_short_* against the 9be5df9 report.
 constexpr size_t kShortEcho = 16 * 1024;   // == kSramFloats, whole arena, mono
+
+// 0.25 s at 48 kHz, the fixed offset SetDelayTime(0.25f, true) used to set.
+constexpr float kEchoDelaySamples = 0.25f * kSampleRate;
 
 EchoDelay<kShortEcho> g_echo_abl;
 
 void setup_echo_region(float* buf)
 {
     g_echo_abl.Init(kSampleRate, buf);
-    g_echo_abl.SetLagTime(0.03f);          // same slew the shipping Flux sets
-    g_echo_abl.SetDelayTime(0.25f, true);
     g_echo_abl.SetFeedback(0.7f);
 }
 void setup_echo_sram()  { setup_echo_region(sram_arena());  }
@@ -210,7 +221,8 @@ float proc_echo()
 {
     const float* in = test_input();
     float acc = 0.f;
-    for (size_t i = 0; i < kBlock; ++i) acc += g_echo_abl.Process(in[i]);
+    for (size_t i = 0; i < kBlock; ++i)
+        acc += g_echo_abl.Process(in[i], kEchoDelaySamples);
     return acc;
 }
 
