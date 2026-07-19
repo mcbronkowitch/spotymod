@@ -134,3 +134,94 @@ TEST_CASE("tick: SMOOTH slew matches outside a post-boundary blackout") {
         CHECK(tp.dut_out == doctest::Approx(tp.ref_out).epsilon(0.02));
     }
 }
+
+TEST_CASE("tick: multiple boundaries inside one interval are replayed in order") {
+    // 500 Hz at 8 steps = one boundary every 12 samples = 8 per tick. With
+    // GROW dice active, a single skipped or reordered boundary desyncs the
+    // RNG stream and the exact target comparison fails within a few ticks.
+    TickPair tp;
+    tp.boot(21u, [](ModLane& l) {
+        l.set_range(1.f); l.set_shape(1.f); l.set_smooth(0.f);
+        l.set_step(true, 8); l.set_rate_hz(500.f);
+        l.set_variation(0.6f);
+    });
+    // A boundary landing within float-eps of a tick edge shifts that one
+    // boundary into the neighbouring window: the straddle tick compares
+    // different "last boundary" targets, then equality resumes. Tolerate
+    // isolated straddle ticks, never sustained divergence -- a skipped or
+    // reordered boundary desyncs the RNG stream permanently and blows the
+    // mismatch budget.
+    int mismatch = 0;
+    for (int t = 0; t < 200; ++t) {
+        tp.advance_one_tick();
+        if (tp.dut.target() != tp.ref.target()) { ++mismatch; continue; }
+    }
+    CHECK(mismatch <= 2);                          // isolated straddles only
+    CHECK(tp.dut.target() == tp.ref.target());     // re-converged at the end
+}
+
+TEST_CASE("tick: wrap events land before the new cycle's step 0") {
+    // variation -1 makes the RENEW walk-regen dice certain (v^2 = 1), so the
+    // whole _seq walk regenerates at EVERY wrap. Step 0's target right after
+    // the seam must sample the NEW walk -- if tick() ran the step-0 boundary
+    // before _wrap_events(), it would sample the old walk and diverge from
+    // the per-sample reference immediately.
+    TickPair tp;
+    tp.boot(33u, [](ModLane& l) {
+        l.set_range(1.f); l.set_shape(1.f); l.set_smooth(0.f);
+        l.set_step(true, 8); l.set_rate_hz(4.3f);
+        l.set_variation(-1.f);
+    });
+    int skew = 0, skew_events = 0;
+    for (int t = 0; t < 300; ++t) {
+        tp.advance_one_tick();
+        if ((tp.ref_fires > 0) != tp.dut_fired) { skew = 1; ++skew_events; continue; }
+        if (skew > 0) { --skew; continue; }
+        CHECK(tp.dut.target() == tp.ref.target());
+    }
+    CHECK(skew_events <= 4);
+}
+
+TEST_CASE("tick: SPOT kick equivalence at tick granularity") {
+    // Kick applied to both paths at a tick edge (the only place Center can
+    // apply it in production -- SPOT runs on the control tick).
+    TickPair tp;
+    tp.boot(5u, [](ModLane& l) {
+        l.set_range(1.f); l.set_shape(0.4f); l.set_smooth(0.f);
+        l.set_step(true, 8); l.set_rate_hz(2.9f);
+    });
+    for (int t = 0; t < 50; ++t) tp.advance_one_tick();
+    tp.ref.kick(0.3f, 0.2f);
+    tp.dut.kick(0.3f, 0.2f);
+    int blackout = 0;
+    for (int t = 0; t < 400; ++t) {
+        tp.advance_one_tick();
+        if (tp.ref_fires > 0 || tp.dut_fired) { blackout = 2; continue; }
+        if (blackout > 0) { --blackout; continue; }
+        // shape 0.4 is phase-dependent: boundary targets differ by the
+        // detection-overshoot phase (< 1 sample) -- loose but real bound.
+        CHECK(tp.dut_out == doctest::Approx(tp.ref_out).epsilon(0.05));
+    }
+}
+
+TEST_CASE("tick: SETTLE glides the audible phase the same way") {
+    // Build up EVOLVE walks first (variation > 0), then settle both paths and
+    // compare the audible phase while the glide runs (tau 0.3 s, ctr 1 s).
+    TickPair tp;
+    tp.boot(13u, [](ModLane& l) {
+        l.set_range(1.f); l.set_shape(0.5f); l.set_smooth(0.f);
+        l.set_rate_hz(2.f);
+        l.set_variation(0.8f);
+    });
+    for (int t = 0; t < 1500; ++t) tp.advance_one_tick();   // ~3 s of walk
+    tp.ref.settle();
+    tp.dut.settle();
+    for (int t = 0; t < 600; ++t) {                          // ~1.2 s glide
+        tp.advance_one_tick();
+        // circular distance: phases straddling the 1.0 wrap must not read
+        // as a full-cycle disagreement (0.999 vs 0.001 is 0.002 apart)
+        float d = std::fabs(tp.dut.phase_eff() - tp.ref.phase_eff());
+        if (d > 0.5f) d = 1.f - d;
+        CHECK(d < 0.01f);
+    }
+}
