@@ -8,6 +8,7 @@
 // and (later) the Daisy firmware use. No hardware type crosses this boundary.
 #include "instrument.h"
 #include "fx/flux.h"
+#include "fx/dust.h"
 #include "mod/divisions.h"
 
 using namespace spkyvcv;
@@ -43,6 +44,30 @@ struct FluxRateQuantity : ParamQuantity {
 struct FluxFbQuantity : ParamQuantity {
     std::string getDisplayValueString() override {
         return string::f("%.0f%%", getValue() * 120.f);
+    }
+};
+
+// ROT tooltip: name the zone the knob is in, then the position inside it.
+// SYNC = grid-locked stutter, FREE = classic scatter, ROT = reverse + writeback.
+struct RotQuantity : ParamQuantity {
+    std::string getDisplayValueString() override {
+        const float r = getValue();
+        if (r < spky::dust_tuning::kZoneSEnd)
+            return string::f("SYNC %.0f%%", r / spky::dust_tuning::kZoneSEnd * 100.f);
+        if (r < spky::dust_tuning::kZoneFEnd)
+            return string::f("FREE %.0f%%",
+                (r - spky::dust_tuning::kZoneSEnd)
+                / (spky::dust_tuning::kZoneFEnd - spky::dust_tuning::kZoneSEnd) * 100.f);
+        return string::f("ROT %.0f%%",
+            (r - spky::dust_tuning::kZoneFEnd)
+            / (1.f - spky::dust_tuning::kZoneFEnd) * 100.f);
+    }
+};
+
+// DUST tooltip: plain percent of grain activity.
+struct DustQuantity : ParamQuantity {
+    std::string getDisplayValueString() override {
+        return string::f("%.0f%%", getValue() * 100.f);
     }
 };
 
@@ -104,6 +129,10 @@ struct Spotymod : Module {
                         configParam<FluxRateQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     else if (c.id == FLUXFB_A || c.id == FLUXFB_B)
                         configParam<FluxFbQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
+                    else if (c.id == DUST_A || c.id == DUST_B)
+                        configParam<DustQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
+                    else if (c.id == ROT_A || c.id == ROT_B)
+                        configParam<RotQuantity>(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     else
                         configParam(c.id, 0.f, 1.f, defaultFor(c.id), lbl);
                     break;
@@ -173,6 +202,10 @@ struct Spotymod : Module {
             case FLUXFB_B:     return 0.354f;
             case COLOR_A:      return 0.647f;  // pad blooms into a seventh/ninth stack
             case COLOR_B:      return 0.f;     // bass stays single notes
+            case DUST_A:       return 0.f;     // DUST off: bit-exact with the
+            case DUST_B:       return 0.f;     // pre-DUST init patch
+            case ROT_A:        return 0.f;     // zone S, fully grid-locked
+            case ROT_B:        return 0.f;
             default: break;
         }
         const int part = id / PART_STRIDE;  // 0 = A (chord pad), 1 = B (bass)
@@ -233,6 +266,10 @@ struct Spotymod : Module {
             inst.set_fx_target_base(p, spky::FXT_FLUX_FB,
                 params[p ? FLUXFB_B : FLUXFB_A].getValue());
             inst.set_grit_mix(p, pp(GRIT_A, p));
+            // Appended params are outside the stride, so pp() would compute the
+            // wrong id — the explicit ternary is required (see FLUXRATE/FLUXFB).
+            inst.set_dust(p, params[p ? DUST_B : DUST_A].getValue());
+            inst.set_rot(p, params[p ? ROT_B : ROT_A].getValue());
             // The FX blocks are gated by an explicit on/off (a pad on hardware,
             // a scenario action on the desktop). VCV has no such pad, so the mix
             // knob doubles as the on switch: knob up == engaged. At 0 the block
