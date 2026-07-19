@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <vector>
 #include "fx/flux.h"
@@ -166,6 +167,87 @@ TEST_CASE("flux: feedback below unity decays to silence") {
         return p;
     };
     CHECK(peak_around(168000) < peak_around(24000));   // 7th repeat quieter than 1st
+}
+
+TEST_CASE("echo: zero writeback is bit-exact with the one-arg store") {
+    static float a_buf[Flux::kMaxSamples];
+    static float b_buf[Flux::kMaxSamples];
+    EchoDelay<Flux::kMaxSamples> a, b;
+    a.Init(48000.f, a_buf);
+    b.Init(48000.f, b_buf);
+    a.SetFeedback(0.6f);
+    b.SetFeedback(0.6f);
+    // EchoDelay has no sample rate or smoother of its own since 8723bc5 -- the
+    // caller passes an already-slewed length in samples.
+    const float ds = 0.25f * 48000.f;
+    for (int i = 0; i < 60000; ++i) {
+        float in = std::sin(0.013f * i) * 0.7f;
+        float ya = a.Process(in, ds);
+        float yb = b.Process(in, ds, 0.f);
+        REQUIRE(ya == yb);
+    }
+}
+
+TEST_CASE("echo: freeze stops writing but keeps the pointer moving") {
+    static float buf[Flux::kMaxSamples];
+    EchoDelay<Flux::kMaxSamples> e;
+    e.Init(48000.f, buf);
+    e.SetFeedback(0.5f);
+    const float ds = 0.25f * 48000.f;
+    for (int i = 0; i < 48000; ++i) e.Process(std::sin(0.01f * i) * 0.5f, ds);
+
+    // snapshot the whole line, then freeze and hammer it with loud input
+    static float snap[Flux::kMaxSamples];
+    std::memcpy(snap, e.line(), sizeof(snap));
+    const int32_t p0 = e.write_ptr();
+    e.set_freeze(true);
+    e.set_wear(1.f);
+    for (int i = 0; i < 24000; ++i) e.Process(1.f, ds);
+
+    CHECK(std::memcmp(snap, e.line(), sizeof(snap)) == 0);   // nothing stored
+    const int32_t expect = (p0 - 24000 + 2 * (int32_t)Flux::kMaxSamples)
+                         % (int32_t)Flux::kMaxSamples;
+    CHECK(e.write_ptr() == expect);                          // but it advanced
+}
+
+TEST_CASE("echo: frozen with wear < 1 decays the loop, bounded") {
+    static float buf[Flux::kMaxSamples];
+    EchoDelay<Flux::kMaxSamples> e;
+    e.Init(48000.f, buf);
+    e.SetFeedback(0.5f);
+    const float ds = 0.25f * 48000.f;
+    for (int i = 0; i < 48000; ++i) e.Process(std::sin(0.01f * i) * 0.5f, ds);
+
+    auto rms = [&]() {
+        double s = 0.0;
+        for (size_t i = 0; i < Flux::kMaxSamples; ++i)
+            s += (double)e.line()[i] * (double)e.line()[i];
+        return std::sqrt(s / (double)Flux::kMaxSamples);
+    };
+    const double before = rms();
+    e.set_freeze(true);
+    e.set_wear(1.f - 4.0e-6f);
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) e.Process(1.f, ds);   // one full pass
+    const double after = rms();
+
+    CHECK(after < before);          // it eroded
+    CHECK(after > 0.0);             // but did not vanish in one pass
+    CHECK(std::isfinite(after));
+}
+
+TEST_CASE("echo: writeback stays bounded under sustained full scale") {
+    static float buf[Flux::kMaxSamples];
+    EchoDelay<Flux::kMaxSamples> e;
+    e.Init(48000.f, buf);
+    e.SetFeedback(1.2f);
+    const float ds = 0.1f * 48000.f;
+    float peak = 0.f;
+    for (int i = 0; i < 480000; ++i) {
+        float y = e.Process(1.f, ds, 0.9f);
+        peak = std::max(peak, std::fabs(y));
+        REQUIRE(std::isfinite(y));
+    }
+    CHECK(peak < 4.f);
 }
 
 TEST_CASE("flux slice: norm endpoints hit 1/2 and 1/32") {
