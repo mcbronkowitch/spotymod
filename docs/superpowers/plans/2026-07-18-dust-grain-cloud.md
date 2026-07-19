@@ -1,14 +1,20 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo — Implementation Plan
 
-> **⛔ DO NOT EXECUTE THIS PLAN YET (2026-07-19).** The design spec's CPU
-> estimate ("≪ 1 %") understated the cost by roughly 30×: the grain reads are
-> scattered SDRAM accesses, and `grain_read_sdram` already prices that pattern
-> at 16.84 % max for *eight* grains where this design wants sixteen. Realistic
-> worst case is ~24–35 points of block budget; the instrument has **2.3 points
-> of margin**. The `dust` bench family (`bench/workloads_dust.cpp`) must run on
-> hardware first, and the spray-window question it settles may change §3's zone
-> F and the grain-pool size — both of which this plan builds. See the design
-> spec §8, rev 4.
+> **⛔ DO NOT EXECUTE THIS PLAN (2026-07-19, measured).** The design spec's CPU
+> estimate ("≪ 1 %") is wrong: the 16-grain cloud measures **18.54 % of block
+> budget**, 21.48 % with erosion engaged, against **2.3 points of margin**
+> (`docs/bench/2026-07-19-12f05ce.md`, `dust` family). Halving the pool to 8
+> grains gives 9.31 % — still four times the margin.
+>
+> Two corrections to carry into the eventual implementation, both against
+> earlier guesses in this repo: grain reads are **not** expensive scattered
+> SDRAM accesses (a grain is a linearly-walking read head, and the prefetcher
+> handles it — `dust_8_full` beats `grain_read_sdram` by 45 % at equal grain
+> count), and the bounded-spray fix an earlier revision proposed buys about one
+> point, so **§3 zone F keeps its full 5 s reach**. The cost is per-grain
+> arithmetic, ~116 cycles/grain/sample, and Task 1's `DustCloud` must avoid the
+> per-sample `age / length` division the bench proxy uses. See design spec §8,
+> rev 5.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

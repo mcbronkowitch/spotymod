@@ -1,12 +1,13 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo
 
 **Date:** 2026-07-18 (rev 3 — control surface reduced to what the hardware will
-actually have, same day); **rev 4 2026-07-19 — CPU budget corrected, §8**
-**Status:** design approved, **implementation BLOCKED on measurement.** The
-plan (`docs/superpowers/plans/2026-07-18-dust-grain-cloud.md`) is written and
-must not be executed until the `dust` bench family has run on hardware: §8's
-original "≪ 1 %" understated the cost by roughly 30× and the instrument has
-2.3 points of margin. See §8.
+actually have, same day); **rev 5 2026-07-19 — CPU budget MEASURED, §8**
+**Status:** design approved, **implementation BLOCKED on budget.** The plan
+(`docs/superpowers/plans/2026-07-18-dust-grain-cloud.md`) is written and must
+not be executed: measured cost is **18.5 points of block budget** (21.5 with
+erosion) against **2.3 points of margin**. The design's premise survived — no
+new buffers, grain reads nearly free — but the per-grain arithmetic needs an
+optimization pass and headroom must come from elsewhere first. See §8.
 **Scope:** a per-part granular read/write stage inside the FLUX block, a character axis (ROT), and a tape FREEZE with erosion. No new audio buffers. No change to GRIT, COMP, reverb, or the master chain.
 
 ## Problem
@@ -130,12 +131,13 @@ change.
 
 ### 8. CPU + memory budget
 
-> **Rev 4 correction (2026-07-19). The estimate below this box was wrong by
-> roughly 30×, and the feature is blocked on measurement.** The original text
-> read "estimated ≪ 1 %". It counted arithmetic, and the arithmetic was right —
-> what it missed is that the grain `read` is not a read. See the analysis that
-> follows. **Do not execute the implementation plan until the `dust` bench
-> family has run on hardware.**
+> **Rev 5 (2026-07-19) — measured on hardware.** The original estimate here
+> read "≪ 1 %"; the real figure is **18.54 % of block budget** for the specified
+> 16-grain cloud, 21.48 % with erosion engaged. The rev-4 correction that caught
+> the error guessed 24–35 points on a cache-miss argument and was itself wrong —
+> **on the number and, more importantly, on the mechanism**: grain reads turn out
+> to be nearly free, and the bounded-spray fix rev 4 proposed buys about one
+> point. The cost is per-grain arithmetic. Full findings below.
 
 - **Memory:** ~8 grain structs × 2 parts (< 1 KB). **No new audio buffers.** —
   this part of the original estimate stands and is the design's real strength.
@@ -146,66 +148,81 @@ change.
   computed once at grain birth, not per sample.
 - DUST = 0 and no freeze: two branch checks. (Unchanged and free.)
 
-**Why the operation count is the wrong unit here.** FLUX's tape is 262 144
-floats per channel per part — 1 MB. It does not fit SRAM at any size, so every
-grain read is a *scattered* access into SDRAM. The bench already prices exactly
-this pattern, and has since before this spec was written:
+**MEASURED 2026-07-19** (`docs/bench/2026-07-19-12f05ce.md`, `dust` family,
+seven rows). The estimate this box replaced said "≪ 1 %". The correction that
+replaced *it* said 24–35 points, on a cache-miss argument. **Both were wrong,
+and the second was wrong about the mechanism, which matters more than the
+number.**
 
-| row | avg % | max % | anchored max |
-|---|---:|---:|---:|
-| `grain_read_sram` | 3.04 | 3.09 | — |
-| `grain_read_sdram` | 16.07 | 16.84 | 17.43 |
+| row | avg % | max % |
+|---|---:|---:|
+| `dust_16_full` | 17.19 | **18.54** |
+| `dust_16_win05` | 16.77 | 17.43 |
+| `dust_16_win01` | 16.86 | 17.65 |
+| `dust_8_full` | 8.94 | 9.31 |
+| `dust_16_rev` | 17.12 | 17.91 |
+| `dust_16_wb` | 18.67 | 19.95 |
+| `dust_16_erode` | 19.91 | 21.48 |
 
-**The region factor is 5.3×**, and that row measures *eight* grains. This spec
-wants sixteen. Scaling it — with the caveat that the row reads interpolated
-stereo where DUST reads one integer sample, which drops loads but not cache
-lines, so the miss count is what carries over — puts the cloud at roughly
-**24–35 points of the 960 000-cycle block budget**. Against "≪ 1 %".
+**Finding 1 — the spray window buys nothing. Hypothesis refuted.** Full 5 s
+spray costs 18.54 %, a 0.5 s window 17.43 %, a 0.1 s window 17.65 % — the
+narrowest is *worse* than the middle one, so the whole spread is noise around
+roughly one point. A 0.1 s window is 19 KB and fits the 32 KB D-cache outright;
+if misses drove the cost, that row would have collapsed. It did not. **§3 zone
+F keeps its full 5 s reach — there was never anything to buy by giving it up.**
 
-For scale: the instrument currently sits at **97.69 % anchored max with 2.3
-points of margin** (`docs/bench/2026-07-19-6e38090.md`). The entire remaining
-ranked cut list — a global voice cap 8→5 (~13 points, itself a ceiling), the
-`Svf` single-pass rework (~2–4), the `PartFx` rev-send `fast_sin` (~1–2) — comes
-to about 19 points and **does not pay for this feature**. DUST as specified
-would land the instrument near 125 %.
+**Finding 2 — grain reads are nearly free, and `grain_read_sdram` was a bad
+proxy.** `dust_8_full` (9.31 %) costs **45 % less** than `grain_read_sdram`
+(16.82 %) at the same grain count, while doing strictly more arithmetic. The
+reason is the access shape: that proxy re-randomizes its index every sample, so
+it is 8 genuinely random accesses per sample. **A DUST grain is not a random
+access — it is a read head.** Born at a random offset, it then walks linearly
+(offset += 0 forward, += 2 reverse), so consecutive samples read adjacent
+addresses. Sixteen grains are sixteen sequential streams, which is the
+prefetcher's best case; only the *birth* is a jump, amortized over 1 200–19 200
+samples of grain life. The 5.3× SDRAM region factor never applied here.
 
-This is the same failure mode as the mod-plane design spec, which estimated
-4–6 % of budget for a plane that measured 33 %, and as `util/fast_sin.h`'s
-still-uncorrected "~10–15 cycles" comment against an empirical 50–65. Counting
-operations predicts nothing on this chip when the operand is in SDRAM.
+**Finding 3 — the cost is arithmetic, and it is linear in grain count.** 8→16
+grains scales 1.99× with no cliff anywhere. That works out to **~116 cycles per
+grain per sample**, which is far more than "1 read + window + 2 mults" should
+cost. The bench loop is the explanation and is honest about it: it computes
+`age / length` as a **float division per grain per sample**, then calls
+out-of-line `hann_value_at`, which does its own multiply, float→int cast, bounds
+compare and lerp. **So these rows are an upper bound on a naive implementation,
+not a floor** — a phase accumulator stepped by a reciprocal computed at birth,
+plus an inlined window read, should take a real bite out of 116 cycles. How
+much is unmeasured, and this spec has now been wrong twice by reasoning instead
+of measuring, so: unmeasured means unknown.
 
-**The lever, and why the feature is probably still viable.** Cost is linear in
-cache *misses*, not in grains. Grains confined to the most recent slice of tape
-read the region the write head and echo head are already touching — that stays
-resident, and the 5.3× region factor should largely collapse toward the
-`grain_read_sram` figure. Zone F's "spray widens across the zone from ~150 ms up
-to the full 5 s" (§3) is the expensive clause, and it is **a tuning constant,
-not a structural requirement**. Bounding the spray buys back most of the cost
-for a narrowing of one zone's reach.
+**Finding 4 — writeback and erosion are cheap, reverse is free.** Zone-R
+writeback adds 1.4 points over plain, erosion 2.9. Reverse grains cost nothing
+measurable (17.91 vs 18.54, inside the noise) — the +2 stride is as
+prefetch-friendly as +1.
 
-That is a hypothesis, not a result. It is what the bench family exists to
-settle.
+**Where that leaves the feature.** The instrument sits at **97.60 % offline /
+98.07 % anchored** with 2.3 points of margin (same run). DUST as specified adds
+18.5 points, 21.5 with erosion engaged — call it **~119 %**. It does not fit.
+Nor does it fit at half the pool: 8 grains total is 9.3 points, still four times
+the available margin. The honest position is that DUST needs *both* a per-grain
+optimization pass *and* headroom bought elsewhere (the global voice cap 8→5 is
+~13 points, itself a ceiling), and that neither number exists yet.
 
-**Required before implementation: the `dust` bench family**
-(`bench/workloads_dust.cpp`, seven rows, added 2026-07-19). It runs the real
-access shape — integer offsets, one channel per grain, Hann window, equal-power
-pan, grain respawn — rather than a proxy:
+What did survive contact with the probe is the design's premise: **no new audio
+buffers, < 1 KB of state, and grain reads that cost almost nothing.** The
+expensive part is per-grain arithmetic in a loop nobody has optimized yet, which
+is the more tractable kind of problem to have.
 
-| row | question it answers |
-|---|---|
-| `dust_16_full` | the headline worst case: 16 grains, full 5 s spray |
-| `dust_16_win05` | does a 0.5 s spray window collapse the SDRAM factor? |
-| `dust_16_win01` | the tight end — zone S reads near the head anyway |
-| `dust_8_full` | grain count isolated from window width; also prices DUST's integer read against `grain_read_sdram`'s interpolated stereo read at equal grain count |
-| `dust_16_rev` | reverse grains walk memory backwards — different prefetch behaviour, and zone R makes ~70 % of grains reverse |
-| `dust_16_wb` | zone-R writeback: grain sum → `fast_tanh` → store |
-| `dust_16_erode` | freeze + erosion: read-modify-write at the pointer |
+**The `dust` bench family** (`bench/workloads_dust.cpp`) stays in the tree as
+the measuring instrument for that work: `dust_16_full` is the headline,
+`dust_8_full` proves linearity in pool size, `dust_16_wb` / `dust_16_erode`
+price the zone-R and freeze paths, `dust_16_rev` the reverse stride. The two
+window rows have done their job and can go if the table gets crowded.
 
-**Decision rule.** If `dust_16_win05` lands in single digits, the feature ships
-with a bounded spray and §3 zone F is retuned accordingly. If even the windowed
-rows are expensive, the grain pool must shrink (cost is linear in it) or DUST
-waits for headroom that does not currently exist. Either way the number comes
-from the probe, not from this document.
+**Decision rule, revised.** Re-measure after a per-grain optimization pass. If
+`dust_16_full` lands near or under the margin that exists at that time, DUST
+ships at 16 grains; if it lands in the high single digits, it ships at 8 and
+§1's pool constant changes. Cost is linear in the pool, which is the one thing
+here that is now proven rather than argued.
 
 ## Testing
 
