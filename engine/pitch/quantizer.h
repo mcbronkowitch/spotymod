@@ -38,8 +38,15 @@ public:
     static constexpr float SPAN_SEMIS = 36.f;
     static constexpr float HYST_SEMIS = 0.30f;   // switch ~15 cents past midpoint
 
-    void init(float sample_rate) {
-        _slew_len = static_cast<int>(sample_rate * 0.04f);   // ~40 ms change slew
+    // call_interval = how many samples pass between process() calls. Part
+    // drives the quantizer at the engine's control tick (96), so the 40 ms
+    // change slew has to be counted in calls, not samples. Floored at 1 so a
+    // large interval cannot collapse the slew to nothing.
+    void init(float sample_rate, int call_interval = 1) {
+        if (call_interval < 1) call_interval = 1;
+        _slew_len = static_cast<int>(sample_rate * 0.04f
+                                     / static_cast<float>(call_interval));
+        if (_slew_len < 1) _slew_len = 1;
         _slew_ctr = 0;
         _have_note = false;
         _have_out = false;

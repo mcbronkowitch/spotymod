@@ -101,3 +101,33 @@ TEST_CASE("quantizer: leaving FREE slews from the last raw output") {
     for (int i = 0; i < 1920; ++i) q.process(0.5f);
     CHECK(q.process(0.5f) == doctest::Approx(17.f / 36.f));
 }
+
+TEST_CASE("quantizer: slew length scales with the caller's interval") {
+    // Called once per 96 samples, a 40 ms slew must still be 40 ms of audio
+    // -- 1920 samples -- which is 20 calls, not 1920.
+    //
+    // Settling is detected by convergence, not by comparing against a fixed
+    // value: the slewed output rises monotonically and then holds, so the
+    // first post-change sample is a transient the output never revisits.
+    // At root 0 and input 0.5 (= 18 semitones) the scale change moves the
+    // nearest allowed note from 17 (dorian) to 18 (whole tone), so there is
+    // a real distance to slew across.
+    auto calls_to_settle = [](int interval) {
+        Quantizer q;
+        q.init(48000.f, interval);
+        q.set_root(0);
+        q.process(0.5f);                          // establish _last_out
+        q.set_scale(SCALE_MASKS[SCALE_WHOLE]);    // on_change() arms the slew
+        int calls = 0;
+        float prev = q.process(0.5f);
+        for (; calls < 5000; ++calls) {
+            const float cur = q.process(0.5f);
+            if (cur == prev) break;               // slew done, output holds
+            prev = cur;
+        }
+        return calls;
+    };
+
+    CHECK(calls_to_settle(96) <= 25);    // ~20 control ticks, not ~1920
+    CHECK(calls_to_settle(1)  > 100);    // default: still a sample-rate slew
+}
