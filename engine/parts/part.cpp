@@ -94,10 +94,15 @@ float Part::max_voice_env() const {
     return m;
 }
 
-// Everything the engine reads at its own control tick: the five lane targets,
-// the quantized pitch, the chord surface. Task 4 gates this behind a
-// 96-sample raster; until then it runs per sample and the output is
-// bit-identical to the pre-extraction code.
+// Everything the engine and FX read at their own control rate: the five lane
+// targets, the quantized pitch, the chord surface, the set_targets push, and
+// the five FX target values (Task 6 moved the last three in). Runs on the
+// SynthEngine::kCtrlInterval-sample raster, phase-aligned with SynthEngine's
+// own control tick (see the _ctrl_ctr comment in part.h). Not idempotent -- it
+// advances Quantizer::process's slew and re-evaluates ChordBuilder::set_color's
+// zone hysteresis -- so process()'s raster-tick and fire-refresh branches
+// must stay mutually exclusive (else if, not a second if); calling this
+// twice on the same sample double-steps the glide.
 void Part::_control_tick() {
     for (int i = 0; i < LANE_COUNT; ++i) _tg[i] = target_raw(i);
     _tg[LANE_PITCH] = _quant.process(pitch_pre_quant());
@@ -121,6 +126,12 @@ void Part::_control_tick() {
                                  _quant.root_semis(), chord);
     _engine->set_chord(chord, nch);
 
+    // Raster-rate push is safe because both receivers smooth on their own
+    // side and neither ever sees the 96-sample staircase raw: SynthEngine::
+    // process runs _targets[LANE_LEVEL] through a ~10 ms smoother, and
+    // PartFx::process runs each of the five FX values through a 2 ms
+    // smoother. Do not "optimize away" that smoothing -- it is what makes
+    // this raster hold inaudible.
     _engine->set_targets(_tg, _tune);
     for (int i = 0; i < FXT_COUNT; ++i) _fxv[i] = fx_target_value(i);
 }

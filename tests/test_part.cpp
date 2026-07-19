@@ -524,3 +524,99 @@ TEST_CASE("part: targets reach the engine on the 96-sample raster") {
     CHECK(any_change);
     CHECK(changes > 0);
 }
+
+TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster") {
+    // No public accessor exposes the raster-held _tg cache directly:
+    // target_value(LANE_LEVEL) and fx_target_value() both recompute live and
+    // bypass it entirely (part.cpp:55-65), and SynthEngine/PartFx keep the
+    // pushed value and its own smoother private. TestToneEngine is the one
+    // place the push is externally visible at all: set_targets() there
+    // writes _amp = t[LANE_LEVEL] with no smoothing (test_tone_engine.h),
+    // unlike SynthEngine's 10 ms level smoother or PartFx's 2 ms smoothers,
+    // so its audio output is a direct, undistorted readout of whatever was
+    // last pushed.
+    //
+    // Rather than reverse-engineering that amplitude out of the sine (fragile
+    // -- tried it, the algebra is right but nails down bit-exactness only
+    // asymptotically near the peak), run a second, independent TestToneEngine
+    // ("shadow") fed the LIVE value every sample instead of Part's
+    // raster-held cache, phase-locked to Part's real engine by starting both
+    // from the same first active sample. If Part's push were live too, the
+    // two outputs would always agree; because it is raster-held, they must
+    // agree exactly AT a tick (both just received the identical fresh value)
+    // and are free to disagree between ticks (the live target has moved on
+    // but Part's cache has not).
+    Part p;
+    p.init(48000.f, 7u);
+    p.fx().set_comp(0.f);   // 0 = bit-exact bypass (comp.h); the only always-on FX block
+
+    // Land the engine-switch activation exactly on a raster tick. The
+    // SoftSwitch fade-out is a fixed 191-sample countdown from the sample
+    // set_engine() effectively starts it; one warm-up process() call first
+    // (still on the boot engine, otherwise inert) shifts that countdown by
+    // one sample, from absolute sample 191 to 192 -- a multiple of
+    // kCtrlInterval. Without this, TestToneEngine's very first active sample
+    // would run on its power-on default frequency (test_tone_engine.h:
+    // _freq = 220.f) for exactly one sample before the next tick corrects
+    // it -- a real but irrelevant cold-start artifact that would otherwise
+    // leave a small permanent phase offset against the shadow engine below,
+    // which is fed the correct frequency from its first sample.
+    float warm_l, warm_r;
+    p.process(warm_l, warm_r);
+    p.set_engine(ENGINE_TEST_TONE);
+
+    p.set_target_active(LANE_PITCH, false);
+    p.set_target_base(LANE_PITCH, 1.f);       // freq = 110 * 8^1 = 880 Hz, fixed
+    p.quant().set_mode(QuantMode::Free);       // passthrough: no slew to settle
+
+    p.set_target_active(LANE_LEVEL, true);
+    p.set_target_base(LANE_LEVEL, 0.8f);
+    p.set_target_depth(LANE_LEVEL, 1.f);
+    p.set_depth(1.f);
+    p.mod().set_range(1.f);
+    p.mod().set_smooth(0.f);
+    p.mod().set_rate(1.f);                     // fast LFO: visible movement inside 96 samples
+
+    TestToneEngine shadow;
+    shadow.init(48000.f);
+    float shadow_tg[LANE_COUNT] = { 0.f, 0.f, 0.f, 0.f, 0.f };
+    shadow_tg[LANE_PITCH] = 1.f;                // matches Part's fixed PITCH target exactly
+
+    float l, r;
+    int  since_switch = 0;
+    bool tick_mismatch = false;
+    bool off_tick_divergence = false;
+
+    for (int i = 0; i < 96 * 30; ++i) {
+        const int abs_i = i + 1;                // +1 for the warm-up sample above
+        p.process(l, r);
+        const bool tone_active = (p.engine_id() == ENGINE_TEST_TONE);
+        if (!tone_active) continue;             // shadow starts the instant Part's real tone does
+
+        const float live = p.target_raw(LANE_LEVEL);   // same call _control_tick() makes internally
+        shadow_tg[LANE_LEVEL] = live;
+        float sl, sr;
+        shadow.set_targets(shadow_tg, 0.5f);
+        shadow.process(sl, sr);
+
+        ++since_switch;
+        if (since_switch <= 300) continue;      // let the 4 ms engine-switch fade settle
+
+        const bool at_tick = (abs_i % SynthEngine::kCtrlInterval) == 0;
+        const float d = std::fabs(l - sl);
+        if (at_tick) {
+            if (d > 1e-4f) tick_mismatch = true;
+        } else if (d > 0.02f) {
+            off_tick_divergence = true;
+        }
+    }
+
+    // At every raster tick Part just latched the same live value the shadow
+    // is fed every sample, so the two engines must agree there.
+    CHECK_FALSE(tick_mismatch);
+    // Between ticks the live LFO keeps moving but Part's cache does not --
+    // sanity check that the two streams actually pull apart somewhere, so
+    // the tick-agreement check above isn't vacuously true because nothing
+    // ever changed.
+    CHECK(off_tick_divergence);
+}

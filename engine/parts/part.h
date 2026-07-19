@@ -146,8 +146,10 @@ private:
     // "aligned" in the sense the rest of this comment describes.
     int _ctrl_ctr = 0;
 
-    // Target cache: _control_tick() fills it, process() pushes it to the
-    // engine. Boot values mirror SynthEngine::_targets so a push before the
+    // Target cache: _control_tick() both fills it and pushes it to the
+    // engine (part.cpp:124) -- process() no longer does the push itself
+    // (Task 6), it only reads _tg[LANE_PITCH] back out for the fire's chord
+    // build. Boot values mirror SynthEngine::_targets so a push before the
     // first tick cannot hand the engine garbage.
     float _tg[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 0.8f };
 
