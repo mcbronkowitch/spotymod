@@ -312,3 +312,67 @@ TEST_CASE("dust: density rises with DUST, level stays inside a band") {
     CHECK(e_high < 4500.0);
     CHECK(e_high > e_mid);   // regression pin: DUST=1 must not be quieter than DUST=0.6
 }
+
+// Instrument births by watching for a fresh grain: with DUST low enough that
+// the pool is nearly always empty, a transition from silence to non-silence
+// marks a birth.
+static std::vector<int> birth_indices(float rot, float amount, float delay_s,
+                                      int n_samples) {
+    FakeTape t; t.fill_noise(11);
+    DustCloud d;
+    d.init(48000.f, 0xD0571u);
+    d.set_dust(amount);
+    d.set_rot(rot);
+    d.set_delay_time(delay_s);
+    std::vector<int> births;
+    bool was_silent = true;
+    for (int i = 0; i < n_samples; ++i) {
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);
+        const bool silent = (gl == 0.f && gr == 0.f);
+        if (was_silent && !silent) births.push_back(i);
+        was_silent = silent;
+        t.advance();
+    }
+    return births;
+}
+
+TEST_CASE("dust: zone S with no jitter births on the delay/4 grid") {
+    // rot = 0 -> jitter 0. delay 0.5 s -> grid 0.125 s -> 6000 samples.
+    const auto b = birth_indices(0.f, 0.35f, 0.5f, 480000);
+    REQUIRE(b.size() >= 8);
+    for (size_t i = 1; i < b.size(); ++i) {
+        const int gap = b[i] - b[i - 1];
+        // Every gap must be a whole number of grid periods (a slot can decline
+        // to fire), so the remainder against 6000 is what is locked.
+        const int rem = gap % 6000;
+        CHECK((rem < 40 || rem > 5960));
+    }
+}
+
+TEST_CASE("dust: zone S jitter grows across the zone") {
+    auto spread = [](float rot) {
+        const auto b = birth_indices(rot, 0.35f, 0.5f, 480000);
+        if (b.size() < 8) return 0.0;
+        double worst = 0.0;
+        for (size_t i = 1; i < b.size(); ++i) {
+            const int gap = (b[i] - b[i - 1]) % 6000;
+            const double off = gap > 3000 ? (6000 - gap) : gap;
+            worst = std::max(worst, off);
+        }
+        return worst;
+    };
+    const double tight = spread(0.0f);          // locked
+    const double loose = spread(0.30f);         // near the top of zone S
+    CHECK(tight < 40.0);
+    CHECK(loose > tight * 4.0);
+}
+
+TEST_CASE("dust: zone S grid follows the delay time") {
+    const auto slow = birth_indices(0.f, 0.35f, 0.5f, 480000);   // grid 6000
+    const auto fast = birth_indices(0.f, 0.35f, 0.25f, 480000);  // grid 3000
+    REQUIRE(slow.size() >= 8);
+    REQUIRE(fast.size() >= 8);
+    // Same fire probability, half the grid period -> roughly twice the births.
+    CHECK((double)fast.size() > (double)slow.size() * 1.5);
+}

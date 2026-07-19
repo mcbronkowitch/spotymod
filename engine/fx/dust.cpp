@@ -154,7 +154,23 @@ void DustCloud::_spawn(const TapeTap& tape) {
 }
 
 void DustCloud::_schedule(const TapeTap& tape) {
-    if (_rng.next_unipolar() < _birth_prob) _spawn(tape);
+    if (_zone != 0) {                       // zones F and R: free-running
+        if (_rng.next_unipolar() < _birth_prob) _spawn(tape);
+        return;
+    }
+    // Zone S: births lock to a grid derived from the delay itself, so stutter
+    // bursts always subdivide the echo — dub polyrhythm with no extra control.
+    // Duration-synced like FLUX, not phase-locked to the sequencer.
+    if (--_grid_countdown > 0) return;
+
+    _grid_countdown = _grid_period;
+    if (_jitter > 0.f) {
+        const float j = _rng.next_bipolar() * _jitter * 0.5f;
+        _grid_countdown += (int32_t)(j * (float)_grid_period);
+        if (_grid_countdown < 1) _grid_countdown = 1;
+    }
+    if (_rng.next_unipolar() >= _fire_prob) return;
+    for (int i = 0; i < _burst; ++i) _spawn(tape);
 }
 
 float DustCloud::process(const TapeTap& tape, float& gl, float& gr) {
