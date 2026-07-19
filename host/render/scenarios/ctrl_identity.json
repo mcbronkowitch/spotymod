@@ -1,0 +1,19 @@
+{
+  "sample_rate": 48000,
+  "bpm": 120,
+  "duration_s": 8.0,
+  "init": [
+    { "action": "set_quant_mode", "part": 0, "value": "free" },
+    { "action": "set_quant_mode", "part": 1, "value": "free" },
+    { "action": "set_reverb_mix", "value": 0.0 },
+    { "action": "set_depth", "part": 0, "value": 1.0 },
+    { "action": "set_depth", "part": 1, "value": 1.0 },
+    { "action": "set_rate", "part": 0, "value": 0.8 },
+    { "action": "set_rate", "part": 1, "value": 0.55 },
+    { "action": "set_target_depth", "part": 0, "slot": 2, "value": 1.0 },
+    { "action": "set_target_depth", "part": 1, "slot": 2, "value": 1.0 },
+    { "action": "set_smooth", "part": 0, "value": 0.0 },
+    { "action": "set_smooth", "part": 1, "value": 0.0 }
+  ],
+  "events": []
+}
