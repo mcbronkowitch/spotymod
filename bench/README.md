@@ -164,8 +164,13 @@ two points, not to hold at the figure recorded here.
 
 Add one row to the relevant `kXxxWorkloads[]` table (`workloads_system.cpp`
 for family 1, `workloads_daisysp.cpp` for family 2, `workloads_memory.cpp`
-for family 3) with a family tag, a name, a setup function and a process
-function. Workload **basenames must stay unique across the whole bench**,
+for family 3, `workloads_mod.cpp` for the modulation plane, `workloads_abl.cpp`
+for the ablation rows, `workloads_dust.cpp` for the DUST grain cloud) with a
+family tag, a name, a setup function and a process function. A new *table*
+additionally needs its `extern` in `workload.h`, an entry in `runner.cpp`'s
+`find_workload` arrays (and its loop bound), a loop in `main.cpp`, and the
+source in the `Makefile` — five places, none of them automatic, because table
+order is execution order and must not depend on link order. Workload **basenames must stay unique across the whole bench**,
 not just within one file's table — libDaisy's Makefile flattens every
 source path with `notdir` when it builds the object list, so two files
 named e.g. `voice.cpp` in different directories would collide at link time

@@ -66,6 +66,10 @@ int main(void)
         const bench::Workload& w = bench::kAblWorkloads[i];
         bench::report_row(w, bench::run_workload(w));
     }
+    for (int i = 0; i < bench::kDustCount; ++i) {
+        const bench::Workload& w = bench::kDustWorkloads[i];
+        bench::report_row(w, bench::run_workload(w));
+    }
 
     // Offline is optimistic: no cache/DMA contention from a live audio
     // engine sharing the bus. Three rows re-run inside a real callback to

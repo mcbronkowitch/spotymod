@@ -1,9 +1,12 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo
 
 **Date:** 2026-07-18 (rev 3 — control surface reduced to what the hardware will
-actually have, same day)
-**Status:** design approved; implementation plan written —
-`docs/superpowers/plans/2026-07-18-dust-grain-cloud.md`
+actually have, same day); **rev 4 2026-07-19 — CPU budget corrected, §8**
+**Status:** design approved, **implementation BLOCKED on measurement.** The
+plan (`docs/superpowers/plans/2026-07-18-dust-grain-cloud.md`) is written and
+must not be executed until the `dust` bench family has run on hardware: §8's
+original "≪ 1 %" understated the cost by roughly 30× and the instrument has
+2.3 points of margin. See §8.
 **Scope:** a per-part granular read/write stage inside the FLUX block, a character axis (ROT), and a tape FREEZE with erosion. No new audio buffers. No change to GRIT, COMP, reverb, or the master chain.
 
 ## Problem
@@ -127,9 +130,82 @@ change.
 
 ### 8. CPU + memory budget
 
-- **Memory:** ~8 grain structs × 2 parts (< 1 KB). **No new audio buffers.**
-- **CPU:** worst case 16 grains × (1 read + window + 2 mults); reverse costs one extra add. Writeback adds one tanh per part-sample *only in zone R*; erosion one more *only while frozen*. No transcendentals otherwise in the hot path — the window is a table lookup (`hann_value_at`), and pan gains are computed once at grain birth, not per sample. Estimated ≪ 1 % on the H750 @ 480 MHz.
-- DUST = 0 and no freeze: two branch checks.
+> **Rev 4 correction (2026-07-19). The estimate below this box was wrong by
+> roughly 30×, and the feature is blocked on measurement.** The original text
+> read "estimated ≪ 1 %". It counted arithmetic, and the arithmetic was right —
+> what it missed is that the grain `read` is not a read. See the analysis that
+> follows. **Do not execute the implementation plan until the `dust` bench
+> family has run on hardware.**
+
+- **Memory:** ~8 grain structs × 2 parts (< 1 KB). **No new audio buffers.** —
+  this part of the original estimate stands and is the design's real strength.
+- **CPU:** worst case 16 grains × (1 read + window + 2 mults); reverse costs one
+  extra add. Writeback adds one `fast_tanh` per part-sample *only in zone R*;
+  erosion one more *only while frozen*. No transcendentals otherwise in the hot
+  path — the window is a table lookup (`hann_value_at`), and pan gains are
+  computed once at grain birth, not per sample.
+- DUST = 0 and no freeze: two branch checks. (Unchanged and free.)
+
+**Why the operation count is the wrong unit here.** FLUX's tape is 262 144
+floats per channel per part — 1 MB. It does not fit SRAM at any size, so every
+grain read is a *scattered* access into SDRAM. The bench already prices exactly
+this pattern, and has since before this spec was written:
+
+| row | avg % | max % | anchored max |
+|---|---:|---:|---:|
+| `grain_read_sram` | 3.04 | 3.09 | — |
+| `grain_read_sdram` | 16.07 | 16.84 | 17.43 |
+
+**The region factor is 5.3×**, and that row measures *eight* grains. This spec
+wants sixteen. Scaling it — with the caveat that the row reads interpolated
+stereo where DUST reads one integer sample, which drops loads but not cache
+lines, so the miss count is what carries over — puts the cloud at roughly
+**24–35 points of the 960 000-cycle block budget**. Against "≪ 1 %".
+
+For scale: the instrument currently sits at **97.69 % anchored max with 2.3
+points of margin** (`docs/bench/2026-07-19-6e38090.md`). The entire remaining
+ranked cut list — a global voice cap 8→5 (~13 points, itself a ceiling), the
+`Svf` single-pass rework (~2–4), the `PartFx` rev-send `fast_sin` (~1–2) — comes
+to about 19 points and **does not pay for this feature**. DUST as specified
+would land the instrument near 125 %.
+
+This is the same failure mode as the mod-plane design spec, which estimated
+4–6 % of budget for a plane that measured 33 %, and as `util/fast_sin.h`'s
+still-uncorrected "~10–15 cycles" comment against an empirical 50–65. Counting
+operations predicts nothing on this chip when the operand is in SDRAM.
+
+**The lever, and why the feature is probably still viable.** Cost is linear in
+cache *misses*, not in grains. Grains confined to the most recent slice of tape
+read the region the write head and echo head are already touching — that stays
+resident, and the 5.3× region factor should largely collapse toward the
+`grain_read_sram` figure. Zone F's "spray widens across the zone from ~150 ms up
+to the full 5 s" (§3) is the expensive clause, and it is **a tuning constant,
+not a structural requirement**. Bounding the spray buys back most of the cost
+for a narrowing of one zone's reach.
+
+That is a hypothesis, not a result. It is what the bench family exists to
+settle.
+
+**Required before implementation: the `dust` bench family**
+(`bench/workloads_dust.cpp`, seven rows, added 2026-07-19). It runs the real
+access shape — integer offsets, one channel per grain, Hann window, equal-power
+pan, grain respawn — rather than a proxy:
+
+| row | question it answers |
+|---|---|
+| `dust_16_full` | the headline worst case: 16 grains, full 5 s spray |
+| `dust_16_win05` | does a 0.5 s spray window collapse the SDRAM factor? |
+| `dust_16_win01` | the tight end — zone S reads near the head anyway |
+| `dust_8_full` | grain count isolated from window width; also prices DUST's integer read against `grain_read_sdram`'s interpolated stereo read at equal grain count |
+| `dust_16_rev` | reverse grains walk memory backwards — different prefetch behaviour, and zone R makes ~70 % of grains reverse |
+| `dust_16_wb` | zone-R writeback: grain sum → `fast_tanh` → store |
+| `dust_16_erode` | freeze + erosion: read-modify-write at the pointer |
+
+**Decision rule.** If `dust_16_win05` lands in single digits, the feature ships
+with a bounded spray and §3 zone F is retuned accordingly. If even the windowed
+rows are expensive, the grain pool must shrink (cost is linear in it) or DUST
+waits for headroom that does not currently exist. Either way the number comes
+from the probe, not from this document.
 
 ## Testing
 

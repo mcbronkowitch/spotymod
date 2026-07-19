@@ -1,5 +1,15 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo — Implementation Plan
 
+> **⛔ DO NOT EXECUTE THIS PLAN YET (2026-07-19).** The design spec's CPU
+> estimate ("≪ 1 %") understated the cost by roughly 30×: the grain reads are
+> scattered SDRAM accesses, and `grain_read_sdram` already prices that pattern
+> at 16.84 % max for *eight* grains where this design wants sixteen. Realistic
+> worst case is ~24–35 points of block budget; the instrument has **2.3 points
+> of margin**. The `dust` bench family (`bench/workloads_dust.cpp`) must run on
+> hardware first, and the spray-window question it settles may change §3's zone
+> F and the grain-pool size — both of which this plan builds. See the design
+> spec §8, rev 4.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a per-part granular read/write stage (DUST amount, ROT character) and a tape FREEZE with erosion to the FLUX block, reusing the existing 5 s echo tape as grain memory — no new audio buffers.
