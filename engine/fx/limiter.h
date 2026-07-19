@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include "util/fast_tanh.h"
 
 namespace spky {
 
@@ -57,7 +58,7 @@ private:
     static float shape(float x, float knee) {
         const float ax = std::fabs(x);
         if (ax <= knee) return x;
-        const float y = knee + (1.f - knee) * std::tanh((ax - knee) / (1.f - knee));
+        const float y = knee + (1.f - knee) * fast_tanh((ax - knee) / (1.f - knee));
         return x < 0.f ? -y : y;
     }
 
