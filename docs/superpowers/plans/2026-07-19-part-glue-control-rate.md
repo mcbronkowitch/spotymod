@@ -18,7 +18,8 @@
 - Raster constant is `SynthEngine::kCtrlInterval` (= 96, `engine/synth/synth_engine.h:33`). Do not define a second 96 in `Part`.
 - Commit trailer on every commit: `Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>`
 - Branch: `cpu-hunt`.
-- Tasks 1–5 must not change audio output. Task 6 may, and only Task 6.
+- Bit-exactness is NOT required (Bastian, 2026-07-19): pre-release engine, parallel CPU work landing. No checksum gates any task. Tasks 1-5 should still be behaviour-neutral by construction; Task 6 changes the render on purpose.
+- Another session (session_01T727NNiydTvBtBBxpZ3oDG) also commits to `cpu-hunt`, in `engine/fx/{flux,comp}.*` and `third_party/oliverb/`. Stage only your own explicit paths -- never `git add -A` or `git add .`.
 
 ---
 
@@ -518,34 +519,33 @@ Existing tests should survive: `target_value(slot)` computes live from `target_r
 
 - [ ] **Step 6: The identity gate**
 
-The reference is the checksum committed at `host/render/scenarios/ctrl_identity.sha256`. The rendered WAV itself is not tracked — `/renders/` is gitignored on purpose.
+**Bit-exactness is not required** (Bastian, 2026-07-19): the engine is pre-release and other CPU work is landing in parallel, so no checksum gates this. Render the scenario to confirm the raster did not break the audio outright, and report what you observe.
 
 ```bash
 cmake --build build --target render
+echo "RENDER_BUILD_EXIT=$?"
 ./build/render host/render/scenarios/ctrl_identity.json /tmp/ctrl_identity_after.wav /tmp/ctrl_identity_after.csv
-echo "$(cut -d' ' -f1 host/render/scenarios/ctrl_identity.sha256)  /tmp/ctrl_identity_after.wav" | sha256sum -c -
+echo "RENDER_EXIT=$?"
+python -c "
+import wave, struct
+w = wave.open('/tmp/ctrl_identity_after.wav'); n = w.getnframes()
+d = struct.unpack('<%dh' % (n * w.getnchannels()), w.readframes(n))
+print('frames', n, 'peak', max(abs(x) for x in d))
+"
 ```
 
-Expected: `/tmp/ctrl_identity_after.wav: OK`
+Expected: both exit codes 0, 384000 frames, a peak in the same order as Task 2's 12590 — audio, not silence and not clipping.
 
-If it reports `FAILED`, the raster changed something it was not supposed to. Do not adjust the scenario or the checksum to make it pass, and do not proceed to Task 5 — that is the gate doing its job. Re-render the reference from the previous commit to get a CSV to diff against:
+Check the exit codes explicitly as shown. Do not pipe the build through `head`/`tail` — the pipeline's status masks a failed build and the next command then runs against a stale binary.
 
-```bash
-git stash && cmake --build build --target render
-./build/render host/render/scenarios/ctrl_identity.json /tmp/ctrl_before.wav /tmp/ctrl_before.csv
-git stash pop
-```
-
-then diff `/tmp/ctrl_before.csv` against `/tmp/ctrl_identity_after.csv` to find the first diverging sample, and report the finding.
-
-- [ ] **Step 7: Look at the default render too**
+- [ ] **Step 7: Render the default scenario too**
 
 ```bash
 ./build/render host/render/scenarios/chord_bloom.json /tmp/chord_bloom_after.wav /tmp/chord_bloom_after.csv
-sha256sum renders/chord_bloom.wav /tmp/chord_bloom_after.wav
+echo "RENDER_EXIT=$?"
 ```
 
-Expected: these two **may** differ — this scenario runs the scale quantizer and a moving COLOR, both cadence-dependent hysteresis paths. A difference here is the spec's predicted behaviour, not a failure. Note in your report whether it differed, and do not commit the new file.
+Expected: exit 0. This scenario runs the scale quantizer and a moving COLOR — both cadence-dependent hysteresis paths — so its audio is expected to shift slightly under the raster. Confirm it still renders and is not silent; do not commit anything under `renders/`.
 
 - [ ] **Step 8: Commit**
 
@@ -559,8 +559,6 @@ Counter lives in Part, phase-aligned with SynthEngine's by construction. A
 PITCH fire refreshes off-raster, because a tick-stale pitch under SMOOTH=0
 is the wrong note, not a late one. LEVEL, the set_targets push and the FX
 targets stay per-sample for now.
-
-ctrl_identity render byte-identical.
 
 Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>
 EOF
@@ -654,22 +652,6 @@ Spec Step 2. LEVEL, the five FX targets and the `set_targets` push move onto the
 - Consumes: Task 4's raster.
 - Produces: `float Part::_fxv[FXT_COUNT]` (private).
 
-- [ ] **Step 0 (before Steps 1-3): capture the "before" render**
-
-Step 5 needs the pre-change audio, and no reference WAV is tracked. Render it from the current tree first; the checksum check doubles as proof that Tasks 3-5 left the audio untouched.
-
-```bash
-cd "/c/Users/bernd/Documents/AI/Spotykach"
-source env.sh
-cmake --build build --target render
-./build/render host/render/scenarios/ctrl_identity.json /tmp/ctrl_before6.wav /tmp/ctrl_before6.csv
-echo "$(cut -d' ' -f1 host/render/scenarios/ctrl_identity.sha256)  /tmp/ctrl_before6.wav" | sha256sum -c -
-```
-
-Expected: `/tmp/ctrl_before6.wav: OK`.
-
-If it reports `FAILED`, stop and report. Something in Tasks 3-5 changed the audio when it should not have, and that finding outranks this task.
-
 - [ ] **Step 1: Add the FX cache to `part.h`**
 
 Next to the `_tg` member from Task 1:
@@ -724,43 +706,33 @@ cmake --build build && ctest --test-dir build --output-on-failure
 
 Expected: all tests pass. A test asserting an exact LEVEL-driven amplitude within the first 96 samples could legitimately move now; if one fails, report which and why before touching it.
 
-- [ ] **Step 5: Confirm the identity render now differs, and by how much**
+- [ ] **Step 5: Render and sanity-check the audio**
 
-This compares against `/tmp/ctrl_before6.wav` from Step 0. `/renders/` is gitignored, so there is no reference WAV in the repo — only the checksum at `host/render/scenarios/ctrl_identity.sha256`.
+Bit-exactness is not required (Bastian, 2026-07-19) — this task changes the render on purpose. What matters is that the change is a smoothed step and not a click or a dropout.
 
 ```bash
 cmake --build build --target render
+echo "RENDER_BUILD_EXIT=$?"
 ./build/render host/render/scenarios/ctrl_identity.json /tmp/ctrl_after6.wav /tmp/ctrl_after6.csv
+echo "RENDER_EXIT=$?"
 python -c "
 import wave, struct
-def rd(p):
-    w = wave.open(p); n = w.getnframes()
-    return struct.unpack('<%dh' % (n * w.getnchannels()), w.readframes(n))
-a, b = rd('/tmp/ctrl_before6.wav'), rd('/tmp/ctrl_after6.wav')
-d = [abs(x - y) for x, y in zip(a, b)]
-print('max abs diff', max(d), 'of 32768; differing samples', sum(1 for x in d if x))
+w = wave.open('/tmp/ctrl_after6.wav'); n = w.getnframes()
+d = struct.unpack('<%dh' % (n * w.getnchannels()), w.readframes(n))
+peak = max(abs(x) for x in d)
+jump = max(abs(d[i+2] - d[i]) for i in range(0, len(d) - 2, 2))
+print('frames', n, 'peak', peak, 'max sample-to-sample jump', jump)
 "
 ```
 
-Expected: a non-zero difference (that is the point of this task), with the max absolute difference small — a smoothed step, not a click. Record both numbers in your report; they are the measured price of Step 2.
+Expected: both exit codes 0, 384000 frames, peak in the same order as Task 2's 12590. Report the max jump — a large jump against a modest peak is the signature of a step reaching the output unsmoothed, which is what the FX and level smoothers are supposed to prevent. Investigate before committing if it looks that way.
 
-If the max diff is a large fraction of full scale, something stepped without smoothing. Investigate before committing.
+Do not pipe the build through `head`/`tail`: the pipeline's exit status hides a failed build and the render then runs a stale binary.
 
-- [ ] **Step 6: Update the tracked checksum**
-
-The gate's reference moves with this deliberate change.
+- [ ] **Step 6: Commit**
 
 ```bash
-sha256sum /tmp/ctrl_after6.wav | awk '{print $1"  ctrl_identity.wav"}' > host/render/scenarios/ctrl_identity.sha256
-cat host/render/scenarios/ctrl_identity.sha256
-```
-
-Expected: one line, the new hash. Do not commit anything under `renders/` — that directory is gitignored by design.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add engine/parts/part.h engine/parts/part.cpp host/render/scenarios/ctrl_identity.sha256
+git add engine/parts/part.h engine/parts/part.cpp
 git commit -m "$(cat <<'EOF'
 perf(part): LEVEL, the target push and the FX targets onto the raster
 
