@@ -134,10 +134,17 @@ static spky::FxMem pp_fx_mem() {
 }
 
 TEST_CASE("instrument: set_dust forwards to the named part only") {
-    // MORPH at an extreme is an equal-power crossfade that snaps to EXACTLY
-    // gain 0/1 (OnePole::process snaps once within 0.0005 of target), so the
-    // non-target part contributes nothing to `l` and any change in output can
-    // only come from the FX chain on the part actually named in set_dust(p, .).
+    // MORPH at an extreme is an equal-power crossfade, and the isolation it
+    // gives is ASYMMETRIC -- do not read the two halves as equally strong:
+    //   morph 0: gain_a = cos(0) = 1.0f and gain_b = sin(0) = 0.0f, both
+    //            bit-exact, so B is multiplied by a true zero. Bulletproof.
+    //   morph 1: gain_b = sin(kQuarter) rounds to exactly 1.0f, but
+    //            gain_a = cos(kQuarter) is -4.37e-8, NOT zero -- float32
+    //            rounding of pi/2. A leaks at about -147 dB.
+    // The A-audible half is therefore the load-bearing one; it is exact and it
+    // is also the assertion that fires first on a part-swap mutant. The
+    // B-audible half is near-zero isolation, strong enough for the mutants
+    // tested but not a true zero, and it must not be relied on alone.
     // A per-part test must fail if part A's value is forwarded to part B: here,
     // if set_dust(PART_A, .) actually wrote PART_B's Flux (silent, morph 0),
     // base_a and dust_a would come out identical and CHECK(base_a != dust_a)
