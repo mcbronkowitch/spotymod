@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-19 (first optimization pass: Part glue to control rate + FX hygiene cuts; worst case 156 % -> 123 %).
+- **Last updated:** 2026-07-19 (mod plane to control rate, measured at `94468af`; worst case 156 % -> 104 % anchored max, avg under budget for the first time at 98 %).
 
 > **Reminder:** the engine and its milestones are still verified only against
 > the desktop offline renderer (unit tests + WAV/CSV render) — the Daisy
@@ -398,21 +398,34 @@ Makefile) is untouched by its presence; Step 1 of the bench plan re-proves
 that on every run.
 
 The headline numbers are no longer estimates — they come from a real Daisy
-Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-c7f6a73.md`):
+Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-94468af.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 117 % (avg) /
-  123 % (max) of the block budget offline and 118 % (avg) /
-  123 % (max) anchored inside a real audio callback. **Still over budget,
-  but no longer by the margin that made the 2×4 verdict look final** — the
-  first optimization pass took ~33 points off the anchored max, from 156 %.
-  Two strands landed together on `cpu-hunt`: the **Part-glue control-rate
-  cut** (`docs/superpowers/plans/2026-07-19-part-glue-control-rate.md`),
-  worth ~19.6 points on its own — the glue fell 112 820 → 18 664 cycles per
-  part, 83.5 % of it, against a predicted 70–85 % — and four **FX hygiene
-  cuts** whose largest more than halved the reverb (`oliverb_solo_sram`
-  186 673 → 91 420 cycles). Roughly 23 points still separate the worst case
-  from the budget; the ranked list below is what is left to spend.
+  parts, all FX on, high diffusion, echo at max) costs 97 % (avg) /
+  104 % (max) of the block budget offline and 98 % (avg) /
+  104 % (max) anchored inside a real audio callback. **The average is under
+  budget for the first time; the max is not, and the max is the gate** — a
+  worst case that fits on average still drops blocks. Three optimization
+  passes have now taken ~52 points off the anchored max, from 156 %. The
+  latest is the **mod-plane control-rate cut**
+  (`docs/superpowers/plans/2026-07-19-mod-plane-control-rate.md`), worth
+  **~19 points** against a predicted 17–19: the plane fell 253 254 → 56 667
+  cycles (−77.6 %), far past the spec's own expectation. Before it, on the
+  same branch, the **Part-glue control-rate cut**
+  (`docs/superpowers/plans/2026-07-19-part-glue-control-rate.md`) was worth
+  ~19.6 points — the glue fell 112 820 → 18 664 cycles per part, 83.5 %,
+  against a predicted 70–85 % — alongside four **FX hygiene cuts** whose
+  largest more than halved the reverb (`oliverb_solo_sram` 186 673 → 91 420
+  cycles). Roughly **4 points** now separate the worst case from the budget;
+  the ranked list below is what is left to spend.
+- **The cut list's attribution has drifted and needs re-deriving before it
+  is spent again.** `part_glue_flow` halved a second time at `94468af`
+  (19.86 % → 9.97 %) even though the Part-glue cut had already landed at
+  `c7f6a73` — the 96-sample raster tick was carrying cost the ablation had
+  booked to the glue. `instrument_worst` is unaffected (it is the ground
+  truth, not a sum), but the per-owner shares below were derived at
+  `9be5df9`/`c7f6a73` and no longer add up against the current run. Re-run
+  the ablation family before trusting any individual predicted saving.
 - Two caveats on the new run. `echo_short_sram` / `echo_short_sdram` are
   **not comparable** to `9be5df9` — the delay-time one-pole moved out of
   `EchoDelay` into `Flux`, so those rows no longer carry the per-sample
@@ -485,8 +498,15 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-c7f6a73.md`):
   machinery — independent of any waveform call — now account for most of
   what is left; see the spec's Outcome section for the full breakdown —
   DONE 2026-07-19 (texture lanes on the 96er raster, spec
-  2026-07-19-mod-plane-control-rate-design.md; measured saving pending the
-  next hardware bench).
+  2026-07-19-mod-plane-control-rate-design.md) — **SPENT, measured at
+  `94468af`: the plane fell to 5.90 % (avg) / 6.11 % (max) of the block
+  budget, 253 254 → 56 667 cycles, a 77.6 % cut worth ~19 points on the
+  anchored worst case (predicted 17–19).** Where the earlier `wave_sine`
+  cut undershot its spec, this one overshot: moving the lanes off the
+  per-sample path removed not just their waveform evaluation but the
+  per-sample lane machinery that the previous Outcome had identified as the
+  irreducible remainder. `super_mod_5lanes` fell 13.23 % → 2.86 % on the
+  same run.
   The mod plane's output changed deliberately as part of this cut (`fast_sin`
   is not bit-identical to libm `sin`), so `renders/` byte-identity is no
   longer treated as a regression gate for it — re-cut references are the

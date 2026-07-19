@@ -725,7 +725,42 @@ git commit -m "docs: re-pin ctrl_identity, mark the mod-plane cut done"
 
 ## Out of scope / deferred
 
-- **Hardware bench re-run** (`python bench/run.py`, Daisy Seed attached) — user step; the ~17–19-point estimate is not trusted until measured. Commit code BEFORE measuring (run.py names result files by HEAD hash).
+- ~~**Hardware bench re-run**~~ — **DONE 2026-07-19 at `94468af`**, see `## Outcome` below. Result: `docs/bench/2026-07-19-94468af.md`.
 - **VCV plugin rebuild** — engine-only change; the installed plugin needs a rebuild before any Rack play test.
 - **`renders/` refresh** — all references diverge byte-wise (accepted); belongs to the user's listening pass.
-- **Approach B** (PITCH lane on the raster + analytic fire scheduling) — named follow-up in the spec, only if the budget stays tight.
+- **Approach B** (PITCH lane on the raster + analytic fire scheduling) — named follow-up in the spec, only if the budget stays tight. **It is still tight** (4 points over), but the cheaper `EchoDelay` fast-tanh cut (~8 points, no output-timing risk) should be spent first; Approach B stays the reserve.
+
+---
+
+## Outcome (2026-07-19)
+
+**Measured on hardware at `94468af`** — Daisy Seed, 480 MHz, block 96, `docs/bench/2026-07-19-94468af.md`. Baseline is `c7f6a73`.
+
+### The cut delivered, slightly above prediction
+
+| row | `c7f6a73` | `94468af` | Δ |
+|---|---:|---:|---:|
+| `mod_plane_2x_center` | 26.38 % (253 254 cyc) | **5.90 %** (56 667 cyc) | −77.6 % |
+| `super_mod_5lanes` | 13.23 % | **2.86 %** | −78.4 % |
+| `part_glue_flow` | 19.86 % | **9.97 %** | −49.8 % |
+| `instrument_init` | 81.47 / 93.07 % | **62.00 / 73.64 %** | −19.5 pts (max) |
+| `instrument_worst` offline | 117.37 / 123.11 % | **96.59 / 103.63 %** | −19.5 pts (max) |
+| `instrument_worst` anchored | 118.35 / 123.15 % | **97.60 / 104.06 %** | **−19.1 pts (max)** |
+
+Predicted 17–19 points on the anchored worst case; **realized ~19–21** (19.1 on max, 20.8 on avg). This is the first cut in the series to land at the top of its own estimate rather than under it — the earlier `wave_sine`→`fast_sin` pass realized only ~40 % of what its spec predicted.
+
+**Why it overshot.** The previous mod-plane Outcome attributed the residual ~26 % to two things: `fast_sin` running near ~50 cycles at that call site, and "the ten lanes' own per-sample machinery — independent of any waveform call". Moving the lanes to the 96-sample raster removed *both*, not just the first. The per-sample machinery was not irreducible; it was simply never separable from the per-sample loop until the raster existed.
+
+### The verdict did not flip
+
+`instrument_worst` anchored is **97.60 % avg / 104.06 % max**. The gate is the max — a worst case that fits on average still drops blocks — so `bench/report.cpp` still emits *"the 2x4 architecture does not fit"*. The average crossing under 100 % is a real milestone and worth recording, but it is not the go/no-go. **~4 points remain.**
+
+### Unplanned finding: the ablation attribution has drifted
+
+`part_glue_flow` halved a second time (19.86 % → 9.97 %) even though the Part-glue control-rate cut had already landed at `c7f6a73`. The 96-sample raster tick was carrying cost that the `abl` family had booked to the glue — the two cuts overlap in a way neither plan predicted.
+
+This does **not** affect any headline number (`instrument_worst` is measured directly, never summed), but it does mean the ranked cut list in `docs/roadmap.md` — derived at `9be5df9`/`c7f6a73` — no longer reconciles against the current run. **Re-run the ablation family before trusting any individual predicted saving from it**, including the ~8-point `EchoDelay` tanh figure that is the obvious next spend. Noted in the roadmap's Bench section.
+
+### Still open from this plan
+
+`renders/` refresh and the VCV plugin rebuild remain the user's listening-pass steps; the engine's output changed deliberately (see the spec's bit-exactness decision), so those are re-cuts, not regressions.
