@@ -78,6 +78,7 @@ add_executable(spky_tests
     tests/test_comp.cpp
     tests/test_limiter.cpp
     tests/test_fast_sin.cpp
+    tests/test_fast_tanh.cpp
     tests/test_morph_osc.cpp
     tests/test_env.cpp
     engine/synth/voice.cpp
