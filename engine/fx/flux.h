@@ -60,7 +60,7 @@ public:
     // Move the head without storing — FREEZE: the tape keeps rolling under
     // the read heads, but nothing is written onto it.
     void Advance() {
-        write_ptr_ = (write_ptr_ - 1 + max_size) % max_size;
+        write_ptr_ = (write_ptr_ - 1) & kMask;
     }
 
     // EROSION: abrade what is on the tape and burn `sample` into it. `wear`
@@ -69,7 +69,7 @@ public:
         // fast_tanh, not std::tanh: this runs per sample in the audio path
         // while frozen, and flux.h already includes util/fast_tanh.h.
         line_[write_ptr_] = fast_tanh(line_[write_ptr_] * wear + sample);
-        write_ptr_ = (write_ptr_ - 1 + max_size) % max_size;
+        write_ptr_ = (write_ptr_ - 1) & kMask;
     }
 
 private:
@@ -128,6 +128,8 @@ public:
         delay_line_.Init(buf);
         bpf_.Init(sample_rate);
         feedback_ = 0.f;
+        frozen_ = false;
+        wear_ = 1.f;
     }
 
     void SetFeedback(float feedback) { feedback_ = feedback; }

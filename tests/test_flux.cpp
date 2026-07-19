@@ -186,6 +186,9 @@ TEST_CASE("echo: zero writeback is bit-exact with the one-arg store") {
         float yb = b.Process(in, ds, 0.f);
         REQUIRE(ya == yb);
     }
+    // Bit-exactness is a claim about what lands on the tape, not merely what
+    // Process returns -- compare the stores directly.
+    CHECK(std::memcmp(a.line(), b.line(), Flux::kMaxSamples * sizeof(float)) == 0);
 }
 
 TEST_CASE("echo: freeze stops writing but keeps the pointer moving") {
@@ -247,7 +250,96 @@ TEST_CASE("echo: writeback stays bounded under sustained full scale") {
         peak = std::max(peak, std::fabs(y));
         REQUIRE(std::isfinite(y));
     }
-    CHECK(peak < 4.f);
+    // Process returns fast_tanh(...), which is hard-clamped to |y| <= 1
+    // unconditionally (util/fast_tanh.h) -- that's the real bound; 4.0 would
+    // assert nothing.
+    CHECK(peak <= 1.f);
+}
+
+TEST_CASE("echo: frozen writeback overdubs the tape in the direction of wb") {
+    // The one case the primitive exists for: frozen tape, non-zero writeback
+    // overdubbed onto it. Covers both branches of the freeze else-if --
+    // wear_ >= 1 (pure overdub, Advance()'s sibling) and wear_ < 1 (decay
+    // blended with the overdub) -- and is sensitive to a sign error or a
+    // swapped argument pair in WriteBlend(wb, wear_): swapping the arguments
+    // would compute fast_tanh(old * wb + wear_) instead of
+    // fast_tanh(old * wear_ + wb), which disagrees with the expected values
+    // below whenever wb != wear_.
+    const float ds = 0.1f * 48000.f;
+    const float kConst = 0.3f;   // known, non-zero prior tape content
+    const float wb = 0.4f;       // known, non-zero writeback
+
+    auto prime_and_freeze = [&](EchoDelay<Flux::kMaxSamples>& e, float wear) {
+        e.SetFeedback(0.f);   // store == in exactly while unfrozen, wb == 0
+        for (size_t i = 0; i < Flux::kMaxSamples; ++i) e.Process(kConst, ds, 0.f);
+        // Confirm the priming actually landed bit-exact before trusting it
+        // as the "known prior content" for the freeze pass below.
+        float max_prime_err = 0.f;
+        for (size_t i = 0; i < Flux::kMaxSamples; ++i)
+            max_prime_err = std::max(max_prime_err, std::fabs(e.line()[i] - kConst));
+        REQUIRE(max_prime_err == 0.f);
+
+        e.set_freeze(true);
+        e.set_wear(wear);
+        for (size_t i = 0; i < Flux::kMaxSamples; ++i) e.Process(0.f, ds, wb);
+    };
+
+    // wear_ >= 1: pure overdub, no decay of the prior sample.
+    static float buf1[Flux::kMaxSamples];
+    EchoDelay<Flux::kMaxSamples> e1;
+    e1.Init(48000.f, buf1);
+    prime_and_freeze(e1, 1.f);
+    const float expect1 = fast_tanh(kConst * 1.f + wb);
+    float max_err1 = 0.f, max_abs1 = 0.f;
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {
+        max_err1 = std::max(max_err1, std::fabs(e1.line()[i] - expect1));
+        max_abs1 = std::max(max_abs1, std::fabs(e1.line()[i]));
+    }
+    CHECK(max_err1 == 0.f);
+    CHECK(max_abs1 <= 1.f);           // fast_tanh's hard clamp, still holds
+    CHECK(expect1 > kConst);          // positive wb moved the sample up
+
+    // wear_ < 1: decay of the prior sample blended with the same overdub --
+    // must land somewhere different from the wear_ == 1 case above.
+    static float buf2[Flux::kMaxSamples];
+    EchoDelay<Flux::kMaxSamples> e2;
+    e2.Init(48000.f, buf2);
+    prime_and_freeze(e2, 0.5f);
+    const float expect2 = fast_tanh(kConst * 0.5f + wb);
+    float max_err2 = 0.f, max_abs2 = 0.f;
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {
+        max_err2 = std::max(max_err2, std::fabs(e2.line()[i] - expect2));
+        max_abs2 = std::max(max_abs2, std::fabs(e2.line()[i]));
+    }
+    CHECK(max_err2 == 0.f);
+    CHECK(max_abs2 <= 1.f);
+    CHECK(std::fabs(expect2 - expect1) > 1e-3f);   // wear actually mattered
+}
+
+TEST_CASE("deline: N samples behind the head reads the sample written N steps ago") {
+    // Pins down the tape-tap indexing convention data()/write_ptr() exist
+    // for: write_ptr_ DECREMENTS on every Write, so it moves further back in
+    // time as it advances forward in address space. "N samples behind the
+    // head" is therefore data()[(write_ptr() + N) & mask] -- an INCREASING
+    // index for further into the past, the opposite of the naive
+    // "head - N" reading. Task 2's grain reads build directly on this.
+    static float buf[Flux::kMaxSamples];
+    DeLine<float, Flux::kMaxSamples> line;
+    line.Init(buf);
+
+    const int32_t mask = static_cast<int32_t>(Flux::kMaxSamples) - 1;
+    const int n = 100;
+    // Marker sequence: sample i carries value (i + 1), so 0 never collides
+    // with the silent buffer Init() just zeroed.
+    for (int i = 0; i < n; ++i) line.Write(static_cast<float>(i + 1));
+
+    // back == 1 is the most recently written sample (value n); back == n is
+    // the oldest one still in this run (value 1).
+    for (int back = 1; back <= n; ++back) {
+        const float expect = static_cast<float>(n - back + 1);
+        const float got = line.data()[(line.write_ptr() + back) & mask];
+        CHECK(got == doctest::Approx(expect));
+    }
 }
 
 TEST_CASE("flux slice: norm endpoints hit 1/2 and 1/32") {
