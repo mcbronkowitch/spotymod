@@ -39,6 +39,7 @@ void Comp::set_amount(float n) {
 float Comp::gain_db() const { return 20.f * std::log10(_gain); }
 
 void Comp::update_curve(float a) {
+    _curve_amount = a;
     _thr_db = -32.f * a;
     const float ratio = 1.f + 9.f * a * a;          // 2:1 at 1/3, 5:1 at 2/3, 10:1 at 1
     _inv_ratio = 1.f / ratio;
@@ -53,7 +54,7 @@ void Comp::update_curve(float a) {
 
 void Comp::compute_gain() {
     if (_env < 1e-9f) _env = 0.f;   // denormal floor (long engaged silence)
-    update_curve(_amount.value());
+    if (_amount.value() != _curve_amount) update_curve(_amount.value());
     const float env_db = 20.f * std::log10(std::max(_env, 1e-6f));
     const float over = env_db - _thr_db;
     float gr_db = 0.f;

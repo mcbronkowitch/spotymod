@@ -31,7 +31,9 @@ private:
     OnePole _amount;                          // ~2 ms knob smoothing
     float _sr            = 48000.f;
     float _amount_target = 0.f;
-    // curve (recomputed at the decimated rate from the smoothed amount)
+    // curve (recomputed only when the smoothed amount actually moved — the
+    // OnePole snaps on convergence, so a static knob costs no exp/pow here)
+    float _curve_amount = -1.f;               // amount the curve was built for
     float _thr_db    = 0.f;
     float _inv_ratio = 1.f;                   // 1/ratio
     float _makeup_db = 0.f;
