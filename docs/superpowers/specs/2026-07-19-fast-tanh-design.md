@@ -70,11 +70,18 @@ ceiling below full scale.
 
 ### The three properties that are contract, not cosmetics
 
-1. **`|fast_tanh(x)| ≤ 1.0` strictly, for every finite input.** This is what
-   bounds the echo feedback loop at coefficient 1.2 and what defines the master
-   limiter's ceiling. The clamp guarantees it *hard*; the unclamped Padé does not
-   (it runs to `x/15` for large x and would let the loop diverge). Verified:
-   `max|f| = 1.0000000000` over the sweep.
+1. **`|fast_tanh(x)| ≤ 1.0`, for every finite input.** This is what bounds the
+   echo feedback loop at coefficient 1.2 and what defines the master limiter's
+   ceiling. The unclamped Padé does not have it (it runs to `x/15` for large x
+   and would let the loop diverge) — but the threshold alone does not
+   guarantee it either: `3.646739f` sits 4.1e-7 above the true root
+   (3.6467385950…), so a 9.3e-6-wide band of floats just below the threshold
+   evaluates the raw rational form up to 1.19e-7 above 1.0, found by
+   exhaustive float32 enumeration, not by the sweep below (its 8e-5 step is
+   8.6× wider than the band, so it steps straight over it — the earlier
+   "Verified: max|f| = 1.0000000000 over the sweep" claim was a grid artifact,
+   not a measurement). The bound is now enforced on the return value itself
+   (two compares), so it holds regardless of the threshold's rounding.
 2. **Monotonic** over the whole range. A non-monotonic saturator folds the
    transfer curve and produces artifacts in the loop that read as a bug.
 3. **`f'(0) = 1` exactly.** `Limiter::shape` is C1-continuous at the knee only

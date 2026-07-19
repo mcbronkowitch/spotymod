@@ -67,6 +67,16 @@ TEST_CASE("fast_tanh: odd symmetry is exact") {
     }
 }
 
+TEST_CASE("fast_tanh: the bound holds through the clamp neighbourhood") {
+    // The uniform sweep above steps 8e-5; the band where the raw rational form
+    // exceeds 1.0 is 9.3e-6 wide, so a grid sweep can step straight over it.
+    // Walk every representable float approaching the clamp from below instead.
+    for (float x = 3.6467f; x <= 3.646739f; x = std::nextafter(x, 4.f)) {
+        CHECK(fast_tanh( x) <=  1.0f);
+        CHECK(fast_tanh(-x) >= -1.0f);
+    }
+}
+
 TEST_CASE("fast_tanh: origin value and slope") {
     CHECK(fast_tanh(0.f) == 0.f);                    // exact, not Approx
 
