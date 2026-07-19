@@ -535,3 +535,29 @@ TEST_CASE("instrument: COLOR 0 stays bit-deterministic") {
         }
     }
 }
+
+TEST_CASE("instrument: control raster survives a block-size-agnostic call pattern") {
+    // The raster lives in Part and advances per sample, so rendering the same
+    // audio in 96-sample blocks and in 7-sample blocks must give the same
+    // samples. If anything ever ties the tick to the host block boundary,
+    // this is what catches it.
+    auto render = [](size_t chunk, std::vector<float>& out) {
+        Instrument inst;
+        inst.init(48000.f);
+        inst.set_tempo_bpm(120.f);
+        for (int p = 0; p < PART_COUNT; ++p) {
+            inst.set_depth(p, 1.f);
+            inst.set_rate(p, 0.8f);
+        }
+        out.assign(4800, 0.f);
+        std::vector<float> r(4800, 0.f);
+        for (size_t i = 0; i < 4800; i += chunk) {
+            const size_t n = std::min(chunk, size_t(4800) - i);
+            inst.process(nullptr, nullptr, out.data() + i, r.data() + i, n);
+        }
+    };
+    std::vector<float> a, b;
+    render(96, a);
+    render(7, b);
+    for (size_t i = 0; i < a.size(); ++i) REQUIRE(a[i] == b[i]);
+}
