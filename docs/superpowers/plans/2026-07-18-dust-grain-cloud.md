@@ -218,7 +218,7 @@ Now do the `TRIGGER_A/B` → `FRZ_A/B` swap and wire the latch.
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `DeLine::data() -> const T*`, `DeLine::write_ptr() -> int32_t`, `DeLine::Advance() -> void`, `DeLine::WriteBlend(T sample, float wear) -> void`; `EchoDelay::line() -> const float*`, `EchoDelay::write_ptr() -> int32_t`, `EchoDelay::set_freeze(bool)`, `EchoDelay::set_wear(float)`, `EchoDelay::Process(float in, float wb) -> float` (the existing one-arg `Process(float in)` stays and delegates with `wb = 0.f`).
+- Produces: `DeLine::data() -> const T*`, `DeLine::write_ptr() -> int32_t`, `DeLine::Advance() -> void`, `DeLine::WriteBlend(T sample, float wear) -> void`; `EchoDelay::line() -> const float*`, `EchoDelay::write_ptr() -> int32_t`, `EchoDelay::set_freeze(bool)`, `EchoDelay::set_wear(float)`, `EchoDelay::Process(float in, float delay_samples, float wb = 0.f) -> float` (**a third, defaulted parameter on the EXISTING two-arg signature** — `8723bc5` moved the delay-time slew up into `Flux`, so `delay_samples` already occupies slot 2 and every current call site keeps working untouched).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -237,14 +237,15 @@ TEST_CASE("echo: zero writeback is bit-exact with the one-arg store") {
     EchoDelay<Flux::kMaxSamples> a, b;
     a.Init(48000.f, a_buf);
     b.Init(48000.f, b_buf);
-    a.SetDelayTime(0.25f, true);
-    b.SetDelayTime(0.25f, true);
     a.SetFeedback(0.6f);
     b.SetFeedback(0.6f);
+    // EchoDelay has no sample rate or smoother of its own since 8723bc5 -- the
+    // caller passes an already-slewed length in samples.
+    const float ds = 0.25f * 48000.f;
     for (int i = 0; i < 60000; ++i) {
         float in = std::sin(0.013f * i) * 0.7f;
-        float ya = a.Process(in);
-        float yb = b.Process(in, 0.f);
+        float ya = a.Process(in, ds);
+        float yb = b.Process(in, ds, 0.f);
         REQUIRE(ya == yb);
     }
 }
@@ -253,9 +254,9 @@ TEST_CASE("echo: freeze stops writing but keeps the pointer moving") {
     static float buf[Flux::kMaxSamples];
     EchoDelay<Flux::kMaxSamples> e;
     e.Init(48000.f, buf);
-    e.SetDelayTime(0.25f, true);
     e.SetFeedback(0.5f);
-    for (int i = 0; i < 48000; ++i) e.Process(std::sin(0.01f * i) * 0.5f);
+    const float ds = 0.25f * 48000.f;
+    for (int i = 0; i < 48000; ++i) e.Process(std::sin(0.01f * i) * 0.5f, ds);
 
     // snapshot the whole line, then freeze and hammer it with loud input
     static float snap[Flux::kMaxSamples];
@@ -263,7 +264,7 @@ TEST_CASE("echo: freeze stops writing but keeps the pointer moving") {
     const int32_t p0 = e.write_ptr();
     e.set_freeze(true);
     e.set_wear(1.f);
-    for (int i = 0; i < 24000; ++i) e.Process(1.f);
+    for (int i = 0; i < 24000; ++i) e.Process(1.f, ds);
 
     CHECK(std::memcmp(snap, e.line(), sizeof(snap)) == 0);   // nothing stored
     const int32_t expect = (p0 - 24000 + 2 * (int32_t)Flux::kMaxSamples)
@@ -275,9 +276,9 @@ TEST_CASE("echo: frozen with wear < 1 decays the loop, bounded") {
     static float buf[Flux::kMaxSamples];
     EchoDelay<Flux::kMaxSamples> e;
     e.Init(48000.f, buf);
-    e.SetDelayTime(0.25f, true);
     e.SetFeedback(0.5f);
-    for (int i = 0; i < 48000; ++i) e.Process(std::sin(0.01f * i) * 0.5f);
+    const float ds = 0.25f * 48000.f;
+    for (int i = 0; i < 48000; ++i) e.Process(std::sin(0.01f * i) * 0.5f, ds);
 
     auto rms = [&]() {
         double s = 0.0;
@@ -288,7 +289,7 @@ TEST_CASE("echo: frozen with wear < 1 decays the loop, bounded") {
     const double before = rms();
     e.set_freeze(true);
     e.set_wear(1.f - 4.0e-6f);
-    for (size_t i = 0; i < Flux::kMaxSamples; ++i) e.Process(1.f);   // one full pass
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) e.Process(1.f, ds);   // one full pass
     const double after = rms();
 
     CHECK(after < before);          // it eroded
@@ -300,11 +301,11 @@ TEST_CASE("echo: writeback stays bounded under sustained full scale") {
     static float buf[Flux::kMaxSamples];
     EchoDelay<Flux::kMaxSamples> e;
     e.Init(48000.f, buf);
-    e.SetDelayTime(0.1f, true);
     e.SetFeedback(1.2f);
+    const float ds = 0.1f * 48000.f;
     float peak = 0.f;
     for (int i = 0; i < 480000; ++i) {
-        float y = e.Process(1.f, 0.9f);
+        float y = e.Process(1.f, ds, 0.9f);
         peak = std::max(peak, std::fabs(y));
         REQUIRE(std::isfinite(y));
     }
@@ -336,14 +337,16 @@ In `engine/fx/flux.h`, inside `class DeLine`, immediately after `Read()` (curren
     // EROSION: abrade what is on the tape and burn `sample` into it. `wear`
     // slightly below 1 is what makes the frozen loop decompose per pass.
     void WriteBlend(T sample, float wear) {
-        line_[write_ptr_] = std::tanh(line_[write_ptr_] * wear + sample);
+        // fast_tanh, not std::tanh: this runs per sample in the audio path
+        // while frozen, and flux.h already includes util/fast_tanh.h.
+        line_[write_ptr_] = fast_tanh(line_[write_ptr_] * wear + sample);
         write_ptr_ = (write_ptr_ - 1 + max_size) % max_size;
     }
 ```
 
 - [ ] **Step 4: Add the `EchoDelay` primitives**
 
-In `engine/fx/flux.h`, inside `class EchoDelay`, replace the existing `Process` (lines 122-132) with:
+In `engine/fx/flux.h`, inside `class EchoDelay`, replace the existing `Process(float in, float delay_samples)` with the following. **Read the current body first** — it is the shipped code and only two things are being added to it (the `wb` parameter and the freeze/erosion branch); everything else must survive byte-for-byte:
 
 ```cpp
     void set_freeze(bool on) { frozen_ = on; }
@@ -355,19 +358,25 @@ In `engine/fx/flux.h`, inside `class EchoDelay`, replace the existing `Process` 
     const float* line() const { return delay_line_.data(); }
     int32_t write_ptr() const { return delay_line_.write_ptr(); }
 
-    float Process(float in) { return Process(in, 0.f); }
-
-    // `wb` is the DustCloud writeback (already tanh-bounded by the caller);
-    // it is 0 outside ROT zone R, and the store is then bit-identical to the
-    // pre-DUST code path.
-    float Process(float in, float wb) {
-        daisysp::fonepole(delay_time_current_, delay_time_target_,
-                          delay_smooth_coef_);
-        delay_line_.SetDelay(delay_time_current_ * sample_rate_);
+    // `wb` is the DustCloud writeback (already bounded by the caller); it is 0
+    // outside ROT zone R, and the store is then bit-identical to the pre-DUST
+    // path. DEFAULTED, so every existing call site compiles unchanged.
+    //
+    // Mind the parameter ORDER: `delay_samples` is the second argument and has
+    // been since 8723bc5 lifted the delay-time slew into Flux -- one shared
+    // one-pole for both channels instead of two. EchoDelay owns no sample rate
+    // and no smoother; the caller passes an already-slewed length in samples.
+    float Process(float in, float delay_samples, float wb = 0.f) {
+        delay_line_.SetDelay(delay_samples);
         float out = delay_line_.Read();
         out = bpf_.Process(out);
-        out = std::tanh(out);   // tape-warm limiter: transparent near unity,
-                                // bounded self-oscillation above it (bloom)
+        out = fast_tanh(out);   // tape-warm limiter: transparent near unity,
+                                // bounded self-oscillation above it (bloom).
+                                // fast_tanh, NOT std::tanh: e8266bd took this
+                                // off libm, and its hard clamp at |x| >= 3.65
+                                // is what the existing "flux: feedback at max
+                                // blooms but stays bounded" thresholds are
+                                // tuned against. Do not revert it.
         if (!frozen_) {
             float store = out * feedback_ + in;
             if (wb != 0.f) store += wb;   // explicit: keeps the wb == 0 path
@@ -381,7 +390,7 @@ In `engine/fx/flux.h`, inside `class EchoDelay`, replace the existing `Process` 
     }
 ```
 
-and add to the private member block (after `float feedback_ = 0.f;`, line 139):
+and add to the private member block (after `float feedback_ = 0.f;`):
 
 ```cpp
     bool  frozen_ = false;
@@ -1210,7 +1219,10 @@ In `engine/fx/dust.cpp`, replace the last two lines of `DustCloud::process`:
     // itself over generations. tanh-bounded here so the recirculating energy
     // cannot run away no matter what the feedback path does with it.
     if (_wb_gain <= 0.f) return 0.f;
-    return std::tanh((gl + gr) * 0.5f * _wb_gain);
+    // fast_tanh, not std::tanh. Not only house style: the dust_16_wb and
+    // dust_16_erode bench rows were measured with fast_tanh, so std::tanh
+    // here would cost more than the figures the budget decision rests on.
+    return fast_tanh((gl + gr) * 0.5f * _wb_gain);
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -1348,7 +1360,7 @@ Add to the end of `Flux::init` (after `set_mix(0.5f);`, line 23):
     _dust.set_delay_time(_delay_time);
 ```
 
-Add to the end of `Flux::recompute_time` (after the two `SetDelayTime` calls, line 47):
+Add to the end of `Flux::recompute_time` (after `if (immediate) _dt_current = _delay_time;` — note it no longer calls `SetDelayTime` on the two `EchoDelay`s at all: since 8723bc5 it only updates `_dt_target`/`_dt_current`, and `Flux::process` passes the slewed length down):
 
 ```cpp
     _dust.set_delay_time(_delay_time);   // zone S grid follows the echo
@@ -1376,9 +1388,15 @@ void Flux::process(float& l, float& r) {
     float send = _sw.process();
     if (_sw.is_idle()) return;   // fully off: bit-exact dry
 
+    // The shared delay-time slew (8723bc5) advances exactly ONCE per sample,
+    // before the branch -- both paths must see the same tape geometry or the
+    // DUST = 0 bypass stops being bit-exact.
+    daisysp::fonepole(_dt_current, _dt_target, _dt_coef);
+    const float ds = _dt_current * _sr;
+
     if (!_dust.active()) {       // DUST = 0: bit-exact with the pre-DUST path
-        l += _echo_l.Process(l * send) * _mix_lin;
-        r += _echo_r.Process(r * send) * _mix_lin;
+        l += _echo_l.Process(l * send, ds) * _mix_lin;
+        r += _echo_r.Process(r * send, ds) * _mix_lin;
         return;
     }
 
@@ -1390,8 +1408,8 @@ void Flux::process(float& l, float& r) {
     float gl = 0.f, gr = 0.f;
     const float wb = _dust.process(tap, gl, gr);
 
-    const float e_l = _echo_l.Process(l * send, wb);
-    const float e_r = _echo_r.Process(r * send, wb);
+    const float e_l = _echo_l.Process(l * send, ds, wb);
+    const float e_r = _echo_r.Process(r * send, ds, wb);
 
     // Grain sum joins BEFORE _mix_lin: FLUX MIX stays the single wet control
     // for everything coming off the tape. Grain reads deliberately skip the
