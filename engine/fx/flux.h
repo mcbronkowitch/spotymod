@@ -10,8 +10,13 @@
 namespace spky {
 
 // Port of src/core/deline.h (interpolating delay line over an injected buffer).
+// max_size must be a power of two: all index wraps are AND masks (the indices
+// are never negative), so the per-sample path stays free of integer division.
 template <typename T, size_t max_size>
 class DeLine {
+    static_assert((max_size & (max_size - 1)) == 0, "max_size must be a power of two");
+    static constexpr int32_t kMask = static_cast<int32_t>(max_size) - 1;
+
 public:
     DeLine() = default;
     DeLine(const DeLine&) = delete;
@@ -32,17 +37,17 @@ public:
     void SetDelay(float delay) {
         int32_t int_delay = static_cast<int32_t>(delay);
         frac_ = delay - static_cast<float>(int_delay);
-        delay_ = int_delay % static_cast<int32_t>(max_size);
+        delay_ = int_delay & kMask;
     }
 
     void Write(T sample) {
         line_[write_ptr_] = sample;
-        write_ptr_ = (write_ptr_ - 1 + max_size) % max_size;
+        write_ptr_ = (write_ptr_ - 1) & kMask;
     }
 
     T Read() const {
-        T a = line_[(write_ptr_ + delay_) % max_size];
-        T b = line_[(write_ptr_ + delay_ + 1) % max_size];
+        T a = line_[(write_ptr_ + delay_) & kMask];
+        T b = line_[(write_ptr_ + delay_ + 1) & kMask];
         return a + (b - a) * frac_;
     }
 
@@ -146,7 +151,11 @@ private:
 // onto the signal at FLUX MIX (original topology: send-style, full-wet echo).
 class Flux {
 public:
-    static constexpr size_t kMaxSamples = 240000;   // 5 s @ 48 kHz
+    // Power of two so DeLine's index wraps compile to AND masks instead of
+    // integer divisions (4 modulos per sample per channel otherwise).
+    // 2^18 = 5.46 s @ 48 kHz; was 240000 (5 s) — the extra 0.35 MB SDRAM per
+    // buffer is the price of the mask.
+    static constexpr size_t kMaxSamples = 262144;
 
     void init(float sample_rate, float* buf_l, float* buf_r);
     void set_on(bool on, bool immediate = false) { _sw.set_on(on, immediate); }
