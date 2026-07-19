@@ -799,3 +799,67 @@ EOF
 Spec coverage checked section by section: raster ownership → Task 4 Step 3; the three paths → Tasks 1, 4, 6; quantizer slew → Task 3; Step 1 identity gate with its named condition → Task 2 + Task 4 Step 6; Step 2 → Task 6; expected saving and the assumption it fails on → Task 7 Step 2; verification table → Tasks 4, 5, 6, 7.
 
 Two spec items are deliberately *not* tasks. The listening pass after Task 6 is Bastian's, not an agent's. The `set_engine`-swap counter offset is documented in the comment added in Task 4 Step 3 and left unfixed, as the spec says.
+
+---
+
+## Outcome (2026-07-19)
+
+Measured on the Daisy Seed at `c7f6a73`, clean tree, two passes checksum-identical
+(`docs/bench/2026-07-19-c7f6a73.md`).
+
+**The cut, isolated.** Using the row's own formula — `glue = part_glue_flow −
+super_mod_5lanes − engine intercept − fx_none`, where the intercept is
+`synth_1 − (synth_2 − synth_1)`:
+
+| | cycles/part | % of 960k budget, both parts |
+|---|---:|---:|
+| before (`9be5df9`) | 112 820 | 23.5 % |
+| after (`c7f6a73`) | 18 664 | 3.9 % |
+| **saved** | **94 156** | **19.6 %** |
+
+That is **83.5 % of the glue**, against the spec's predicted 70–85 %, and 19.6 %
+of budget against the predicted 16–19 % — at the top of the range and just
+under the cut list's 23 % ceiling, which is the shape the spec argued for: the
+ceiling assumes the glue reaches zero, and 18 664 cycles/part is the mandatory
+per-sample remainder (engine fade, both `lane_fired` reads, the gate counter).
+
+**The assumption the spec named as its failure risk held.** It predicted the
+saving on the premise that `Quantizer::process` — with its `nearest_note`
+outward search and the `% 12` in `allowed()` — dominates the glue. Landing at
+the top of the predicted range rather than below it is consistent with that;
+had the distribution been flatter, the five `fx_target_value` calls left
+standing after Task 4 would have made Task 4 under-deliver.
+
+**Instrument budget — attribution matters here.**
+
+| | before | after |
+|---|---:|---:|
+| `instrument_worst` offline | 150.83 % avg / 156.06 % max | 117.37 % / 123.11 % |
+| `instrument_worst` anchored | 152.03 % avg / 155.95 % max | 118.38 % / 123.24 % |
+
+**This drop is not this plan's alone.** A second session landed four FX cuts on
+the same branch (`7e9f924`, `8723bc5`, `f88501a`, `7ea004b`). Their largest is
+visible directly: `oliverb_solo_sram` fell 186 673 → 91 420 cycles, better than
+halved. Of the ~32.7-point drop in anchored max, this plan's glue cut accounts
+for ~19.6 points; the FX work accounts for the rest. Do not credit the whole
+move to the raster.
+
+**Still over budget.** 123 % anchored max. The remaining ranked items are the
+reverb composition-coupling question, fast tanh in `EchoDelay` (ceiling ≈8 %,
+now partly overtaken by the FX session's work), fast tanh in `Limiter::shape()`
+(≈3 %, `limiter_driven` is unchanged at 35 223 cycles), and the `PartFx`
+rev-send `std::sin` hygiene one-liner.
+
+**Bench harness caveat.** `echo_short_sram` / `echo_short_sdram` are **not
+comparable** to the `9be5df9` run: `8723bc5` moved the delay-time one-pole out
+of `EchoDelay` into `Flux`, so those rows no longer carry the per-sample slew.
+The harness had stopped compiling against the new API and was repaired in
+`c7f6a73` — it went unnoticed because `bench/` builds only under the ARM
+toolchain, never in the desktop CMake suite the FX change was verified against.
+
+**Known limitation shipped deliberately.** Phase alignment between `Part` and
+`SynthEngine` holds until the first `set_engine` swap. `SynthEngine::_ctrl_ctr`
+freezes while its engine is inactive and resumes from the frozen value, so
+after a swap everything behind its `_update_control()` — cutoff, resonance,
+pan/drift, detune, envelope times, chord bloom — runs on a permanently offset
+schedule, up to ~2 ms from `Part`'s raster. Documented in `part.h`, not fixed.

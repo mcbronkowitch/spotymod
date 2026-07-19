@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-19 (ablation family closes the instrument's unaccounted budget).
+- **Last updated:** 2026-07-19 (first optimization pass: Part glue to control rate + FX hygiene cuts; worst case 156 % -> 123 %).
 
 > **Reminder:** the engine and its milestones are still verified only against
 > the desktop offline renderer (unit tests + WAV/CSV render) — the Daisy
@@ -398,15 +398,26 @@ Makefile) is untouched by its presence; Step 1 of the bench plan re-proves
 that on every run.
 
 The headline numbers are no longer estimates — they come from a real Daisy
-Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-9be5df9.md`):
+Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-c7f6a73.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 151 % (avg) /
-  156 % (max) of the block budget offline and 152 % (avg) /
-  156 % (max) anchored inside a real audio callback — over budget either
-  way. **The 2×4 architecture does not fit**; anchor mode confirmed this
-  audibly, with the callback unable to keep up and the DAC emitting
-  underrun garbage. The design has to shed voices or FX before M6.
+  parts, all FX on, high diffusion, echo at max) costs 117 % (avg) /
+  123 % (max) of the block budget offline and 118 % (avg) /
+  123 % (max) anchored inside a real audio callback. **Still over budget,
+  but no longer by the margin that made the 2×4 verdict look final** — the
+  first optimization pass took ~33 points off the anchored max, from 156 %.
+  Two strands landed together on `cpu-hunt`: the **Part-glue control-rate
+  cut** (`docs/superpowers/plans/2026-07-19-part-glue-control-rate.md`),
+  worth ~19.6 points on its own — the glue fell 112 820 → 18 664 cycles per
+  part, 83.5 % of it, against a predicted 70–85 % — and four **FX hygiene
+  cuts** whose largest more than halved the reverb (`oliverb_solo_sram`
+  186 673 → 91 420 cycles). Roughly 23 points still separate the worst case
+  from the budget; the ranked list below is what is left to spend.
+- Two caveats on the new run. `echo_short_sram` / `echo_short_sdram` are
+  **not comparable** to `9be5df9` — the delay-time one-pole moved out of
+  `EchoDelay` into `Flux`, so those rows no longer carry the per-sample
+  slew. And the earlier figures below (the ablation closure, the mod-plane
+  history) are stated against `9be5df9` and were not re-derived here.
 - **The unaccounted gap is now attributed, and the go/no-go conclusion did
   not move.** Component rows summed to ~120 % of budget while
   `instrument_worst` measured ~159 % (avg) — a ~375k-cycle (39-point) gap
@@ -436,9 +447,13 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-9be5df9.md`):
   every prior measurement — the closure just names where the cost lives
   instead of leaving 39 points dark. Ranked cut list for the next spec
   (predicted savings, largest first, all as % of the 960k-cycle budget):
-  Part glue to control rate (ceiling ≈23 %, not proven safe — STEP's
-  fire-gating already exists, FLOW's SMOOTH=0 near-passthrough is the risk
-  case); reverb composition-coupling investigation (≈4 % already paid,
+  Part glue to control rate — **SPENT 2026-07-19** (`c7f6a73`, spec
+  `2026-07-19-part-glue-control-rate-design.md`): measured **19.6 %**, not the
+  23 % ceiling, because 18 664 cycles/part are a mandatory per-sample
+  remainder. The `SMOOTH=0` risk case largely dissolved — the engine had
+  never seen those intermediate values, since it reads at its own 96-sample
+  control tick; what remained was fire timing, answered with an event refresh
+  rather than a finer raster; reverb composition-coupling investigation (≈4 % already paid,
   mechanism unexplained) plus a speculative, unmeasured half-rate-reverb
   hypothesis (order ≈10 %, needs its own ablation before it's trusted); fast
   tanh in `EchoDelay` (ceiling ≈8 %, mirrors the `wave_sine`→`fast_sin`
