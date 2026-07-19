@@ -484,6 +484,72 @@ TEST_CASE("color-mod: deterministic — same seed, same density sequence") {
     REQUIRE(!sa.empty());
 }
 
+TEST_CASE("part: an engine swapped in off the raster gets the commanded target immediately") {
+    // Finding 3 regression. Before the fix, the engine-swap block in
+    // process() completed the swap but left Part::_ctrl_ctr running on its
+    // old schedule, so a freshly active engine got no set_targets()/
+    // set_chord() push until the next natural raster tick -- up to
+    // kCtrlInterval-1 samples on its power-on defaults. For TestToneEngine
+    // that default is _freq = 220.f (test_tone_engine.h), not the commanded
+    // pitch.
+    //
+    // Two warm-up process() calls (still on the boot engine) before
+    // set_engine(): the SoftSwitch fade-out is a fixed 191-sample countdown
+    // from the sample set_engine() starts it, so this lands the swap at
+    // absolute sample 193 -- one sample past a raster tick (192), i.e. the
+    // worst-case off-raster phase, which maximizes the stale window a bug
+    // would leave (up to kCtrlInterval - 1 samples, here ending at the next
+    // tick at 288).
+    //
+    // The swap sample itself is unusable as a probe: is_idle() -- and so the
+    // swap -- fires exactly when SoftSwitch's fade output is at its silent
+    // floor, and stays at/near exactly 0 for a few samples after (idle ->
+    // rise transition), so amplitude there is dominated by the fade, not by
+    // which engine state is behind it. Zero-crossing counting a window later
+    // in the stale range sidesteps that: a positive scale factor from the
+    // fade never flips the sign of the raw tone.
+    // A tone held at the commanded 880 Hz completes ~1.3 cycles in an
+    // 80-sample window (80/48000 s), i.e. several sign changes; a tone stuck
+    // on TestToneEngine's 220 Hz power-on default cannot complete even half
+    // a cycle in that window from a phase-0 start, i.e. zero sign changes.
+    // That gap is what this test asserts on -- no exact-value/bit-matching
+    // against a reference engine needed.
+    Part p;
+    p.init(48000.f, 11u);
+    p.quant().set_mode(QuantMode::Free);   // passthrough: no slew to settle
+    p.mod().set_rate(0.f);                 // park the LFOs so no lane fires in this window
+    p.set_target_active(LANE_PITCH, false);
+    p.set_target_base(LANE_PITCH, 1.f);    // commanded freq = 110 * 8^1 = 880 Hz
+
+    float l = 0.f, r = 0.f;
+    p.process(l, r);
+    p.process(l, r);                       // two warm-up calls, see comment above
+    p.set_engine(ENGINE_TEST_TONE);
+
+    int swap_sample = -1;
+    for (int i = 2; i < 96 * 4 && swap_sample < 0; ++i) {
+        p.process(l, r);
+        if (p.engine_id() == ENGINE_TEST_TONE) swap_sample = i;
+    }
+    REQUIRE(swap_sample == 193);   // pins the precondition this test relies on
+    REQUIRE((swap_sample % SynthEngine::kCtrlInterval) != 0);   // deliberately off-raster
+
+    int crossings = 0;
+    float prev = 0.f;
+    bool have_prev = false;
+    for (int i = swap_sample + 1; i <= swap_sample + 80; ++i) {
+        p.process(l, r);
+        if (l == 0.f) continue;            // ambiguous fade-zero sample near the swap; skip
+        if (have_prev && ((prev < 0.f) != (l < 0.f))) ++crossings;
+        prev = l;
+        have_prev = true;
+    }
+    // >=1 already rules out the 220 Hz power-on default from a phase-0
+    // start over 80 samples (it cannot complete a half cycle); >=2 leaves
+    // margin.
+    CHECK(crossings >= 2);
+}
+
 TEST_CASE("part: targets reach the engine on the 96-sample raster") {
     // The quantized pitch is recomputed at the control tick and held between
     // ticks. pitch_cv() reads _pitch_q, so it must be a staircase with 96-

@@ -151,6 +151,13 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
         if (_last_master_hz > 0.f) _engine->set_cycle(1.f / _last_master_hz);
         _switching = false;
         _engine_fade.set_on(true);
+        // A freshly swapped-in engine holds none of the previous engine's
+        // pushed state -- set_targets()/set_chord() never reached it while
+        // it was inactive -- so re-arm the raster to run _control_tick()
+        // later in THIS SAME process() call, rather than up to
+        // SynthEngine::kCtrlInterval - 1 samples from now on its power-on
+        // defaults (e.g. TestToneEngine's 220 Hz _freq, test_tone_engine.h).
+        _ctrl_ctr = 0;
     }
 
     // forward the master-lane cycle length on change, not per sample
