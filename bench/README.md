@@ -160,6 +160,24 @@ but not zero. If a future production build moves the reverb buffer to
 SDRAM, expect `instrument_worst`'s headline percentage to rise by roughly
 two points, not to hold at the figure recorded here.
 
+## Row order is state, not just presentation
+
+The `abl` instrument rows share one `Instrument` (`g_abl_inst`) and each
+`setup_worst()` re-inits it, which clears the FLUX tape (`DeLine::Init`
+memsets), the reverb buffer (`FxEngine::Init` calls `Clear`) and the reverb
+loop filters (reset in `Oliverb::Init`). Even so, **inserting
+`inst_worst_nogrit` before `inst_worst_choked` changed the choked row's
+checksum** (`995dbd34` → `cd90d415`) while its cost moved 0.001 %
+(841 869 → 841 859 cycles). Some state still carries between these rows and
+the three obvious candidates above are not it; the cause is unpinned.
+
+Consequences: a checksum shift on a row you did not touch, after inserting a
+row *before* it, is expected rather than alarming — but it means **abl
+checksums are only comparable between runs whose table order matches**, and
+a genuine determinism regression could hide behind the same signature. The
+same trap is documented in `workloads_system.cpp` for `g_inst_ctr`. Append
+new `abl` rows at the end of the table when you can.
+
 ## Adding a workload
 
 Add one row to the relevant `kXxxWorkloads[]` table (`workloads_system.cpp`

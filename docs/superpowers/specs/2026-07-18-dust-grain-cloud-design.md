@@ -261,10 +261,65 @@ while its *max* moved 6 % (178 053 → 188 764). For these component rows compar
 icache layout shift this bench has seen before. `instrument_worst`'s max stays
 the gate; that is a different, much larger row.
 
+**Finding 6 — folding DUST into the GRIT selector is worth 3.2 points, and
+that is not enough.** The proposal (2026-07-19): make GRIT a three-way choice
+per part — Drive / Reduce / **Dust** — instead of adding DUST as a fourth FX
+block. Mutually exclusive means the worst case pays `max(GRIT, DUST)` rather
+than `GRIT + DUST`, so GRIT's in-context cost *is* the saving. That number was
+unmeasured, and the two available proxies disagreed by 57 %, so
+**`inst_worst_nogrit`** now measures it directly (`abl` family, GRIT off on both
+parts, everything else at worst case):
+
+| | avg | max |
+|---|---:|---:|
+| `instrument_worst` | 882 312 | 934 199 |
+| `inst_worst_nogrit` | 851 234 | 900 102 |
+| **GRIT, both parts** | **3.24 %** | **3.55 %** |
+
+*Proxy post-mortem, because this repo keeps paying for proxies:*
+`grit_drive_solo × 2` predicted 3.06 — **off by −5 %, essentially right**.
+`fx_grit − fx_none` predicted 4.81 — **off by +48 %**, and the mechanism is
+visible in `part_fx.cpp:29`: the FX block is guarded by
+`if (_grit.engaged() || _flux.engaged())`, so `fx_none` skips the *entire*
+chain — smoothed target reads, the FLUX call, the dry/wet crossfade — not just
+Grit. That delta was never GRIT alone. Note this cuts against the FLUX
+precedent, where the solo row *over*-predicted: there is no general law that
+solo rows over- or under-state. Each block has to be checked.
+
+With the measured figure, against `instrument_worst`'s 97.31 % offline max:
+
+| merged configuration | arithmetic | result |
+|---|---|---:|
+| 8 grains | 97.3 − 3.6 + 7.0 | 100.7 % ✗ |
+| 8 grains + erosion | 97.3 − 3.6 + 9.1 | 102.9 % ✗ |
+| 16 grains | 97.3 − 3.6 + 13.3 | 107.1 % ✗ |
+
+**The merge alone does not land it — it misses by about one point at 8 grains.**
+An earlier estimate in this conversation said it would land at 99.3 %, using the
+4.81 proxy; that estimate was wrong for exactly the reason the post-mortem
+above gives. What closes the remaining gap is the `Svf` single-pass rework
+(~2–4 points, and musically free — `Voice::process` reads only `_filt.Low()`
+while DaisySP's `Svf` is double-sampled and computes five outputs):
+**merge + 8 grains + Svf ≈ 96.7–98.7 %**, which fits without spending a single
+voice. With erosion engaged it is 98.9–100.9 % — borderline, and the case to
+re-measure rather than argue.
+
+The merge's non-CPU consequences belong in §6 if it is adopted: GRIT's existing
+intensity knob can carry the DUST amount, so the panel cost falls from +4 small
+knobs to +2 (only ROT per part) — reduction-ladder step (3), taken for free. The
+musical price is that GRIT and DUST become exclusive, and they sit at *different*
+points in the chain: GRIT is saturation **before** the tape, DUST reads **from**
+it. Zone R's self-eating tape is exactly where drive in front would be
+idiomatic, and the merge forecloses it. That is a taste decision, not a budget
+one, and it is not settled here.
+
 **Decision rule, settled.** DUST is unblocked when headroom exists for it —
 today it does not. When it does, it ships at **8 grains** unless a re-measure
 shows the margin can carry 16. The pool constant is the knob; cost is
-near-linear in it, which is now proven rather than argued.
+near-linear in it, which is now proven rather than argued. The cheapest known
+route to the headroom is **GRIT-selector merge (3.2) + `Svf` single-pass
+(2–4)**, which together cost no polyphony; the global voice cap 8→5 (~13 as a
+ceiling) is the fallback if that route falls short.
 
 ## Testing
 
