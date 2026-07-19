@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-19 (mod plane to control rate, measured at `94468af`; worst case 156 % -> 104 % anchored max, avg under budget for the first time at 98 %).
+- **Last updated:** 2026-07-19 (fast tanh in the echo loop and the master limiter, measured at `87f3538`; worst case 104 % -> 96 % anchored max — **under budget for the first time, gate and all**).
 
 > **Reminder:** the engine and its milestones are still verified only against
 > the desktop offline renderer (unit tests + WAV/CSV render) — the Daisy
@@ -398,16 +398,21 @@ Makefile) is untouched by its presence; Step 1 of the bench plan re-proves
 that on every run.
 
 The headline numbers are no longer estimates — they come from a real Daisy
-Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-94468af.md`):
+Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-87f3538.md`):
 
 - The full instrument at its worst case (8 voices, COLOR 4-note on both
-  parts, all FX on, high diffusion, echo at max) costs 97 % (avg) /
-  104 % (max) of the block budget offline and 98 % (avg) /
-  104 % (max) anchored inside a real audio callback. **The average is under
-  budget for the first time; the max is not, and the max is the gate** — a
-  worst case that fits on average still drops blocks. Three optimization
-  passes have now taken ~52 points off the anchored max, from 156 %. The
-  latest is the **mod-plane control-rate cut**
+  parts, all FX on, high diffusion, echo at max) costs 91 % (avg) /
+  96 % (max) of the block budget offline and 91 % (avg) /
+  96 % (max) anchored inside a real audio callback. **The max is under budget
+  for the first time, and the max is the gate** — so the bench now emits *"the
+  2×4 architecture fits"* on its own. Four optimization passes have taken ~60
+  points off the anchored max, from 156 %. The margin is **4.2 points**, which
+  is thinner than the saving the last cut returned from its larger call site:
+  one unbudgeted feature can spend it. The newest pass is the **fast-tanh cut**
+  (spec `docs/superpowers/specs/2026-07-19-fast-tanh-design.md`), worth
+  **8.1 points** on the anchored max (103.89 % → 95.77 %) against a predicted
+  ~11 — **it underdelivered, and cleared the gate only because just ~4 points
+  stood in the way.** Before it, the **mod-plane control-rate cut**
   (`docs/superpowers/plans/2026-07-19-mod-plane-control-rate.md`), worth
   **~19 points** against a predicted 17–19: the plane fell 253 254 → 56 667
   cycles (−77.6 %), far past the spec's own expectation. Before it, on the
@@ -416,21 +421,34 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-94468af.md`):
   ~19.6 points — the glue fell 112 820 → 18 664 cycles per part, 83.5 %,
   against a predicted 70–85 % — alongside four **FX hygiene cuts** whose
   largest more than halved the reverb (`oliverb_solo_sram` 186 673 → 91 420
-  cycles). Roughly **4 points** now separate the worst case from the budget;
-  the ranked list below is what is left to spend.
-- **The cut list's attribution has drifted and needs re-deriving before it
-  is spent again.** `part_glue_flow` halved a second time at `94468af`
-  (19.86 % → 9.97 %) even though the Part-glue cut had already landed at
-  `c7f6a73` — the 96-sample raster tick was carrying cost the ablation had
-  booked to the glue. `instrument_worst` is unaffected (it is the ground
-  truth, not a sum), but the per-owner shares below were derived at
-  `9be5df9`/`c7f6a73` and no longer add up against the current run. Re-run
-  the ablation family before trusting any individual predicted saving.
-- Two caveats on the new run. `echo_short_sram` / `echo_short_sdram` are
+  cycles). What is left on the ranked list below is no longer needed to clear
+  the gate; it should be held as margin rather than spent.
+- **The drifted attribution is re-baselined and the flag is cleared — but the
+  family predicts rank order better than magnitude.** `part_glue_flow` had
+  halved a second time at `94468af` (19.86 % → 9.97 %) even though the
+  Part-glue cut had already landed at `c7f6a73`, which looked like instability.
+  At `87f3538` it reads 9.98 % — a 0.07 % move across an independent build,
+  same checksum. Two consecutive runs agree, so that second halving was a
+  one-time re-attribution when the 96-sample raster tick landed, not drift.
+  Every row the fast-tanh cut should not have touched held (`grit_drive_solo`
+  identical to the cycle, `synth_4_voices` within 1 cycle, the `micro_*`
+  controls flat), and the checksum column confirms only FLUX and driven-limiter
+  rows changed hash. The family can be trusted again — with one lesson from
+  spending it: its two fast-tanh predictions were **both high** (8 → 5.8, 3 →
+  1.5), because a ceiling books a whole call site's cost to the one call it
+  contains. Treat the ranking as reliable and the absolute figures as upper
+  bounds. Two further cautions: an `inst_worst_no*` difference carries a ~10 %
+  composition-and-layout error band (in-context reverb moved 11 289 cycles with
+  no reverb code change), and a solo-row saving is an upper bound on what the
+  composed instrument returns (FLUX gave back 3.56 points in context against
+  the 5.80 its solo rows predicted).
+- Two caveats on the recent runs. `echo_short_sram` / `echo_short_sdram` are
   **not comparable** to `9be5df9` — the delay-time one-pole moved out of
   `EchoDelay` into `Flux`, so those rows no longer carry the per-sample
-  slew. And the earlier figures below (the ablation closure, the mod-plane
-  history) are stated against `9be5df9` and were not re-derived here.
+  slew (they are comparable `94468af` → `87f3538`, which is where the
+  fast-tanh halving above is read). And the earlier figures below (the
+  ablation closure, the mod-plane history) are stated against `9be5df9` and
+  were not re-derived since.
 - **The unaccounted gap is now attributed, and the go/no-go conclusion did
   not move.** Component rows summed to ~120 % of budget while
   `instrument_worst` measured ~159 % (avg) — a ~375k-cycle (39-point) gap
@@ -456,9 +474,11 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-94468af.md`):
   treated as a missing owner; it's attributed to the additive-stacking
   approximation used for "full PartFx" (no row yet measures GRIT+FLUX+COMP
   running together in one part) plus compounded row-to-row jitter. The 2×4
-  verdict itself is unchanged — `instrument_worst` sits within jitter of
-  every prior measurement — the closure just names where the cost lives
-  instead of leaving 39 points dark. Ranked cut list for the next spec
+  verdict did not move *at the time* — at `9be5df9` `instrument_worst` still
+  sat within jitter of every prior measurement — the closure's contribution
+  was naming where the cost lives instead of leaving 39 points dark; it is
+  the four cuts it enabled that eventually flipped the verdict, four commits
+  later. Ranked cut list for the next spec
   (predicted savings, largest first, all as % of the 960k-cycle budget):
   Part glue to control rate — **SPENT 2026-07-19** (`c7f6a73`, spec
   `2026-07-19-part-glue-control-rate-design.md`): measured **19.6 %**, not the
@@ -469,8 +489,15 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-94468af.md`):
   rather than a finer raster; reverb composition-coupling investigation (≈4 % already paid,
   mechanism unexplained) plus a speculative, unmeasured half-rate-reverb
   hypothesis (order ≈10 %, needs its own ablation before it's trusted); fast
-  tanh in `EchoDelay` (ceiling ≈8 %, mirrors the `wave_sine`→`fast_sin`
-  cut); fast tanh in the master limiter's `shape()` (≈3 %); and two hygiene
+  tanh in `EchoDelay` — **SPENT 2026-07-19** (`87f3538`, spec
+  `2026-07-19-fast-tanh-design.md`): measured **5.8 %** against a ceiling of
+  ≈8 %, the echo kernel itself more than halving (`echo_short_sram` 21 154 →
+  8 752 cycles) but returning less once composed into the instrument; fast tanh
+  in the master limiter's `shape()` — **SPENT 2026-07-19**, same commit:
+  measured **1.5 %** against ≈3 %, half the prediction, because the ceiling had
+  booked the whole driven-limiter tax to `tanh` when most of what remains is
+  gain-riding arithmetic. Together **8.1 points** on the anchored max, which
+  cleared the 100 % gate; and two hygiene
   one-liners already known from source — `PartFx` rev-send `std::sin` →
   `fast_sin` (measured ≈1 %, ceiling ≈2 %) and the double pitch
   quantization in `Part::process` (ceiling ≈2 %, likely much smaller, no

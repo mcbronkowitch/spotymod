@@ -195,3 +195,128 @@ attribution flagged in the roadmap at no extra cost.
 - **`renders/` refresh and the VCV plugin rebuild** — the user's listening pass,
   bundled with the one already pending from the mod-plane cut.
 - **Chasing the `[3/2]` variant's 0.32 points** — considered and rejected above.
+
+## Outcome (2026-07-19)
+
+**Measured at `87f3538`** on a clean tree (`docs/bench/2026-07-19-87f3538.md`),
+against the `94468af` baseline. **The gate cleared: `instrument_worst` anchored
+max is 95.77 %, under 100 % for the first time.**
+
+| `instrument_worst` | `94468af` | `87f3538` | delta |
+|---|---:|---:|---:|
+| offline avg | 96.59 % | 90.67 % | −5.92 pts |
+| offline max | 103.63 % | 95.61 % | −8.02 pts |
+| anchored avg | 97.59 % | 90.91 % | −6.68 pts |
+| **anchored max** | **103.89 %** | **95.77 %** | **−8.12 pts** |
+
+Avg and max are separate claims and both moved, but only the second one is the
+verdict. The average had already been under budget at `94468af`; what this cut
+bought is the max, and it is the max that decides whether a worst-case block
+gets dropped. The second capture repeat of this run read 95.85 % anchored max,
+so the figure resolves to about ±0.1 — the margin under 100 % is roughly forty
+times the jitter, not a coin flip.
+
+One bookkeeping note on the baseline: this spec's Context section and the
+roadmap quote the `94468af` anchored pair as 97.60 / 104.06, while the committed
+bench report for that same commit records 97.59 / 103.89. Both are true — they
+are the two capture repeats of one run, and the earlier prose took its numbers
+from the second. The table above uses the committed report. Against the 104.06
+reading the saving is −8.29 pts instead of −8.12; nothing about the verdict
+depends on which one is used.
+
+### Predicted vs realized
+
+**The prediction was too optimistic, and both call sites underdelivered.** The
+ranked cut list put `EchoDelay` at ≈8 points and the limiter at ≈3, a combined
+≈11. The cut returned **8.12**, about three quarters of that. Isolating the two
+sites in the same run shows where the shortfall sits:
+
+| site | predicted | realized | evidence |
+|---|---:|---:|---|
+| `EchoDelay::Process` | ≈8 pts | **5.80 pts** | FLUX solo over the FX-none shell, 65 953 → 38 099 cycles/part, ×2 parts |
+| `Limiter::shape` | ≈3 pts | **1.53 pts** | driven-limiter tax (`limiter_driven − limiter_clean`), 27 732 → 13 020 cycles |
+| sum of the two | ≈11 pts | 7.33 pts | — |
+| `instrument_worst` anchored max | — | **8.12 pts** | ground truth, not a sum |
+
+Some of the gap was structural and foreseeable: those were *ceilings*, derived
+by booking the entire measured cost of a call site to `tanh`, and `fast_tanh` is
+not free — roughly 30 cycles against libm's ~200, so about 15 % of the cost was
+always going to survive. That accounts for a point or so. It does not account
+for the limiter's realized saving being **half** its prediction: the ≈3-point
+figure was the whole driven-limiter tax, and most of what remains after the swap
+is gain-riding arithmetic that has nothing to do with `tanh`. The estimate
+attributed to the nonlinearity work that was never the nonlinearity's.
+
+The correct way to record this is that the ablation was **right about rank order
+and wrong about magnitude** — `EchoDelay` really was the bigger of the two, by
+about 3.8× as predicted, but both absolute figures were high. The cut cleared
+the gate because only ~4 points stood between the baseline and budget, not
+because the estimate was good.
+
+Two secondary rows show the kernel-level effect plainly, unmixed with the rest
+of the instrument: `echo_short_sram` fell 21 154 → 8 752 cycles (−58.6 %) and
+`echo_short_sdram` 23 012 → 10 607 (−53.9 %). The echo kernel itself more than
+halved; it is the instrument around it that dilutes that into 5.8 points.
+
+The in-context FLUX delta (`instrument_worst − inst_worst_noflux`) fell 133 824
+→ 99 657 cycles, a saving of only 3.56 points against the 5.80 the solo rows
+predict for two parts. That direction is consistent with the previously measured
+negative `coupling_flux`: FLUX in context costs less than FLUX alone, so cutting
+it also returns less. It is a caution for the next estimate — a solo-row saving
+is an upper bound on what the composed instrument will hand back.
+
+### What the re-baselined `abl` family says about the drift
+
+The roadmap flagged the ablation attribution as untrustworthy after
+`part_glue_flow` halved a second time at `94468af` (19.86 % → 9.97 %), post-dating
+the Part-glue cut that should have already collected that saving. **This run
+clears the flag.** `part_glue_flow` reads 95 842 cycles against `94468af`'s
+95 774 — a 0.07 % move across an independent build, with an identical checksum.
+Two consecutive runs now agree, so the second halving was a one-time
+re-attribution when the 96-sample raster tick landed (cost the ablation had been
+booking to the glue, correctly reassigned once the tick existed), not ongoing
+instability in the family.
+
+Every row the cut should not have touched held: `grit_drive_solo` 14 628 →
+14 628 exactly, `synth_4_voices` 187 380 → 187 379, `mod_plane_2x_center` 56 667
+→ 56 637, `micro_sinf` / `micro_powf` / `micro_fast_sin` flat, and `micro_tanhf`
+— the untouched libm control — 20 081 → 19 852 (−1.1 %, jitter). The widest
+untouched move is `oliverb_solo_sram` at −2.1 % with no reverb code change,
+which is the cross-build layout shift the report's own precision note warns
+about; treat ~2 % as this run pair's noise floor on solo rows.
+
+The checksum column corroborates the confinement independently of the timings.
+Exactly the rows that run FLUX or a driven limiter changed hash
+(`fx_flux_sdram`, `instrument_worst`, all three `inst_worst_*` — they keep the
+driven master — `limiter_driven`, both `echo_short_*`), and every other row is
+byte-identical. The curve moved where the spec said it would and nowhere else.
+
+Two ablation figures worth carrying forward, now that the family is trustworthy
+again:
+
+- **CHOKE is still not a worst-case axis.** The choke tax reads 40 023 cycles of
+  *reduction* (`instrument_worst − inst_worst_choked`), against 39 553 at
+  `94468af`. Stable across runs, and settled well below the 94 293 measured at
+  `9be5df9` — the earlier figure belongs to a pre-cut instrument and should not
+  be quoted any more.
+- **In-context deltas carry much wider error bars than solo rows.** In-context
+  reverb reads 104 255 cycles against the baseline's 115 544 despite zero reverb
+  code change — an 11 289-cycle (~10 %) swing that is pure composition and
+  layout noise. Any future prediction built on an `inst_worst_no*` difference
+  should be quoted with that band, not to the cycle.
+
+### Where this leaves the budget
+
+The 2×4 architecture fits, on this worst case, with **4.2 points of margin** on
+the anchored max. `bench/report.cpp` now emits *"the 2×4 architecture fits"* on
+its own, which is the first time it has done so. That is a real milestone and it
+is also a thin one: the margin is smaller than the 5.8 points this cut returned
+from its larger site, so a single unbudgeted feature can spend it. The remaining
+ranked candidates (`PartFx` rev-send `std::sin` → `fast_sin`, ≈1–2 points; the
+double pitch quantization in `Part::process`) are no longer needed to clear the
+gate and should be held as margin rather than spent.
+
+The merge to `main` stays gated on the listening pass. The specific thing to
+listen for is unchanged and is now the only open risk: the echo bloom at maximum
+feedback, where the clamp caps the limit cycle marginally harder than `tanh`'s
+asymptote did.
