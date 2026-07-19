@@ -427,6 +427,92 @@ TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
     }
 }
 
+TEST_CASE("flux: dust returning to 0 clears the grain pool for the next rise") {
+    // F1: DustCloud::process() early-returns at "_dust <= 0" BEFORE the pool
+    // loop (dust.cpp), so nothing used to clear `alive`/`age`/`rd` when DUST
+    // fell back to 0 -- up to kGrains grains could freeze mid-window and
+    // later resume from that exact frozen state, at whatever absolute tape
+    // offset they last held, whenever DUST next left zero -- arbitrarily
+    // later, with the write head somewhere else entirely. The existing "dust
+    // 0 is bit-exact" case above never exercises this: it calls set_dust(0.f)
+    // on a FRESH instance, where the pool is already empty, so there is
+    // nothing stale to leave behind. This case drives DUST up first so there
+    // IS live state to clear before dropping it back to 0.
+    static float ref_l[Flux::kMaxSamples], ref_r[Flux::kMaxSamples];
+    static float dut_l[Flux::kMaxSamples], dut_r[Flux::kMaxSamples];
+    Flux ref, dut;
+    ref.init(48000.f, ref_l, ref_r, 0xD0571u);
+    dut.init(48000.f, dut_l, dut_r, 0xD0571u);
+    for (Flux* f : {&ref, &dut}) {
+        f->set_on(true, true);
+        f->set_bpm(120.f);
+        f->set_rate(3);
+        f->set_feedback(0.6f);
+        f->set_mix(0.8f);
+    }
+    dut.set_rot(0.5f);      // free zone
+    dut.set_dust(1.f);      // pool runs near-full (spec: ~8.4 offered at d=1)
+    for (int i = 0; i < 20000; ++i) {
+        const float s = std::sin(0.011f * i) * 0.5f;
+        float l = s, r = s;
+        ref.process(l, r);
+        dut.process(l, r);
+    }
+
+    dut.set_dust(0.f);      // the down-stroke this case exists to cover
+
+    // (a) From here on, bit-exact with a reference that was never dusted at
+    // all. Flux's own "!_dust.active()" branch bypasses DustCloud::process()
+    // entirely at DUST = 0 regardless of what is left inside the pool, so
+    // this half holds whether or not F1 is fixed -- it is a plain regression
+    // pin, not the half that falsifies F1. See (b) below for that.
+    for (int i = 0; i < 48000; ++i) {
+        const float s = std::sin(0.013f * i) * 0.4f;
+        float al = s, ar = s, bl = s, br = s;
+        ref.process(al, ar);
+        dut.process(bl, br);
+        REQUIRE(al == bl);
+        REQUIRE(ar == br);
+    }
+    REQUIRE(std::memcmp(ref_l, dut_l, sizeof(ref_l)) == 0);
+    REQUIRE(std::memcmp(ref_r, dut_r, sizeof(ref_r)) == 0);
+
+    // (b) The claim F1 actually breaks: the NEXT rise must start from a clean
+    // pool, not replay whatever was alive when DUST fell to 0. Flux exposes no
+    // active_grains() accessor, so -- same idiom as the "dust 0 is bit-exact"
+    // case's mechanism-2 probe above -- drive a bare DustCloud directly, and
+    // give it a tap with a DIFFERENT write_ptr on the rise, standing in for
+    // "the write head arbitrarily later, somewhere else entirely" the finding
+    // describes.
+    static float pool_l[Flux::kMaxSamples], pool_r[Flux::kMaxSamples];
+    DustCloud probe;
+    probe.init(48000.f, 0xD0571u);
+    probe.set_delay_time(0.5f);
+    probe.set_rot(0.5f);
+    probe.set_dust(1.f);
+    const TapeTap tap_a{pool_l, pool_r, 0,
+                        static_cast<int32_t>(Flux::kMaxSamples) - 1};
+    for (int i = 0; i < 20000; ++i) {
+        float gl = 0.f, gr = 0.f;
+        probe.process(tap_a, gl, gr);
+    }
+    const int pre_drop = probe.active_grains();
+    REQUIRE(pre_drop > 1);   // sanity: there really is live state to clear
+
+    probe.set_dust(0.f);
+    probe.set_dust(1.f);    // the next rise -- immediately, no samples between
+    const TapeTap tap_b{pool_l, pool_r, 123456,
+                        static_cast<int32_t>(Flux::kMaxSamples) - 1};
+    float gl = 0.f, gr = 0.f;
+    probe.process(tap_b, gl, gr);
+    // A clean pool can only have gained what THIS one process() call could
+    // itself spawn (at most one grain in zones F/R) -- nowhere near
+    // pre_drop's stale count. Pre-fix, this is exactly pre_drop (nothing was
+    // ever cleared); post-fix it is 0 or 1.
+    CHECK(probe.active_grains() <= 1);
+    CHECK(probe.active_grains() < pre_drop);
+}
+
 TEST_CASE("flux: dust makes sound and the head fades at the top") {
     // "The head fades at the top": head_gain() has no Flux accessor, so probe
     // it directly on a standalone DustCloud -- the idiom the dust-0 bit-exact

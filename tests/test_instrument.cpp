@@ -175,7 +175,23 @@ TEST_CASE("instrument: set_dust forwards to the named part only") {
 
     const auto base_b = run(0.f, 0.f, 1.f);    // B audible (morph 1 -> gain_a = 0, gain_b = 1)
     const auto dust_b = run(0.f, 0.6f, 1.f);   // only PART_B's dust moves
-    CHECK(base_b != dust_b);
+    // NOT a plain !=: at morph 1, gain_a is -4.37e-8, not an exact zero (see
+    // the comment atop this case), so a mutant that ignores the part index
+    // and always writes _parts[0] regardless of which part was named --
+    // e.g. `void set_dust(int p, float n) { _parts[0].fx().set_dust(n); }`
+    // -- still makes base_b and dust_b differ: the DUST it misapplied to the
+    // wrong (near-silent) part leaks through that -147 dB gain, and `!=` on a
+    // std::vector<float> reports "true" from a single differing sample no
+    // matter how small. Compare RMS against a threshold instead -- real
+    // per-part isolation moves dust_b by orders of magnitude more than a
+    // -147 dB leak ever could.
+    double sum_sq = 0.0;
+    for (size_t i = 0; i < base_b.size(); ++i) {
+        const double diff = (double)dust_b[i] - (double)base_b[i];
+        sum_sq += diff * diff;
+    }
+    const double rms = std::sqrt(sum_sq / (double)base_b.size());
+    CHECK(rms > 1e-4);
 }
 
 TEST_CASE("instrument: set_rot forwards to the named part only") {
@@ -211,7 +227,17 @@ TEST_CASE("instrument: set_rot forwards to the named part only") {
 
     const auto base_b = run(0.f, 0.f, 1.f);    // B audible
     const auto rot_b   = run(0.f, 0.9f, 1.f);  // only PART_B's rot moves
-    CHECK(base_b != rot_b);
+    // Same reasoning as set_dust's B-half above: an exact `!=` is maximally
+    // sensitive to the -147 dB morph-1 leak on gain_a, so a mutant that
+    // forwards to the wrong part still trips it via that leak. RMS against a
+    // threshold instead.
+    double sum_sq = 0.0;
+    for (size_t i = 0; i < base_b.size(); ++i) {
+        const double diff = (double)rot_b[i] - (double)base_b[i];
+        sum_sq += diff * diff;
+    }
+    const double rms = std::sqrt(sum_sq / (double)base_b.size());
+    CHECK(rms > 1e-4);
 }
 
 TEST_CASE("instrument: boots both parts on the synth engine with an audible drone") {
