@@ -50,7 +50,17 @@ New `engine/fx/dust.h/.cpp`: `DustCloud`, fixed pool of **8 grains** per part (p
 - **d = 0:** dust path skipped entirely — **bit-exact** with today's FLUX.
 - Density: mean grain birth rate rises exponentially (sparse splinters → full 8-voice overlap).
 - Grain length range rises with d (≈ 25–100 ms sparse → 80–400 ms dense).
-- Level: grain sum normalized by `1/sqrt(expected overlap)`.
+- Level: grain sum normalized by **`1/sqrt(active grain count)`** — the count
+  actually sounding, smoothed, **not** the expected overlap. *(Corrected
+  2026-07-19, measured.)* The original `1/sqrt(expected overlap)` fails at the
+  top of the knob: at DUST = 1 the tuning offers ≈8.4 grains to a pool of 8, and
+  a loss system at full utilisation drops ~26 % of arrivals (Erlang-B). Dividing
+  by a load the pool cannot deliver made the cloud **quieter** at maximum DUST —
+  energy ∝ carried/offered = 0.74, measured 0.68 — which would have read as a
+  dead range at the top of the sweep. Normalising against what is actually
+  sounding holds the level flat across the knob, which is what this
+  normalisation was always for: **DUST changes texture and density, not
+  loudness.**
 - **Head takeover:** above d ≈ 0.7 the echo read head fades (equal-power) to zero at d = 1 — the cloud eats the delay. Feedback keeps recirculating underneath (the tape stays alive; only the *audible* head swaps).
 
 ### 3. ROT knob — which character

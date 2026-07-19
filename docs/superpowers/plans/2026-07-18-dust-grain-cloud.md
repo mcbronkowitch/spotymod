@@ -582,6 +582,10 @@ constexpr float kZoneFEnd = 0.66f;      // free scatter -> rot
 
 constexpr float kRateMin  = 1.5f;       // births/s just above DUST = 0
 constexpr float kRateMax  = 35.f;       // births/s at DUST = 1 (~8 overlap)
+// Level normalisation follows the ACTIVE grain count, not the expected overlap
+// (spec §2, corrected 2026-07-19). Smoothed, because the raw count steps by +-1
+// on every birth and death and would pump at up to ~35 births/s.
+constexpr float kNormSmoothS = 0.02f;   // ~20 ms; ear-tunable in the play-test
 
 constexpr float kLenMinLo = 0.025f;     // grain length range at DUST = 0
 constexpr float kLenMaxLo = 0.100f;
@@ -715,9 +719,13 @@ void DustCloud::_remap() {
     _len_min = lerpf(kLenMinLo, kLenMinHi, d);
     _len_max = lerpf(kLenMaxLo, kLenMaxHi, d);
 
-    const float mean_len = 0.5f * (_len_min + _len_max);
-    const float overlap = rate_hz * mean_len;
-    _norm = 1.f / std::sqrt(overlap > 1.f ? overlap : 1.f);
+    // The normalisation is NOT computed here. It was 1/sqrt(expected overlap)
+    // = 1/sqrt(rate_hz * mean_len), and that is wrong at the top of the knob --
+    // design spec §2, corrected 2026-07-19. At DUST = 1 the tuning offers ~8.4
+    // grains to a pool of 8; Erlang-B says a loss system at full utilisation
+    // drops ~26 % of arrivals, so dividing by the OFFERED load made the cloud
+    // QUIETER at maximum DUST (energy ratio 0.74 predicted, 0.68 measured).
+    // The normalisation now follows the count actually sounding, in process().
 
     // Head takeover: above the knee the echo read head fades out (equal power)
     // so the cloud eats the delay. Feedback keeps recirculating underneath.
@@ -824,6 +832,13 @@ float DustCloud::process(const TapeTap& tape, float& gl, float& gr) {
         if (++g.age >= g.len) g.alive = false;
     }
 
+    // Normalise by what is ACTUALLY sounding, not by the expected overlap.
+    // `active` was counted for free while iterating the pool above. The
+    // reciprocal square roots come from a kGrains+1 entry constexpr table: a
+    // per-sample sqrt + divide would cost ~30 cycles per part, and this
+    // feature's budget was measured without one.
+    const float norm_target = kInvSqrt[active < 1 ? 1 : active];
+    _norm += (norm_target - _norm) * _norm_coef;   // one multiply-add
     gl = sl * _norm;
     gr = sr * _norm;
     return 0.f;   // writeback arrives in Task 5
@@ -1212,6 +1227,13 @@ Expected: the "rises with rot" case FAILs — `mid` and `top` are both 0.0 becau
 In `engine/fx/dust.cpp`, replace the last two lines of `DustCloud::process`:
 
 ```cpp
+    // Normalise by what is ACTUALLY sounding, not by the expected overlap.
+    // `active` was counted for free while iterating the pool above. The
+    // reciprocal square roots come from a kGrains+1 entry constexpr table: a
+    // per-sample sqrt + divide would cost ~30 cycles per part, and this
+    // feature's budget was measured without one.
+    const float norm_target = kInvSqrt[active < 1 ? 1 : active];
+    _norm += (norm_target - _norm) * _norm_coef;   // one multiply-add
     gl = sl * _norm;
     gr = sr * _norm;
 
