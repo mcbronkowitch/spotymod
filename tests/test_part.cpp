@@ -729,5 +729,12 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
     // any per-sample path ever leaked into the LEVEL push again, l would
     // drift off sl between ticks and this fails; a laxer tolerance (or the
     // old, inverted divergence check) would not have caught it.
+    // Scope note: this catches the held lane VALUE moving off-raster (a
+    // per-sample write that changes what is pushed). It does not catch a
+    // hypothetical per-sample push that keeps re-pushing the SAME already-
+    // held value on every sample instead of only at the tick -- the shadow
+    // would be fed that identical value too, so l and sl would still agree.
+    // That would be a raster-cadence regression with no observable float
+    // divergence here, not something this assertion is positioned to see.
     CHECK_FALSE(off_tick_exact_mismatch);
 }

@@ -7,6 +7,10 @@ namespace spky {
 // but with no libDaisy dependency).
 class OnePole {
 public:
+    // Note: ModLane::_update_slew (engine/mod/lane.cpp) derives its own tick-
+    // rate coefficient by mirroring this exact `k` formula + clamp, then
+    // compounding it kTickInterval times, so its per-sample and tick slews
+    // agree. If this formula changes, that derivation must change with it.
     void init(float sample_rate, float time_s = 0.001f) {
         if (time_s <= 0.f || sample_rate <= 0.f) { _kof = 1.f; return; }
         float k = 1.f / (time_s * sample_rate);

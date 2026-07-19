@@ -62,7 +62,12 @@ void SuperModulator::process() {
     // raster (spec 2026-07-19 mod-plane-control-rate); the counter boots at
     // 0 so the first call ticks, which lands the mod tick on the same
     // samples as Part::_control_tick() -- the sole audio-path consumer reads
-    // values that are 0 samples old.
+    // values that are 0 samples old. That claim holds on the shared boot
+    // grid; after an off-grid engine swap Part re-arms its own raster
+    // (_ctrl_ctr) while this counter does not follow, so the two de-phase --
+    // up to 95 samples (~2 ms) of texture staleness at the read until the
+    // grids happen to coincide again. Documented as the spec's "Accepted
+    // asymmetry"; see also part.h.
     _out[LANE_PITCH] = _lanes[LANE_PITCH].process();
     if (_tick_ctr == 0) {
         _tick_ctr = ModLane::kTickInterval;

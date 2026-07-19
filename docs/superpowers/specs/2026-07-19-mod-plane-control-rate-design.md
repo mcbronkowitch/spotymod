@@ -85,6 +85,12 @@ coincide — the same class as the documented SynthEngine `_ctrl_ctr` offset
 asymmetry in `part.h`, and accepted for the same reason (rare knob gesture,
 musically negligible).
 
+The same class also covers RST (`SuperModulator::reset_phases()`): it
+restarts the PITCH lane on the very next sample but only rejoins the texture
+lanes at their next 96-sample `tick()`, so an off-grid reset can leave up to
+95 samples of texture lane-time skew against the freshly-reset pitch lane
+until that tick. Accepted for the same reason.
+
 ### `tick()` semantics
 
 `tick()` must produce the same *observable sequence* as 96 consecutive
@@ -127,7 +133,10 @@ musically negligible).
    `fired()` is the VCV LED boost (UI rate) — tick-wide flags make the LEDs
    slightly *more* visible, no other consumer exists.
 7. `kick()`, `settle()`, `reset()`, `set_step()` live-rescale operate on
-   stored state and need no semantic change. SPOT/servo/TIDE rate changes all
+   stored state and need no semantic change (see the amended "Accepted
+   asymmetry" note above for the one caveat: an off-grid `reset()` call still
+   leaves texture lanes up to 95 samples behind the reset pitch lane until
+   the next tick). SPOT/servo/TIDE rate changes all
    land on Center's control tick, which shares the 96-grid — a kick applied at
    that sample is absorbed by the same tick that today absorbs it over 96
    single steps, at the same phase positions.
@@ -164,6 +173,16 @@ points, not byte-identical). Consequences:
    smoothed outputs at tick samples within a small epsilon. Covers STEP, FLOW,
    variation > 0 (GROW dice), variation < 0 (RENEW), and a SPOT kick + SETTLE
    run. These tests are permanent, not scaffolding.
+
+   "Identical boundary counts" is enforced with a tick-edge skew guard, not a
+   bare equality: a boundary landing within float-eps of a tick window edge
+   can be detected one tick apart by the two paths (the per-sample path finds
+   it on its own sample, the tick path resolves it to whichever side of the
+   window boundary the fused phase lands on). That is self-correcting — no
+   RNG draw is skipped or duplicated, the boundary is still processed exactly
+   once on each path — and only isolated straddles are tolerated, within a
+   fixed budget; sustained divergence (more than the budget, or the same
+   boundary skewing on every cycle) still fails the suite.
 2. **Multi-boundary tick:** an extreme rate forcing ≥ 3 boundaries per tick —
    every slot visited in order, note aging and holds correct, loop cap never
    hit at panel-reachable rates.

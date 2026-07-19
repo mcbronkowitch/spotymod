@@ -108,6 +108,12 @@ void ModLane::_update_slew() {
     _slew.init(_sr, t);
     // Tick twin: the exact kTickInterval-sample compound of the per-sample
     // coefficient, so held segments converge identically at tick sampling.
+    // The `k` derivation + clamp below intentionally mirrors OnePole::init's
+    // own coefficient formula (engine/util/onepole.h) so that compounding it
+    // kTickInterval times reproduces the per-sample coefficient's effect
+    // exactly. If that formula changes, this must change with it -- these
+    // two are a matched pair, not independent code, and this tick twin would
+    // otherwise silently diverge from process()'s slew.
     float k = 1.f / (t * _sr);
     if (k > 1.f) k = 1.f;
     _slew_tick.set_coef(1.f - std::pow(1.f - k, static_cast<float>(kTickInterval)));
@@ -305,6 +311,14 @@ float ModLane::tick() {
     _fired = false;
     _kick_shape *= _kick_coef_tick;
     if (_settle_ctr > 0) {
+        // Clamp-to-0 (rather than letting the counter go negative) plus the
+        // fact every decayed quantity here targets zero means a mid-window
+        // _settle_ctr expiry is harmless: at most it decays one extra partial
+        // window's worth on values that are gliding to 0 anyway, never past
+        // it and never in the wrong direction. This also means _settle_ctr
+        // is NOT guaranteed to be an exact multiple of kTickInterval at
+        // every supported sample rate (e.g. 44.1 kHz, as used by Rack) --
+        // the clamp is what makes that safe rather than an off-by-one bug.
         _settle_ctr = _settle_ctr > kTickInterval ? _settle_ctr - kTickInterval : 0;
         _ev_phase   *= _settle_coef_tick;
         _ev_shape   *= _settle_coef_tick;
@@ -314,6 +328,15 @@ float ModLane::tick() {
 
     // Pending step mismatch first: init/reset leave _cur_step = -1 and the
     // per-sample path fires step 0 on its very first sample the same way.
+    // This same check also absorbs kick()'s phase jumps (a kick can land
+    // _phase past the current step's boundary without _cur_step having
+    // moved), FLOW->STEP re-entry (_cur_step is stale from before FLOW was
+    // engaged), and float overshoot of the final partial-interval phase
+    // advance (rounding can nudge _phase a hair past a step edge the walk
+    // below already accounted for). Do not simplify this to an init/reset-
+    // only check -- all four cases share the same "phase says a different
+    // step than _cur_step remembers" symptom and this one branch catches
+    // them all.
     if (_step_mode) {
         int step = static_cast<int>(_phase * static_cast<float>(_steps));
         if (step >= _steps) step = _steps - 1;
