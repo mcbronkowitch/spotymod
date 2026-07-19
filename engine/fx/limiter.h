@@ -51,8 +51,9 @@ private:
     static constexpr float kKneeHi = 0.89125f;        // -1 dBFS: transparent at drive 0
     static constexpr float kKneeLo = 0.45f;           // warm saturation onset at full drive
 
-    // Wide-knee soft saturation: exact identity below the knee, tanh toward an
-    // asymptote of 1.0 above it (C1-continuous at the knee). With knee = kKneeHi
+    // Wide-knee soft saturation: exact identity below the knee, tanh-shaped
+    // above it, hard-clamped to 1.0 at ax >= knee + 3.6467*(1-knee)
+    // (C1-continuous at the knee). With knee = kKneeHi
     // this is exactly the original -1 dBFS ceiling; a lower knee starts the bend
     // earlier over a wider (1-knee) transition => the warm DRIVE curve.
     static float shape(float x, float knee) {

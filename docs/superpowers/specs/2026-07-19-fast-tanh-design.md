@@ -220,12 +220,17 @@ Avg and max are separate claims and both moved, but only the second one is the
 verdict. The average had already been under budget at `94468af`; what this cut
 bought is the max, and it is the max that decides whether a worst-case block
 gets dropped. The second capture repeat of this run read 95.85 % anchored max,
-so the figure resolves to about ±0.1 — the margin under 100 % is roughly forty
-times the jitter, not a coin flip.
+a same-binary, same-layout repeat seconds apart, so that specific comparison
+resolves to about ±0.1. That is not the band that governs whether the next
+build still fits, though: this same document's re-baselined `abl` family
+below puts this run pair's cross-build noise floor on solo rows at ~2 %
+(`oliverb_solo_sram` moved −2.1 % with no reverb code change, in-context
+reverb swung ~10 %) — at ~2 % of the 95.77 reading that is ~1.9 points,
+roughly 2× the noise against the 4.2-point margin, not forty.
 
-One bookkeeping note on the baseline: this spec's Context section and the
-roadmap quote the `94468af` anchored pair as 97.60 / 104.06, while the committed
-bench report for that same commit records 97.59 / 103.89. Both are true — they
+One bookkeeping note on the baseline: this spec's Context section quotes the
+`94468af` anchored pair as 97.60 / 104.06, while the committed bench report
+for that same commit records 97.59 / 103.89. Both are true — they
 are the two capture repeats of one run, and the earlier prose took its numbers
 from the second. The table above uses the committed report. Against the 104.06
 reading the saving is −8.29 pts instead of −8.12; nothing about the verdict
@@ -330,7 +335,10 @@ ranked candidates (`PartFx` rev-send `std::sin` → `fast_sin`, ≈1–2 points;
 double pitch quantization in `Part::process`) are no longer needed to clear the
 gate and should be held as margin rather than spent.
 
-The merge to `main` stays gated on the listening pass. The specific thing to
-listen for is unchanged and is now the only open risk: the echo bloom at maximum
-feedback, where the clamp caps the limit cycle marginally harder than `tanh`'s
-asymptote did.
+The merge to `main` stays gated on the listening pass. Two specific things to
+listen for: the echo bloom at maximum feedback, where the clamp caps the limit
+cycle marginally harder than `tanh`'s asymptote did; and master DRIVE at high
+settings, where `Limiter::shape` scales `fast_tanh`'s curve error by
+`(1 - knee)` — the error on the bus reaches ~1.5e-4 (≈ −76 dBFS) at drive 0 and
+~7.5e-4 (≈ −62 dBFS) at full drive, five times larger and on the summed master
+rather than one FX return.

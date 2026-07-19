@@ -417,13 +417,16 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-87f3538.md`):
   from the same run's second capture repeat, reconciled in the spec's
   Outcome) against a predicted ~11 — **it underdelivered, and cleared the
   gate only because just ~4 points stood in the way.** The cut's audio is not
-  yet evaluated: the merge to `main` stays gated on a listening pass, and the
-  specific thing to listen for is the echo bloom at maximum feedback, where
-  the new hard clamp caps the limit cycle marginally harder than `tanh`'s
-  asymptote did. Before it, the **mod-plane control-rate cut**
+  yet evaluated: the merge to `main` stays gated on a listening pass, and there
+  are two specific things to listen for: the echo bloom at maximum feedback,
+  where the new hard clamp caps the limit cycle marginally harder than
+  `tanh`'s asymptote did, and master DRIVE at high settings, where the same
+  curve error is scaled onto the summed master bus and grows with drive.
+  Before it, the **mod-plane control-rate cut**
   (`docs/superpowers/plans/2026-07-19-mod-plane-control-rate.md`), worth
   **~19 points** against a predicted 17–19: the plane fell 253 254 → 56 667
-  cycles (−77.6 %), far past the spec's own expectation. Before it, on the
+  cycles (−77.6 %), landing at the top of that predicted range, not past it —
+  only the avg (20.8) exceeded it, and the avg is not the gate. Before it, on the
   same branch, the **Part-glue control-rate cut**
   (`docs/superpowers/plans/2026-07-19-part-glue-control-rate.md`) was worth
   ~19.6 points — the glue fell 112 820 → 18 664 cycles per part, 83.5 %,
