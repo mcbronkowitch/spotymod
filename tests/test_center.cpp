@@ -435,3 +435,48 @@ TEST_CASE("center grid: step-clock — a 16-step bank locks at half the division
     CHECK(std::fabs(wrap_err(ta - r.a.pitch_phase())) < 0.03f);
     CHECK(std::fabs(wrap_err(tb - r.b.pitch_phase())) < 0.03f);
 }
+
+// Task 11: beat plumbing -- Center exposes a one-tick beat_edge() (the
+// transport's fractional beat wrapping past an integer) and beat_samples()
+// (the beat length in samples), the phase reference Zone S (DUST sync
+// stutter) needs. Pure plumbing here: nothing yet consumes these.
+TEST_CASE("center transport: beat_samples matches 60/bpm*sr at 120 BPM/48 kHz") {
+    Rig r; r.init();
+    r.c.set_tempo_bpm(120.f);
+    CHECK(std::fabs(r.c.beat_samples() - 24000.f) <= 1.f);
+}
+
+TEST_CASE("center transport: beat_edge fires exactly once per beat, never latched") {
+    Rig r; r.init();
+    r.c.set_tempo_bpm(120.f);
+    // 24000 samples/beat / kCtrlInterval (96 samples/tick) = 250 ticks/beat.
+    // +2 ticks of slack: the transport's double accumulator lands the Nth
+    // wrap a hair before or after the exact tick boundary (measured: 9.999999999999343
+    // beats after exactly 2500 ticks at this bpm/sr, not 10.0) -- the accumulator
+    // is double specifically so this jitter never compounds across a session
+    // (see transport.h), but a test pinned to the exact boundary tick can still
+    // catch it mid-wrap and undercount by one.
+    const int ticks_per_beat = static_cast<int>(r.c.beat_samples() / Center::kCtrlInterval + 0.5f);
+    const int beats = 10;
+    int edges = 0;
+    for (int k = 0; k < ticks_per_beat * beats + 2; ++k) {
+        r.ticks(1);
+        if (r.c.beat_edge()) ++edges;
+    }
+    CHECK(edges == beats);
+}
+
+TEST_CASE("center transport: clock_pulse mid-beat produces a beat edge on the following tick") {
+    // clock_pulse() snaps the transport's beat accumulator to the nearest
+    // beat, immediately, independent of Center::update()'s control-tick
+    // cadence -- it can therefore move the phase BACKWARDS across the span
+    // of one control tick. That still reads as a beat edge: an external
+    // clock pulse IS a downbeat (do not suppress it).
+    Rig r; r.init();
+    r.c.set_tempo_bpm(120.f);
+    for (int k = 0; k < 75; ++k) r.ticks(1);   // ~0.3 of a beat in -- no wrap yet
+    CHECK_FALSE(r.c.beat_edge());              // sanity: mid-beat, no edge
+    r.c.clock_pulse();                         // external resync, snaps phase backward
+    r.ticks(1);                                // the following control tick
+    CHECK(r.c.beat_edge());
+}

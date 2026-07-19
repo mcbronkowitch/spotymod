@@ -213,6 +213,7 @@ public:
     void set_mix(float norm);                            // -40 .. 0 dBFS
     void set_dust(float norm);                           // 0 .. 1 grain amount
     void set_rot(float norm);                            // 0 .. 1 character
+    void sync_beat(float beat_samples);                  // transport beat edge -> DustCloud
     bool dust_active() const { return _dust.active(); }
     void process(float& l, float& r);
 

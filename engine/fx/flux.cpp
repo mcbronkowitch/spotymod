@@ -96,6 +96,11 @@ void Flux::set_rot(float norm) {
     _dust.set_rot(r);
 }
 
+void Flux::sync_beat(float beat_samples) {
+    if (!_buf_ok) return;
+    _dust.sync_beat(beat_samples);
+}
+
 void Flux::process(float& l, float& r) {
     if (!_buf_ok) return;
     float send = _sw.process();

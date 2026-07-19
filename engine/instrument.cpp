@@ -59,6 +59,15 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         if (_ctrl_ctr == 0) {                 // control-rate center update (per 96 samples)
             _center.update(_parts[PART_A].mod(), _parts[PART_B].mod(),
                            _parts[PART_A], _parts[PART_B]);
+            if (_center.beat_edge()) {
+                // Beat plumbing (task 11): forward the transport's beat edge
+                // and length to the FLUX grain cloud (DUST zone S's phase
+                // reference). No grain behaviour reads this yet -- that is
+                // the next task.
+                const float bs = _center.beat_samples();
+                _parts[PART_A].fx().sync_beat(bs);
+                _parts[PART_B].fx().sync_beat(bs);
+            }
             _ctrl_ctr = Center::kCtrlInterval;
         }
         --_ctrl_ctr;

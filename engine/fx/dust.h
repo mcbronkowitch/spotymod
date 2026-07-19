@@ -102,6 +102,12 @@ public:
     void set_dust(float d);            // 0..1 amount
     void set_rot(float r);             // 0..1 character
     void set_delay_time(float s);      // FLUX delay time -> zone S grid
+    // Transport beat edge, forwarded from Center via Flux (task 11 beat
+    // plumbing). Stores the beat length and marks an anchor pending; the
+    // anchor itself is a tape index, only reachable inside process(), so
+    // _beat_pending is consumed there on the next sample. Nothing consumes
+    // it yet -- that lands in the next task, which wires zone S to it.
+    void sync_beat(float beat_samples);
 
     bool  active() const { return _dust > 0.f; }
     float head_gain() const { return _head_gain; }   // echo head takeover
@@ -186,6 +192,10 @@ private:
     int   _active_grains = 0;      // telemetry: grains sounding last process()
     float _head_gain = 1.f;
     float _wear = 1.f;
+
+    // Beat-edge anchor (task 11 plumbing; consumed starting the next task).
+    float _beat_samples = 0.f;
+    bool  _beat_pending = false;
 };
 
 } // namespace spky

@@ -70,7 +70,11 @@ void Center::init(float sample_rate, uint32_t seed) {
 }
 
 void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
+    const float prev_phase = _beat_phase_prev;
     _transport.tick();
+    const float phase = _transport.beat_phase();
+    _beat_edge = phase < prev_phase;
+    _beat_phase_prev = phase;
     _rebase_grid(a, 0);
     _rebase_grid(b, 1);
 

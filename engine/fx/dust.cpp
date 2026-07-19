@@ -57,6 +57,12 @@ void DustCloud::set_delay_time(float s) {
     _remap();
 }
 
+void DustCloud::sync_beat(float beat_samples) {
+    _beat_samples = beat_samples;
+    _remap();
+    _beat_pending = true;
+}
+
 void DustCloud::_remap() {
     // --- DUST: density, length, level, head takeover -----------------------
     const float d = _dust;
