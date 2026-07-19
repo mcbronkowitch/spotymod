@@ -97,7 +97,7 @@ struct Spotymod : Module {
                     }
                     else if (c.id == FILT_A || c.id == FILT_B)  // bipolar cutoff trim
                         configParam(c.id, -1.f, 1.f,
-                                    c.id == FILT_A ? -0.096f : -0.251f, lbl);
+                                    c.id == FILT_A ? -0.061f : -0.230f, lbl);
                     else if (c.id == TIDE)  // texture-lane rate, snaps under SYNC
                         configParam<TideQuantity>(c.id, 0.f, 1.f, 0.5f, lbl);
                     else if (c.id == FLUXRATE_A || c.id == FLUXRATE_B)
@@ -111,9 +111,9 @@ struct Spotymod : Module {
                     configParam(c.id, -1.f, 1.f,
                                 c.id == MELODY_A ? -0.728f : -1.f, lbl); break;
                 case WK_KNOBI:
-                    if (c.id == SCALE)  // init patch is Dorian (holds every min9 tone)
+                    if (c.id == SCALE)  // init patch is Lydian — the bright end of the sweep
                         configParam(c.id, 0.f, (float)(spky::SCALE_LIST_COUNT - 1),
-                                    (float)spky::SCALE_DORIAN, "Scale");
+                                    (float)spky::SCALE_LYDIAN, "Scale");
                     else  // STEPS_A / STEPS_B
                         configParam(c.id, 2.f, 16.f, 8.f, "Steps");
                     getParamQuantity(c.id)->snapEnabled = true;
@@ -144,55 +144,54 @@ struct Spotymod : Module {
 
     // Init "patch" (Rack Initialize / fresh instance): part A = a slow chord
     // pad (COLOR up, the chord layer sounding from the first note), part B = a
-    // short plucked bass under it, both in Dorian (all min9 tones: A C E G B).
-    // Knob values are a snapshot of a hand-dialled panel state (chord_init,
-    // 2026-07-18, superseding the 2026-07-15 drone snapshot): MORPH sits just
-    // left of centre so both decks are audible, COUPLE/DRIFT full, both MELO
-    // knobs negative so the progression loops instead of wandering off, and the
-    // room sits behind the parts (MIX 0.46) now that the pad fills the width.
+    // short plucked bass under it, both in Lydian. Knob values are a snapshot
+    // of a hand-dialled panel state (cpu.vcvm, 2026-07-19, superseding the
+    // 2026-07-18 chord_init snapshot): MORPH left of centre so both decks are
+    // audible, COUPLE/DRIFT full, both MELO knobs negative so the progression
+    // loops instead of wandering off, both FLUX lanes well up.
     // Only knob params (WK_BIGKNOB/WK_SMKNOB) come through here;
     // STEP/SYNC/STEPS/SCALE/MELO/FILT defaults live in configControls().
     // RATE values are expressed on the 17-rung ladder introduced 2026-07-16
-    // (0.0625 = 4 bars, 0.1875 = 1 bar — same musical rates as the snapshot).
+    // (0.0625 = 4 bars, 0.5 = 1/4 — the rungs the snapshot lands on).
     static float defaultFor(int id) {
-        switch (id) {                       // global knobs (chord_init snapshot 2026-07-18)
-            case MORPH:        return 0.349f;  // just left of centre — pad forward, bass under it
+        switch (id) {                       // global knobs (cpu snapshot 2026-07-19)
+            case MORPH:        return 0.312f;  // left of centre — pad forward, bass under it
             case COUPLE:       return 1.00f;   // full = hard loop lock
             case DRIFT:        return 1.00f;
-            case MASTER_DRIVE: return 0.402f;
-            case REV_SIZE:     return 1.00f;   // full room
-            case REV_DECAY:    return 0.875f;
+            case MASTER_DRIVE: return 0.619f;
+            case REV_SIZE:     return 0.851f;
+            case REV_DECAY:    return 0.851f;
             case REV_TONE:     return 0.803f;
             case REV_DIFF:     return 0.863f;
-            case REV_MIX:      return 0.459f;  // behind the parts — the chord already fills the width
+            case REV_MIX:      return 0.410f;  // behind the parts — the chord already fills the width
             case REV_SMEAR:    return 0.568f;  // diffuser LFO smear (wash)
             case REV_MOD:      return 0.237f;  // tail LFO wobble
             case TEMPO:        return 0.00f;   // as saved (40 BPM floor; parts run Synced)
             case FLUXRATE_A:   return 3.f / 11.f;   // "1/4" for part A's pad echo
             case FLUXRATE_B:   return 4.f / 11.f;   // "1/8." for part B's bass echo
-            case FLUXFB_A:     return 0.45f;
-            case FLUXFB_B:     return 0.401f;
+            case FLUXFB_A:     return 0.563f;
+            case FLUXFB_B:     return 0.354f;
             case COLOR_A:      return 0.647f;  // pad blooms into a seventh/ninth stack
             case COLOR_B:      return 0.f;     // bass stays single notes
             default: break;
         }
         const int part = id / PART_STRIDE;  // 0 = A (chord pad), 1 = B (bass)
         switch (id % PART_STRIDE) {         // fold part B onto the *_A enum; part ? B : A
-            case RATE_A:   return part ? 3.f / 16.f : 0.0625f;  // B "1 bar", A "4 bars"
-            case SHAPE_A:  return part ? 0.60f  : 0.616f;
-            case DENSITY_A: return part ? 0.641f : 0.345f;  // sparse chord changes, busier bass
-            case SMOOTH_A: return part ? 0.30f  : 1.00f;   // A fully smoothed = the pad breathes
+            case RATE_A:   return part ? 8.f / 16.f : 0.0625f;  // B "1/4", A "4 bars"
+            case SHAPE_A:  return part ? 0.600f : 0.616f;
+            case DENSITY_A: return part ? 0.370f : 0.345f;
+            case SMOOTH_A: return part ? 0.300f : 1.000f;  // A fully smoothed = the pad breathes
             case RANGE_A:  return part ? 0.236f : 0.679f;  // melody ambitus
-            case MOD_A:    return part ? 0.695f : 0.388f;  // texture depth
-            case TUNE_A:   return part ? 0.00f  : 0.55f;   // B down an octave-ish
-            case ATTACK_A: return part ? 0.00f  : 0.657f;  // B snaps in, A swells
-            case DECAY_A:  return part ? 0.167f : 0.902f;  // A rings/stacks; B plucks short
-            case RES_A:    return part ? 0.347f : 0.259f;
-            case SUB_A:    return part ? 0.663f : 0.35f;   // weight under the bass
-            case DETUNE_A: return part ? 0.10f  : 0.20f;
-            case FLUX_A:   return part ? 0.727f : 0.325f;  // both echo engaged
-            case GRIT_A:   return part ? 0.20f  : 0.00f;   // B light grit; A off
-            case COMP_A:   return part ? 0.28f  : 0.227f;
+            case MOD_A:    return part ? 0.790f : 0.593f;  // texture depth
+            case TUNE_A:   return part ? 0.000f : 0.550f;  // B down an octave-ish
+            case ATTACK_A: return part ? 0.000f : 0.657f;  // B snaps in, A swells
+            case DECAY_A:  return part ? 0.268f : 0.902f;  // A rings/stacks; B plucks short
+            case RES_A:    return part ? 0.379f : 0.259f;
+            case SUB_A:    return part ? 0.663f : 0.350f;  // weight under the bass
+            case DETUNE_A: return part ? 0.088f : 0.773f;  // A wide, B nearly clean
+            case FLUX_A:   return part ? 0.736f : 0.793f;  // both echo lanes well up
+            case GRIT_A:   return part ? 0.113f : 0.000f;  // B light grit; A off
+            case COMP_A:   return part ? 0.547f : 0.363f;
             default: break;
         }
         return 0.5f;
