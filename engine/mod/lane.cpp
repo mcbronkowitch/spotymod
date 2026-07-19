@@ -224,6 +224,33 @@ void ModLane::_mutate_groove(bool renew_side) {
     }
 }
 
+// Cycle-wrap events, shared by process() and tick(): pending phrase regen,
+// the EVOLVE walk (GROW) or walk decay + per-unit regen (RENEW), and the
+// outer-zone groove mutations. Order is load-bearing and identical to the
+// old inline block.
+void ModLane::_wrap_events() {
+    if (_regen_pending && _melodic && _step_mode) {
+        generate_phrase(_principle, _rng, _steps, _seq, _gate, _motif_id, _layout);
+        pg_gen_groove(_rng, _layout.motif_len, _groove);
+        _regen_pending = false;
+        _ev_phase = _ev_shape = _ev_rate = 0.f; // present fresh phrase un-warped
+    }
+    if (_variation > 0.f) {                 // GROW: EVOLVE contour walk (live)
+        _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _variation, -0.5f, 0.5f);
+        _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _variation, -0.25f, 0.25f);
+        _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _variation, -0.2f, 0.2f);
+        _mutate_groove(false);              // outer zone: rhythm drifts too
+    } else if (_variation < 0.f) {          // RENEW: per-unit regen + walk decay
+        if (_melodic && _step_mode) _renew_units();
+        else if (!_melodic) {
+            if (_rng.next_unipolar() < _variation * _variation) _renew_walk();
+        }
+        float decay = 1.f + 0.2f * _variation;  // variation -1 -> x0.8/cycle
+        _ev_phase *= decay; _ev_shape *= decay; _ev_rate *= decay;
+        _mutate_groove(true);               // outer zone: re-decide pushes
+    }                                       // variation 0 (LOOP): walk frozen
+}
+
 float ModLane::process() {
     _fired = false;
     _kick_shape *= _kick_coef;                 // SPOT shape offset fades toward 0
@@ -238,28 +265,7 @@ float ModLane::process() {
     bool wrapped = false;
     while (_phase >= 1.f) { _phase -= 1.f; wrapped = true; }
 
-    if (wrapped) {
-        if (_regen_pending && _melodic && _step_mode) {
-            generate_phrase(_principle, _rng, _steps, _seq, _gate, _motif_id, _layout);
-            pg_gen_groove(_rng, _layout.motif_len, _groove);
-            _regen_pending = false;
-            _ev_phase = _ev_shape = _ev_rate = 0.f; // present fresh phrase un-warped
-        }
-        if (_variation > 0.f) {                 // GROW: EVOLVE contour walk (live)
-            _ev_phase = clampf(_ev_phase + _rng.next_bipolar() * 0.01f * _variation, -0.5f, 0.5f);
-            _ev_shape = clampf(_ev_shape + _rng.next_bipolar() * 0.02f * _variation, -0.25f, 0.25f);
-            _ev_rate  = clampf(_ev_rate  + _rng.next_bipolar() * 0.01f * _variation, -0.2f, 0.2f);
-            _mutate_groove(false);              // outer zone: rhythm drifts too
-        } else if (_variation < 0.f) {          // RENEW: per-unit regen + walk decay
-            if (_melodic && _step_mode) _renew_units();
-            else if (!_melodic) {
-                if (_rng.next_unipolar() < _variation * _variation) _renew_walk();
-            }
-            float decay = 1.f + 0.2f * _variation;  // variation -1 -> x0.8/cycle
-            _ev_phase *= decay; _ev_shape *= decay; _ev_rate *= decay;
-            _mutate_groove(true);               // outer zone: re-decide pushes
-        }                                       // variation 0 (LOOP): walk frozen
-    }
+    if (wrapped) _wrap_events();
 
     if (_step_mode) {
         int step = static_cast<int>(_phase * _steps);

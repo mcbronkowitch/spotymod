@@ -10,6 +10,11 @@ namespace spky {
 // -> smooth -> range. Bipolar output in [-1,1]. Deterministic given its seed.
 class ModLane {
 public:
+    // Control-raster interval of the tick() path (spec 2026-07-19
+    // mod-plane-control-rate). part.cpp static_asserts this against
+    // SynthEngine::kCtrlInterval -- the mod layer must not include synth.
+    static constexpr int kTickInterval = 96;
+
     void init(float sample_rate, uint32_t seed);
 
     void set_rate_hz(float hz);
@@ -54,6 +59,7 @@ private:
     void  _update_slew();
     void  _update_inc();            // step-clock: inc = rate/sr * (STEP ? 8/steps : 1)
     void  _on_boundary();
+    void  _wrap_events();           // regen/EVOLVE/groove events at a cycle wrap
     float _compute_raw() const;
     int   _sh_slot() const;         // which _seq slot the S&H end reads now
     void  _mutate_slot(int slot);   // GROW: variation dice + pitch walk on a fired step

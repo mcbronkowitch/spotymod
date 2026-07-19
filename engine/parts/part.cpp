@@ -2,6 +2,12 @@
 
 using namespace spky;
 
+// The mod tick must ride the same raster the engine control tick uses --
+// Part::_control_tick() reads texture lane outputs the sample they are
+// produced (spec 2026-07-19 mod-plane-control-rate).
+static_assert(ModLane::kTickInterval == SynthEngine::kCtrlInterval,
+              "mod tick interval must equal the engine control raster");
+
 void Part::init(float sample_rate, uint32_t seed_base,
                 float* echo_l, float* echo_r) {
     _sr = sample_rate;
