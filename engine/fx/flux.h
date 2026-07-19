@@ -91,9 +91,11 @@ private:
 };
 
 // Port of src/core/echo.h (Nick Donaldson / Infrasonic Audio): tape-ish echo.
-// Feedback unbounded but soft-clipped, output full-wet, band-passed, delay
-// time changes slewed by a one-pole (the "tape" pitch behavior — under
-// modulation this slew IS the feature: FLOW = wobble, STEP = dub pitch jumps).
+// Feedback unbounded but soft-clipped, output full-wet, band-passed. The
+// delay-time slew (the "tape" pitch behavior — under modulation this slew IS
+// the feature: FLOW = wobble, STEP = dub pitch jumps) lives in Flux, which
+// runs one shared one-pole for both channels and hands the smoothed length
+// in as delay_samples.
 template <size_t max_size>
 class EchoDelay {
 public:
@@ -102,32 +104,16 @@ public:
     EchoDelay& operator=(const EchoDelay&) = delete;
 
     void Init(float sample_rate, float* buf) {
-        sample_rate_ = sample_rate;
         delay_line_.Init(buf);
         bpf_.Init(sample_rate);
-        delay_time_current_ = delay_time_target_ = 0.05f;
         feedback_ = 0.f;
-    }
-
-    // Approximate lag (smoothing) for delay-time changes, in seconds.
-    void SetLagTime(float time_s) {
-        delay_smooth_coef_ = (time_s <= 0.f || sample_rate_ <= 0.f)
-            ? 1.f
-            : daisysp::fmin(1.f / (time_s * sample_rate_), 1.f);
-    }
-
-    void SetDelayTime(float time_s, bool immediately = false) {
-        delay_time_target_ = time_s;
-        if (immediately) delay_time_current_ = time_s;
     }
 
     void SetFeedback(float feedback) { feedback_ = feedback; }
     float Feedback() const { return feedback_; }
 
-    float Process(float in) {
-        daisysp::fonepole(delay_time_current_, delay_time_target_,
-                          delay_smooth_coef_);
-        delay_line_.SetDelay(delay_time_current_ * sample_rate_);
+    float Process(float in, float delay_samples) {
+        delay_line_.SetDelay(delay_samples);
         float out = delay_line_.Read();
         out = bpf_.Process(out);
         out = std::tanh(out);   // tape-warm limiter: transparent near unity,
@@ -137,10 +123,6 @@ public:
     }
 
 private:
-    float sample_rate_ = 48000.f;
-    float delay_time_current_ = 0.05f;
-    float delay_time_target_ = 0.05f;
-    float delay_smooth_coef_ = 1.f;
     float feedback_ = 0.f;
 
     DeLine<float, max_size> delay_line_;
@@ -183,6 +165,10 @@ private:
     float _bpm = 120.f;
     int   _rate_idx = 3;         // "1/4"
     float _delay_time = 0.5f;
+    // shared L/R delay-time slew (both channels always run the same length)
+    float _dt_current = 0.05f;   // seconds
+    float _dt_target = 0.05f;
+    float _dt_coef = 1.f;
 };
 
 } // namespace spky

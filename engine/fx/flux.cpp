@@ -14,8 +14,8 @@ void Flux::init(float sample_rate, float* buf_l, float* buf_r) {
     if (!_buf_ok) return;
     _echo_l.Init(sample_rate, buf_l);
     _echo_r.Init(sample_rate, buf_r);
-    _echo_l.SetLagTime(0.03f);   // short slew: click-free division changes, locks to grid
-    _echo_r.SetLagTime(0.03f);
+    // short slew: click-free division changes, locks to grid (~30 ms lag)
+    _dt_coef = daisysp::fmin(1.f / (0.03f * sample_rate), 1.f);
     _rate_idx = 3;               // boot "1/4"
     _bpm = 120.f;
     recompute_time(true);        // snap the boot time
@@ -43,8 +43,8 @@ void Flux::recompute_time(bool immediate) {
     float t = (hz > 0.f) ? 1.f / hz : 0.5f;
     const float t_max = static_cast<float>(kMaxSamples - 2) / _sr;   // buffer safety
     _delay_time = clampf(t, 0.001f, t_max);
-    _echo_l.SetDelayTime(_delay_time, immediate);
-    _echo_r.SetDelayTime(_delay_time, immediate);
+    _dt_target = _delay_time;
+    if (immediate) _dt_current = _delay_time;
 }
 
 void Flux::set_feedback(float norm) {
@@ -63,6 +63,8 @@ void Flux::process(float& l, float& r) {
     if (!_buf_ok) return;
     float send = _sw.process();
     if (_sw.is_idle()) return;   // fully off: bit-exact dry
-    l += _echo_l.Process(l * send) * _mix_lin;
-    r += _echo_r.Process(r * send) * _mix_lin;
+    daisysp::fonepole(_dt_current, _dt_target, _dt_coef);
+    const float ds = _dt_current * _sr;
+    l += _echo_l.Process(l * send, ds) * _mix_lin;
+    r += _echo_r.Process(r * send, ds) * _mix_lin;
 }
