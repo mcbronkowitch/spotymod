@@ -10,7 +10,16 @@ namespace spky {
 class Transport {
 public:
     void init(float ctrl_rate) { _cr = ctrl_rate; _beats = 0.0; }
-    void set_bpm(float bpm)    { _bpm = bpm; }
+    // Guarded at the source, not at each reader: bpm() feeds a divide in
+    // every consumer (Center::beat_samples() -- DUST zone S's grid, spec
+    // task 12 -- and nearest_division()/division_hz() for COUPLE's grid
+    // gravity), so a single non-positive value stored here would otherwise
+    // reach all of them as a non-finite result. A non-positive or non-finite
+    // request is dropped and the last good tempo (default 120) is kept,
+    // rather than clamped to some arbitrary floor BPM: scenario files forward
+    // their `bpm` field unvalidated (host/render/scenario.cpp), and a
+    // zero/negative value there is bad input, not a real slow tempo to honor.
+    void set_bpm(float bpm) { if (bpm > 0.f && std::isfinite(bpm)) _bpm = bpm; }
     float bpm() const          { return _bpm; }
 
     void tick()        { _beats += static_cast<double>(_bpm) / (60.0 * static_cast<double>(_cr)); }

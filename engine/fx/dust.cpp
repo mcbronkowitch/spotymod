@@ -21,6 +21,15 @@ void DustCloud::init(float sample_rate, uint32_t seed) {
     _rot = 0.f;
     _delay_time = 0.5f;
     _grid_countdown = 1;
+    // Preseed the zone-S grid to the 120 BPM value for this sample rate: the
+    // transport's first real beat edge does not arrive until a full beat
+    // after boot (0.5 s at 120 BPM), and _beat_samples defaulting to 0 would
+    // leave zone S computing a zero-length grid (silent) until then -- an
+    // audible missing first bar the moment a player turns DUST up before the
+    // first beat lands. sync_beat() overwrites this the moment a real edge
+    // arrives; nothing else depends on the specific default tempo.
+    _beat_samples = 60.f / 120.f * _sr;
+    _anchor = 0;
     // Start at the one-grain target, not 1.f: the smoother would otherwise
     // spend its first ~20 ms climbing the makeup, so the first grain after a
     // rise would come in 7 dB quiet.
@@ -97,16 +106,23 @@ void DustCloud::_remap() {
                                      // see design spec §8 Finding 1). Spray
                                      // target only — _spawn() clamps against
                                      // the real tape.size() regardless.
-    if (r < kZoneSEnd) {                                // zone S — synced stutter
+    if (r < kZoneSEnd) {                                // zone S — beat repeat
         _zone = 0;
         const float u = r / kZoneSEnd;
-        _jitter = u;
-        _fire_prob = d;
-        _burst = 1 + (int)(d * 2.f);                    // density stacks bursts
-        _spray = (int32_t)(kSpraySync * _sr);
+        _jitter = u;                                     // unchanged, ROT across the zone
+        _subdiv = 1 + (int)(_dust * 3.999f);              // 1..4 => 2,4,8,16 slots/beat
+        _octave = _dust >= kOctaveThresh;
         _rev_prob = 0.f;
         _wb_gain = 0.f;
         _wear = 1.f;
+        // Grid comes from the BEAT, not the delay time (spec §3 rev 7): a
+        // one-slot-per-beat grid would be a one-beat delay, which is exactly
+        // what this zone must not be -- n = 0 is unreachable by construction
+        // since _subdiv >= 1 always.
+        const int32_t grid = (int32_t)(_beat_samples / (float)(1 << _subdiv));
+        const int32_t grid_min = (int32_t)(kGridMinS * _sr);
+        _grid_period = grid > grid_min ? grid : grid_min;
+        if (_grid_countdown > _grid_period) _grid_countdown = _grid_period;
     } else if (r < kZoneFEnd) {                         // zone F — free scatter
         _zone = 1;
         const float u = (r - kZoneSEnd) / (kZoneFEnd - kZoneSEnd);
@@ -124,11 +140,6 @@ void DustCloud::_remap() {
         _wb_gain = kWbGainMax * u;
         _wear = 1.f - kWearRate * u;
     }
-
-    const int32_t grid = (int32_t)((_delay_time / (float)kGridDiv) * _sr);
-    const int32_t grid_min = (int32_t)(kGridMinS * _sr);
-    _grid_period = grid > grid_min ? grid : grid_min;
-    if (_grid_countdown > _grid_period) _grid_countdown = _grid_period;
 }
 
 void DustCloud::_spawn(const TapeTap& tape) {
@@ -178,6 +189,7 @@ void DustCloud::_spawn(const TapeTap& tape) {
         // a sign flip at the midpoint (382 == 2 * (hann_curve().size() - 1)).
         g.widx = 0.f;
         g.wstep = 382.f / (float)g.len;
+        g.hold  = 0;   // zones F/R: no flat top -- see process()'s fold comment
 
         g.alive = true;
         return;
@@ -185,24 +197,77 @@ void DustCloud::_spawn(const TapeTap& tape) {
     // Pool full: the birth is dropped. This is what bounds the CPU (spec §8).
 }
 
+void DustCloud::_spawn_anchored(const TapeTap& tape, int rate) {
+    for (int i = 0; i < kGrains; ++i) {
+        if (_g[i].alive) continue;
+        Grain& g = _g[i];
+
+        g.len = _grid_period < 8 ? 8 : _grid_period;   // grain length = one slot
+        g.age = 0;
+        g.rd_step = -rate;
+
+        // The write head decrements, so index _anchor + k is k samples OLDER
+        // than the anchor. Starting `len * rate` behind the anchor and
+        // stepping -rate walks the grain FORWARD in time, ending exactly at
+        // _anchor -- every grain in the beat shares the same _anchor, so they
+        // all replay the SAME slice (spec §3: the load-bearing property this
+        // task exists to add).
+        int32_t back = g.len * rate;
+        if (back > tape.size() - 4) back = tape.size() - 4;
+        g.rd = (_anchor + back) & tape.mask;
+
+        // Pan, source channel and the pool-full drop are unchanged from
+        // _spawn() above.
+        const bool right = (_rng.next_u32() & 1u) != 0u;
+        g.tape = right ? tape.r : tape.l;
+
+        const float pan = _rng.next_bipolar();
+        const float a = (pan + 1.f) * 0.125f;
+        g.gr = fast_sin(a);
+        g.gl = fast_sin(a + 0.25f);
+
+        // Trapezoid gate (spec §3 rev 7): sin^2 ramps over a short fixed
+        // fade, held flat between them -- a full-length Hann over a whole
+        // slot would put a slow attack on every repeat and wash out the
+        // transient that makes a repeat read as rhythm rather than a swell.
+        int32_t fade = (int32_t)(kSlotFadeS * _sr);
+        const int32_t half_len = g.len / 2;
+        if (fade > half_len) fade = half_len;
+        if (fade < 1) fade = 1;
+        g.widx  = 0.f;
+        g.wstep = 191.f / (float)fade;
+        g.hold  = g.len - 2 * fade;
+
+        g.alive = true;
+        return;
+    }
+    // Pool full: the birth is dropped, same as _spawn() (spec §8).
+}
+
 void DustCloud::_schedule(const TapeTap& tape) {
     if (_zone != 0) {                       // zones F and R: free-running
         if (_rng.next_unipolar() < _birth_prob) _spawn(tape);
         return;
     }
-    // Zone S: births lock to a grid derived from the delay itself, so stutter
-    // bursts always subdivide the echo — dub polyrhythm with no extra control.
-    // Duration-synced like FLUX, not phase-locked to the sequencer.
+    // Zone S: a beat repeat. Every slot fires (deterministic; DUST selects
+    // the subdivision, not a probability -- spec §3 rev 7), phase-locked to
+    // the transport's beat edge rather than duration-synced to the delay.
+    if (_beat_pending) {              // consume the edge; latch the slice
+        _beat_pending = false;
+        _anchor = tape.write_ptr;
+        _grid_countdown = 1;          // first slot fires on this sample
+    }
+    if (_grid_period < 1) return;
     if (--_grid_countdown > 0) return;
 
     _grid_countdown = _grid_period;
-    if (_jitter > 0.f) {
+    if (_jitter > 0.f) {               // unchanged jitter on the countdown
         const float j = _rng.next_bipolar() * _jitter * 0.5f;
         _grid_countdown += (int32_t)(j * (float)_grid_period);
         if (_grid_countdown < 1) _grid_countdown = 1;
     }
-    if (_rng.next_unipolar() >= _fire_prob) return;
-    for (int i = 0; i < _burst; ++i) _spawn(tape);
+    _spawn_anchored(tape, 1);
+    if (_octave) _spawn_anchored(tape, 2);
 }
 
 float DustCloud::process(const TapeTap& tape, float& gl, float& gr) {
@@ -236,7 +301,10 @@ float DustCloud::process(const TapeTap& tape, float& gl, float& gr) {
         g.rd = (g.rd + g.rd_step) & tape.mask;
 
         g.widx += g.wstep;
-        if (g.widx > 191.f) { g.widx = 382.f - g.widx; g.wstep = -g.wstep; }
+        if (g.widx > 191.f) {
+            if (g.hold > 0) { g.widx = 191.f; --g.hold; }   // flat top (zone S)
+            else { g.widx = 382.f - g.widx; g.wstep = -g.wstep; }
+        }
 
         if (++g.age >= g.len) g.alive = false;
     }

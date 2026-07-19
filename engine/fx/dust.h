@@ -49,11 +49,15 @@ constexpr float kLenMaxLo = 0.100f;
 constexpr float kLenMinHi = 0.080f;     // ... and at DUST = 1
 constexpr float kLenMaxHi = 0.400f;
 
-constexpr float kSpraySync   = 0.05f;   // s, zone S: tight, near the head
 constexpr float kSprayFreeLo = 0.15f;   // s, zone F start (widens to the tape)
 
-constexpr int   kGridDiv    = 4;        // zone S grid = FLUX delay time / 4
-constexpr float kGridMinS   = 0.010f;   // ... clamped to a sane minimum
+constexpr float kGridMinS   = 0.010f;   // zone S grid, clamped to a sane minimum
+
+// Zone S rev 7 (2026-07-19): rebuilt as a beat repeat -- see design spec §3
+// and the superseded block beneath it for what these replace (a delay-time
+// grid, probabilistic firing, a 50 ms spray -- all deleted, not tuned).
+constexpr float kOctaveThresh = 0.5f;    // DUST above this adds the 2x layer
+constexpr float kSlotFadeS    = 0.003f;  // 3 ms trapezoid edge, zone S only
 
 constexpr float kRevProbMax = 0.70f;    // zone R reverse probability at r = 1
 constexpr float kWbGainMax  = 0.60f;    // zone R writeback gain at r = 1
@@ -105,8 +109,8 @@ public:
     // Transport beat edge, forwarded from Center via Flux (task 11 beat
     // plumbing). Stores the beat length and marks an anchor pending; the
     // anchor itself is a tape index, only reachable inside process(), so
-    // _beat_pending is consumed there on the next sample. Nothing consumes
-    // it yet -- that lands in the next task, which wires zone S to it.
+    // _beat_pending is consumed there (in _schedule(), zone S) on the next
+    // sample, latching _anchor from the tape passed to that call.
     void sync_beat(float beat_samples);
 
     bool  active() const { return _dust > 0.f; }
@@ -153,11 +157,21 @@ private:
         float   widx = 0.f;            // 0..191 into the Hann table
         float   wstep = 0.f;
         float   gl = 0.f, gr = 0.f;    // equal-power pan gains
+        // Trapezoid flat-top hold, zone S only (spec §3 rev 7): samples left
+        // to hold at widx == 191 before folding back down. Zones F/R always
+        // set this to 0, which degenerates the per-sample fold in process()
+        // to exactly the old symmetric-Hann behaviour -- bit-identical.
+        int32_t hold = 0;
     };
 
     void _remap();                       // recompute derived values
     void _schedule(const TapeTap& tape);
     void _spawn(const TapeTap& tape);
+    // Zone S only: every grain in a beat is born from the SAME `_anchor` (the
+    // write head's absolute tape index, latched once per beat edge in
+    // _schedule() -- NOT re-read here), so every grain replays the identical
+    // slice. `rate` is 1 for the base grain, 2 for the octave layer.
+    void _spawn_anchored(const TapeTap& tape, int rate);
 
     Grain _g[kGrains];
     Rng   _rng;
@@ -180,11 +194,11 @@ private:
     float _birth_prob = 0.f;     // zone F/R: per-sample birth probability
     int32_t _grid_period = 1;    // zone S: samples between grid slots
     int32_t _grid_countdown = 1;
-    float _fire_prob = 0.f;      // zone S: chance a grid slot fires
-    int   _burst = 1;            // zone S: grains per firing slot
+    int   _subdiv = 4;           // zone S: 1..4 => 2/4/8/16 slots per beat
+    bool  _octave = false;       // zone S: DUST >= kOctaveThresh adds 2x layer
     float _jitter = 0.f;         // zone S: 0 = locked, 1 = fully random
     float _len_min = 0.025f, _len_max = 0.1f;
-    int32_t _spray = 1;          // max offset a new grain may start at
+    int32_t _spray = 1;          // zone F/R: max offset a new grain may start at
     float _rev_prob = 0.f;
     float _wb_gain = 0.f;
     float _norm = 1.f;             // smoothed 1/sqrt(active grains), see kInvSqrt
@@ -193,9 +207,16 @@ private:
     float _head_gain = 1.f;
     float _wear = 1.f;
 
-    // Beat-edge anchor (task 11 plumbing; consumed starting the next task).
-    float _beat_samples = 0.f;
-    bool  _beat_pending = false;
+    // Beat-edge anchor (task 11 plumbing; consumed starting task 12). Latched
+    // once per beat edge in _schedule(): the tape's absolute write-head index
+    // at that instant, shared by every grain born in the beat -- this is the
+    // load-bearing fix over the superseded design (spec §3): an offset
+    // measured against the moving write head reproduces a delay tap no matter
+    // how births are scheduled, so only an absolute anchor makes this a
+    // repeat.
+    float   _beat_samples = 0.f;
+    bool    _beat_pending = false;
+    int32_t _anchor = 0;
 };
 
 } // namespace spky

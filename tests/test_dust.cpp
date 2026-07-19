@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <cmath>
+#include <iomanip>
 #include <vector>
 #include "fx/dust.h"
 #include "fx/flux.h"
@@ -326,154 +327,203 @@ TEST_CASE("dust: density rises with DUST, level stays inside a band") {
     CHECK(e_high > e_mid);   // regression pin: DUST=1 must not be quieter than DUST=0.6
 }
 
-// Instrument births by watching for a fresh grain: with DUST low enough that
-// the pool is nearly always empty, a transition from silence to non-silence
-// marks a birth. Assumption this relies on: a birth is inferred from
-// `gl == 0.f && gr == 0.f` flipping false, so a MID-grain sample that happens
-// to land exactly on 0.f for both channels would register as a spurious
-// extra "birth" (and, symmetrically, a real birth whose first sample somehow
-// wasn't exactly 0 would be missed). Negligible here in practice -- FakeTape
-// is dense float noise and a grain's own window starts at curve[0] == 0.0
-// exactly (see the structural window-shape test below) -- but this helper's
-// count is a proxy for "birth", not a direct measurement of it.
-static std::vector<int> birth_indices(float rot, float amount, float delay_s,
-                                      int n_samples) {
+// --- Task 12: zone S rebuilt as a beat repeat -------------------------------
+//
+// The old zone-S timing tests (birth_indices() and the three cases built on
+// it) asserted the superseded `delay_time / kGridDiv` grid with probabilistic
+// firing -- exactly the design this task replaces. They are gone, not
+// extended; see docs/superpowers/specs/2026-07-18-dust-grain-cloud-design.md
+// §3 for the rebuilt zone and the measurement that killed the old one.
+
+// A tape whose L and R channels are the SAME buffer: eliminates the random
+// per-grain channel choice as a confound in the anchored-replay test below --
+// with l == r, content read is independent of which channel a grain happens
+// to pick.
+struct MonoTape {
+    static constexpr int32_t kSize = 65536;
+    static_assert((kSize & (kSize - 1)) == 0, "kSize must be a power of two");
+    std::vector<float> buf;
+    int32_t ptr = 0;
+    MonoTape() : buf(kSize, 0.f) {}
+    void fill_noise(uint32_t seed) {
+        Rng g; g.seed(seed);
+        for (int32_t i = 0; i < kSize; ++i) buf[i] = g.next_bipolar() * 0.5f;
+    }
+    TapeTap tap() const { return TapeTap{buf.data(), buf.data(), ptr, kSize - 1}; }
+    void advance() { ptr = (ptr - 1 + kSize) % kSize; }
+};
+
+TEST_CASE("dust: zone S anchored replay -- successive grains repeat the same slice") {
+    // The load-bearing test for this task. A grain's contribution to the
+    // stereo sum is norm(t) * pan * window(k) * content(read_position(k)),
+    // where pan is a random per-grain equal-power split. gl^2 + gr^2 cancels
+    // that split exactly (sin^2 + cos^2 == 1 for ANY pan angle), leaving
+    // norm(t)^2 * window(k)^2 * content(k)^2 -- so comparing gl^2+gr^2
+    // between two grains born in the same beat isolates exactly the claim
+    // that matters here: do they read the SAME tape content at the same
+    // position-in-life k. Anything else (a delay tap read relative to the
+    // moving write head, i.e. the bug this task removes) reads a DIFFERENT
+    // section of tape for the second grain and fails this comparison.
+    MonoTape t; t.fill_noise(0x5EED);
+    DustCloud d;
+    d.init(48000.f, 0xD0571u);
+    d.set_dust(0.1f);       // subdiv = 1 -> 2 slots/beat; below kOctaveThresh
+    d.set_rot(0.0f);        // zone S, jitter == 0 exactly: no scheduling slack
+    d.sync_beat(48000.f);   // 1 s beat @ 48 kHz -> grid_period = beat/2 = 24000
+
+    constexpr int kLen = 24000;   // == grid_period at this dust/beat setting
+    std::vector<float> e0(kLen), e1(kLen);
+    for (int i = 0; i < 2 * kLen; ++i) {
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);
+        const float e = gl * gl + gr * gr;
+        if (i < kLen) e0[i] = e; else e1[i - kLen] = e;
+        t.advance();
+    }
+
+    // Compare well inside the flat "hold" region, away from the fade edges
+    // (shared shape between both grains, but staying inside hold sidesteps
+    // any float slack right at the fold point).
+    const int fade = (int)(spky::dust_tuning::kSlotFadeS * 48000.f);
+    int compared = 0;
+    for (int k = fade * 2; k < kLen - fade * 2; k += 37) {
+        REQUIRE(e0[k] > 1e-8f);   // sanity: genuinely sounding, not silence
+        CHECK(e1[k] == doctest::Approx(e0[k]).epsilon(0.02));
+        ++compared;
+    }
+    CHECK(compared > 100);
+}
+
+TEST_CASE("dust: zone S phase lock -- first birth lands within one control tick of the beat edge") {
     FakeTape t; t.fill_noise(11);
     DustCloud d;
     d.init(48000.f, 0xD0571u);
-    d.set_dust(amount);
-    d.set_rot(rot);
-    d.set_delay_time(delay_s);
-    std::vector<int> births;
-    bool was_silent = true;
-    for (int i = 0; i < n_samples; ++i) {
+    d.set_dust(0.2f);
+    d.set_rot(0.1f);
+    // Run well past the preseeded default grid before the real edge arrives,
+    // so a scheduler that ignored sync_beat() and just kept counting down its
+    // OWN stale grid would not accidentally land inside the window by luck.
+    // Zone S runs back-to-back grains (grain length == grid period), so
+    // active_grains() is essentially ALWAYS >= 1 once the cloud is running --
+    // checking for mere presence would pass even if sync_beat() were a no-op,
+    // because the grain already in flight before the edge is still sounding.
+    // The genuine signal is an INCREASE over the pre-edge count: the edge
+    // spawns a new anchored grain into a free pool slot alongside whatever is
+    // already playing, without killing it.
+    for (int i = 0; i < 5000; ++i) {
         float gl = 0.f, gr = 0.f;
         d.process(t.tap(), gl, gr);
-        const bool silent = (gl == 0.f && gr == 0.f);
-        if (was_silent && !silent) births.push_back(i);
-        was_silent = silent;
         t.advance();
     }
-    return births;
-}
+    const int pre = d.active_grains();
+    d.sync_beat(48000.f);
 
-TEST_CASE("dust: zone S with no jitter births on the delay/4 grid") {
-    // rot = 0 -> _remap sets _jitter = rot / kZoneSEnd = 0 EXACTLY (dust.cpp),
-    // so _schedule's `if (_jitter > 0.f)` branch never runs and no offset is
-    // ever added to _grid_countdown. Every gap between births is therefore an
-    // EXACT integer multiple of the grid period -- no rounding, no slack of
-    // any kind -- so this pins the period's VALUE, not merely a divisibility
-    // class of it. delay 0.5 s / kGridDiv (4) -> grid 0.125 s -> 6000 samples
-    // at 48 kHz.
-    const auto b = birth_indices(0.f, 0.35f, 0.5f, 480000);
-    REQUIRE(b.size() >= 8);
-
-    int min_gap = b[1] - b[0];
-    for (size_t i = 1; i < b.size(); ++i) {
-        const int gap = b[i] - b[i - 1];
-        // Every gap must be a whole number of grid periods (a slot can
-        // decline to fire) -- checked exactly, not within slack: with
-        // _jitter == 0 there is nothing to round away.
-        REQUIRE(gap % 6000 == 0);
-        if (gap < min_gap) min_gap = gap;
+    int birth_at = -1;
+    for (int i = 0; i < 200; ++i) {
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);
+        if (d.active_grains() > pre) { birth_at = i; break; }
+        t.advance();
     }
-    // Pin the grid period's VALUE, not just "gaps land in some divisibility
-    // class of 6000": a wrong divisor (e.g. kGridDiv = 2, an actual 12000-
-    // sample grid) still produces gaps that are exact multiples of 6000 --
-    // 12000, 24000, ... -- and would pass a "gap % 6000 == 0"-only check.
-    // The minimum gap actually realised must equal 6000 exactly: with
-    // fire_prob = 0.35 and ~80 grid slots in this 480000-sample run, two
-    // consecutive slots both firing (one un-skipped grid period, giving the
-    // smallest possible gap) has probability 1 - (1 - 0.35^2)^79, i.e.
-    // effectively certain, so the minimum observed gap is the true grid
-    // period itself.
-    CHECK(min_gap == 6000);
+    REQUIRE(birth_at >= 0);
+    CHECK(birth_at <= 96);   // Center::kCtrlInterval
 }
 
-TEST_CASE("dust: zone S jitter grows across the zone") {
-    // spread() does NOT report "the largest single-slot jitter offset
-    // actually realised", despite what an earlier version of this comment
-    // claimed. birth_indices() only counts a birth where the summed output
-    // returns fully to silence first, and _schedule() redraws a fresh jitter
-    // offset on EVERY grid tick -- including ticks whose slot declines to
-    // fire (fire_prob = 0.35 here, so most measured gaps span several grid
-    // periods, each with its own independent jitter draw). What spread()
-    // actually measures is the ACCUMULATED jitter of however many slots
-    // elapsed between two births, folded into [0, 3000] by `% 6000` and the
-    // `gap > 3000 ? 6000 - gap : gap` step below -- not a single slot's
-    // offset. The per-slot ceiling derived further down in this function
-    // (2727.3 samples at rot = 0.30) is a real bound on _schedule()'s own
-    // per-tick draw, but it is NOT the ceiling of what this test measures:
-    // the modulo fold makes 3000 the ceiling of the MEASURED quantity
-    // regardless of the true per-slot range, by aliasing.
-    //
-    // Concretely: doubling dust.cpp's per-slot jitter range (_jitter * 0.5f
-    // -> _jitter * 1.0f in _schedule(), pushing the true per-slot ceiling
-    // from 2727.3 to 5454.5 -- well outside spec §3's intended range of a
-    // full grid period) still folds under 3000 here and passes every
-    // assertion below. Confirmed by hand: this test does NOT catch that
-    // mutation. What it DOES still pin, honestly: jitter grows monotonically
-    // across the zone, and it is exactly zero when rot locks the grid --
-    // r00 == 0.0 is the one number here that is genuinely exact, not
-    // aliased, because with _jitter == 0 there is nothing to fold in.
-    auto spread = [](float rot) {
-        const auto b = birth_indices(rot, 0.35f, 0.5f, 480000);
-        if (b.size() < 8) return 0.0;
-        double worst = 0.0;
-        for (size_t i = 1; i < b.size(); ++i) {
-            const int gap = (b[i] - b[i - 1]) % 6000;
-            const double off = gap > 3000 ? (6000 - gap) : gap;
-            worst = std::max(worst, off);
+TEST_CASE("dust: zone S subdivision selects 2/4/8/16 slots per beat") {
+    // _subdiv = 1 + (int)(dust * 3.999f) => 1,2,3,4 => 1<<_subdiv = 2,4,8,16
+    // slots/beat (spec §3). A slot's births are deterministic (every slot
+    // fires), so counting silence-to-sound transitions over exactly one beat
+    // pins the subdivision directly.
+    auto births_per_beat = [](float dust_amt) {
+        FakeTape t; t.fill_noise(11);
+        DustCloud d;
+        d.init(48000.f, 0xD0571u);
+        d.set_dust(dust_amt);
+        d.set_rot(0.0f);         // zone S, jitter == 0: grid stays exact
+        d.sync_beat(48000.f);    // 1 s beat @ 48 kHz
+        int births = 0;
+        bool was_silent = true;
+        for (int i = 0; i < 48000; ++i) {   // exactly one beat
+            float gl = 0.f, gr = 0.f;
+            d.process(t.tap(), gl, gr);
+            const bool silent = (gl == 0.f && gr == 0.f);
+            if (was_silent && !silent) ++births;
+            was_silent = silent;
+            t.advance();
         }
-        return worst;
+        return births;
     };
+    CHECK(births_per_beat(0.10f) == 2);
+    CHECK(births_per_beat(0.35f) == 4);
+    CHECK(births_per_beat(0.60f) == 8);   // >= kOctaveThresh: stacks an octave
+    CHECK(births_per_beat(0.90f) == 16);  // grain per slot, but still ONE slot
+}                                          // = one silence-to-sound transition
 
-    // _remap() sets _jitter = rot / kZoneSEnd (kZoneSEnd = 0.33) inside zone
-    // S, and _schedule() draws a per-slot offset of up to
-    // +-(_jitter * 0.5) * _grid_period samples (_grid_period = 6000 here).
-    // The theoretical max single-slot offset at each sampled rot is:
-    //   rot = 0.00 -> jitter = 0.0000 -> max offset =    0.0  (locked)
-    //   rot = 0.05 -> jitter = 0.1515 -> max offset =  454.5
-    //   rot = 0.16 -> jitter = 0.4848 -> max offset = 1454.5
-    //   rot = 0.30 -> jitter = 0.9091 -> max offset = 2727.3
-    // i.e. growth is monotone in rot, and by rot = 0.30 the ceiling is well
-    // over 2700 samples -- not just "greater than the locked baseline's exact
-    // zero". Pin both: the monotone climb across four points, and an
-    // absolute floor on the top point derived from that ~2727 ceiling (with
-    // slack for `worst` being a maximum over a finite, random sample of
-    // slots, not the theoretical supremum itself).
-    const double r00 = spread(0.00f);   // locked: jitter == 0 exactly
-    const double r05 = spread(0.05f);
-    const double r16 = spread(0.16f);
-    const double r30 = spread(0.30f);   // near the top of zone S
+TEST_CASE("dust: zone S octave layer -- second grain traverses 2x the tape distance in the same duration") {
+    // A tape that is silent except for one marker sample, placed at a
+    // distance from the anchor only the octave (rate = 2) grain can reach
+    // within one slot's duration -- the base (rate = 1) grain's read range is
+    // bounded to [anchor+1, anchor+len], so it never sees a marker at
+    // anchor + 1.5*len. Both grains end at _anchor (spec §3): base steps -1
+    // from anchor+len, octave steps -2 from anchor+2*len, so at read-position
+    // D from the anchor, base is at k = len - D and octave is at
+    // k = len - D/2 -- exactly half as many samples in for the same tape
+    // distance, i.e. twice the speed.
+    FakeTape t;   // all-zero: FakeTape's ctor zero-fills and is not noise-filled here
+    const int32_t D = 3000;
+    t.l[D & (FakeTape::kSize - 1)] = 1.f;
+    t.r[D & (FakeTape::kSize - 1)] = 1.f;
 
-    CHECK(r00 == 0.0);          // locked baseline: no offset is ever drawn
-    CHECK(r05 > r00);
-    CHECK(r16 > r05);
-    CHECK(r30 > r16);
-    CHECK(r30 > 1500.0);        // derived floor: ceiling is ~2727, see above
-}
+    DustCloud d;
+    d.init(48000.f, 0xD0571u);
+    d.set_dust(0.6f);       // >= kOctaveThresh: octave layer active; subdiv = 3
+    d.set_rot(0.0f);        // zone S, jitter == 0
+    d.sync_beat(48000.f);   // grid_period = 48000 / (1 << 3) = 6000
 
-TEST_CASE("dust: zone S grid follows the delay time") {
-    const auto slow = birth_indices(0.f, 0.35f, 0.5f, 480000);   // grid 6000
-    const auto fast = birth_indices(0.f, 0.35f, 0.25f, 480000);  // grid 3000
-    REQUIRE(slow.size() >= 8);
-    REQUIRE(fast.size() >= 8);
-    // NOT a clean "half the grid period -> twice the births" relation: at
-    // DUST = 0.35, grain length ranges up to len_max = lerp(kLenMaxLo,
-    // kLenMaxHi, 0.35) ~= 0.205 s ~= 9840 samples (dust.cpp _remap), which
-    // exceeds BOTH grids here (6000 and 3000 samples). birth_indices() only
-    // counts a birth where the summed output returns fully to silence first
-    // (see that function's comment), so overlapping grains merge and the
-    // counted total under-reports the true number of grid slots that fired --
-    // on both settings, not just one. Measured on this exact scenario/seed on
-    // 2026-07-19: slow.size() = 17, fast.size() = 33 (ratio 1.94) -- close to
-    // the naive 2x, but that closeness is this seed's outcome of correlated
-    // merge suppression on both sides, not a property either grid guarantees
-    // on its own; a materially different merge rate between the two settings
-    // could pull the ratio well under 2 without the grid itself being wrong.
-    // `1.5` is kept as the floor: comfortably under the measured 1.94, while
-    // still failing if the grid stopped following the delay time at all
-    // (ratio near 1, e.g. if `_grid_period` ignored `_delay_time`).
-    CHECK((double)fast.size() > (double)slow.size() * 1.5);
+    constexpr int32_t kLen = 6000;         // == grid_period here
+    const int32_t k_base = kLen - D;       // 3000: base grain reads D here
+    const int32_t k_oct  = kLen - D / 2;   // 4500: octave grain reads D here
+
+    std::vector<float> e(kLen);
+    for (int32_t i = 0; i < kLen; ++i) {
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);
+        e[i] = gl * gl + gr * gr;
+        t.advance();
+    }
+
+    for (int32_t k = 0; k < kLen; ++k) {
+        if (k == k_base || k == k_oct) continue;
+        REQUIRE(e[k] == 0.f);   // silent tape everywhere but the marker reads
+    }
+    CHECK(e[k_base] > 1e-6f);   // the base (1x) grain passes the marker
+    CHECK(e[k_oct]  > 1e-6f);   // the octave (2x) grain passes the SAME marker
+}                                // at half the elapsed samples
+
+TEST_CASE("dust: zones F and R are bit-identical to the pre-task build") {
+    // Task 12 touches zone S only: Grain::hold defaults to 0 and _spawn()
+    // (used by zones F/R) sets it explicitly, so the trapezoid gate's
+    // `if (g.hold > 0)` branch is never taken there and the fold degenerates
+    // to exactly the old `widx = 382 - widx; wstep = -wstep` behaviour.
+    // Pinned against the pre-task build (same seed/scenario, captured before
+    // this task's changes landed) -- the cheapest guard against this task
+    // leaking into the other two zones.
+    auto checksum = [](float rot, float amount) {
+        FakeTape t; t.fill_noise(11);
+        DustCloud d;
+        d.init(48000.f, 0xD0571u);
+        d.set_dust(amount);
+        d.set_rot(rot);
+        d.set_delay_time(0.5f);
+        double sum = 0.0;
+        for (int i = 0; i < 96000; ++i) {
+            float gl = 0.f, gr = 0.f;
+            d.process(t.tap(), gl, gr);
+            sum += (double)gl * 1000003.0 + (double)gr * 7919.0;
+            t.advance();
+        }
+        return sum;
+    };
+    CHECK(checksum(0.5f, 0.8f) == doctest::Approx(74822799.72581546).epsilon(1e-12));   // zone F
+    CHECK(checksum(0.9f, 0.8f) == doctest::Approx(28634632.408616465).epsilon(1e-12));  // zone R
 }
