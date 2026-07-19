@@ -217,8 +217,8 @@ Create `host/render/scenarios/ctrl_identity.json`:
     { "action": "set_depth", "part": 1, "value": 1.0 },
     { "action": "set_rate", "part": 0, "value": 0.8 },
     { "action": "set_rate", "part": 1, "value": 0.55 },
-    { "action": "set_target_depth", "part": 0, "slot": 0, "value": 1.0 },
-    { "action": "set_target_depth", "part": 1, "slot": 0, "value": 1.0 },
+    { "action": "set_target_depth", "part": 0, "slot": 2, "value": 1.0 },
+    { "action": "set_target_depth", "part": 1, "slot": 2, "value": 1.0 },
     { "action": "set_smooth", "part": 0, "value": 0.0 },
     { "action": "set_smooth", "part": 1, "value": 0.0 }
   ],
@@ -226,7 +226,7 @@ Create `host/render/scenarios/ctrl_identity.json`:
 }
 ```
 
-`"slot": 0` is `LANE_PITCH` (`engine/mod/lane_id.h`). `set_smooth` at 0 is deliberate: it is the near-passthrough case the cut list flagged as the risk, so the gate covers it head-on.
+`"slot": 2` is `LANE_PITCH` (`engine/mod/lane_id.h`; slot 0 is `LANE_SOURCE`). `set_smooth` at 0 is deliberate: it is the near-passthrough case the cut list flagged as the risk, so the gate covers it head-on.
 
 - [ ] **Step 2: Verify the scenario loads and the field names are right**
 
@@ -519,15 +519,25 @@ Existing tests should survive: `target_value(slot)` computes live from `target_r
 
 - [ ] **Step 6: The identity gate**
 
+The reference is the checksum committed at `host/render/scenarios/ctrl_identity.sha256`. The rendered WAV itself is not tracked — `/renders/` is gitignored on purpose.
+
 ```bash
 cmake --build build --target render
 ./build/render host/render/scenarios/ctrl_identity.json /tmp/ctrl_identity_after.wav /tmp/ctrl_identity_after.csv
-sha256sum renders/ctrl_identity.wav /tmp/ctrl_identity_after.wav
+echo "$(cut -d' ' -f1 host/render/scenarios/ctrl_identity.sha256)  /tmp/ctrl_identity_after.wav" | sha256sum -c -
 ```
 
-Expected: **the two hashes are identical.**
+Expected: `/tmp/ctrl_identity_after.wav: OK`
 
-If they differ, the raster changed something it was not supposed to. Do not adjust the scenario to make it pass and do not proceed to Task 5 — that is the gate doing its job. Diff the CSVs (`renders/ctrl_identity.csv` against `/tmp/ctrl_identity_after.csv`) to find the first diverging sample, and report the finding.
+If it reports `FAILED`, the raster changed something it was not supposed to. Do not adjust the scenario or the checksum to make it pass, and do not proceed to Task 5 — that is the gate doing its job. Re-render the reference from the previous commit to get a CSV to diff against:
+
+```bash
+git stash && cmake --build build --target render
+./build/render host/render/scenarios/ctrl_identity.json /tmp/ctrl_before.wav /tmp/ctrl_before.csv
+git stash pop
+```
+
+then diff `/tmp/ctrl_before.csv` against `/tmp/ctrl_identity_after.csv` to find the first diverging sample, and report the finding.
 
 - [ ] **Step 7: Look at the default render too**
 
@@ -645,6 +655,22 @@ Spec Step 2. LEVEL, the five FX targets and the `set_targets` push move onto the
 - Consumes: Task 4's raster.
 - Produces: `float Part::_fxv[FXT_COUNT]` (private).
 
+- [ ] **Step 0 (before Steps 1-3): capture the "before" render**
+
+Step 5 needs the pre-change audio, and no reference WAV is tracked. Render it from the current tree first; the checksum check doubles as proof that Tasks 3-5 left the audio untouched.
+
+```bash
+cd "/c/Users/bernd/Documents/AI/Spotykach"
+source env.sh
+cmake --build build --target render
+./build/render host/render/scenarios/ctrl_identity.json /tmp/ctrl_before6.wav /tmp/ctrl_before6.csv
+echo "$(cut -d' ' -f1 host/render/scenarios/ctrl_identity.sha256)  /tmp/ctrl_before6.wav" | sha256sum -c -
+```
+
+Expected: `/tmp/ctrl_before6.wav: OK`.
+
+If it reports `FAILED`, stop and report. Something in Tasks 3-5 changed the audio when it should not have, and that finding outranks this task.
+
 - [ ] **Step 1: Add the FX cache to `part.h`**
 
 Next to the `_tg` member from Task 1:
@@ -701,47 +727,47 @@ Expected: all tests pass. A test asserting an exact LEVEL-driven amplitude withi
 
 - [ ] **Step 5: Confirm the identity render now differs, and by how much**
 
+This compares against `/tmp/ctrl_before6.wav` from Step 0. `/renders/` is gitignored, so there is no reference WAV in the repo — only the checksum at `host/render/scenarios/ctrl_identity.sha256`.
+
 ```bash
 cmake --build build --target render
 ./build/render host/render/scenarios/ctrl_identity.json /tmp/ctrl_after6.wav /tmp/ctrl_after6.csv
-sha256sum renders/ctrl_identity.wav /tmp/ctrl_after6.wav
 python -c "
 import wave, struct
 def rd(p):
     w = wave.open(p); n = w.getnframes()
     return struct.unpack('<%dh' % (n * w.getnchannels()), w.readframes(n))
-a, b = rd('renders/ctrl_identity.wav'), rd('/tmp/ctrl_after6.wav')
+a, b = rd('/tmp/ctrl_before6.wav'), rd('/tmp/ctrl_after6.wav')
 d = [abs(x - y) for x, y in zip(a, b)]
 print('max abs diff', max(d), 'of 32768; differing samples', sum(1 for x in d if x))
 "
 ```
 
-Expected: the hashes differ (that is the point of this task), and the max absolute difference is small — a smoothed step, not a click. Record both numbers in your report; they are the measured price of Step 2.
+Expected: a non-zero difference (that is the point of this task), with the max absolute difference small — a smoothed step, not a click. Record both numbers in your report; they are the measured price of Step 2.
 
 If the max diff is a large fraction of full scale, something stepped without smoothing. Investigate before committing.
 
-- [ ] **Step 6: Re-cut the committed reference renders**
+- [ ] **Step 6: Update the tracked checksum**
+
+The gate's reference moves with this deliberate change.
 
 ```bash
-for s in host/render/scenarios/*.json; do
-  n=$(basename "$s" .json)
-  ./build/render "$s" "renders/$n.wav" "renders/$n.csv"
-done
-git status --short renders/
+sha256sum /tmp/ctrl_after6.wav | awk '{print $1"  ctrl_identity.wav"}' > host/render/scenarios/ctrl_identity.sha256
+cat host/render/scenarios/ctrl_identity.sha256
 ```
 
-Expected: the rendered scenarios show as modified. Scenarios without a matching committed render simply create new files; that is fine.
+Expected: one line, the new hash. Do not commit anything under `renders/` — that directory is gitignored by design.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add engine/parts/part.h engine/parts/part.cpp renders/
+git add engine/parts/part.h engine/parts/part.cpp host/render/scenarios/ctrl_identity.sha256
 git commit -m "$(cat <<'EOF'
 perf(part): LEVEL, the target push and the FX targets onto the raster
 
 The last per-sample glue consumers. PartFx's 2 ms smoothers and the
-engine's 10 ms level smoother absorb the steps. This changes the render --
-reference renders re-cut in the same commit.
+engine's 10 ms level smoother absorb the steps. This changes the render on
+purpose, so the identity gate's checksum moves with it.
 
 Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>
 EOF
