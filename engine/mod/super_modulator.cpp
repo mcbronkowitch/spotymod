@@ -15,6 +15,7 @@ void SuperModulator::init(float sample_rate, uint32_t seed_base) {
         _lanes[i].init(sample_rate, seed_base + static_cast<uint32_t>(i) * 2654435761u);
         _out[i] = 0.f;
     }
+    _tick_ctr = 0;
     _pitch_scale = 1.f; _mod_scale = 1.f;
     _update_rate();
 }
@@ -56,8 +57,19 @@ void SuperModulator::set_step(bool on, int n) { for (auto& l : _lanes) l.set_ste
 void SuperModulator::set_fixed_slew(bool on)  { for (auto& l : _lanes) l.set_fixed_slew(on); }
 
 void SuperModulator::process() {
-    for (int i = 0; i < LANE_COUNT; ++i)
-        _out[i] = _lanes[i].process();
+    // The PITCH lane is the anchor: per-sample, fires bit-identical to the
+    // pre-rework engine. The four texture lanes advance on the 96-sample
+    // raster (spec 2026-07-19 mod-plane-control-rate); the counter boots at
+    // 0 so the first call ticks, which lands the mod tick on the same
+    // samples as Part::_control_tick() -- the sole audio-path consumer reads
+    // values that are 0 samples old.
+    _out[LANE_PITCH] = _lanes[LANE_PITCH].process();
+    if (_tick_ctr == 0) {
+        _tick_ctr = ModLane::kTickInterval;
+        for (int i = 0; i < LANE_COUNT; ++i)
+            if (i != LANE_PITCH) _out[i] = _lanes[i].tick();
+    }
+    --_tick_ctr;
 }
 
 void SuperModulator::spot(Rng& rng) {

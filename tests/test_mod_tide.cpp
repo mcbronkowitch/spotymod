@@ -47,7 +47,11 @@ TEST_CASE("tide: free scaling drives texture lanes only") {
     const float base = m.master_hz();
     m.set_tide(1.f);                                  // frei: x4
     CHECK(m.master_hz() == doctest::Approx(base));    // Melodie-Clock steht
-    m.process();                                      // 1 Sample: Phase == Inkrement
+    // Texture lanes advance on the 96-sample raster (Task 4, spec
+    // 2026-07-19 mod-plane-control-rate): 96 samples give the pitch lane the
+    // same elapsed time as the texture lanes' single tick(), so the ratio
+    // still reads cleanly on that grid instead of after 1 sample.
+    for (int i = 0; i < ModLane::kTickInterval; ++i) m.process();
     float pitch = m.lane_phase(LANE_PITCH);
     CHECK(m.lane_phase(LANE_SOURCE) == doctest::Approx(pitch * 2.00f * 4.f));
     CHECK(m.lane_phase(LANE_SIZE)   == doctest::Approx(pitch * 0.50f * 4.f));
@@ -72,7 +76,9 @@ TEST_CASE("tide: composes with the center rate_scale") {
     m.set_rate(0.3f);
     m.set_rate_scale(1.f, 2.f);                       // COUPLE/DRIFT-Hook
     m.set_tide(1.f);                                  // x4 obendrauf
-    m.process();
+    // Texture lanes advance on the 96-sample raster (Task 4): read the
+    // ratio on that grid (see the comment above for why).
+    for (int i = 0; i < ModLane::kTickInterval; ++i) m.process();
     float pitch = m.lane_phase(LANE_PITCH);
     CHECK(m.lane_phase(LANE_SOURCE)
           == doctest::Approx(pitch * 2.f * 2.f * 4.f));

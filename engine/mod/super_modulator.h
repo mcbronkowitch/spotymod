@@ -78,6 +78,7 @@ private:
     float    _base_hz    = 1.f;   // rate from knob/sync, before rate_scale
     float    _tide_norm = 0.5f;   // TIDE knob position (0..1)
     float    _tide_mult = 1.f;    // effective factor: ladder rung or free curve
+    int      _tick_ctr = 0;        // texture-lane raster; 0 = tick on next process()
 };
 
 } // namespace spky

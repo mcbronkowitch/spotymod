@@ -705,9 +705,14 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
     // At every raster tick Part just latched the same live value the shadow
     // is fed every sample, so the two engines must agree there.
     CHECK_FALSE(tick_mismatch);
-    // Between ticks the live LFO keeps moving but Part's cache does not --
-    // sanity check that the two streams actually pull apart somewhere, so
-    // the tick-agreement check above isn't vacuously true because nothing
-    // ever changed.
-    CHECK(off_tick_divergence);
+    // Task 4 (spec 2026-07-19 mod-plane-control-rate) moved LANE_LEVEL --
+    // a texture lane -- onto the same 96-sample tick() raster as Part's own
+    // push cache, and the two rasters are phase-locked. So target_raw()
+    // itself no longer moves between ticks for a texture lane: the "live"
+    // shadow input now changes in lockstep with Part's cache, not every
+    // sample. The old sanity check (the streams must pull apart somewhere
+    // off-tick, or the tick-agreement check above would be vacuous) no
+    // longer holds for a texture lane and is expected to invert -- there is
+    // no off-tick divergence left to find.
+    CHECK_FALSE(off_tick_divergence);
 }

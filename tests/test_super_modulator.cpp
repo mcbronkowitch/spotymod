@@ -9,7 +9,11 @@ TEST_CASE("super: lane rate ratios (x2, x1/2, x1, x3/4, x3/2)") {
     SuperModulator m;
     m.init(48000.f, 42);
     m.set_rate(0.3f);
-    m.process();                         // one sample -> each lane phase == its inc
+    // Texture lanes advance on the 96-sample raster (Task 4, spec
+    // 2026-07-19 mod-plane-control-rate): read the ratio on that grid, not
+    // after one sample -- 96 process() calls give the pitch lane the same
+    // elapsed time as the texture lanes' single tick().
+    for (int i = 0; i < ModLane::kTickInterval; ++i) m.process();
     float pitch = m.lane_phase(LANE_PITCH);
     CHECK(m.lane_phase(LANE_SOURCE) == doctest::Approx(pitch * 2.00f));
     CHECK(m.lane_phase(LANE_SIZE)   == doctest::Approx(pitch * 0.50f));
@@ -119,4 +123,25 @@ TEST_CASE("super: spot stumbles every lane except the PITCH master lane") {
     Rng rx; rx.seed(5u); Rng ry; ry.seed(5u);
     x.spot(rx); y.spot(ry);
     CHECK(x.lane_phase(LANE_SOURCE) == y.lane_phase(LANE_SOURCE));
+}
+
+TEST_CASE("super: texture lanes hold between control ticks, pitch stays per-sample") {
+    SuperModulator m;
+    m.init(48000.f, 42u);
+    m.set_rate(0.6f);
+    m.set_shape(0.3f);          // continuous FLOW: per-sample path would move
+    m.set_smooth(0.f);
+    m.process();                // counter boots at 0: the first call ticks
+    float held[LANE_COUNT];
+    for (int s = 0; s < LANE_COUNT; ++s) held[s] = m.lane_output(s);
+    bool stair_ok = true;
+    for (int i = 1; i < 96 * 20; ++i) {
+        m.process();
+        for (int s = 0; s < LANE_COUNT; ++s) {
+            if (s == LANE_PITCH) continue;
+            if (i % 96 == 0) held[s] = m.lane_output(s);
+            else if (m.lane_output(s) != held[s]) stair_ok = false;
+        }
+    }
+    CHECK(stair_ok);            // texture = 96-sample staircase by construction
 }
