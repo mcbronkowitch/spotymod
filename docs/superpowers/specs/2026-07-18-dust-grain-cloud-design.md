@@ -183,7 +183,7 @@ change.
 
 ### 7. Engine API + host plumbing
 
-- `Flux::set_dust(float)`, `Flux::set_rot(float)`, `Flux::set_freeze(bool)`; `Flux` owns the `DustCloud`, passes tap access + delay time (zones F/R) + collects writeback.
+- `Flux::set_dust(float)`, `Flux::set_rot(float)`, `Flux::set_freeze(bool)`; `Flux` owns the `DustCloud`, passes tap access + collects writeback. Zones F/R read `_birth_prob`, derived internally from DUST — not a delay time (corrected 2026-07-19, task 12 finding 6: `DustCloud::set_delay_time()` was dead state and has been removed).
 - **Beat plumbing (rev 7).** Zone S needs a phase reference the FX chain does not
   currently have. `Center` already owns a `Transport` with a `double` beat
   accumulator and `beat_phase()`; it gains a beat-edge detector at the control

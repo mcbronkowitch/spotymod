@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <vector>
 #include "fx/dust.h"
 #include "fx/flux.h"
@@ -33,7 +34,6 @@ TEST_CASE("dust: amount 0 is silent and inactive") {
     d.init(48000.f, 0xD0571u);
     d.set_dust(0.f);
     d.set_rot(0.5f);
-    d.set_delay_time(0.5f);
     CHECK(!d.active());
     for (int i = 0; i < 48000; ++i) {
         float gl = 1.f, gr = 1.f;
@@ -52,7 +52,6 @@ TEST_CASE("dust: deterministic for a given seed") {
         d.init(48000.f, 0xD0571u);
         d.set_dust(0.8f);
         d.set_rot(0.5f);            // free zone
-        d.set_delay_time(0.5f);
         out.resize(48000);
         for (int i = 0; i < 48000; ++i) {
             float gl = 0.f, gr = 0.f;
@@ -72,7 +71,6 @@ TEST_CASE("dust: free zone produces sound and stays bounded") {
     d.init(48000.f, 0xD0571u);
     d.set_dust(1.f);
     d.set_rot(0.5f);
-    d.set_delay_time(0.5f);
     float peak = 0.f;
     double sum_sq = 0.0;
     for (int i = 0; i < 96000; ++i) {
@@ -137,7 +135,6 @@ TEST_CASE("dust: grain sum is click-free across births and deaths") {
     d.init(48000.f, 0xD0571u);
     d.set_dust(0.9f);
     d.set_rot(0.5f);
-    d.set_delay_time(0.5f);
 
     // Derived bound on the legitimate per-sample step (not measured):
     //  - Tape: 93.75 Hz sine (SineTape::freq_hz -- see that struct for why it
@@ -227,7 +224,6 @@ TEST_CASE("dust: grain window opens and closes near zero (structural)") {
     d.init(48000.f, 0xD0571u);
     d.set_dust(0.05f);      // sparse: isolated single-grain lifetimes
     d.set_rot(0.5f);
-    d.set_delay_time(0.5f);
 
     int prev_active = 0;
     float prev_gl = 0.f;
@@ -271,7 +267,6 @@ TEST_CASE("dust: density rises with DUST, level stays inside a band") {
         d.init(48000.f, 0xD0571u);
         d.set_dust(amount);
         d.set_rot(0.5f);
-        d.set_delay_time(0.5f);
         double s = 0.0, a = 0.0;
         for (int i = 0; i < 192000; ++i) {
             float gl = 0.f, gr = 0.f;
@@ -351,6 +346,20 @@ struct MonoTape {
     }
     TapeTap tap() const { return TapeTap{buf.data(), buf.data(), ptr, kSize - 1}; }
     void advance() { ptr = (ptr - 1 + kSize) % kSize; }
+};
+
+// Production-sized tape (task 12 finding 1): the zone-S grid clamp is
+// computed against Flux::kMaxSamples directly, not any test fixture's own
+// size, so a test of that exact clamp needs a tape of that exact size to be
+// a genuine end-to-end check rather than a check of the formula in isolation.
+struct BigTape {
+    static constexpr int32_t kSize = (int32_t)Flux::kMaxSamples;
+    static_assert((kSize & (kSize - 1)) == 0, "kSize must be a power of two");
+    std::vector<float> buf;
+    int32_t ptr = 0;
+    BigTape() : buf(kSize, 0.f) {}
+    TapeTap tap() const { return TapeTap{buf.data(), buf.data(), ptr, kSize - 1}; }
+    void advance() { ptr = (ptr - 1) & (kSize - 1); }
 };
 
 TEST_CASE("dust: zone S anchored replay -- successive grains repeat the same slice") {
@@ -500,7 +509,7 @@ TEST_CASE("dust: zone S octave layer -- second grain traverses 2x the tape dista
     CHECK(e[k_oct]  > 1e-6f);   // the octave (2x) grain passes the SAME marker
 }                                // at half the elapsed samples
 
-TEST_CASE("dust: zones F and R are bit-identical to the pre-task build") {
+TEST_CASE("dust: zones F and R checksum pin against the pre-task build") {
     // Task 12 touches zone S only: Grain::hold defaults to 0 and _spawn()
     // (used by zones F/R) sets it explicitly, so the trapezoid gate's
     // `if (g.hold > 0)` branch is never taken there and the fold degenerates
@@ -508,13 +517,25 @@ TEST_CASE("dust: zones F and R are bit-identical to the pre-task build") {
     // Pinned against the pre-task build (same seed/scenario, captured before
     // this task's changes landed) -- the cheapest guard against this task
     // leaking into the other two zones.
+    //
+    // NAMING (task 12 finding 5): this used to be called "bit-identical",
+    // which is not what it checked -- doctest::Approx(...).epsilon(1e-12) on
+    // a float-weighted double sum is roughly 7.5e-5 of absolute slack here,
+    // not a bit-exactness claim. Renamed to say what it actually is: a
+    // regression pin on a hand-copied checksum literal. The comparison is now
+    // exact `==` on the double instead: this build's own float pipeline
+    // (fast_sin, the Hann table, the same seed/scenario) is deterministic run
+    // to run -- see "dust: deterministic for a given seed" above, which pins
+    // that same determinism via plain `==` on the raw floats -- so the
+    // checksum is reproducible exactly, not just approximately, as long as
+    // the literal was captured with full double precision (it was: printed
+    // with the <iomanip> precision this file already includes).
     auto checksum = [](float rot, float amount) {
         FakeTape t; t.fill_noise(11);
         DustCloud d;
         d.init(48000.f, 0xD0571u);
         d.set_dust(amount);
         d.set_rot(rot);
-        d.set_delay_time(0.5f);
         double sum = 0.0;
         for (int i = 0; i < 96000; ++i) {
             float gl = 0.f, gr = 0.f;
@@ -524,6 +545,184 @@ TEST_CASE("dust: zones F and R are bit-identical to the pre-task build") {
         }
         return sum;
     };
-    CHECK(checksum(0.5f, 0.8f) == doctest::Approx(74822799.72581546).epsilon(1e-12));   // zone F
-    CHECK(checksum(0.9f, 0.8f) == doctest::Approx(28634632.408616465).epsilon(1e-12));  // zone R
+    CHECK(checksum(0.5f, 0.8f) == 74822799.72581546);   // zone F
+    CHECK(checksum(0.9f, 0.8f) == 28634632.408616465);  // zone R
+}
+
+// --- Task 12 findings 1, 3, 4 ------------------------------------------
+
+TEST_CASE("dust: zone S grid period is clamped so a grain never reads ahead of the write head") {
+    // At BPM 1 / 48 kHz / DUST 0.6, the raw grid computation
+    // (_beat_samples / 2^_subdiv) is far longer than the tape itself: without
+    // an upper clamp on _grid_period, _spawn_anchored's `back = len * rate`
+    // saturates at `tape.size() - 4` for the octave (rate = 2) grain, and a
+    // grain lifetime of hundreds of thousands of samples then walks its read
+    // index straight past the anchor and out past the moving write head --
+    // reading ahead of it. With the fix (finding 1: _grid_period clamped to
+    // at most (Flux::kMaxSamples - 4) / 2), `back` never needs to saturate
+    // for EITHER rate: back0 (the offset behind the write head at birth) is
+    // exactly `grid_period * rate`. Checking that equality at birth is the
+    // direct, falsifiable proof: if the clamp is missing or wrong, back0
+    // saturates to tape.size()-4 instead and the check fails -- and once
+    // back0 == grid_period*rate holds, the grain's read offset (which only
+    // ever moves at a constant rate for the rest of its life -- see
+    // _spawn_anchored's own comment on rd_step) provably never goes negative
+    // before the grain's own life ends, which is exactly "never reads ahead
+    // of the write head for its whole life".
+    BigTape t;
+    DustCloud d;
+    d.init(48000.f, 0xD0571u);
+    d.set_dust(0.6f);        // >= kOctaveThresh: exercises both rate=1 and rate=2
+    d.set_rot(0.0f);         // zone S, jitter == 0: exact grid
+    d.sync_beat(60.f / 1.f * 48000.f);   // BPM 1 @ 48 kHz -- the finding's own scenario
+
+    const int32_t mask = BigTape::kSize - 1;
+    const int32_t grid_period = d.grid_period();
+    // Sanity: this really is the scenario finding 1 describes -- the raw,
+    // unclamped grid would exceed the clamp, so if grid_period here were NOT
+    // bounded this test would not be exercising anything.
+    REQUIRE((long long)grid_period * 2 <= (long long)Flux::kMaxSamples - 4);
+
+    bool was_alive[DustCloud::kGrains] = {};
+    bool checked_rate1 = false, checked_rate2 = false;
+
+    for (int i = 0; i < 400000 && !(checked_rate1 && checked_rate2); ++i) {
+        const int32_t write_ptr_now = t.ptr;
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);
+        for (int s = 0; s < DustCloud::kGrains; ++s) {
+            const bool alive = d.grain_alive(s);
+            if (alive && !was_alive[s]) {
+                // rd has already been stepped once this same call (process()
+                // advances it right after spawning), so the birth offset is
+                // one step earlier than what we read here.
+                const int32_t rate = -d.grain_rd_step(s);
+                const int32_t offset_after_step = (d.grain_rd(s) - write_ptr_now) & mask;
+                const int32_t back0 = offset_after_step + rate;
+                CHECK(back0 == grid_period * rate);
+                if (rate == 1) checked_rate1 = true;
+                if (rate == 2) checked_rate2 = true;
+            }
+            was_alive[s] = alive;
+        }
+        t.advance();
+    }
+    CHECK(checked_rate1);
+    CHECK(checked_rate2);
+}
+
+TEST_CASE("dust: DUST 0 -> re-armed relatches the zone-S anchor instead of replaying a stale one") {
+    MonoTape t; t.fill_noise(0x5EED);
+    DustCloud d;
+    d.init(48000.f, 0xD0571u);
+    d.set_rot(0.0f);           // zone S
+    d.set_dust(0.1f);          // subdiv = 1 => grid_period = beat/2; no octave layer
+    d.sync_beat(48000.f);      // establish a real grid/anchor
+
+    for (int i = 0; i < 30000; ++i) {
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);
+        t.advance();
+    }
+    d.set_dust(0.f);            // DUST -> 0: clears the pool
+    for (int i = 0; i < 50000; ++i) {   // write head moves on a long way further
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);     // early-returns (dust <= 0); pool stays clear
+        t.advance();
+    }
+    d.set_dust(0.1f);           // re-armed: DUST leaves zero again
+
+    // The very next process() call must spawn from a FRESHLY latched anchor
+    // (== the write_ptr at THAT call), not the one latched 80,000 samples ago.
+    const int32_t mask = MonoTape::kSize - 1;
+    const int32_t write_ptr_now = t.ptr;
+    const int32_t grid_period = d.grid_period();
+    float gl = 0.f, gr = 0.f;
+    d.process(t.tap(), gl, gr);
+
+    REQUIRE(d.grain_alive(0));   // pool was empty; the first free slot spawns
+    const int32_t rate = -d.grain_rd_step(0);
+    const int32_t rd_before_step = (d.grain_rd(0) + rate) & mask;
+    const int32_t anchor_implied = (rd_before_step - grid_period * rate) & mask;
+    CHECK(anchor_implied == write_ptr_now);
+}
+
+TEST_CASE("dust: ROT sweep from zone F into zone S relatches a fresh anchor, not a stale one") {
+    MonoTape t; t.fill_noise(0x5EED);
+    DustCloud d;
+    d.init(48000.f, 0xD0571u);
+    d.set_rot(0.0f);          // zone S first: consume sync_beat()'s pending
+    d.set_dust(0.1f);         // edge here, not in zone F below -- zone F's
+    d.sync_beat(48000.f);     // _schedule() ignores _beat_pending entirely
+                               // (it only checks it in the zone-S branch), so
+                               // sync_beat() called while already in zone F
+                               // would leave it sitting true for the whole
+                               // stretch below, and the eventual F -> S spawn
+                               // would pick that up regardless of whether the
+                               // finding-3 transition fix is present --
+                               // silently defeating this test. One process()
+                               // call here latches and consumes it for real.
+    { float gl = 0.f, gr = 0.f; d.process(t.tap(), gl, gr); t.advance(); }
+    REQUIRE(d.grain_alive(0));   // sanity: that call actually spawned
+
+    d.set_rot(0.5f);          // NOW cross into zone F: free scatter
+
+    for (int i = 0; i < 40000; ++i) {   // plenty of (stale, irrelevant) time passes
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);
+        t.advance();
+    }
+
+    bool was_alive[DustCloud::kGrains];
+    for (int s = 0; s < DustCloud::kGrains; ++s) was_alive[s] = d.grain_alive(s);
+
+    d.set_rot(0.0f);   // sweep into zone S
+
+    const int32_t mask = MonoTape::kSize - 1;
+    const int32_t grid_period = d.grid_period();
+    int born_slot = -1;
+    int32_t write_ptr_at_birth = 0;
+    for (int i = 0; i < 500 && born_slot < 0; ++i) {
+        const int32_t write_ptr_now = t.ptr;
+        float gl = 0.f, gr = 0.f;
+        d.process(t.tap(), gl, gr);
+        for (int s = 0; s < DustCloud::kGrains; ++s) {
+            const bool alive = d.grain_alive(s);
+            if (alive && !was_alive[s] && born_slot < 0) {
+                born_slot = s;
+                write_ptr_at_birth = write_ptr_now;
+            }
+            was_alive[s] = alive;
+        }
+        t.advance();
+    }
+    REQUIRE(born_slot >= 0);
+
+    const int32_t rate = -d.grain_rd_step(born_slot);
+    const int32_t rd_before_step = (d.grain_rd(born_slot) + rate) & mask;
+    const int32_t anchor_implied = (rd_before_step - grid_period * rate) & mask;
+    CHECK(anchor_implied == write_ptr_at_birth);
+}
+
+TEST_CASE("dust: sync_beat guards a non-positive or non-finite beat_samples") {
+    FakeTape t; t.fill_noise(11);
+    DustCloud d;
+    d.init(48000.f, 0xD0571u);
+    d.set_dust(0.2f);
+    d.set_rot(0.0f);
+    d.sync_beat(48000.f);          // valid edge: establishes a real grid
+    const int32_t good_grid = d.grid_period();
+
+    const float bad_values[] = {0.f, -1.f, -48000.f,
+                                 std::numeric_limits<float>::quiet_NaN()};
+    for (float bad : bad_values) {
+        d.sync_beat(bad);
+        CHECK(d.grid_period() == good_grid);   // dropped, not applied
+        float gl = 0.f, gr = 0.f;
+        float wb = d.process(t.tap(), gl, gr);
+        CHECK(std::isfinite(gl));
+        CHECK(std::isfinite(gr));
+        CHECK(wb == 0.f);
+        t.advance();
+    }
 }

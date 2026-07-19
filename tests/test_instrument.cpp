@@ -2,6 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <limits>
 #include "instrument.h"
 #include "fx/reverb.h"
 #include "mod/super_modulator.h"
@@ -676,4 +677,45 @@ TEST_CASE("instrument: control raster survives a block-size-agnostic call patter
     render(96, a);
     render(7, b);
     for (size_t i = 0; i < a.size(); ++i) REQUIRE(a[i] == b[i]);
+}
+
+TEST_CASE("instrument: set_tempo_bpm guards a non-positive or non-finite bpm at the single door") {
+    // Instrument::set_tempo_bpm is the one call both SuperModulator::
+    // set_tempo_bpm and Flux::set_bpm go through -- both keep their own _bpm
+    // and bypass Transport entirely, so guarding only Transport::set_bpm (as
+    // it already was) left this door open: host/render/scenario.cpp forwards
+    // an unvalidated scenario-file `bpm` straight into this method (task 12
+    // finding 2). A guarded call must be a complete no-op, so a reference
+    // instrument that only ever receives the one valid bpm is compared,
+    // sample for sample, against a "dut" that also receives interleaved bad
+    // calls -- the same bit-exact idiom already used for FLUX's other
+    // unchanged-value guards (I3, see flux.h). SYNC is on so SuperModulator
+    // actually divides by bpm (division_hz), which is the path that reacts.
+    auto setup = [](Instrument& inst) {
+        inst.init(48000.f);
+        inst.set_sync(true);
+        inst.set_tempo_bpm(120.f);
+        inst.set_target_active(PART_A, LANE_PITCH, true);
+        inst.set_rate(PART_A, 0.5f);
+        inst.set_range(PART_A, 1.f);
+    };
+    Instrument ref, dut;
+    setup(ref);
+    setup(dut);
+
+    std::vector<float> rl(96), rr(96), dl(96), dr(96);
+    for (int block = 0; block < 50; ++block) {
+        if (block == 10) {
+            dut.set_tempo_bpm(0.f);
+            dut.set_tempo_bpm(-30.f);
+            dut.set_tempo_bpm(std::numeric_limits<float>::quiet_NaN());
+        }
+        ref.process(nullptr, nullptr, rl.data(), rr.data(), 96);
+        dut.process(nullptr, nullptr, dl.data(), dr.data(), 96);
+        for (int i = 0; i < 96; ++i) {
+            REQUIRE(std::isfinite(dl[i]));
+            REQUIRE(dl[i] == rl[i]);
+            REQUIRE(dr[i] == rr[i]);
+        }
+    }
 }

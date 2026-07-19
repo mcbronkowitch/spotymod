@@ -47,6 +47,15 @@ void Instrument::set_reverb_mix(float n) {
 }
 
 void Instrument::set_tempo_bpm(float bpm) {
+    // The real single door (task 12 finding 2): Transport::set_bpm guards its
+    // own readers, but SuperModulator::set_tempo_bpm and Flux::set_bpm each
+    // keep their own _bpm and bypass Transport entirely -- guarding only
+    // Transport left both reachable with an unvalidated value, including
+    // host/render/scenario.cpp's unvalidated scenario-file `bpm` field, which
+    // forwards straight into this method. Dropped silently, same policy as
+    // Transport::set_bpm: the last good tempo is kept rather than clamped to
+    // an arbitrary floor.
+    if (!(bpm > 0.f) || !std::isfinite(bpm)) return;
     _bpm = bpm;
     _center.set_tempo_bpm(bpm);
     for (auto& p : _parts) p.mod().set_tempo_bpm(bpm);

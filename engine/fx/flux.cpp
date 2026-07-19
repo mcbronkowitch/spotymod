@@ -29,16 +29,15 @@ void Flux::init(float sample_rate, float* buf_l, float* buf_r, uint32_t seed) {
     // (engine/parts/part.cpp), the same idiom Instrument::init already uses
     // for SynthEngine's per-part drift seed.
     //
-    // DustCloud must be init()ed before recompute_time(true) below, not
-    // after (M2): recompute_time() ends by calling _dust.set_delay_time(),
-    // which only has a real _delay_time to apply once init() has run --
-    // doing this in the other order (as before) meant the line right after
-    // init() had to re-apply set_delay_time() itself, because init() had
-    // just reset _delay_time back to its own 0.5 s default. That
-    // re-application is gone now; recompute_time(true) is the one and only
-    // place _dust's delay time gets set during boot.
+    // recompute_time() no longer touches `_dust` at all (task 12 finding 6
+    // removed the `_dust.set_delay_time()` call it used to end with): zone
+    // S's grid now follows the transport's beat via DustCloud::sync_beat(),
+    // not the echo's delay time -- see fx/dust.cpp. The init-ordering
+    // constraint that call used to impose (DustCloud::init() before this
+    // recompute_time(true)) is gone with it; the order below is kept only
+    // because it reads naturally, not because anything still depends on it.
     _dust.init(sample_rate, seed);
-    recompute_time(true);        // snap the boot time; also seeds the zone-S grid
+    recompute_time(true);        // snap the boot delay time
     set_feedback(0.45f);
     set_mix(0.5f);
 }
@@ -65,7 +64,6 @@ void Flux::recompute_time(bool immediate) {
     _delay_time = clampf(t, 0.001f, t_max);
     _dt_target = _delay_time;
     if (immediate) _dt_current = _delay_time;
-    _dust.set_delay_time(_delay_time);   // zone S grid follows the echo
 }
 
 void Flux::set_feedback(float norm) {

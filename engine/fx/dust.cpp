@@ -19,7 +19,6 @@ void DustCloud::init(float sample_rate, uint32_t seed) {
     for (int i = 0; i < kGrains; ++i) _g[i] = Grain{};
     _dust = 0.f;
     _rot = 0.f;
-    _delay_time = 0.5f;
     _grid_countdown = 1;
     // Preseed the zone-S grid to the 120 BPM value for this sample rate: the
     // transport's first real beat edge does not arrive until a full beat
@@ -55,24 +54,36 @@ void DustCloud::set_dust(float d) {
         for (int i = 0; i < kGrains; ++i) _g[i].alive = false;
         _norm = kGrainMakeup;   // one-grain target, see init()
         _grid_countdown = 1;
+        // The pool is cleared, but `_anchor` itself is untouched -- left
+        // pointing at whatever tape position it was latched to arbitrarily
+        // long ago. Without a fresh latch request, the next zone-S sample
+        // (whenever DUST next leaves zero) would spawn straight from that
+        // stale anchor and replay up to a beat of off-grid material before
+        // the following sync_beat() edge corrects it (task 12 finding 3).
+        _beat_pending = true;
     }
     _dust = d;
     _remap();
 }
 void DustCloud::set_rot(float r)  { _rot  = clampf(r, 0.f, 1.f); _remap(); }
 
-void DustCloud::set_delay_time(float s) {
-    _delay_time = s > kGridMinS ? s : kGridMinS;
-    _remap();
-}
-
 void DustCloud::sync_beat(float beat_samples) {
+    // A NaN or non-positive length is bad input, not a real tempo: the
+    // `(int32_t)` conversion of `_beat_samples / (1 << _subdiv)` in _remap()
+    // below is undefined for a non-finite value, and callers besides
+    // Instrument (tests, in particular) reach this API directly, without
+    // Transport::set_bpm's guard two subsystems away (task 12 finding 4).
+    // Dropped silently, same policy as Transport::set_bpm: the last good
+    // beat length is kept rather than clamped to an arbitrary floor.
+    if (!(beat_samples > 0.f) || !std::isfinite(beat_samples)) return;
     _beat_samples = beat_samples;
     _remap();
     _beat_pending = true;
 }
 
 void DustCloud::_remap() {
+    const int prev_zone = _zone;   // task 12 finding 3: detect an F/R -> S crossing below
+
     // --- DUST: density, length, level, head takeover -----------------------
     const float d = _dust;
     const float rate_hz = kRateMin * std::pow(kRateMax / kRateMin, d);
@@ -122,6 +133,21 @@ void DustCloud::_remap() {
         const int32_t grid = (int32_t)(_beat_samples / (float)(1 << _subdiv));
         const int32_t grid_min = (int32_t)(kGridMinS * _sr);
         _grid_period = grid > grid_min ? grid : grid_min;
+        // Upper-bound the grid so a slot can never outlive the tape it reads
+        // from (task 12 finding 1). _spawn_anchored's `back = len * rate` is
+        // clamped to `tape.size() - 4` as a last-resort safety net, but that
+        // net alone lets grain LIFETIME (== _grid_period) run on long after
+        // `back` has saturated: the octave (rate = 2) grain's read index then
+        // walks past _anchor and out the other side, reading ahead of the
+        // write head -- and the base (rate = 1) grain degenerates into a
+        // fixed-offset delay tap, exactly what this zone exists to not be.
+        // Bounding _grid_period at the source keeps `back` from ever needing
+        // to saturate in the first place. The /2 is because the octave grain
+        // traverses 2 * len; Flux::kMaxSamples (not a literal) is the actual
+        // tape length every production TapeTap is built over -- see the
+        // static_assert at the top of this file.
+        constexpr int32_t kGridMax = (int32_t)((Flux::kMaxSamples - 4) / 2);
+        if (_grid_period > kGridMax) _grid_period = kGridMax;
         if (_grid_countdown > _grid_period) _grid_countdown = _grid_period;
     } else if (r < kZoneFEnd) {                         // zone F — free scatter
         _zone = 1;
@@ -140,6 +166,14 @@ void DustCloud::_remap() {
         _wb_gain = kWbGainMax * u;
         _wear = 1.f - kWearRate * u;
     }
+
+    // A ROT sweep INTO zone S from F or R (task 12 finding 3): `_anchor` was
+    // last latched at whatever tape position the beat edge happened to land
+    // on, possibly a long time ago while ROT was elsewhere entirely -- reuse
+    // it as-is and the first zone-S sample after the sweep replays up to a
+    // beat of material from a stale anchor, same failure as the DUST 0 ->
+    // re-armed case in set_dust() above. Request the same fresh latch.
+    if (prev_zone != 0 && _zone == 0) _beat_pending = true;
 }
 
 void DustCloud::_spawn(const TapeTap& tape) {

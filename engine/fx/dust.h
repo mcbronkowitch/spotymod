@@ -105,7 +105,6 @@ public:
     void init(float sample_rate, uint32_t seed);
     void set_dust(float d);            // 0..1 amount
     void set_rot(float r);             // 0..1 character
-    void set_delay_time(float s);      // FLUX delay time -> zone S grid
     // Transport beat edge, forwarded from Center via Flux (task 11 beat
     // plumbing). Stores the beat length and marks an anchor pending; the
     // anchor itself is a tape index, only reachable inside process(), so
@@ -123,6 +122,17 @@ public:
     // through level, and the whole point of the Task 2 normalisation fix is
     // that level stays flat across the knob.
     int active_grains() const { return _active_grains; }
+
+    // Test/telemetry accessors (task 12 finding 1 + finding 3): expose one
+    // pool slot's raw state so a test can observe a grain's read offset
+    // relative to the write head, and one derived value (the clamped zone-S
+    // grid length) so a test can confirm the clamp itself without
+    // reconstructing it from the tuning constants. Not read anywhere in the
+    // audio path -- same idiom as active_grains() above.
+    bool    grain_alive(int i)   const { return _g[i].alive; }
+    int32_t grain_rd(int i)      const { return _g[i].rd; }
+    int32_t grain_rd_step(int i) const { return _g[i].rd_step; }
+    int32_t grid_period()        const { return _grid_period; }
 
     // Advance one sample. Writes the stereo grain sum to gl/gr and returns the
     // tanh-bounded writeback sample (0 outside zone R).
@@ -188,7 +198,6 @@ private:
     float _sr = 48000.f;
     float _dust = 0.f;
     float _rot = 0.f;
-    float _delay_time = 0.5f;
 
     int   _zone = 0;             // 0 = S sync, 1 = F free, 2 = R rot
     float _birth_prob = 0.f;     // zone F/R: per-sample birth probability

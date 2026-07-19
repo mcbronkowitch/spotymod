@@ -388,7 +388,6 @@ TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
         probe.init(48000.f, 1u);
         probe.set_dust(0.f);
         probe.set_rot(rot);
-        probe.set_delay_time(dut.delay_time());
         REQUIRE(probe.head_gain() == 1.0f);
 
         // Mechanism 2 -- no grain may ever go alive at DUST = 0. Called
@@ -487,7 +486,6 @@ TEST_CASE("flux: dust returning to 0 clears the grain pool for the next rise") {
     static float pool_l[Flux::kMaxSamples], pool_r[Flux::kMaxSamples];
     DustCloud probe;
     probe.init(48000.f, 0xD0571u);
-    probe.set_delay_time(0.5f);
     probe.set_rot(0.5f);
     probe.set_dust(1.f);
     const TapeTap tap_a{pool_l, pool_r, 0,
