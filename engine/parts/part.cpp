@@ -96,13 +96,13 @@ float Part::max_voice_env() const {
 
 // Everything the engine and FX read at their own control rate: the five lane
 // targets, the quantized pitch, the chord surface, the set_targets push, and
-// the five FX target values (Task 6 moved the last three in). Runs on the
-// SynthEngine::kCtrlInterval-sample raster, phase-aligned with SynthEngine's
-// own control tick (see the _ctrl_ctr comment in part.h). Not idempotent -- it
-// advances Quantizer::process's slew and re-evaluates ChordBuilder::set_color's
-// zone hysteresis -- so process()'s raster-tick and fire-refresh branches
-// must stay mutually exclusive (else if, not a second if); calling this
-// twice on the same sample double-steps the glide.
+// the five FX target values. Runs on the SynthEngine::kCtrlInterval-sample
+// raster, phase-aligned with SynthEngine's own control tick (see the
+// _ctrl_ctr comment in part.h). Not idempotent -- it advances
+// Quantizer::process's slew and re-evaluates ChordBuilder::set_color's zone
+// hysteresis -- so process()'s raster-tick and fire-refresh branches must
+// stay mutually exclusive (else if, not a second if); calling this twice on
+// the same sample double-steps the glide.
 void Part::_control_tick() {
     for (int i = 0; i < LANE_COUNT; ++i) _tg[i] = target_raw(i);
     _tg[LANE_PITCH] = _quant.process(pitch_pre_quant());
@@ -186,11 +186,11 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     //
     // Two consequences worth knowing about, neither a bug:
     // - A fire refresh is an extra Quantizer::process call one sample after
-    //   a raster tick. Since Task 3 recalibrated the slew to count *calls*
-    //   (a call now spans 96 samples), that refresh advances the glide by a
-    //   full tick's worth. Bounded at one extra step per note and probably
-    //   desirable, but not something the next reader should have to
-    //   rediscover.
+    //   a raster tick. Quantizer::process's slew counts *calls*, and each
+    //   call now spans SynthEngine::kCtrlInterval samples, so that refresh
+    //   advances the glide by a full tick's worth. Bounded at one extra step
+    //   per note and probably desirable, but not something the next reader
+    //   should have to rediscover.
     // - The fire refresh only covers lane_fired(LANE_PITCH). SynthEngine's
     //   _auto_pending drone promise (synth_engine.cpp:243-245) also reads
     //   the chord surface, and a set_flow/set_hold transition landing

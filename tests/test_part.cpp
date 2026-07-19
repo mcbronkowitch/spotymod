@@ -588,7 +588,17 @@ TEST_CASE("part: targets reach the engine on the 96-sample raster") {
         prev = now;
     }
     CHECK(any_change);
-    CHECK(changes > 0);
+    // Finding 6: the phase check above (on_raster || on_fire) passes just as
+    // well under a raster that fires on every 2nd or 3rd tick (192- or
+    // 288-sample interval -- still a multiple of kCtrlInterval), i.e. a
+    // regression that makes the raster coarser stays green with only that
+    // check. Pin a lower bound too. This scenario observes 9 changes (all
+    // of them on-raster; PITCH never fires here) over the 20 ticks this loop
+    // renders; 6 leaves comfortable margin below that while still well
+    // above what a 192- or 288-sample raster would produce over the same
+    // window (10 and ~7 tick opportunities respectively, each hit at
+    // roughly the same rate as here).
+    CHECK(changes >= 6);
 }
 
 TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster") {
@@ -616,17 +626,22 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
     p.init(48000.f, 7u);
     p.fx().set_comp(0.f);   // 0 = bit-exact bypass (comp.h); the only always-on FX block
 
-    // Land the engine-switch activation exactly on a raster tick. The
-    // SoftSwitch fade-out is a fixed 191-sample countdown from the sample
-    // set_engine() effectively starts it; one warm-up process() call first
-    // (still on the boot engine, otherwise inert) shifts that countdown by
-    // one sample, from absolute sample 191 to 192 -- a multiple of
-    // kCtrlInterval. Without this, TestToneEngine's very first active sample
-    // would run on its power-on default frequency (test_tone_engine.h:
-    // _freq = 220.f) for exactly one sample before the next tick corrects
-    // it -- a real but irrelevant cold-start artifact that would otherwise
-    // leave a small permanent phase offset against the shadow engine below,
-    // which is fed the correct frequency from its first sample.
+    // Land the engine-switch activation exactly on a raster tick. This is
+    // STILL needed after Finding 3's fix, just for a different reason than
+    // before: that fix re-arms Part::_ctrl_ctr to 0 in the swap block, so
+    // TestToneEngine gets the commanded target on its very first active
+    // sample regardless of where the swap lands (the cold-start staleness
+    // this comment used to describe is gone). But re-arming the counter
+    // also re-phases Part's raster from then on to (swap sample, swap
+    // sample + kCtrlInterval, ...) -- harmless in general, but this test's
+    // `i % kCtrlInterval == 0` checks below assume the raster is still on
+    // Part's original 0, kCtrlInterval, 2*kCtrlInterval, ... grid from
+    // construction. Landing the swap ON that grid keeps the re-phase a
+    // no-op. The SoftSwitch fade-out is a fixed 191-sample countdown from
+    // the sample set_engine() effectively starts it; one warm-up
+    // process() call first (still on the boot engine, otherwise inert)
+    // shifts that countdown by one sample, from absolute sample 191 to
+    // 192 -- a multiple of kCtrlInterval.
     float warm_l, warm_r;
     p.process(warm_l, warm_r);
     p.set_engine(ENGINE_TEST_TONE);
@@ -650,6 +665,7 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
 
     float l, r;
     int  since_switch = 0;
+    int  first_active_abs_i = -1;
     bool tick_mismatch = false;
     bool off_tick_divergence = false;
 
@@ -658,6 +674,7 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
         p.process(l, r);
         const bool tone_active = (p.engine_id() == ENGINE_TEST_TONE);
         if (!tone_active) continue;             // shadow starts the instant Part's real tone does
+        if (first_active_abs_i < 0) first_active_abs_i = abs_i;
 
         const float live = p.target_raw(LANE_LEVEL);   // same call _control_tick() makes internally
         shadow_tg[LANE_LEVEL] = live;
@@ -676,6 +693,14 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
             off_tick_divergence = true;
         }
     }
+
+    // Finding 5: assert the precondition the warm-up above exists to
+    // establish, rather than leaving it an unstated coincidence of the fade
+    // length and the warm-up count. If SoftSwitch's fade length or the Hann
+    // table size ever changes, this fails here, by name, instead of showing
+    // up downstream as an opaque tick_mismatch that points at the raster.
+    REQUIRE(first_active_abs_i >= 0);
+    REQUIRE((first_active_abs_i % SynthEngine::kCtrlInterval) == 0);
 
     // At every raster tick Part just latched the same live value the shadow
     // is fed every sample, so the two engines must agree there.

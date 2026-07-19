@@ -244,6 +244,14 @@ void SynthEngine::process(float& outL, float& outR) {
         _auto_pending = false;
         trigger_chord(_chord, _chord_n);         // full chord at current COLOR
     }
+    // Part::_ctrl_ctr (engine/parts/part.h) is phase-locked to this counter:
+    // both init to 0 and advance once per call to their respective
+    // process(), so they tick on the same samples as long as this engine
+    // stays active. Do not change this counter's init value or the
+    // decrement-then-compare idiom without re-reading that comment -- it
+    // documents what depends on the phase this establishes, including a
+    // permanent offset this counter accrues while inactive that no test
+    // can realistically observe.
     if (--_ctrl_ctr <= 0) {
         _ctrl_ctr = kCtrlInterval;
         _update_control();

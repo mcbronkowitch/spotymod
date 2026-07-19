@@ -128,29 +128,60 @@ private:
                                  : static_cast<IPartEngine*>(&_tone);
     }
 
-    // Rasterable half of process(): everything the engine consumes at its own
-    // control tick. Task 1 calls it per sample; the raster arrives in Task 4.
+    // Everything the engine and FX consume at their own control rate -- see
+    // the doc comment on the definition in part.cpp for the full contract
+    // (what it does, why it is not idempotent, and how it stays
+    // phase-aligned with SynthEngine's own control tick).
     void _control_tick();
 
-    // Control raster. Phase-aligned with SynthEngine's own _ctrl_ctr by
-    // construction: both init to 0, both advance once per Part::process, so
-    // both fire on samples 0, 96, 192 -- and _control_tick() runs before
-    // _engine->process() within that sample, which is the order the
-    // per-sample code delivered. After a set_engine swap the engine's counter
-    // is offset (it did not run while inactive), so it may read a target up
-    // to one interval stale for one interval; the fade is at zero there.
+    // Control raster. Both this counter and SynthEngine::_ctrl_ctr init to 0
+    // and advance once per call to their respective process(), so while both
+    // run continuously they fire on the same samples (0, kCtrlInterval,
+    // 2*kCtrlInterval, ...), and _control_tick() runs before _engine->
+    // process() within that sample -- the order the per-sample code
+    // delivered.
+    //
+    // set_engine() re-arms this counter to 0 on the sample its swap
+    // completes (see the swap block in process()), so that sample is always
+    // a raster tick: the freshly active engine gets set_targets()/
+    // set_chord() then and there, not up to kCtrlInterval - 1 samples later
+    // on its power-on defaults. A side effect worth knowing: if the swap
+    // lands off the sample-0-based grid (0, kCtrlInterval, 2*kCtrlInterval,
+    // ...), this counter's own future ticks permanently rebase to (swap
+    // sample, swap sample + kCtrlInterval, ...) instead -- harmless for the
+    // engine (nothing downstream cares which absolute grid the raster is
+    // on), but it means code or tests that assume ticks land on the
+    // original sample-0 grid need the swap to land on it too, or to compute
+    // "on raster" relative to the swap sample instead.
+    //
+    // That re-arm does NOT re-align SynthEngine::_ctrl_ctr. That counter
+    // only advances inside SynthEngine::process() (synth_engine.cpp), so it
+    // freezes for as long as SynthEngine is the inactive engine and resumes
+    // counting from the frozen value once swapped back in -- a *permanent*
+    // phase offset against this counter, (samples SynthEngine was inactive)
+    // mod kCtrlInterval, not a one-interval blip, and it does not self-heal.
+    // set_targets()/set_chord() still land immediately (they write
+    // _targets[]/_chord[] directly), but anything SynthEngine only
+    // recomputes inside its own _update_control() -- cutoff, resonance,
+    // pan/drift width, detune, attack/decay times, the live chord-surface
+    // bloom/collapse -- keeps updating on that offset schedule, not on this
+    // raster, until the next swap changes the offset again. The SoftSwitch
+    // fade does not mask this: it is a 192-sample (4 ms) rise, so across one
+    // kCtrlInterval window it reaches only ~0.5 gain, not zero.
+    //
     // This alignment claim is about SynthEngine specifically -- TestToneEngine
     // has no control tick at all and reads t[LANE_PITCH] every sample, so
-    // under this raster its pitch becomes a 96-sample staircase too. That is
-    // acceptable (it is a diagnostic engine, not the audio path), just not
-    // "aligned" in the sense the rest of this comment describes.
+    // under this raster its pitch becomes a kCtrlInterval-sample staircase
+    // too. That is acceptable (it is a diagnostic engine, not the audio
+    // path), just not "aligned" in the sense the rest of this comment
+    // describes.
     int _ctrl_ctr = 0;
 
     // Target cache: _control_tick() both fills it and pushes it to the
-    // engine (part.cpp:124) -- process() no longer does the push itself
-    // (Task 6), it only reads _tg[LANE_PITCH] back out for the fire's chord
-    // build. Boot values mirror SynthEngine::_targets so a push before the
-    // first tick cannot hand the engine garbage.
+    // engine via set_targets() -- process() no longer pushes it itself, it
+    // only reads _tg[LANE_PITCH] back out for the fire's chord build. Boot
+    // values mirror SynthEngine::_targets so a push before the first tick
+    // cannot hand the engine garbage.
     float _tg[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 0.8f };
 
     // FX target cache, filled at the control tick. PartFx smooths each value

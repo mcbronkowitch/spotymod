@@ -195,11 +195,11 @@ Task 4's correctness proof. The scenario is built to be structurally free of the
 
 **Files:**
 - Create: `host/render/scenarios/ctrl_identity.json`
-- Create: `renders/ctrl_identity.wav`, `renders/ctrl_identity.csv` (build artifacts, committed as the reference)
+- Produces, not committed: `renders/ctrl_identity.wav`, `renders/ctrl_identity.csv` -- `/renders/` is gitignored (15091b9); these are local render artifacts, not tracked reference files.
 
 **Interfaces:**
 - Consumes: `Part::_control_tick()` from Task 1 (indirectly — the render just has to run).
-- Produces: `renders/ctrl_identity.wav` and its SHA-256, the gate Tasks 4 and 5 compare against.
+- Produces: the rendered WAV/CSV as a local sanity-check artifact. (No checksum gate: bit-exactness is not required for this pre-release engine -- see the branch-level note above -- and the `.sha256` this task originally tracked next to the scenario has since been removed as a stale, unconsumed file.)
 
 - [ ] **Step 1: Write the scenario**
 
@@ -646,7 +646,7 @@ Spec Step 2. LEVEL, the five FX targets and the `set_targets` push move onto the
 **Files:**
 - Modify: `engine/parts/part.h` (`_fxv` cache member)
 - Modify: `engine/parts/part.cpp` (`_control_tick`, `process`)
-- Modify: `renders/*.wav`, `renders/*.csv` (re-cut)
+- Re-cut, not committed: the `ctrl_identity` render, as a local sanity check -- `/renders/` is gitignored, nothing under it is tracked.
 
 **Interfaces:**
 - Consumes: Task 4's raster.
