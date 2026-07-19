@@ -307,32 +307,31 @@ Append to `tests/test_quantizer.cpp`:
 TEST_CASE("quantizer: slew length scales with the caller's interval") {
     // Called once per 96 samples, a 40 ms slew must still be 40 ms of audio
     // -- 1920 samples -- which is 20 calls, not 1920.
-    Quantizer q;
-    q.init(48000.f, 96);
-    q.set_root(0);
-    q.process(0.5f);                 // establish _last_out so a change slews
-    q.set_scale(SCALE_MASKS[SCALE_WHOLE]);   // triggers on_change() -> slew
+    //
+    // Settling is detected by convergence, not by comparing against a fixed
+    // value: the slewed output rises monotonically and then holds, so the
+    // first post-change sample is a transient the output never revisits.
+    // At root 0 and input 0.5 (= 18 semitones) the scale change moves the
+    // nearest allowed note from 17 (dorian) to 18 (whole tone), so there is
+    // a real distance to slew across.
+    auto calls_to_settle = [](int interval) {
+        Quantizer q;
+        q.init(48000.f, interval);
+        q.set_root(0);
+        q.process(0.5f);                          // establish _last_out
+        q.set_scale(SCALE_MASKS[SCALE_WHOLE]);    // on_change() arms the slew
+        int calls = 0;
+        float prev = q.process(0.5f);
+        for (; calls < 5000; ++calls) {
+            const float cur = q.process(0.5f);
+            if (cur == prev) break;               // slew done, output holds
+            prev = cur;
+        }
+        return calls;
+    };
 
-    int calls = 0;
-    const float target = q.process(0.5f);
-    while (calls < 500) {
-        ++calls;
-        if (q.process(0.5f) == target) break;
-    }
-    CHECK(calls <= 25);              // ~20 control ticks, not ~1920
-
-    // and the default is unchanged for per-sample callers
-    Quantizer q1;
-    q1.init(48000.f);
-    q1.process(0.5f);
-    q1.set_scale(SCALE_MASKS[SCALE_WHOLE]);
-    int calls1 = 0;
-    const float t1 = q1.process(0.5f);
-    while (calls1 < 4000) {
-        ++calls1;
-        if (q1.process(0.5f) == t1) break;
-    }
-    CHECK(calls1 > 100);             // still sample-rate slew
+    CHECK(calls_to_settle(96) <= 25);    // ~20 control ticks, not ~1920
+    CHECK(calls_to_settle(1)  > 100);    // default: still a sample-rate slew
 }
 ```
 
