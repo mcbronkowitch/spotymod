@@ -85,6 +85,10 @@ enum ParamId {
     FLUXFB_B,
     COLOR_A,
     COLOR_B,
+    DUST_A,
+    DUST_B,
+    ROT_A,
+    ROT_B,
     NUM_PARAMS
 };
 enum InputId {
@@ -123,8 +127,8 @@ static const PanelCtl kParamCtls[] = {
     {SUB_A, WK_SMKNOB, {22.500f, 89.400f}, "SUB", {22.500f, 95.000f}, 0, 1.90f, 0x171713, "SUB"},
     {DETUNE_A, WK_SMKNOB, {35.500f, 89.400f}, "DTUN", {35.500f, 95.000f}, 0, 1.90f, 0x171713, "DTUN"},
     {FLUX_A, WK_SMKNOB, {62.750f, 77.300f}, "FLUX", {62.750f, 82.900f}, 0, 1.90f, 0x171713, "FLUX"},
-    {GRIT_A, WK_SMKNOB, {56.000f, 89.400f}, "GRIT", {56.000f, 95.000f}, 0, 1.90f, 0x171713, "GRIT"},
-    {COMP_A, WK_SMKNOB, {69.500f, 89.400f}, "COMP", {69.500f, 95.000f}, 0, 1.90f, 0x171713, "COMP"},
+    {GRIT_A, WK_SMKNOB, {49.500f, 89.400f}, "GRIT", {49.500f, 95.000f}, 0, 1.90f, 0x171713, "GRIT"},
+    {COMP_A, WK_SMKNOB, {58.333f, 89.400f}, "COMP", {58.333f, 95.000f}, 0, 1.90f, 0x171713, "COMP"},
     {STEPS_A, WK_KNOBI, {35.500f, 103.600f}, "STPS", {35.500f, 109.200f}, 0, 1.90f, 0x171713, "STPS"},
     {ENGINE_A, WK_LATCH, {11.500f, 103.600f}, "ENG", {11.500f, 109.000f}, 0, 1.90f, 0x171713, "ENG"},
     {GRITMODE_A, WK_LATCH, {22.000f, 103.600f}, "GRIT", {22.000f, 109.000f}, 0, 1.90f, 0x171713, "GRIT"},
@@ -146,8 +150,8 @@ static const PanelCtl kParamCtls[] = {
     {SUB_B, WK_SMKNOB, {190.860f, 89.400f}, "SUB", {190.860f, 95.000f}, 0, 1.90f, 0x171713, "SUB"},
     {DETUNE_B, WK_SMKNOB, {177.860f, 89.400f}, "DTUN", {177.860f, 95.000f}, 0, 1.90f, 0x171713, "DTUN"},
     {FLUX_B, WK_SMKNOB, {150.610f, 77.300f}, "FLUX", {150.610f, 82.900f}, 0, 1.90f, 0x171713, "FLUX"},
-    {GRIT_B, WK_SMKNOB, {157.360f, 89.400f}, "GRIT", {157.360f, 95.000f}, 0, 1.90f, 0x171713, "GRIT"},
-    {COMP_B, WK_SMKNOB, {143.860f, 89.400f}, "COMP", {143.860f, 95.000f}, 0, 1.90f, 0x171713, "COMP"},
+    {GRIT_B, WK_SMKNOB, {163.860f, 89.400f}, "GRIT", {163.860f, 95.000f}, 0, 1.90f, 0x171713, "GRIT"},
+    {COMP_B, WK_SMKNOB, {155.027f, 89.400f}, "COMP", {155.027f, 95.000f}, 0, 1.90f, 0x171713, "COMP"},
     {STEPS_B, WK_KNOBI, {177.860f, 103.600f}, "STPS", {177.860f, 109.200f}, 0, 1.90f, 0x171713, "STPS"},
     {ENGINE_B, WK_LATCH, {201.860f, 103.600f}, "ENG", {201.860f, 109.000f}, 0, 1.90f, 0x171713, "ENG"},
     {GRITMODE_B, WK_LATCH, {191.360f, 103.600f}, "GRIT", {191.360f, 109.000f}, 0, 1.90f, 0x171713, "GRIT"},
@@ -181,6 +185,10 @@ static const PanelCtl kParamCtls[] = {
     {FLUXFB_B, WK_SMKNOB, {137.360f, 77.300f}, "FFB", {137.360f, 82.900f}, 0, 1.90f, 0x171713, "FFB"},
     {COLOR_A, WK_BIGKNOB, {24.966f, 16.700f}, "COLOR", {20.017f, 10.801f}, 2, 1.90f, 0x171713, "COLOR"},
     {COLOR_B, WK_BIGKNOB, {188.394f, 16.700f}, "COLOR", {193.343f, 10.801f}, 1, 1.90f, 0x171713, "COLOR"},
+    {DUST_A, WK_SMKNOB, {67.167f, 89.400f}, "DUST", {67.167f, 95.000f}, 0, 1.90f, 0x171713, "DUST"},
+    {DUST_B, WK_SMKNOB, {146.193f, 89.400f}, "DUST", {146.193f, 95.000f}, 0, 1.90f, 0x171713, "DUST"},
+    {ROT_A, WK_SMKNOB, {76.000f, 89.400f}, "ROT", {76.000f, 95.000f}, 0, 1.90f, 0x171713, "ROT"},
+    {ROT_B, WK_SMKNOB, {137.360f, 89.400f}, "ROT", {137.360f, 95.000f}, 0, 1.90f, 0x171713, "ROT"},
 };
 static const PanelCtl kInputCtls[] = {
     {IN_L, WK_IN, {55.250f, 118.400f}, "L", {55.250f, 124.800f}, 0, 1.80f, 0x171713, "IN L"},

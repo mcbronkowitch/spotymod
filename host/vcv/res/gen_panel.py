@@ -154,7 +154,10 @@ def orbit_label(cx, cy, ang_deg, mir):
 VOICE_X  = [9.5, 22.5, 35.5]        # ATK DEC FILT / RES SUB DTUN
 ROW_V1, ROW_V2 = 77.3, 89.4
 FX_TOP   = [49.5, 62.75, 76.0]      # FRATE FLUX FFB -- the delay cluster
-FX_BOT   = [56.0, 69.5]             # GRIT COMP
+# FX bottom row went from two slots to four (spec 2026-07-18 dust-grain-cloud):
+# GRIT COMP DUST ROT. Pitch 8.833 mm against a 3.0 mm knob radius, so the
+# 6.0 mm minimum in test_no_overlap still has room to spare.
+FX_BOT   = [49.5, 58.333, 67.167, 76.0]   # GRIT COMP | DUST ROT
 PLAY_Y   = 103.6
 PAD_X    = [11.5, 22.0, 46.0, 56.5, 67.0, 77.5]   # ENG GRIT | STEP PRIN NEW TRIG
 STEPS_X  = 35.5                     # sequencer knob, between the two pad blocks
@@ -337,6 +340,14 @@ PARAMS = PART_A + PART_B + SHARED + [
     # sits in the PITCH sector. Still appended LAST: order defines the param id.
     color_ctl("_A", False),
     color_ctl("_B", True),
+    # DUST / ROT: the grain cloud on the FLUX tape (spec 2026-07-18
+    # dust-grain-cloud). Appended LAST like FILT/TIDE/FLUXRATE/COLOR so existing
+    # .vcv patches keep their param ids; the coordinates fill slots 3 and 4 of
+    # the widened FX bottom row, right under the delay cluster they feed off.
+    Ctl("DUST_A", SMKNOB, FX_BOT[2],     ROW_V2, "DUST"),
+    Ctl("DUST_B", SMKNOB, W - FX_BOT[2], ROW_V2, "DUST"),
+    Ctl("ROT_A",  SMKNOB, FX_BOT[3],     ROW_V2, "ROT"),
+    Ctl("ROT_B",  SMKNOB, W - FX_BOT[3], ROW_V2, "ROT"),
 ]
 
 # --- lights --------------------------------------------------------------------

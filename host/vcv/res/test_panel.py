@@ -47,6 +47,7 @@ PARAM_ORDER = [
     'MASTER_DRIVE', 'SETTLE', 'REV_SIZE', 'REV_DECAY', 'REV_MIX', 'REV_TONE',
     'REV_DIFF', 'REV_SMEAR', 'REV_MOD', 'CHOKE', 'FILT_A', 'FILT_B', 'TIDE',
     'FLUXRATE_A', 'FLUXRATE_B', 'FLUXFB_A', 'FLUXFB_B', 'COLOR_A', 'COLOR_B',
+    'DUST_A', 'DUST_B', 'ROT_A', 'ROT_B',
 ]
 INPUT_ORDER = ['IN_L', 'IN_R', 'CLOCK', 'RESET']
 OUTPUT_ORDER = ['OUT_L', 'OUT_R', 'PITCH_A', 'GATE_A', 'PITCH_B', 'GATE_B']
@@ -60,6 +61,17 @@ def test_enum_order():
     check([c.enum for c in g.OUTPUTS] == OUTPUT_ORDER, "OUTPUTS order changed")
     check([c.enum for c in g.LIGHTS] == LIGHT_ORDER, "LIGHTS order changed")
     check(g.PART_STRIDE == 23, f"PART_STRIDE is {g.PART_STRIDE}, must be 23")
+
+
+def test_dust_params():
+    """DUST/ROT are appended at the end of PARAMS, not templated into
+    part_controls() -- appending keeps PART_STRIDE unchanged so TRIGGER_A/B,
+    every part-B id and every already-appended tail param keep their id."""
+    check(g.PART_STRIDE == 23, "PART_STRIDE must stay 23")
+    ids = {c.enum: i for i, c in enumerate(g.PARAMS)}
+    for e in ("DUST_A", "DUST_B", "ROT_A", "ROT_B"):
+        check(e in ids, f"{e} missing")
+        check(ids[e] >= 2 * g.PART_STRIDE, f"{e} must be appended, not templated")
 
 
 def test_no_overlap():
@@ -193,7 +205,8 @@ LOWER_A = {   # enum -> (x, y)   part A; part B is W - x
     'ATTACK_A': (9.50, 77.30), 'DECAY_A': (22.50, 77.30), 'FILT_A': (35.50, 77.30),
     'RES_A': (9.50, 89.40), 'SUB_A': (22.50, 89.40), 'DETUNE_A': (35.50, 89.40),
     'FLUXRATE_A': (49.50, 77.30), 'FLUX_A': (62.75, 77.30), 'FLUXFB_A': (76.00, 77.30),
-    'GRIT_A': (56.00, 89.40), 'COMP_A': (69.50, 89.40),
+    'GRIT_A': (49.50, 89.40), 'COMP_A': (58.333, 89.40),
+    'DUST_A': (67.167, 89.40), 'ROT_A': (76.00, 89.40),
     'ENGINE_A': (11.50, 103.60), 'GRITMODE_A': (22.00, 103.60),
     'STEPS_A': (35.50, 103.60), 'STEP_A': (46.00, 103.60),
     'PRINCIPLE_A': (56.50, 103.60), 'NEWPHRASE_A': (67.00, 103.60),
