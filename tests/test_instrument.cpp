@@ -124,6 +124,89 @@ TEST_CASE("instrument: fx setters reach the parts and reverb setters are null-sa
     CHECK(l == l);   // not NaN
 }
 
+static float s_pp_echo[PART_COUNT][2][spky::Flux::kMaxSamples];
+
+static spky::FxMem pp_fx_mem() {
+    spky::FxMem m;
+    for (int p = 0; p < PART_COUNT; ++p)
+        for (int c = 0; c < 2; ++c) m.echo[p][c] = s_pp_echo[p][c];
+    return m;
+}
+
+TEST_CASE("instrument: set_dust forwards to the named part only") {
+    // MORPH at an extreme is an equal-power crossfade that snaps to EXACTLY
+    // gain 0/1 (OnePole::process snaps once within 0.0005 of target), so the
+    // non-target part contributes nothing to `l` and any change in output can
+    // only come from the FX chain on the part actually named in set_dust(p, .).
+    // A per-part test must fail if part A's value is forwarded to part B: here,
+    // if set_dust(PART_A, .) actually wrote PART_B's Flux (silent, morph 0),
+    // base_a and dust_a would come out identical and CHECK(base_a != dust_a)
+    // would fail -- likewise for the B-audible half below.
+    auto run = [](float dust_a, float dust_b, float morph) {
+        Instrument inst;
+        inst.init(48000.f, pp_fx_mem());
+        inst.set_morph(morph);
+        inst.set_fx_on(PART_A, FxBlock::Flux, true);
+        inst.set_fx_on(PART_B, FxBlock::Flux, true);
+        inst.set_flux_mix(PART_A, 1.f);
+        inst.set_flux_mix(PART_B, 1.f);
+        float l, r;
+        for (int i = 0; i < 20000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);  // settle morph snap + fx fade
+        inst.set_dust(PART_A, dust_a);
+        inst.set_dust(PART_B, dust_b);
+        std::vector<float> out(20000);
+        for (size_t i = 0; i < out.size(); ++i) {
+            inst.process(nullptr, nullptr, &l, &r, 1);
+            out[i] = l;
+        }
+        return out;
+    };
+
+    const auto base_a = run(0.f, 0.f, 0.f);    // A audible (morph 0 -> gain_a = 1, gain_b = 0)
+    const auto dust_a = run(0.6f, 0.f, 0.f);   // only PART_A's dust moves
+    CHECK(base_a != dust_a);
+
+    const auto base_b = run(0.f, 0.f, 1.f);    // B audible (morph 1 -> gain_a = 0, gain_b = 1)
+    const auto dust_b = run(0.f, 0.6f, 1.f);   // only PART_B's dust moves
+    CHECK(base_b != dust_b);
+}
+
+TEST_CASE("instrument: set_rot forwards to the named part only") {
+    // Same isolation idiom as set_dust above. ROT only affects DustCloud
+    // behaviour while DUST is active, so both parts get a common DUST > 0
+    // baseline first and the runs diverge only in the ROT value.
+    auto run = [](float rot_a, float rot_b, float morph) {
+        Instrument inst;
+        inst.init(48000.f, pp_fx_mem());
+        inst.set_morph(morph);
+        inst.set_fx_on(PART_A, FxBlock::Flux, true);
+        inst.set_fx_on(PART_B, FxBlock::Flux, true);
+        inst.set_flux_mix(PART_A, 1.f);
+        inst.set_flux_mix(PART_B, 1.f);
+        float l, r;
+        for (int i = 0; i < 20000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);
+        inst.set_dust(PART_A, 0.7f);
+        inst.set_dust(PART_B, 0.7f);
+        for (int i = 0; i < 5000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);  // let DUST settle in first
+        inst.set_rot(PART_A, rot_a);
+        inst.set_rot(PART_B, rot_b);
+        std::vector<float> out(20000);
+        for (size_t i = 0; i < out.size(); ++i) {
+            inst.process(nullptr, nullptr, &l, &r, 1);
+            out[i] = l;
+        }
+        return out;
+    };
+
+    const auto base_a = run(0.f, 0.f, 0.f);    // A audible
+    const auto rot_a   = run(0.9f, 0.f, 0.f);  // only PART_A's rot moves
+    CHECK(base_a != rot_a);
+
+    const auto base_b = run(0.f, 0.f, 1.f);    // B audible
+    const auto rot_b   = run(0.f, 0.9f, 1.f);  // only PART_B's rot moves
+    CHECK(base_b != rot_b);
+}
+
 TEST_CASE("instrument: boots both parts on the synth engine with an audible drone") {
     Instrument inst;
     inst.init(48000.f);

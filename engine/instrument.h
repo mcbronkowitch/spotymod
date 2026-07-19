@@ -60,6 +60,8 @@ public:
     void set_flux_mix(int p, float n)              { _parts[p].fx().set_flux_mix(n); }
     void set_flux_rate(int p, int slice_idx) { _parts[p].fx().set_flux_rate(slice_idx); }
     void set_grit_mix(int p, float n)              { _parts[p].fx().set_grit_mix(n); }
+    void set_dust(int p, float n) { _parts[p].fx().set_dust(n); }
+    void set_rot(int p, float n)  { _parts[p].fx().set_rot(n); }
     void set_comp(int p, float n)                  { _parts[p].fx().set_comp(n); }
     void set_reverb_size(float n)  { if (_reverb) _reverb->set_size(n); }
     void set_reverb_decay(float n) { if (_reverb) _reverb->set_decay(n); }
