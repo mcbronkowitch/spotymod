@@ -17,7 +17,7 @@ static void fill(float* v, float grit, float time, float mix, float send, float 
 
 TEST_CASE("part_fx: both blocks off is bit-exact dry, send 0 is exact zero") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r);
+    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
     float v[FXT_COUNT];
     fill(v, 0.3f, 0.4f, 1.f, 0.f, 0.45f);
     for (int i = 0; i < 2000; ++i) {
@@ -33,7 +33,7 @@ TEST_CASE("part_fx: both blocks off is bit-exact dry, send 0 is exact zero") {
 
 TEST_CASE("part_fx: FX MIX 0 keeps the dry signal even with grit engaged") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r);
+    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
     fx.set_fx_on(FxBlock::Grit, true, true);
     float v[FXT_COUNT];
     fill(v, 0.9f, 0.4f, 0.f, 0.f, 0.f);
@@ -47,7 +47,7 @@ TEST_CASE("part_fx: FX MIX 0 keeps the dry signal even with grit engaged") {
 
 TEST_CASE("part_fx: FX MIX 1 with grit on changes the signal") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r);
+    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
     fx.set_fx_on(FxBlock::Grit, true, true);
     float v[FXT_COUNT];
     fill(v, 0.9f, 0.4f, 1.f, 0.f, 0.f);
@@ -63,7 +63,7 @@ TEST_CASE("part_fx: FX MIX 1 with grit on changes the signal") {
 
 TEST_CASE("part_fx: send taps post-FX at the equal-power gain") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r);
+    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
     float v[FXT_COUNT];
     fill(v, 0.3f, 0.4f, 1.f, 1.f, 0.45f);   // send fully open
     // prime the smoothers (first process snaps), then measure
@@ -79,7 +79,7 @@ TEST_CASE("part_fx: send taps post-FX at the equal-power gain") {
 
 TEST_CASE("part_fx: comp default 0 leaves chain and send bit-exact") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r);
+    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
     const float fxv[FXT_COUNT] = {0.f, 0.5f, 1.f, 0.5f, 0.f};
     for (int i = 0; i < 4800; ++i) {
         float s = 0.5f * std::sin(6.2831853f * 220.f * i / 48000.f);
@@ -94,7 +94,7 @@ TEST_CASE("part_fx: comp sits BEFORE the send tap — the send gets louder too")
     const float fxv[FXT_COUNT] = {0.f, 0.5f, 1.f, 0.8f, 0.f};
     auto send_rms = [&](float amount) {
         PartFx fx;
-        fx.init(48000.f, s_pf_l, s_pf_r);
+        fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
         fx.set_comp(amount);
         double acc = 0.0;
         int n = 0;
@@ -111,7 +111,7 @@ TEST_CASE("part_fx: comp sits BEFORE the send tap — the send gets louder too")
 
 TEST_CASE("part_fx: synced rate + BPM place the echo, not FXT_FLUX_TIME") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r);
+    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
     fx.set_fx_on(FxBlock::Flux, true, true);
     fx.set_flux_mix(1.f);              // 0 dB wet
     fx.set_bpm(120.f);

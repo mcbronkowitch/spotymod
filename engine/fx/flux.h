@@ -194,7 +194,12 @@ public:
     // buffer is the price of the mask.
     static constexpr size_t kMaxSamples = 262144;
 
-    void init(float sample_rate, float* buf_l, float* buf_r);
+    // `seed` is a caller-supplied constant, not derived from `buf_l`/`buf_r`'s
+    // address (see the comment on the call to _dust.init() in flux.cpp for
+    // why: the address is not reproducible in the VCV plugin). Part::init
+    // (via PartFx::init) hands each part a distinct constant, the same
+    // idiom Instrument::init already uses for SynthEngine's drift seed.
+    void init(float sample_rate, float* buf_l, float* buf_r, uint32_t seed);
     void set_on(bool on, bool immediate = false) { _sw.set_on(on, immediate); }
     bool is_on() const { return _sw.is_on(); }
     bool engaged() const {
@@ -228,6 +233,13 @@ private:
     float _dt_current = 0.05f;   // seconds
     float _dt_target = 0.05f;
     float _dt_coef = 1.f;
+    // Unchanged-value guards for set_dust/set_rot (I3), mirroring set_bpm/
+    // set_rate: DustCloud::_remap() runs a pow + a cos, and once these are
+    // forwarded at control rate every tick would pay that whether or not the
+    // knob moved. Defaults match DustCloud::init's own _dust=0/_rot=0, so the
+    // first real call after init() only skips forwarding when it is a no-op.
+    float _dust_norm = 0.f;
+    float _rot_norm = 0.f;
 };
 
 } // namespace spky

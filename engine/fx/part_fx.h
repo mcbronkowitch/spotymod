@@ -28,7 +28,10 @@ enum class FxBlock { Flux, Grit };
 // whole chain is skipped, so "FX off" costs nothing and changes nothing.
 class PartFx {
 public:
-    void init(float sample_rate, float* echo_l, float* echo_r);
+    // `dust_seed`: forwarded to Flux::init -- see its comment for why this is
+    // a caller-supplied constant, not derived from echo_l/echo_r's address.
+    void init(float sample_rate, float* echo_l, float* echo_r,
+              uint32_t dust_seed);
 
     Grit& grit() { return _grit; }
     Flux& flux() { return _flux; }

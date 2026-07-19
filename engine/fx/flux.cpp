@@ -7,7 +7,7 @@ namespace {
 inline float dbfs2lin(float db) { return daisysp::pow10f(db * 0.05f); }
 }
 
-void Flux::init(float sample_rate, float* buf_l, float* buf_r) {
+void Flux::init(float sample_rate, float* buf_l, float* buf_r, uint32_t seed) {
     _sw.init(sample_rate);
     _sr = sample_rate;
     _buf_ok = (buf_l != nullptr && buf_r != nullptr);
@@ -18,14 +18,29 @@ void Flux::init(float sample_rate, float* buf_l, float* buf_r) {
     _dt_coef = daisysp::fmin(1.f / (0.03f * sample_rate), 1.f);
     _rate_idx = 3;               // boot "1/4"
     _bpm = 120.f;
-    recompute_time(true);        // snap the boot time
+    // `seed` is a caller-supplied constant (I1), NOT hashed from buf_l's
+    // address: that used to be "0xD0571u ^ (uint32_t)(uintptr_t)buf_l", which
+    // reads as bit-reproducible but is not, off desktop. host/render/main.cpp
+    // gives the echo memory a stable file-scope `static` address, but
+    // host/vcv/src/Spotymod.cpp declares it as a member of `struct Spotymod :
+    // Module`, which Rack heap-allocates per instance -- the address (and
+    // therefore the whole grain stream) changed on every patch load and under
+    // ASLR. Part::init now hands each part a fixed, distinct constant instead
+    // (engine/parts/part.cpp), the same idiom Instrument::init already uses
+    // for SynthEngine's per-part drift seed.
+    //
+    // DustCloud must be init()ed before recompute_time(true) below, not
+    // after (M2): recompute_time() ends by calling _dust.set_delay_time(),
+    // which only has a real _delay_time to apply once init() has run --
+    // doing this in the other order (as before) meant the line right after
+    // init() had to re-apply set_delay_time() itself, because init() had
+    // just reset _delay_time back to its own 0.5 s default. That
+    // re-application is gone now; recompute_time(true) is the one and only
+    // place _dust's delay time gets set during boot.
+    _dust.init(sample_rate, seed);
+    recompute_time(true);        // snap the boot time; also seeds the zone-S grid
     set_feedback(0.45f);
     set_mix(0.5f);
-    // Fixed distinct per-part seeds: the buffer pointer is stable per part for
-    // the life of the instrument, so hashing it gives A and B different grain
-    // streams while staying bit-reproducible across desktop and firmware.
-    _dust.init(sample_rate, 0xD0571u ^ (uint32_t)(uintptr_t)buf_l);
-    _dust.set_delay_time(_delay_time);
 }
 
 void Flux::set_bpm(float bpm) {
@@ -67,12 +82,18 @@ void Flux::set_mix(float norm) {
 
 void Flux::set_dust(float norm) {
     if (!_buf_ok) return;
-    _dust.set_dust(clampf(norm, 0.f, 1.f));
+    const float d = clampf(norm, 0.f, 1.f);
+    if (d == _dust_norm) return;   // I3: DustCloud::_remap() runs pow + cos
+    _dust_norm = d;
+    _dust.set_dust(d);
 }
 
 void Flux::set_rot(float norm) {
     if (!_buf_ok) return;
-    _dust.set_rot(clampf(norm, 0.f, 1.f));
+    const float r = clampf(norm, 0.f, 1.f);
+    if (r == _rot_norm) return;    // I3: same guard as set_dust
+    _rot_norm = r;
+    _dust.set_rot(r);
 }
 
 void Flux::process(float& l, float& r) {
@@ -106,7 +127,16 @@ void Flux::process(float& l, float& r) {
     // Grain sum joins BEFORE _mix_lin: FLUX MIX stays the single wet control
     // for everything coming off the tape. Grain reads deliberately skip the
     // band-pass and tanh — the cloud is rawer and brighter than the echo.
+    //
+    // Deliberate behaviour change vs. the first Task 6 cut: `gl`/`gr` are now
+    // scaled by `send` (the SoftSwitch fade level), same as the dry signal
+    // feeding the echo two lines up. The pre-existing echo tail fades with
+    // `send` too (it dies down through `e_l`/`e_r` because its own INPUT was
+    // already `l * send`), but grains are raw reads with no decay envelope of
+    // their own -- without this they would hold full level right up to
+    // is_idle()'s hard cut, clicking on the way out whenever DUST is up. One
+    // multiply, dust path only; the DUST = 0 bypass above never reaches here.
     const float hg = _dust.head_gain();
-    l += (e_l * hg + gl) * _mix_lin;
-    r += (e_r * hg + gr) * _mix_lin;
+    l += (e_l * hg + gl * send) * _mix_lin;
+    r += (e_r * hg + gr * send) * _mix_lin;
 }

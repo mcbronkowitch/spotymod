@@ -26,7 +26,7 @@ static int first_echo_index(Flux& f, int n) {
 
 TEST_CASE("flux: synced 1/4 at 120 BPM = 0.5 s echo") {
     Flux f;
-    f.init(48000.f, s_buf_l, s_buf_r);
+    f.init(48000.f, s_buf_l, s_buf_r, 0xD0571u);
     f.set_on(true, true);
     f.set_bpm(120.f);
     f.set_rate(3);                   // slice 3 -> kDivisions[8] "1/4" -> 0.5 s @120
@@ -40,7 +40,7 @@ TEST_CASE("flux: synced 1/4 at 120 BPM = 0.5 s echo") {
 
 TEST_CASE("flux: synced 1/8 at 120 BPM = 0.25 s echo") {
     Flux f;
-    f.init(48000.f, s_buf_l, s_buf_r);
+    f.init(48000.f, s_buf_l, s_buf_r, 0xD0571u);
     f.set_on(true, true);
     f.set_bpm(120.f);
     f.set_rate(6);                   // slice 6 -> kDivisions[11] "1/8" -> 0.25 s @120
@@ -51,7 +51,7 @@ TEST_CASE("flux: synced 1/8 at 120 BPM = 0.25 s echo") {
 
 TEST_CASE("flux: longest division clamps to the echo buffer at low BPM") {
     Flux f;
-    f.init(48000.f, s_buf_l, s_buf_r);
+    f.init(48000.f, s_buf_l, s_buf_r, 0xD0571u);
     f.set_on(true, true);
     f.set_bpm(20.f);                 // "1/2" @20 BPM = 6 s > 5 s buffer
     f.set_rate(0);
@@ -62,7 +62,7 @@ TEST_CASE("flux: longest division clamps to the echo buffer at low BPM") {
 
 TEST_CASE("flux: feedback produces decaying repeats") {
     Flux f;
-    f.init(48000.f, s_buf_l, s_buf_r);
+    f.init(48000.f, s_buf_l, s_buf_r, 0xD0571u);
     f.set_on(true, true);
     f.set_bpm(120.f);
     f.set_rate(3);                   // 0.5 s echo, as before
@@ -91,7 +91,7 @@ TEST_CASE("flux: feedback produces decaying repeats") {
 
 TEST_CASE("flux: off is bit-exact dry") {
     Flux f;
-    f.init(48000.f, s_buf_l, s_buf_r);
+    f.init(48000.f, s_buf_l, s_buf_r, 0xD0571u);
     for (int i = 0; i < 2000; ++i) {
         float s = std::sin(0.01f * i) * 0.4f;
         float l = s, r = s;
@@ -103,7 +103,7 @@ TEST_CASE("flux: off is bit-exact dry") {
 
 TEST_CASE("flux: null buffers never engage") {
     Flux f;
-    f.init(48000.f, nullptr, nullptr);
+    f.init(48000.f, nullptr, nullptr, 0xD0571u);
     f.set_on(true, true);
     CHECK(!f.has_buffers());
     CHECK(!f.engaged());
@@ -114,7 +114,7 @@ TEST_CASE("flux: null buffers never engage") {
 
 TEST_CASE("flux: feedback at max blooms but stays bounded") {
     Flux f;
-    f.init(48000.f, s_buf_l, s_buf_r);
+    f.init(48000.f, s_buf_l, s_buf_r, 0xD0571u);
     f.set_on(true, true);
     f.set_bpm(120.f);
     f.set_rate(6);                   // 0.25 s
@@ -148,7 +148,7 @@ TEST_CASE("flux: feedback at max blooms but stays bounded") {
 
 TEST_CASE("flux: feedback below unity decays to silence") {
     Flux f;
-    f.init(48000.f, s_buf_l, s_buf_r);
+    f.init(48000.f, s_buf_l, s_buf_r, 0xD0571u);
     f.set_on(true, true);
     f.set_bpm(120.f);
     f.set_rate(3);                   // 0.5 s
@@ -365,8 +365,8 @@ TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
     static float probe_l[Flux::kMaxSamples], probe_r[Flux::kMaxSamples];
     for (float rot : {0.0f, 0.33f, 0.5f, 0.9f, 1.0f}) {
         Flux ref, dut;
-        ref.init(48000.f, ref_l, ref_r);
-        dut.init(48000.f, dut_l, dut_r);
+        ref.init(48000.f, ref_l, ref_r, 0xD0571u);
+        dut.init(48000.f, dut_l, dut_r, 0xD0571u);
         for (Flux* f : {&ref, &dut}) {
             f->set_on(true, true);
             f->set_bpm(120.f);
@@ -428,40 +428,98 @@ TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
 }
 
 TEST_CASE("flux: dust makes sound and the head fades at the top") {
-    static float bl[Flux::kMaxSamples], br[Flux::kMaxSamples];
-    Flux f;
-    f.init(48000.f, bl, br);
-    f.set_on(true, true);
-    f.set_bpm(120.f);
-    f.set_rate(3);
-    f.set_feedback(0.5f);
-    f.set_mix(1.f);
-    f.set_dust(0.9f);
-    f.set_rot(0.5f);
-    CHECK(f.dust_active());
+    // "The head fades at the top": head_gain() has no Flux accessor, so probe
+    // it directly on a standalone DustCloud -- the idiom the dust-0 bit-exact
+    // case above already uses. Old version of this case never read
+    // head_gain() at all (Flux exposes no accessor for it either), so a
+    // mutant that makes the knee branch return 1.f unconditionally passed
+    // silently.
+    DustCloud probe;
+    probe.init(48000.f, 7u);
+    probe.set_rot(0.5f);
+    probe.set_dust(dust_tuning::kTakeoverKnee);
+    CHECK(probe.head_gain() == 1.0f);    // AT the knee: still full echo
+    probe.set_dust(0.9f);
+    CHECK(probe.head_gain() < 1.0f);     // ABOVE the knee: it faded
+    // _remap()'s cosine: t = (0.9 - 0.7) / (1 - 0.7) = 2/3,
+    // cos(2/3 * pi/2) ~= 0.5 -- a loose bound well short of 1 still catches a
+    // knee that merely clamps near-unity instead of actually fading.
+    CHECK(probe.head_gain() < 0.9f);
+
+    // "Dust makes sound": run a DUST = 0 reference Flux beside a DUST-up one
+    // over identical input and require the outputs to diverge by more than a
+    // trivial margin. The old peak > 0.01f check never exercised this claim:
+    // at mix = 1, feedback = 0.5 the pre-existing echo alone clears 0.01f by
+    // two orders of magnitude on its own, so a mutant forcing gl = gr = 0.f
+    // in DustCloud::process (killing the grain sum outright) still passed.
+    //
+    // DUST is held at 0.5, AT OR BELOW kTakeoverKnee (0.7), so head_gain()
+    // stays exactly 1.0 here -- the only mechanism that can make dut diverge
+    // from ref is the grain sum itself, not the head fade tested above. (An
+    // earlier version of this case ran DUST = 0.9 for this half too: with
+    // gl = gr = 0.f forced, the head-gain fade ALONE still moved dut away
+    // from ref, so the mutant passed. Isolating the two claims to two
+    // different DUST settings is what makes each mutant land on the
+    // assertion that actually names it.)
+    static float ref_bl[Flux::kMaxSamples], ref_br[Flux::kMaxSamples];
+    static float dut_bl[Flux::kMaxSamples], dut_br[Flux::kMaxSamples];
+    Flux ref, dut;
+    ref.init(48000.f, ref_bl, ref_br, 11u);
+    dut.init(48000.f, dut_bl, dut_br, 11u);
+    for (Flux* f : {&ref, &dut}) {
+        f->set_on(true, true);
+        f->set_bpm(120.f);
+        f->set_rate(3);
+        f->set_feedback(0.5f);
+        f->set_mix(1.f);
+    }
+    dut.set_dust(0.5f);
+    dut.set_rot(0.5f);
+    CHECK(dut.dust_active());
+
     float peak = 0.f;
+    double diff_sum_sq = 0.0;
     for (size_t i = 0; i < Flux::kMaxSamples; ++i) {
         const float s = std::sin(0.01f * i) * 0.4f;
-        float l = s, r = s;
-        f.process(l, r);
-        peak = std::max(peak, std::fabs(l));
-        REQUIRE(std::isfinite(l));
+        float rl = s, rr = s;
+        float dl = s, dr = s;
+        ref.process(rl, rr);
+        dut.process(dl, dr);
+        peak = std::max(peak, std::fabs(dl));
+        REQUIRE(std::isfinite(dl));
+        const double diff = (double)dl - (double)rl;
+        diff_sum_sq += diff * diff;
     }
-    CHECK(peak > 0.01f);
-    CHECK(peak < 4.f);
+    const double diff_rms = std::sqrt(diff_sum_sq / (double)Flux::kMaxSamples);
+    // Both Flux instances run the same deterministic dry input and the same
+    // echo settings, and head_gain() == 1.0 at DUST = 0.5, so ref and dut
+    // differ ONLY by the grain sum -- measured diff_rms == 0.148 here; 0.001
+    // sits two orders of magnitude below that and above a silent-grain
+    // mutant's exact 0.0 (confirmed: forcing gl = gr = 0.f in
+    // DustCloud::process makes this measure exactly 0 and fail here).
+    CHECK(diff_rms > 0.001);
+    CHECK(peak < 4.f);   // measured 1.290 here; feedback 0.5 is sub-unity, so
+                          // this stays far under the self-oscillating 8.f
+                          // bound derived in the sibling case below.
 }
 
-TEST_CASE("flux: dust at full recirculates without running away") {
+TEST_CASE("flux: dust at full recirculates without running away (writeback still pending Task 5)") {
     static float bl[Flux::kMaxSamples], br[Flux::kMaxSamples];
     Flux f;
-    f.init(48000.f, bl, br);
+    f.init(48000.f, bl, br, 0xD0571u);
     f.set_on(true, true);
     f.set_bpm(120.f);
     f.set_rate(6);
     f.set_feedback(1.f);       // 1.2 coefficient — self-oscillating
     f.set_mix(1.f);
     f.set_dust(1.f);
-    f.set_rot(1.f);            // zone R: writeback active
+    // Zone R at this commit exercises head fade-out, reverse-grain spawning
+    // and the wear/erosion coefficient -- NOT writeback: DustCloud::process
+    // still ends `return 0.f; // writeback arrives in Task 5`, so `wb` is
+    // always zero here and the tape store this case's peak reflects is
+    // unaffected by ROT. (The old inline comment here read "zone R:
+    // writeback active", which was simply wrong at this commit.)
+    f.set_rot(1.f);
     float peak = 0.f;
     for (int i = 0; i < 480000; ++i) {   // 10 s
         float l = 1.f, r = 1.f;          // sustained full scale
@@ -469,7 +527,64 @@ TEST_CASE("flux: dust at full recirculates without running away") {
         peak = std::max(peak, std::fabs(l));
         REQUIRE(std::isfinite(l));
     }
+    // Bound derivation: fast_tanh clamps the echo read at |x| <= 1; the tape
+    // store itself blooms to ~2.2 under this feedback (echo.cpp's tanh-bounded
+    // bloom, measured); worst case all kGrains = 8 grains sound at once and
+    // sum coherently, normalised by 1/sqrt(8) -- sqrt(8) * 2.2 * 0.92 ~= 5.7
+    // (0.92 folds in fast_sin's equal-power pan-gain ceiling), plus dry input
+    // <= 1 -> ~6.7. 8.f keeps margin above that without masking a real runaway.
     CHECK(peak < 8.f);
+}
+
+TEST_CASE("flux: same seed reproduces the grain stream, different seeds diverge") {
+    // Pins the seeding CONTRACT (I1, M4): DustCloud's seed must be a caller-
+    // supplied constant that fully determines the grain stream on its own --
+    // NOT anything derived from the echo buffer's address. That is exactly
+    // what let the same patch re-roll its cloud on every load in the VCV
+    // plugin: host/vcv/src/Spotymod.cpp declares the echo memory as a member
+    // of `struct Spotymod : Module`, which Rack heap-allocates per instance,
+    // so the address (and the old address-hashed seed derived from it) was
+    // neither stable across loads nor under ASLR. A reproducibility test like
+    // this one would have caught that before it shipped.
+    auto run = [](uint32_t seed, float* bl, float* br) {
+        Flux f;
+        f.init(48000.f, bl, br, seed);
+        f.set_on(true, true);
+        f.set_bpm(120.f);
+        f.set_rate(3);
+        f.set_feedback(0.5f);
+        f.set_mix(1.f);
+        f.set_dust(0.9f);
+        f.set_rot(0.6f);
+        std::vector<float> out(48000);
+        for (int i = 0; i < (int)out.size(); ++i) {
+            const float s = std::sin(0.01f * i) * 0.4f;
+            float l = s, r = s;
+            f.process(l, r);
+            out[i] = l;
+        }
+        return out;
+    };
+
+    // Deliberately different buffer addresses for every run (three distinct
+    // static arrays): under the old buf_l-address-derived seed this alone
+    // would have made same_a and same_b diverge despite the "same seed" below
+    // being meaningless in that scheme -- there was no seed parameter to pass.
+    static float a_bl[Flux::kMaxSamples], a_br[Flux::kMaxSamples];
+    static float b_bl[Flux::kMaxSamples], b_br[Flux::kMaxSamples];
+    static float c_bl[Flux::kMaxSamples], c_br[Flux::kMaxSamples];
+
+    const auto same_a = run(0x1234abcdu, a_bl, a_br);
+    const auto same_b = run(0x1234abcdu, b_bl, b_br);
+    const auto diff_c = run(0x9e3779b9u, c_bl, c_br);
+
+    CHECK(same_a == same_b);   // identical seed -> bit-identical grain stream
+
+    bool any_diff = false;
+    for (size_t i = 0; i < same_a.size(); ++i) {
+        if (same_a[i] != diff_c[i]) { any_diff = true; break; }
+    }
+    CHECK(any_diff);           // different seed -> a different grain stream
 }
 
 TEST_CASE("flux slice: norm endpoints hit 1/2 and 1/32") {
