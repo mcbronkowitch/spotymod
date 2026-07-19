@@ -250,17 +250,31 @@ TEST_CASE("echo: writeback stays bounded under sustained full scale") {
         peak = std::max(peak, std::fabs(y));
         REQUIRE(std::isfinite(y));
     }
-    // Process returns fast_tanh(...), which is hard-clamped to |y| <= 1
-    // unconditionally (util/fast_tanh.h) -- that's the real bound; 4.0 would
-    // assert nothing.
+    // Process returns fast_tanh(...), so |y| <= 1 holds by construction of the
+    // return statement no matter what the writeback does -- and fast_tanh's
+    // clamp has its own test. The RETURN value therefore cannot show a runaway;
+    // the TAPE can, because the writeback lands there. So assert on the tape,
+    // and assert the loop actually produced signal rather than passing on zeros.
     CHECK(peak <= 1.f);
+    CHECK(peak > 0.1f);             // it ran, it did not sit at silence
+    float tape_peak = 0.f;
+    for (size_t i = 0; i < Flux::kMaxSamples; ++i) {
+        REQUIRE(std::isfinite(e.line()[i]));
+        tape_peak = std::max(tape_peak, std::fabs(e.line()[i]));
+    }
+    // store = fast_tanh(out) * feedback_ + in + wb, with |fast_tanh| <= 1,
+    // feedback 1.2, in 1.0, wb 0.9 -> the store cannot exceed 3.1 however long
+    // it recirculates. A real runaway breaks this long before it reaches inf.
+    CHECK(tape_peak <= 3.1f);   // measured 2.849 -- the bound bites
 }
 
 TEST_CASE("echo: frozen writeback overdubs the tape in the direction of wb") {
     // The one case the primitive exists for: frozen tape, non-zero writeback
-    // overdubbed onto it. Covers both branches of the freeze else-if --
-    // wear_ >= 1 (pure overdub, Advance()'s sibling) and wear_ < 1 (decay
-    // blended with the overdub) -- and is sensitive to a sign error or a
+    // overdubbed onto it. Covers both WEAR REGIMES INSIDE WriteBlend -- wear_
+    // >= 1 (pure overdub) and wear_ < 1 (decay blended with the overdub). Note
+    // both cases take the SAME branch: wb != 0 sends them to WriteBlend either
+    // way, and Advance() is reached only with wb == 0, which the preserving-
+    // freeze test above covers. This case is sensitive to a sign error or a
     // swapped argument pair in WriteBlend(wb, wear_): swapping the arguments
     // would compute fast_tanh(old * wb + wear_) instead of
     // fast_tanh(old * wear_ + wb), which disagrees with the expected values
