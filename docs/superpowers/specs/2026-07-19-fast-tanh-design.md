@@ -1,6 +1,6 @@
 # Fast tanh — the echo loop and the master limiter off libm
 
-- **Status:** accepted, unimplemented
+- **Status:** implemented and measured at `87f3538` — see `## Outcome (2026-07-19)`
 - **Date:** 2026-07-19
 - **Branch:** `cpu-hunt`
 - **Baseline:** `94468af` (`docs/bench/2026-07-19-94468af.md`)
