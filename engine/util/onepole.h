@@ -13,6 +13,10 @@ public:
         _kof = k > 1.f ? 1.f : k;
     }
 
+    // Direct coefficient override -- used by ModLane's tick-rate slew twin,
+    // whose exact coefficient (1 - (1-k)^N) has no time_s equivalent.
+    void set_coef(float k) { _kof = k < 0.f ? 0.f : (k > 1.f ? 1.f : k); }
+
     float process(float target) {
         float diff = target - _value;
         if (!_smoothing && std::fabs(diff) < 0.0005f) return _value;

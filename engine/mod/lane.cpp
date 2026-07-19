@@ -38,9 +38,12 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _kick_shape   = 0.f;
     _kick_coef    = std::exp(-1.f / (1.5f * _sr));   // SPOT shape decay tau = 1.5 s
     _settle_coef  = std::exp(-1.f / (0.3f * _sr));   // SETTLE glide tau = 0.3 s
+    _kick_coef_tick   = std::pow(_kick_coef,   static_cast<float>(kTickInterval));
+    _settle_coef_tick = std::pow(_settle_coef, static_cast<float>(kTickInterval));
     _settle_ctr   = 0;
     _update_slew();
     _slew.reset(0.f);
+    _slew_tick.reset(0.f);
 }
 
 float ModLane::phase_eff() const { float p = _phase + _ev_phase; return p - std::floor(p); }
@@ -103,6 +106,11 @@ void ModLane::_update_slew() {
     // smooth 0 -> ~1 sample (near passthrough), smooth 1 -> ~0.5 s.
     float t = _fixed_slew ? 0.02f : (0.00002f * std::pow(25000.f, _smooth));
     _slew.init(_sr, t);
+    // Tick twin: the exact kTickInterval-sample compound of the per-sample
+    // coefficient, so held segments converge identically at tick sampling.
+    float k = 1.f / (t * _sr);
+    if (k > 1.f) k = 1.f;
+    _slew_tick.set_coef(1.f - std::pow(1.f - k, static_cast<float>(kTickInterval)));
 }
 
 void ModLane::kick(float dphase, float dshape) {
@@ -121,6 +129,7 @@ void ModLane::reset(float phase) {
     _note_age = 0;
     _note_hold = 0;
     _slew.reset(_target);
+    _slew_tick.reset(_target);
 }
 
 float ModLane::_compute_raw() const {
@@ -280,5 +289,67 @@ float ModLane::process() {
     }
 
     float smoothed = _slew.process(_target);
+    return apply_range(smoothed, _range);
+}
+
+// Advance exactly kTickInterval samples in one call -- the texture-lane path
+// (spec 2026-07-19 mod-plane-control-rate). Mirrors process()'s observable
+// sequence: every edge (step boundary or wrap) inside the interval runs in
+// phase order with identical RNG draws, note aging and mutations; wrap
+// events run at their phase position (before the new cycle's step 0); only
+// the last target is visible. Boundary targets are evaluated at the grid
+// phase (step/steps, resp. 0 at a wrap) instead of the per-sample path's
+// detection overshoot (< 1 sample of phase) -- an equally valid sampling of
+// the same waveform, covered by the equivalence suite.
+float ModLane::tick() {
+    _fired = false;
+    _kick_shape *= _kick_coef_tick;
+    if (_settle_ctr > 0) {
+        _settle_ctr = _settle_ctr > kTickInterval ? _settle_ctr - kTickInterval : 0;
+        _ev_phase   *= _settle_coef_tick;
+        _ev_shape   *= _settle_coef_tick;
+        _ev_rate    *= _settle_coef_tick;
+        _kick_shape *= _settle_coef_tick;
+    }
+
+    // Pending step mismatch first: init/reset leave _cur_step = -1 and the
+    // per-sample path fires step 0 on its very first sample the same way.
+    if (_step_mode) {
+        int step = static_cast<int>(_phase * static_cast<float>(_steps));
+        if (step >= _steps) step = _steps - 1;
+        if (step != _cur_step) { _cur_step = step; _on_boundary(); }
+    }
+
+    // Walk every edge inside the interval, in order. Panel-reachable worst
+    // case is ~8 edges (480 Hz effective STEP rate, ~12.5 samples/step); the
+    // cap is a safety bound, unreachable from the panel (spec: 2*kSeqSlots).
+    float samples_left = static_cast<float>(kTickInterval);
+    int guard = 2 * kSeqSlots;
+    while (guard-- > 0) {
+        // _ev_rate can change at a wrap (GROW walk), so the per-sample rate
+        // is re-derived per edge -- the per-sample path does the same.
+        const float dp1 = _phase_inc * (1.f + _ev_rate);
+        const float next_edge = _step_mode
+            ? static_cast<float>(_cur_step + 1) / static_cast<float>(_steps)
+            : 1.f;
+        const float dist = next_edge - _phase;
+        const float to_edge = dp1 > 0.f ? dist / dp1 : 1e30f;
+        if (to_edge > samples_left) { _phase += samples_left * dp1; break; }
+        samples_left -= to_edge;
+        if (next_edge >= 1.f) {
+            _phase = 0.f;
+            _wrap_events();
+            if (_step_mode) _cur_step = 0;
+            _on_boundary();              // FLOW fires per wrap; STEP fires step 0
+        } else {
+            _phase = next_edge;
+            ++_cur_step;
+            _on_boundary();
+        }
+    }
+
+    if (!_step_mode && !_frozen) _target = _compute_raw();   // continuous FLOW
+
+    float smoothed = _slew_tick.process(_target);
     return apply_range(smoothed, _range);
 }

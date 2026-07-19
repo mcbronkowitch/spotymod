@@ -31,6 +31,7 @@ public:
     void new_phrase();                 // audition a fresh phrase at the next STEP-mode wrap
 
     float process();                  // advance one sample, return post-range value
+    float tick();                     // advance kTickInterval samples in one call
 
     bool  fired()  const { return _fired; }   // true on the sample a boundary fired
     bool  frozen() const { return _frozen; }  // last dice failed -> holding
@@ -73,6 +74,9 @@ private:
 
     Rng     _rng;
     OnePole _slew;
+    OnePole _slew_tick;          // tick-rate twin of _slew; a lane is driven by
+                                 // exactly ONE path, so the twin's state never
+                                 // fights the per-sample instance
 
     float _sr = 48000.f;
     float _phase = 0.f;
@@ -114,6 +118,8 @@ private:
     float _kick_coef    = 1.f;   // per-sample decay for _kick_shape (tau ~ 1.5 s)
     int   _settle_ctr   = 0;     // >0: gliding EVOLVE walks + kick to 0
     float _settle_coef  = 1.f;   // per-sample settle glide (tau ~ 0.3 s)
+    float _kick_coef_tick   = 1.f;   // _kick_coef ^ kTickInterval
+    float _settle_coef_tick = 1.f;   // _settle_coef ^ kTickInterval
 };
 
 } // namespace spky

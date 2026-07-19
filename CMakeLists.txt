@@ -45,6 +45,7 @@ add_executable(spky_tests
     tests/test_range.cpp
     engine/mod/lane.cpp
     tests/test_lane.cpp
+    tests/test_lane_tick.cpp
     tests/test_gate_density.cpp
     tests/test_step.cpp
     tests/test_step_clock.cpp
