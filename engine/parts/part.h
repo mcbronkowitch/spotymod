@@ -151,6 +151,11 @@ private:
     // first tick cannot hand the engine garbage.
     float _tg[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 0.8f };
 
+    // FX target cache, filled at the control tick. PartFx smooths each value
+    // over 2 ms, so the raster's steps never reach an FX parameter raw.
+    // Boot values mirror _fx_base so the first block cannot push zeros.
+    float _fxv[FXT_COUNT] = { 0.3f, 0.4f, 1.f, 0.25f, 0.45f };
+
     PartFx         _fx;
 
     // Modulation first is the shipped state (spec 2026-07-17 boot-targets):

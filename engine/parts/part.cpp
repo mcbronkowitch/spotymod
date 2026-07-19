@@ -120,6 +120,9 @@ void Part::_control_tick() {
     const int nch = _chord.apply(_tg[LANE_PITCH], _chord_mask(),
                                  _quant.root_semis(), chord);
     _engine->set_chord(chord, nch);
+
+    _engine->set_targets(_tg, _tune);
+    for (int i = 0; i < FXT_COUNT; ++i) _fxv[i] = fx_target_value(i);
 }
 
 void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
@@ -184,10 +187,6 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     }
     --_ctrl_ctr;
 
-    _tg[LANE_LEVEL] = target_raw(LANE_LEVEL);   // per-sample engine consumer
-
-    _engine->set_targets(_tg, _tune);
-
     if (fired && !_note_suppressed) {
         float chord[ChordBuilder::kMaxNotes];
         const int nch = _chord.build(_tg[LANE_PITCH], _chord_mask(),
@@ -198,7 +197,5 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
     outL *= fade;
     outR *= fade;
 
-    float fxv[FXT_COUNT];
-    for (int i = 0; i < FXT_COUNT; ++i) fxv[i] = fx_target_value(i);
-    _fx.process(outL, outR, sendL, sendR, fxv);
+    _fx.process(outL, outR, sendL, sendR, _fxv);
 }
