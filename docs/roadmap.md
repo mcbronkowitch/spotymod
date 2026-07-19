@@ -422,12 +422,14 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-6e38090.md`):
   clamp constant sat 4.1e-7 above the true root, and the guard test's grid was
   8.6× wider than the violation band), so the bound is now enforced on the
   return value instead of the threshold. That is why the shipped figure is
-  97.69 % and not 95.77 %. The cut's audio is not
-  yet evaluated: the merge to `main` stays gated on a listening pass, and there
-  are two specific things to listen for: the echo bloom at maximum feedback,
-  where the new hard clamp caps the limit cycle marginally harder than
-  `tanh`'s asymptote did, and master DRIVE at high settings, where the same
-  curve error is scaled onto the summed master bus and grows with drive.
+  97.69 % and not 95.77 %. **The listening pass cleared it and the cut is on
+  `main`, shipped as Spotymod 2.6.0** (tag `v2.6.0`). Both named risks were
+  checked by ear and neither was audible: the echo bloom at maximum feedback,
+  where the new hard clamp caps the limit cycle marginally harder than `tanh`'s
+  asymptote did, and master DRIVE at high settings, where the same curve error
+  is scaled onto the summed master bus and grows with drive. One human listening
+  session, not a measurement — the error arithmetic in the spec is what stands
+  as the durable record of its size.
   Before it, the **mod-plane control-rate cut**
   (`docs/superpowers/plans/2026-07-19-mod-plane-control-rate.md`), worth
   **~19 points** against a predicted 17–19: the plane fell 253 254 → 56 667

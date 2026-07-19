@@ -187,6 +187,7 @@ attribution flagged in the roadmap at no extra cost.
 
 - **Under 100 % anchored max** — the 2×4 budget question flips for the first
   time. Record it; the listening pass then gates the merge to `main`.
+  *(This is the branch that happened: 97.69 %, listening pass cleared, merged.)*
 - **100–102 %** — next candidate is `PartFx` rev-send `std::sin` → `fast_sin`
   (≈1–2 points, same technique, same listening pass).
 - **Materially above** — the ~8-point estimate was wrong. Go back to measurement
@@ -398,10 +399,16 @@ ranked candidates (`PartFx` rev-send `std::sin` → `fast_sin`, ≈1–2 points;
 double pitch quantization in `Part::process`) are no longer needed to clear the
 gate and should be held as margin rather than spent.
 
-The merge to `main` stays gated on the listening pass. Two specific things to
-listen for: the echo bloom at maximum feedback, where the clamp caps the limit
-cycle marginally harder than `tanh`'s asymptote did; and master DRIVE at high
-settings, where `Limiter::shape` scales `fast_tanh`'s curve error by
-`(1 - knee)` — the error on the bus reaches ~1.5e-4 (≈ −76 dBFS) at drive 0 and
-~7.5e-4 (≈ −62 dBFS) at full drive, five times larger and on the summed master
-rather than one FX return.
+**The listening pass cleared it (2026-07-19) and the cut is on `main`.** Both
+named targets were checked by ear against the shipped build: the echo bloom at
+maximum feedback, where the clamp caps the limit cycle marginally harder than
+`tanh`'s asymptote did; and master DRIVE at high settings, where
+`Limiter::shape` scales `fast_tanh`'s curve error by `(1 - knee)` — the error on
+the bus reaches ~1.5e-4 (≈ −76 dBFS) at drive 0 and ~7.5e-4 (≈ −62 dBFS) at full
+drive, five times larger and on the summed master rather than one FX return.
+Neither was audible. That closes the risk this spec opened; it is a human
+judgement on one listening session, not a measurement, and the arithmetic above
+is what stands as the durable record of how large the error actually is.
+
+Shipped as Spotymod **2.6.0** (tag `v2.6.0`, plugin builds for win-x64,
+mac-arm64, lin-x64).
