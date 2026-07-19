@@ -1,14 +1,29 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo — Implementation Plan
 
-> **⛔ DO NOT EXECUTE THIS PLAN (2026-07-19, measured twice).** The design
-> spec's CPU estimate ("≪ 1 %") is wrong. Measured and then optimized
-> (`docs/bench/2026-07-19-dccb8a3.md`, `dust` family): **11.1 % of block budget
-> at 16 grains, 6.2 % at 8**, against **~2.1 points of margin**. DUST is
-> blocked on headroom, not on design.
+> **▶ VCV-FIRST EXPLORATION (restructured 2026-07-19). Read "Execution order"
+> below before starting — the task list is NOT in execution order.**
 >
-> **Three things this plan must change before it is executed:**
+> **Why the order changed.** The budget question is answered
+> (`docs/bench/2026-07-19-0b274e9.md`): DUST costs **11.1 % of block budget at
+> 16 grains, 6.2 % at 8**, against ~2.1 points of margin, and the cheapest route
+> to headroom — folding DUST into the GRIT selector (3.2) plus the `Svf`
+> single-pass rework (2–4) — costs no polyphony but is not free of consequence.
+> **What is NOT answered is whether the effect is any good.** Nobody has heard
+> it. Every tuning constant that decides its character — zone breakpoints,
+> `wear`, `wb_gain`, the takeover knee, the normalization — is listed in spec
+> §"Out of scope" as *deferred to the play-test*, so the sound is not yet
+> designed, only specified. Spending the hardware budget before hearing it is
+> the wrong order, and this project's history says so: CHOKE took four
+> revisions after play-tests, M4 shipped a pitch siren, M4.6 shipped clipping.
 >
-> 1. **Task 1's `DustCloud` must use the optimized grain loop**, not the
+> So: **build it for VCV, where there is no 960 000-cycle budget, play it, and
+> only then decide whether it earns its cost on hardware.** The phases below
+> reach a playable Rack build as early as the architecture allows, then add one
+> audible thing at a time.
+>
+> **Three corrections that stand regardless of order:**
+>
+> 1. **`DustCloud` must use the optimized grain loop from the start**, not the
 >    obvious one. Measured −35 %: no per-sample `age / length` division (step a
 >    window index by an increment fixed at birth); no per-sample
 >    `hann_value_at()` call (`hann_curve()` is a function-local static, so every
@@ -16,11 +31,11 @@
 >    block loop); no per-sample `(write + offset) & mask` or L/R select (keep an
 >    absolute read index stepped by `delta − 1`, resolve the tape pointer at
 >    birth). Reference implementation: `proc_dust_opt` in
->    `bench/workloads_dust.cpp`.
-> 2. **The pool is 8 grains total, not 8 per part**, unless a re-measure at
->    integration time shows the margin can carry 16. This halves zone F's
->    maximum overlap and is a musical decision, not only a budget one — §2's
->    "full 8-voice overlap" is what it trades on.
+>    `bench/workloads_dust.cpp`. Writing it right costs nothing extra now and
+>    keeps engine, VCV and firmware on one code path.
+> 2. **The pool stays `kGrains = 8` per part (16 total) for the exploration** —
+>    the full design, so what you hear is the ceiling. Phase D decides whether
+>    it survives at 8 total. Do not silently ship 16 to hardware.
 > 3. **§3 zone F keeps its full 5 s reach.** An earlier revision proposed
 >    bounding the spray to save cache misses; measured, that buys about one
 >    point, because a grain is a linearly-walking read head and the prefetcher
@@ -49,6 +64,99 @@
 - **Four source lists** compile `engine/fx/*.cpp` and all need `engine/fx/dust.cpp`: `CMakeLists.txt` (`spky_tests` **and** `render`), `host/vcv/Makefile`, `bench/Makefile`.
 - **Coordination:** `bench/Makefile` is the firmware bench build. Another session may be using it. Adding the source line is required (otherwise the bench build breaks the moment `flux.cpp` references `DustCloud`), but coordinate before touching that file.
 - Build/test (Bash tool): `cd /c/Users/bernd/Documents/AI/Spotykach && source env.sh && cmake --build build` then `./build/spky_tests.exe` (doctest filter: `-tc="dust*"`).
+
+### Constraints added by the VCV-first restructure
+
+- **Branch, and NO release tag.** All of this lands on `dust-explore`, not
+  `main`. Param ids are only permanently claimed by a *released* version, so
+  as long as nothing is tagged the panel layout stays free to change after the
+  play-test. Do not bump `host/vcv/plugin.json` and do not push a `v*` tag.
+  (Consequence if this slips: spec §6's sequencing — DUST's ids before M5's
+  REC — gets frozen around a layout that has not been auditioned.)
+- **Grain pool must be A/B-switchable at runtime** for the Phase D listen:
+  a right-click **context-menu** item on the module (`Grain pool: 8 / 16`),
+  *not* a param. It touches no param id, no panel geometry, and lifts out
+  cleanly. Back it with `DustCloud::set_grain_cap(int)` clamping to
+  `[1, kGrains]` and persist it in `dataToJson` so an A/B patch survives a
+  reload.
+- **Task 8 is split.** Its forwarding half (`PartFx` / `Instrument`
+  `set_dust` / `set_rot` / `set_freeze`) is needed early — Phase A cannot wire
+  the plugin without it. Its scenario/demo half (render actions,
+  `dust_stutter.json`, `dust_erosion.json`) is Phase D and only earns its keep
+  if the effect survives the listen.
+- **Rebuild and install the plugin at the end of every phase.** The point of
+  this ordering is that each phase is audible on its own; a phase that ends
+  without a Rack build has skipped its own gate.
+
+---
+
+## Execution order
+
+**The numbered tasks below are dependency-ordered, not execution-ordered.**
+Work the phases; within a phase, work the listed tasks in the order given.
+
+The reordering is legal because Task 2 establishes `DustCloud`'s *complete*
+API — `process()` returning the writeback float, `head_gain()`, `active()`,
+`set_rot()`, `set_delay_time()` — and Tasks 3, 4 and 5 only fill in behaviour
+behind that fixed interface. Task 6 therefore compiles and runs directly after
+Task 2, with ROT inert and the writeback returning 0.
+
+### Phase A — the first playable cloud
+**Tasks 1 → 2 → 6 → 8a (forwarding only) → 9 (DUST + ROT knobs only) → 10**
+
+Zone F alone: free-running stochastic scheduler, forward read-only grains. No
+stutter grid, no reverse, no writeback, no freeze. **Leave `TRIGGER_A/B` alone
+in this phase** — the FRZ pad replaces it in Phase C, and until freeze exists
+that swap would only install a dead control.
+
+> **LISTEN — the go/no-go for everything after it.** Is a grain cloud reading
+> the echo tape interesting at all? Specifically: does it sound like *the same
+> instrument* (the spec's premise — echo and grains share one sonic identity),
+> or like a second effect bolted on? Sweep DUST 0 → 1 with the delay running:
+> does the head takeover above ~0.7 read as the cloud *eating* the delay, or
+> as a crossfade between two unrelated things? **If this phase is dull, stop
+> here** — the remaining phases add character to something that has none.
+
+### Phase B — the character axis, one audible increment at a time
+**Task 3 (zone S stutter) → Task 4 (reverse) → Task 5 (writeback)**
+
+Rebuild the plugin after each task; each answers its own question.
+
+> **LISTEN, per task.** *Zone S:* does birth-interval = delay-time / 4 give the
+> automatic dub polyrhythm §3 claims, and does jitter growing across the zone
+> read as loosening rather than as breakage? *Reverse:* do backwards splinters
+> sound like time-reversal or like glitches? *Writeback:* does the tape
+> mutating over generations stay musical as it compounds, or does it just turn
+> to mud — and does `kWbGainMax = 0.60` want to be smaller?
+
+### Phase C — the signature feature
+**Task 7 (freeze + erosion) + the FRZ pad half of Tasks 9/10**
+
+Now do the `TRIGGER_A/B` → `FRZ_A/B` swap and wire the latch.
+
+> **LISTEN — the claim under test.** Spec §4 says the eroding loop is
+> "the signature feature — no standard tool does this". Freeze at low ROT: is
+> the preserving 5 s looper useful on its own? Freeze at high ROT: does the
+> loop *decompose* in a way worth having, and can you play it — pulling ROT
+> down mid-erosion to keep what remains? Is `wear` slightly under 1 the right
+> rate, or does it need to be audibly faster/slower? Check the unfreeze seam:
+> §4 accepts it as "honest tape aesthetic" but budgets a write-in crossfade if
+> it clicks.
+
+### Phase D — only if it survived
+**Task 8b (scenarios + demo renders) → pool A/B → budget decision**
+
+1. **Pool A/B.** Switch the context menu 16 → 8 and replay the patches that
+   convinced you. **This is the budget decision**: 16 grains costs 11.1 points,
+   8 costs 6.2, and only 8 is reachable. If 8 sounds equivalent, the expensive
+   argument disappears.
+2. **Then, and only then, the headroom decision** — GRIT-selector merge
+   (3.2 points, but forecloses driving *into* the cloud, and GRIT sits before
+   the tape while DUST reads from it) versus the `Svf` single-pass rework
+   (2–4 points, musically free) versus the voice cap 8→5 (~13, costs
+   polyphony). Spec §8 Finding 6 has the arithmetic; the play-test is what
+   tells you whether losing GRIT in front of the cloud actually matters.
+3. Re-measure on hardware before anything merges to `main`.
 
 ---
 
