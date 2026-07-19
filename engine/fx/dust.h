@@ -1,5 +1,4 @@
 #pragma once
-#include <cassert>
 #include <cstdint>
 #include "fx/fx_util.h"
 #include "mod/rng.h"
@@ -43,25 +42,27 @@ constexpr float kTakeoverKnee = 0.70f;  // DUST above this fades the echo head
 }
 
 // A read-only view of one part's stereo tape at this sample. No ownership, no
-// virtuals, and tests can build one over a plain array. `size` carries a
+// virtuals, and tests can build one over a plain array. `mask` carries a
 // power-of-two CONTRACT (mirroring DeLine/EchoDelay: production's FLUX tape is
 // 262144 = Flux::kMaxSamples, already a power of two) so every wrap in the hot
-// grain loop is a single AND against `mask`, never a divide. The constructor
-// derives `mask` from `size` and, in debug builds, asserts the contract holds
-// — callers only ever set `size`.
+// grain loop is a single AND, never a divide. A plain aggregate, deliberately:
+// there used to be a separate `size` alongside `mask`, derived by a 4-arg
+// constructor that asserted the power-of-two contract on every call —
+// per-sample in the audio path once Flux::process constructs one of these
+// each sample, and a size/mask pair that a default-constructed or partially
+// written TapeTap could still get out of sync (size set, mask left 0). Now
+// there is only `mask`; nothing to disagree with it. The power-of-two
+// contract itself is checked once, at compile time, in dust.cpp
+// (static_assert against Flux::kMaxSamples) rather than per construction.
 struct TapeTap {
     const float* l = nullptr;
     const float* r = nullptr;
     int32_t write_ptr = 0;
-    int32_t size = 0;   // must be a power of two; mask below is size - 1
     int32_t mask = 0;
 
-    TapeTap() = default;
-    TapeTap(const float* l_, const float* r_, int32_t write_ptr_, int32_t size_)
-        : l(l_), r(r_), write_ptr(write_ptr_), size(size_), mask(size_ - 1) {
-        assert(size_ > 0 && (size_ & (size_ - 1)) == 0 &&
-               "TapeTap::size must be a power of two");
-    }
+    // Tape length, derived from mask. Only used at grain birth (_spawn), not
+    // per sample, so the add costs nothing measurable.
+    int32_t size() const { return mask + 1; }
 
     // `offset` is samples BEHIND the write head; the head decrements, so a
     // constant offset is exactly 1x forward playback.

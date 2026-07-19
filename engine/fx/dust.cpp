@@ -1,8 +1,17 @@
 #include "fx/dust.h"
+#include "fx/flux.h"
 #include <cmath>
 
 using namespace spky;
 using namespace spky::dust_tuning;
+
+// TapeTap's `mask` is only ever a valid wrap mask if production's FLUX tape
+// length is a power of two; this is the one-time, compile-time check that
+// used to be a per-construction runtime assert on TapeTap itself (see
+// fx/dust.h). Checked here, once, against the actual constant Flux::process
+// will build a TapeTap over.
+static_assert((Flux::kMaxSamples & (Flux::kMaxSamples - 1)) == 0,
+              "Flux::kMaxSamples must be a power of two (TapeTap::mask contract)");
 
 void DustCloud::init(float sample_rate, uint32_t seed) {
     _sr = sample_rate > 0.f ? sample_rate : 48000.f;
@@ -55,7 +64,7 @@ void DustCloud::_remap() {
     // --- ROT: zone + within-zone morph -------------------------------------
     const float r = _rot;
     const float tape_max_s = 5.f;   // the FLUX tape (~5.46 s); spray target only —
-                                     // _spawn() clamps against the real tape.size
+                                     // _spawn() clamps against the real tape.size()
     if (r < kZoneSEnd) {                                // zone S — synced stutter
         _zone = 0;
         const float u = r / kZoneSEnd;
@@ -114,7 +123,7 @@ void DustCloud::_spawn(const TapeTap& tape) {
 
         // A reverse grain recedes 2 samples per sample; clamp the start so it
         // can never overrun the tape within its own lifetime.
-        int32_t max_off = tape.size - 4 - (delta ? 2 * g.len : 0);
+        int32_t max_off = tape.size() - 4 - (delta ? 2 * g.len : 0);
         if (max_off < 2) max_off = 2;
         int32_t spray = _spray < max_off ? _spray : max_off;
         if (spray < 1) spray = 1;
@@ -174,7 +183,7 @@ float DustCloud::process(const TapeTap& tape, float& gl, float& gr) {
         sr += s * g.gr;
 
         // Single AND wrap, matching bench/workloads_dust.cpp proc_dust_opt:
-        // TapeTap::size is a power-of-two contract now (see fx/dust.h), so
+        // TapeTap::mask is a power-of-two contract now (see fx/dust.h), so
         // there is no longer a runtime case where a mask would be wrong.
         g.rd = (g.rd + g.rd_step) & tape.mask;
 

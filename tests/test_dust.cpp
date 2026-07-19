@@ -8,14 +8,16 @@ using namespace spky;
 // A synthetic tape: ~1.37 s stereo, filled with noise so a grain's output
 // can't be mistaken for anything but what it actually read.
 // kSize is a power of two (TapeTap's contract: production's FLUX tape is
-// Flux::kMaxSamples = 262144, also a power of two; the constructor's debug
-// assert would fire on a non-power-of-two size like the old 48000).
+// Flux::kMaxSamples = 262144, also a power of two; TapeTap itself no longer
+// checks this at all -- see fx/dust.cpp's static_assert against
+// Flux::kMaxSamples -- so this fixture pins its own constant instead).
 struct FakeTape {
     static constexpr int32_t kSize = 65536;
+    static_assert((kSize & (kSize - 1)) == 0, "kSize must be a power of two");
     std::vector<float> l, r;
     int32_t ptr = 0;
     FakeTape() : l(kSize, 0.f), r(kSize, 0.f) {}
-    TapeTap tap() const { return TapeTap{l.data(), r.data(), ptr, kSize}; }
+    TapeTap tap() const { return TapeTap{l.data(), r.data(), ptr, kSize - 1}; }
     void advance() { ptr = (ptr - 1 + kSize) % kSize; }
     void fill_noise(uint32_t seed) {
         Rng g; g.seed(seed);
@@ -106,6 +108,7 @@ struct SineTape {
     // period instead (512 samples, i.e. 93.75 Hz) keeps the tape genuinely
     // seamless.
     static constexpr int32_t kSize = 65536;
+    static_assert((kSize & (kSize - 1)) == 0, "kSize must be a power of two");
     static constexpr int32_t kPeriod = 512;
     static constexpr float freq_hz = 48000.f / (float)kPeriod;   // 93.75 Hz
     std::vector<float> l, r;
@@ -117,7 +120,7 @@ struct SineTape {
             l[i] = v; r[i] = v;
         }
     }
-    TapeTap tap() const { return TapeTap{l.data(), r.data(), ptr, kSize}; }
+    TapeTap tap() const { return TapeTap{l.data(), r.data(), ptr, kSize - 1}; }
     void advance() { ptr = (ptr - 1 + kSize) % kSize; }
 };
 
@@ -180,10 +183,11 @@ TEST_CASE("dust: grain sum is click-free across births and deaths") {
 // for a KNOWN, non-oscillating value so a grain's own envelope is legible.
 struct FlatTape {
     static constexpr int32_t kSize = 65536;   // power of two (TapeTap contract)
+    static_assert((kSize & (kSize - 1)) == 0, "kSize must be a power of two");
     std::vector<float> l, r;
     int32_t ptr = 0;
     FlatTape() : l(kSize, 1.f), r(kSize, 1.f) {}
-    TapeTap tap() const { return TapeTap{l.data(), r.data(), ptr, kSize}; }
+    TapeTap tap() const { return TapeTap{l.data(), r.data(), ptr, kSize - 1}; }
     void advance() { ptr = (ptr - 1 + kSize) % kSize; }
 };
 
