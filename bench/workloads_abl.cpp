@@ -99,7 +99,7 @@ float proc_part_glue()
 Instrument g_abl_inst;
 int        g_abl_ctr = 0;
 
-void setup_worst(bool flux_on, float reverb_mix)
+void setup_worst(bool flux_on, float reverb_mix, bool grit_on = true)
 {
     g_abl_inst.init(kSampleRate, fx_mem());
     g_abl_inst.set_tempo_bpm(120.f);
@@ -109,7 +109,7 @@ void setup_worst(bool flux_on, float reverb_mix)
         g_abl_inst.set_density(p, 1.f);
         g_abl_inst.set_depth(p, 1.f);
         g_abl_inst.set_rate(p, 0.8f);
-        g_abl_inst.set_fx_on(p, FxBlock::Grit, true);
+        g_abl_inst.set_fx_on(p, FxBlock::Grit, grit_on);
         g_abl_inst.set_fx_on(p, FxBlock::Flux, flux_on);
         g_abl_inst.set_grit_mix(p, 1.f);
         g_abl_inst.set_flux_mix(p, 1.f);
@@ -128,6 +128,21 @@ void setup_worst(bool flux_on, float reverb_mix)
 
 void setup_worst_noflux()   { setup_worst(false, 0.5f); }
 void setup_worst_noreverb() { setup_worst(true,  0.f);  }
+
+// GRIT off on both parts. The delta against instrument_worst is GRIT's real
+// in-context cost, which is the number the "fold DUST into the GRIT selector"
+// question turns on: if the two are mutually exclusive, the worst case pays
+// max(GRIT, DUST) instead of GRIT + DUST, so this delta is what the merge
+// saves. Until now it could only be inferred from two disagreeing proxies --
+// fx_grit - fx_none said 2.41 %/part, grit_drive_solo said 1.53 %/part.
+//
+// The row is honest only because Grit::process early-returns on _sw.is_idle()
+// (grit.cpp:95). PartFx calls it whenever grit OR flux is engaged, so the
+// skip has to come from inside Grit itself -- it does, and the SoftSwitch is
+// fully idle long before the measured window (100 warm-up blocks against a
+// 4 ms fade). Note the mode: this ablates GRIT *Drive*, matching what
+// instrument_worst runs; Reduce costs ~1.06 %/part more (grit_reduce_solo).
+void setup_worst_nogrit()   { setup_worst(true,  0.5f, false); }
 
 // CHOKE engaged — the state the system family's worst case runs without.
 // choke = -1 makes part A the priority side; A goes to STEP so its gate is
@@ -266,6 +281,7 @@ const Workload kAblWorkloads[] = {
     { "abl", "part_glue_flow",      setup_part_glue,      proc_part_glue      },
     { "abl", "inst_worst_noflux",   setup_worst_noflux,   proc_abl_inst       },
     { "abl", "inst_worst_noreverb", setup_worst_noreverb, proc_abl_inst       },
+    { "abl", "inst_worst_nogrit",   setup_worst_nogrit,   proc_abl_inst       },
     { "abl", "inst_worst_choked",   setup_worst_choked,   proc_abl_inst       },
     { "abl", "limiter_clean",       setup_lim_clean,      proc_lim            },
     { "abl", "limiter_driven",      setup_lim_driven,     proc_lim            },
