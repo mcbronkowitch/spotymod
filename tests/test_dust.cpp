@@ -314,8 +314,15 @@ TEST_CASE("dust: density rises with DUST, level stays inside a band") {
     // 2193.3 > 3229.6 * 0.5 = 1614.8 is true). `e_high > e_mid` is what
     // actually fails on the buggy pair (2193.3 > 3229.6 is false) and is what
     // the corrected design actually claims.
-    CHECK(e_low > 400.0);
-    CHECK(e_high < 4500.0);
+    // The two absolute bounds are MEASUREMENT PINS, not derived, and they moved
+    // by exactly 5.33x = kGrainMakeup^2 (2.309^2) when the grain-path makeup
+    // landed on 2026-07-19. That factor is the check: the makeup compensates the
+    // Hann-window and equal-power-pan losses (0.4330 combined, -7.27 dB) that
+    // 1/sqrt(active) never covered, so an energy ratio anywhere else would mean
+    // the makeup did not do only what it claims. Re-measure and restate the
+    // factor if either bound is touched again.
+    CHECK(e_low > 2100.0);      // was 400.0 before the makeup
+    CHECK(e_high < 24000.0);    // was 4500.0 before the makeup
     CHECK(e_high > e_mid);   // regression pin: DUST=1 must not be quieter than DUST=0.6
 }
 

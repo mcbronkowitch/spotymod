@@ -21,7 +21,10 @@ void DustCloud::init(float sample_rate, uint32_t seed) {
     _rot = 0.f;
     _delay_time = 0.5f;
     _grid_countdown = 1;
-    _norm = 1.f;
+    // Start at the one-grain target, not 1.f: the smoother would otherwise
+    // spend its first ~20 ms climbing the makeup, so the first grain after a
+    // rise would come in 7 dB quiet.
+    _norm = kGrainMakeup;
     _norm_coef = 1.f - std::exp(-1.f / (kNormSmoothS * _sr));
     _active_grains = 0;
     _curve = hann_curve().data();
@@ -41,7 +44,7 @@ void DustCloud::set_dust(float d) {
     // detect the 1 -> 0 edge without any extra state.
     if (_dust > 0.f && d <= 0.f) {
         for (int i = 0; i < kGrains; ++i) _g[i].alive = false;
-        _norm = 1.f;
+        _norm = kGrainMakeup;   // one-grain target, see init()
         _grid_countdown = 1;
     }
     _dust = d;
@@ -238,7 +241,10 @@ float DustCloud::process(const TapeTap& tape, float& gl, float& gr) {
     // per-sample sqrt + divide would cost ~30 cycles per part, and this
     // feature's budget was measured without one.
     _active_grains = active;
-    const float norm_target = kInvSqrt[active < 1 ? 1 : active];
+    // kGrainMakeup folds into the target, so it costs nothing per sample: the
+    // window and pan losses it compensates are constant, so they belong in the
+    // smoothed value rather than in a second multiply on the output.
+    const float norm_target = kInvSqrt[active < 1 ? 1 : active] * kGrainMakeup;
     _norm += (norm_target - _norm) * _norm_coef;   // one multiply-add
     gl = sl * _norm;
     gr = sr * _norm;

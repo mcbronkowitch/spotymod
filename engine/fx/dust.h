@@ -23,6 +23,27 @@ constexpr float kRateMax  = 35.f;       // births/s at DUST = 1 (~8 overlap)
 // ~35 births/s.
 constexpr float kNormSmoothS = 0.02f;   // ~20 ms; ear-tunable in the play-test
 
+// Grain-path makeup. 1/sqrt(active) compensates for the grain COUNT, and for
+// nothing else -- but every grain sample is also multiplied by the Hann window
+// and by an equal-power pan gain, and both cost level:
+//
+//   Hann sin^2(pi t), RMS over a grain's life = sqrt(3/8) = 0.6124   -4.26 dB
+//   equal-power pan, p uniform -> E[pan^2] = 0.5, RMS = 0.7071       -3.01 dB
+//   combined                                        0.4330          -7.27 dB
+//
+// So without this the cloud sits 7.3 dB under a direct tape read at EVERY DUST
+// setting, and the echo head -- which reads the tape at unity and then builds
+// up through feedback on top -- buries it. Found by ear in the Phase A listen
+// (2026-07-19): "the grains are very quiet next to the delay; only at DUST full
+// do you hear them", which is exactly the head takeover removing the reference
+// rather than the grains getting louder.
+//
+// 1/0.4330 puts one grain at parity with one direct tape read. It deliberately
+// does NOT also compensate the echo's feedback build-up (1/(1-fb), another
+// +5..+14 dB) -- that is the player's FLUX FEEDBACK setting, and matching it
+// would make the cloud scream at low feedback.
+constexpr float kGrainMakeup = 2.309f;  // +7.27 dB; ear-tunable
+
 constexpr float kLenMinLo = 0.025f;     // grain length range at DUST = 0
 constexpr float kLenMaxLo = 0.100f;
 constexpr float kLenMinHi = 0.080f;     // ... and at DUST = 1
