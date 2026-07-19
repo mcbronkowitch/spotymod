@@ -155,8 +155,12 @@ points, not byte-identical). Consequences:
 1. **Equivalence suite (the heart of the design):** the same lane config
    (seed, rate, shape, smooth, STEP/FLOW, variation) driven once via 96×
    `process()` and once via `tick()` must show: identical boundary counts,
-   exactly equal `target()` values at each boundary, identical `_seq` buffer
-   contents after N cycles (proves the RNG streams never diverged), and
+   equal `target()` values at each boundary (bit-exact in the S&H zone
+   (shape 1); for phase-dependent shapes within a small epsilon — the tick
+   path evaluates the boundary at its grid phase instead of the per-sample
+   detection overshoot, both < 1 sample of phase from the ideal), identical
+   `_seq`-driven target streams over N cycles (proves the RNG never
+   diverged), and
    smoothed outputs at tick samples within a small epsilon. Covers STEP, FLOW,
    variation > 0 (GROW dice), variation < 0 (RENEW), and a SPOT kick + SETTLE
    run. These tests are permanent, not scaffolding.
