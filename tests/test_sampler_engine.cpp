@@ -92,6 +92,11 @@ TEST_CASE("sampler: an empty buffer is silent under FLOW, STEP and gate") {
     g.e.set_gate(true);
     auto w = g.render(9600);
     for (float s : w) CHECK(s == doctest::Approx(0.f).epsilon(0.0001));
+
+    // Silence alone proves nothing here -- read_linear returns silence for an
+    // empty buffer whatever the scheduler does. The property under test is
+    // that no grain is spawned AT ALL, which only active_grains() can see.
+    CHECK(g.e.active_grains() == 0);
 }
 
 TEST_CASE("sampler: nullptr memory is silent, not a crash") {
@@ -169,21 +174,46 @@ TEST_CASE("sampler: recording grows the content and the cloud plays while it doe
 TEST_CASE("sampler: grains never read past the write head while recording") {
     Rig g(0);
     g.e.set_flow(true);
+    // SOURCE at the far end (1.0) is what makes this observable, but not for
+    // the reason it first looks like. read_linear() folds EVERY read into
+    // [0, rec_size) no matter what position a grain asks for, so a literal
+    // read of memset-zero memory can never happen either way -- silence is
+    // not the tell here.
+    //
+    // The real tell is an exact-lockstep degeneracy. With SOURCE=1.0 and
+    // recording continuously active, the correct (rec_size()-based) centre
+    // is, at every grain's spawn, EXACTLY equal to the buffer's current
+    // fill. Because both the read position and the fill then advance by
+    // ~1 sample/sample for the rest of that grain's life, they stay
+    // EXACTLY equal the whole time -- so every single read folds to
+    // position 0 (the quiet start of the record fade-in), for every grain,
+    // deterministically. Measured RMS: 0.0 exactly (no RNG is drawn yet in
+    // this task, so this is not a coincidence of the seed).
+    //
+    // The mutant (capacity()-based) centre is instead a huge, effectively
+    // fixed offset (0.98x of the full 2 s buffer) that the small, still-
+    // growing rec_size() never catches up to. It never hits the exact
+    // lockstep, so it never gets folded to the same quiet seam -- it lands
+    // on ordinary, already-recorded DC content instead. Measured RMS: 1.378.
+    //
+    // So the assertion direction is inverted from first intuition: LOW RMS
+    // is what the correct implementation produces here, not high.
+    g.feed(0.5f, 1.f, 0.3f);
     g.e.set_recording(true);
-    // Record DC 1.0. A read past the write head lands in memset-zero memory,
-    // so any such read shows up as a zero inside the recorded region.
+
+    std::vector<float> out;
     for (int i = 0; i < 24000; ++i) {
-        g.e.process_in(1.f, 1.f);
+        g.e.process_in(1.f, 1.f);          // DC, so any real (non-degenerate) read is loud
         float a = 0.f, b = 0.f;
         g.e.process(a, b);
+        out.push_back(a);
     }
     g.e.set_recording(false);
-    const size_t n = g.e.rec_size();
-    REQUIRE(n > 4800);
-    int zeros = 0;
-    for (size_t i = sampler_cfg::kRecordFade * 2; i < n - sampler_cfg::kRecordFade * 2; ++i)
-        if (std::fabs(g.mem[i].l) < 0.5f) ++zeros;
-    CHECK(zeros == 0);
+    REQUIRE(g.e.rec_size() > 4800);
+
+    // Correct: exactly 0.0 (deterministic lockstep fold to the fade-in seam).
+    // Mutant (capacity() instead of rec_size()): ~1.378 -- comfortably above.
+    CHECK(rms(out, 12000, 6000) < 0.1f);
 }
 
 TEST_CASE("sampler: monitoring passes the dry input at unity") {
@@ -233,9 +263,13 @@ TEST_CASE("sampler: clear empties the buffer and silences the cloud") {
     Rig g;
     g.e.set_flow(true);
     g.render(4800);
+    REQUIRE(g.e.active_grains() > 0);      // the cloud is running...
     g.e.clear();
     CHECK(g.e.is_empty());
     CHECK(g.e.buffer_fill() == doctest::Approx(0.f));
+    // ...and clear() must retire the running grains, not merely leave them
+    // reading an empty buffer. Downstream silence cannot tell the two apart.
+    CHECK(g.e.active_grains() == 0);
     auto v = g.render(24000);
     CHECK(rms(v, 12000, 4800) < 0.001f);
 }
