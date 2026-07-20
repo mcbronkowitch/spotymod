@@ -1200,7 +1200,11 @@ TEST_CASE("sampler: FLOW is a standing cloud -- RMS never drops out") {
     g.e.set_flow(true);
     auto v = g.render(48000 * 3);
 
-    const size_t win = 2400;               // 50 ms
+    // 233 samples: PRIME, and deliberately not a divisor of the spawn
+    // interval. A window equal to one spawn interval (2400 at the rig's
+    // defaults) is phase-locked to the overlap cycle and averages every
+    // periodic dip away identically -- it cannot see ripple at all.
+    const size_t win = 233;
     float lowest = 1e9f, highest = 0.f;
     for (size_t i = 4800; i + win < v.size(); i += win) {   // skip the fill-up
         const float e = rms(v, i, win);
@@ -1677,6 +1681,13 @@ int SamplerEngine::active_grains() const {
 
 void SamplerEngine::_kill_all() {
     for (int i = 0; i < kGrains; ++i) _grains[i].kill();
+    // The scheduler restarts with the grains. Every caller (init, clear,
+    // load_sample) leaves no running grain behind to mask a pending
+    // countdown, so a stale _spawn_ctr would hold the cloud silent for up to
+    // one spawn interval -- half a second at long SIZE, on the ordinary load
+    // path. Measured: without this, no grain spawns for 9600+ samples after
+    // a load; with it, the first lands on sample 0.
+    _spawn_ctr = 0.f;
 }
 
 void SamplerEngine::_release_all() {
