@@ -76,12 +76,20 @@ void SampleBuffer::write(float in0, float in1) {
             if (++_fade_ctr >= sampler_cfg::kRecordFade - 1) _state = State::sustain;
             break;
         case State::fadeout:
-            // Decrement THEN test, matching the original exactly
-            // (src/core/buffer.cpp:137): the last effective write uses
-            // counter 2, not 1. Keeping the arithmetic identical matters
-            // because the fade-out is crossfaded over the fade-in.
             fade = hann_value_at(static_cast<float>(_fade_ctr) * kFadeKof);
-            if (--_fade_ctr == 0) { cut(); _state = State::idle; return; }
+            // The `_fade_ctr == 0` arm guards an underflow the ORIGINAL has
+            // too: _fade_ctr is size_t, so stopping a recording with zero
+            // intervening write() calls wraps it to SIZE_MAX and strands the
+            // buffer in fadeout forever. Unreachable in the original's
+            // usage; reachable here, because the render host applies all
+            // scenario events sharing a timestamp back-to-back before the
+            // next process() call, and a host can toggle REC twice inside
+            // one audio block. Identical arithmetic for every _fade_ctr >= 1.
+            if (_fade_ctr == 0 || --_fade_ctr == 0) {
+                cut();
+                _state = State::idle;
+                return;
+            }
             break;
     }
 
