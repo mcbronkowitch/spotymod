@@ -34,7 +34,7 @@ CPP_SOURCES = \
 	workloads_memory.cpp \
 	workloads_mod.cpp \
 	workloads_abl.cpp \
-	workloads_dust.cpp \
+	workloads_taps.cpp \
 	../engine/mod/lane.cpp \
 	../engine/mod/super_modulator.cpp \
 	../engine/parts/part.cpp \
@@ -42,7 +42,7 @@ CPP_SOURCES = \
 	../engine/center/center.cpp \
 	../engine/fx/grit.cpp \
 	../engine/fx/flux.cpp \
-	../engine/fx/dust.cpp \
+	../engine/fx/taps.cpp \
 	../engine/fx/reverb.cpp \
 	../engine/fx/part_fx.cpp \
 	../engine/fx/comp.cpp \

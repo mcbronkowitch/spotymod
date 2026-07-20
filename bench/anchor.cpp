@@ -12,7 +12,7 @@ using namespace daisy;
 // because it does not fit and will sound broken -- see the note below.
 const char* kAnchorNames[] = {
     "oliverb_solo_sram",
-    "grain_read_sdram",
+    "tap_read_sdram",
     "instrument_worst",
 };
 constexpr int kAnchorCount = 3;

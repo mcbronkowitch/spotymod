@@ -66,8 +66,8 @@ int main(void)
         const bench::Workload& w = bench::kAblWorkloads[i];
         bench::report_row(w, bench::run_workload(w));
     }
-    for (int i = 0; i < bench::kDustCount; ++i) {
-        const bench::Workload& w = bench::kDustWorkloads[i];
+    for (int i = 0; i < bench::kTapsCount; ++i) {
+        const bench::Workload& w = bench::kTapsWorkloads[i];
         bench::report_row(w, bench::run_workload(w));
     }
 
