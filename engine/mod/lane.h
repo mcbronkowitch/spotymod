@@ -3,6 +3,7 @@
 #include "util/onepole.h"
 #include "mod/rng.h"
 #include "mod/phrase_gen.h"
+#include "mod/rhythm_view.h"
 
 namespace spky {
 
@@ -48,6 +49,9 @@ public:
     float clock_scale() const { return _step_mode ? 8.f / static_cast<float>(_steps) : 1.f; }
     float phase_eff() const;                  // audible phase = (_phase + EVOLVE offset), wrapped
     float target() const { return _target; }  // pre-smooth, pre-range held value
+
+    // The lane's own rhythm, latched at the last cycle wrap. See rhythm_view.h.
+    const RhythmView& rhythm() const { return _rhythm; }
 
     void reset(float phase = 0.f);
 
@@ -120,6 +124,16 @@ private:
     float _settle_coef  = 1.f;   // per-sample settle glide (tau ~ 0.3 s)
     float _kick_coef_tick   = 1.f;   // _kick_coef ^ kTickInterval
     float _settle_coef_tick = 1.f;   // _settle_coef ^ kTickInterval
+
+    // Onset-gap ring. _since_onset counts samples since the last gated
+    // boundary; _gap holds the last two completed gaps, most recent first;
+    // _onsets saturates at 3 (the count that makes two gaps real).
+    // _rhythm is the snapshot consumers see, copied from the ring at a wrap.
+    static constexpr int32_t kSinceOnsetMax = 1 << 24;   // ~5.8 min @ 48 kHz
+    int32_t    _since_onset = 0;
+    int32_t    _gap[2] = { 0, 0 };
+    int        _onsets = 0;
+    RhythmView _rhythm;
 };
 
 } // namespace spky

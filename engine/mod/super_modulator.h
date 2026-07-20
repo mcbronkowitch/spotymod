@@ -64,6 +64,8 @@ public:
     // Step-clock factor of the pitch/master lane (8/steps in STEP, 1 in FLOW):
     // the grid servo scales its transport target by this (spec 2026-07-17).
     float clock_scale() const { return _lanes[LANE_PITCH].clock_scale(); }
+    // The master lane's rhythm (mod-plane rhythm source for the FX taps).
+    const RhythmView& rhythm() const { return _lanes[LANE_PITCH].rhythm(); }
 
 private:
     void _update_rate();

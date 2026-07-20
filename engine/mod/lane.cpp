@@ -134,6 +134,10 @@ void ModLane::reset(float phase) {
     _cur_step = -1;
     _note_age = 0;
     _note_hold = 0;
+    _since_onset = 0;
+    _onsets = 0;
+    _gap[0] = _gap[1] = 0;
+    _rhythm = RhythmView{};
     _slew.reset(_target);
     _slew_tick.reset(_target);
 }
@@ -171,6 +175,10 @@ void ModLane::_on_boundary() {
     bool gated = _step_mode ? _effective_gate(slot) : true;
     _frozen = !gated;
     if (gated) {
+        _gap[1] = _gap[0];
+        _gap[0] = _since_onset;
+        _since_onset = 0;
+        if (_onsets < 3) ++_onsets;
         _fired = true;
         if (_melodic && _step_mode) _start_note(slot);
         if (_variation > 0.f) _mutate_slot(slot);  // GROW pitch
@@ -244,6 +252,13 @@ void ModLane::_mutate_groove(bool renew_side) {
 // outer-zone groove mutations. Order is load-bearing and identical to the
 // old inline block.
 void ModLane::_wrap_events() {
+    // Publish the rhythm once per cycle, at the pattern boundary. Between
+    // wraps the ring keeps recording but nothing downstream moves -- that is
+    // what makes a looping source pattern produce a STANDING tap figure
+    // rather than one that rotates on every onset.
+    _rhythm.gap[0] = _gap[0];
+    _rhythm.gap[1] = _gap[1];
+    _rhythm.valid  = _onsets >= 3;
     if (_regen_pending && _melodic && _step_mode) {
         generate_phrase(_principle, _rng, _steps, _seq, _gate, _motif_id, _layout);
         pg_gen_groove(_rng, _layout.motif_len, _groove);
@@ -268,6 +283,7 @@ void ModLane::_wrap_events() {
 
 float ModLane::process() {
     _fired = false;
+    if (_since_onset < kSinceOnsetMax) ++_since_onset;
     _kick_shape *= _kick_coef;                 // SPOT shape offset fades toward 0
     if (_settle_ctr > 0) {                     // SETTLE: glide EVOLVE walks + kick to 0
         --_settle_ctr;
@@ -309,6 +325,7 @@ float ModLane::process() {
 // the same waveform, covered by the equivalence suite.
 float ModLane::tick() {
     _fired = false;
+    if (_since_onset < kSinceOnsetMax) _since_onset += kTickInterval;
     _kick_shape *= _kick_coef_tick;
     if (_settle_ctr > 0) {
         // Clamp-to-0 (rather than letting the counter go negative) plus the
