@@ -62,8 +62,15 @@ void SamplerEngine::set_hold(bool on) {
 void SamplerEngine::set_gate(bool on) {
     if (on == _gate) return;
     _gate = on;
-    if (!on) _release_ctr = static_cast<int>(kBurstReleaseS * _sr);
-    else     _burst_latched = false;   // a fresh gate re-latches on next trigger
+    if (!on) {
+        _release_ctr = static_cast<int>(kBurstReleaseS * _sr);
+    } else {
+        // Start the burst on the edge, not up to _spawn_every samples late:
+        // leaving FLOW mid-cycle (or a prior STEP burst) can leave _spawn_ctr
+        // anywhere in [0, _spawn_every), and STEP is supposed to reproduce
+        // the phrase generator's composed rhythm exactly.
+        _spawn_ctr = 0.f;
+    }
 }
 
 void SamplerEngine::process_in(float inL, float inR) {
@@ -140,11 +147,22 @@ void SamplerEngine::_update_control() {
     float len = size_seconds(_targets[LANE_SIZE]) * _sr;
     const float content = static_cast<float>(_buf.rec_size());
     if (content > 1.f && len > content) len = content;
-    if (len < 2.f) len = 2.f;
+    // Floored well above the degenerate case (first samples of a punch-in,
+    // or a <=4-frame file): a tiny _grain_len drives _spawn_every to its
+    // 1-sample floor, which would run _spawn_one -> _next_ratio -> the
+    // std::pow in ratio_for() every sample. Sub-64-sample grains are
+    // musically meaningless anyway, so keep spawn-time std::pow off the
+    // per-sample path by never asking for grains that short.
+    if (len < 64.f) len = 64.f;
     _grain_len = len;
 
     _spawn_every = _grain_len / static_cast<float>(kOverlap);
     if (_spawn_every < 1.f) _spawn_every = 1.f;
+
+    // A shrinking interval must not leave a stale long countdown pending:
+    // sweeping SIZE down would otherwise gap the carpet for up to the old
+    // interval while grains retire at the new, much shorter length.
+    if (_spawn_ctr > _spawn_every) _spawn_ctr = _spawn_every;
 
     // --- overlap normalization: 1/sqrt(active), the COLOR loudness law ---
     const int n = active_grains();

@@ -51,7 +51,13 @@ TEST_CASE("sampler: FLOW is a standing cloud -- RMS never drops out") {
     g.e.set_flow(true);
     auto v = g.render(48000 * 3);
 
-    const size_t win = 2400;               // 50 ms
+    // Prime (233) and not a divisor of 2400 (the spawn interval at the rig's
+    // default SIZE=0.5 -> _grain_len 9600 -> _spawn_every 2400): a window
+    // equal to the spawn interval is phase-locked to the overlap cycle, so
+    // any periodic dip INSIDE a spawn period averages out identically in
+    // every window and never shows up. Walking the window across the cycle
+    // is what actually exposes ripple.
+    const size_t win = 233;
     float lowest = 1e9f, highest = 0.f;
     for (size_t i = 4800; i + win < v.size(); i += win) {   // skip the fill-up
         const float e = rms(v, i, win);
@@ -60,6 +66,28 @@ TEST_CASE("sampler: FLOW is a standing cloud -- RMS never drops out") {
     }
     REQUIRE(highest > 0.02f);              // the cloud actually sounds
     CHECK(lowest > 0.2f * highest);        // ...and never gaps
+}
+
+TEST_CASE("sampler: FLOW stays continuous while SIZE sweeps") {
+    Rig g;
+    g.e.set_flow(true);
+    std::vector<float> v;
+    // Sweep SIZE from long to short: the spawn interval shrinks by ~10x, and
+    // a stale pending countdown would gap the carpet for up to the old one.
+    for (int blk = 0; blk < 40; ++blk) {
+        const float size = 0.8f - 0.7f * (float(blk) / 39.f);
+        g.feed(0.5f, 0.f, size);
+        auto part = g.render(2400);
+        v.insert(v.end(), part.begin(), part.end());
+    }
+    float lowest = 1e9f, highest = 0.f;
+    for (size_t i = 9600; i + 233 < v.size(); i += 233) {
+        const float e = rms(v, i, 233);
+        if (e < lowest)  lowest = e;
+        if (e > highest) highest = e;
+    }
+    REQUIRE(highest > 0.02f);
+    CHECK(lowest > 0.15f * highest);
 }
 
 TEST_CASE("sampler: STEP is silent until the gate opens, and tails off after") {

@@ -55,7 +55,8 @@ public:
     void kill() { _active = false; }
 
     // Begin a click-free fade from wherever the window currently is. Used by
-    // CHOKE and by leaving FLOW -- the grain must not simply stop.
+    // CHOKE and by the STEP gate falling. Leaving FLOW deliberately does NOT
+    // call this -- running grains simply finish their own window.
     void release(int fade_len) {
         if (!_active || _rel_len > 0) return;
         _rel_len = fade_len < 1 ? 1 : fade_len;

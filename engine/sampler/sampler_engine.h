@@ -113,6 +113,10 @@ private:
     float _chord[kMaxChord] = { 0.5f, 0.5f, 0.5f, 0.5f };
     int   _chord_n = 1;
     float _burst_pitch   = 0.5f;
+    // Set by trigger/trigger_chord, persists until the next trigger -- that
+    // is what "trigger latches the pitch for the burst" means. Part::process
+    // (Task 6) calls trigger_chord BEFORE forwarding the gate, so set_gate
+    // must not clear this or the latch would be wiped every time.
     bool  _burst_latched = false;
     float _last_pos = 0.f;
 
