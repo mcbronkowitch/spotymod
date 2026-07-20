@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include "fx/taps.h"
 #include <cmath>
+#include <vector>
 
 using namespace spky;
 
@@ -232,4 +233,274 @@ TEST_CASE("derive_offsets: the uniformity guard fires exactly inside its "
     // g0 (192 = 6 x 32); 0.96 and 1.05 sit just outside it and never do.
     CHECK(checked == 477);
     CHECK(inside_band_checked == 192);
+}
+
+namespace {
+// A tape with a single impulse at a known distance behind the write head, so
+// a tap reading offset N produces a non-zero sample exactly when N matches.
+struct FakeTape {
+    static constexpr int32_t kLen = 262144;
+    std::vector<float> l = std::vector<float>(kLen, 0.f);
+    std::vector<float> r = std::vector<float>(kLen, 0.f);
+    int32_t wp = 1000;
+
+    TapeTap view() const { return TapeTap{ l.data(), r.data(), wp, kLen - 1 }; }
+    void poke(int32_t offset, float v) {
+        const int32_t i = (wp + offset) & (kLen - 1);
+        l[i] = v;
+        r[i] = v;
+    }
+};
+
+TapBank make_bank(float dust = 1.f, float rot = 0.f) {
+    TapBank b;
+    b.init(48000.f);
+    b.set_rot(rot);
+    b.set_dust(dust);
+    return b;
+}
+
+// Run the bank until its gain slews settle, returning the last output pair.
+void settle(TapBank& b, const TapeTap& t, float& l, float& r, int n = 8000) {
+    for (int i = 0; i < n; ++i) { l = 0.f; r = 0.f; b.process(t, l, r); }
+}
+
+// Advances the tape's write head by n samples (mirroring DeLine::Write's
+// per-sample decrement in production, engine/fx/flux.h) while running the
+// bank, so a held offset reads genuinely time-varying material instead of
+// the same frozen sample forever. Required for any assertion about the read
+// signal's FREQUENCY content: a one-pole's steady state for a constant input
+// is that input, independent of its cutoff, so a static write head (as
+// settle() above uses) makes cutoff invisible by construction -- fine for
+// gain/position tests, wrong for spectral ones.
+void run_moving(TapBank& b, FakeTape& tape, float& l, float& r, int n) {
+    for (int i = 0; i < n; ++i) {
+        l = 0.f; r = 0.f;
+        b.process(tape.view(), l, r);
+        --tape.wp;
+    }
+}
+}  // namespace
+
+TEST_CASE("tap bank: dust 0 from init is silent and performs no reads") {
+    FakeTape tape;
+    tape.poke(6000, 1.f);
+    TapBank b = make_bank(0.f);
+    const int32_t off[2] = { 6000, 10500 };
+    b.set_offsets(off);
+
+    CHECK_FALSE(b.active());
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);
+    CHECK(l == 0.f);
+    CHECK(r == 0.f);
+    CHECK(b.reads() == 0);
+}
+
+TEST_CASE("tap bank: dropping DUST to 0 rides the taps out instead of cutting them") {
+    // Flux takes its bit-exact bypass on !active(). If active() went false the
+    // instant the knob hit 0, a full-level tap sum would vanish in one sample.
+    FakeTape tape;
+    for (int32_t o = 0; o < 40000; ++o) tape.poke(o, 0.5f);   // DC everywhere
+    TapBank b = make_bank(1.f);
+    const int32_t off[2] = { 6000, 10500 };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);
+    REQUIRE(std::fabs(l) > 1e-3f);
+
+    b.set_dust(0.f);
+    CHECK(b.active());                  // still riding out, not cut
+
+    // 8000 samples undershoots: kGainSlewS=0.02s @ 48kHz gives a gain_coef of
+    // ~1/960, and 0.7*(1-1/960)^8000 ~= 1.68e-4, still above the 1e-4 snap
+    // threshold. >8495 samples are needed; 10000 leaves comfortable margin.
+    float prev = l;
+    for (int i = 0; i < 10000; ++i) {
+        l = 0.f; r = 0.f;
+        b.process(tape.view(), l, r);
+        CHECK(std::fabs(l - prev) < 0.01f);   // no step anywhere in the decay
+        prev = l;
+    }
+    CHECK_FALSE(b.active());            // settled: the bypass is now safe
+    CHECK(b.reads() == 0);
+}
+
+TEST_CASE("tap bank: dust morphs tap 0 in over the first half, tap 1 over the second") {
+    FakeTape tape;
+    TapBank b = make_bank(0.5f);
+    const int32_t off[2] = { 6000, 10500 };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);
+    CHECK(b.reads() == 1);              // tap 0 only at DUST 0.5
+
+    b.set_dust(1.f);
+    settle(b, tape.view(), l, r);
+    CHECK(b.reads() == 2);              // both taps at DUST 1
+
+    // Back down: tap 1's gain must actually reach 0, not just approach it,
+    // for its read to stop. The first two phases above never exercise this
+    // -- tap 1 starts at exactly 0 (its Tap{} default) and only ever rises,
+    // so a missing gain snap would be invisible to them. 10000 samples (not
+    // the default settle() n=8000) because 0.7*(1-1/960)^8000 ~= 1.68e-4
+    // still sits above the 1e-4 snap threshold; see the parallel note on the
+    // "dropping DUST to 0" test above.
+    b.set_dust(0.5f);
+    settle(b, tape.view(), l, r, 10000);
+    CHECK(b.reads() == 1);              // tap 1's gain snapped back to 0
+}
+
+TEST_CASE("tap bank: a muted offset costs no read") {
+    FakeTape tape;
+    TapBank b = make_bank(1.f);
+    const int32_t off[2] = { 6000, tap_tuning::kMuted };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);
+    CHECK(b.reads() == 1);
+}
+
+TEST_CASE("tap bank: a tap reads its own offset and nothing else") {
+    FakeTape tape;
+    tape.poke(6000, 1.f);               // material only at offset 6000
+    TapBank b = make_bank(1.f, 0.f);    // ROT 0: filters effectively open
+    const int32_t off[2] = { 6000, 10500 };
+    b.set_offsets(off);
+
+    // Settle the gain slew with the write head parked, then read once.
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);
+    CHECK(std::fabs(l) > 1e-3f);        // tap 0 (reads L, panned left) hears it
+
+    // Move the impulse somewhere neither tap looks; output must collapse.
+    FakeTape empty;
+    float l2 = 0.f, r2 = 0.f;
+    settle(b, empty.view(), l2, r2, 2000);
+    CHECK(std::fabs(l2) < 1e-4f);
+}
+
+TEST_CASE("tap bank: a re-latch dips instead of crossfading -- reads never exceed live taps") {
+    FakeTape tape;
+    tape.poke(6000, 1.f);
+    TapBank b = make_bank(1.f);
+    int32_t off[2] = { 6000, 10500 };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);
+
+    off[0] = 20000;                     // far more than kRelatchMin
+    off[1] = 31000;
+    b.set_offsets(off);
+    // Through the whole dip, the bank must never read more than two positions.
+    for (int i = 0; i < 1000; ++i) {
+        l = 0.f; r = 0.f;
+        b.process(tape.view(), l, r);
+        CHECK(b.reads() <= 2);
+    }
+}
+
+TEST_CASE("tap bank: an offset change below kRelatchMin does not dip") {
+    // DC everywhere: with a static (unmoving) write head, only an envelope
+    // dip can move l from here on -- the tape's own value can't, since tap 0
+    // reads the same absolute sample every call regardless of which of the
+    // two nearby offsets is selected.
+    FakeTape tape;
+    for (int32_t o = 0; o < 40000; ++o) tape.poke(o, 1.f);
+    TapBank b = make_bank(1.f);
+    int32_t off[2] = { 6000, 10500 };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    // Settle well past the gain slew's own convergence tail: at n=8000 a
+    // ~1.7e-4 residual remains and would itself drift l over the next few
+    // hundred samples, easily mistaken for a dip at this epsilon.
+    settle(b, tape.view(), l, r, 20000);
+    const float before = l;
+
+    // == 6000 + kRelatchMin(64) - 1, pinned as a literal: deriving this from
+    // the live constant would make the test's own INPUT move with a mutated
+    // kRelatchMin (e.g. kRelatchMin=1 collapses this to 6000+0, a no-op
+    // offset that never reaches the boundary check at all), rather than the
+    // code's decision about it -- silently defeating the mutation this test
+    // exists to catch.
+    off[0] = 6063;
+    b.set_offsets(off);
+    // A single process() call can't observe a wrongly-triggered dip:
+    // Dip::out's envelope is hann_value_at(1.0) == 1.0 on its very first
+    // sample regardless of whether a dip just started. Run past a full dip
+    // cycle (2*dip_len + 1 = 193 samples) instead.
+    for (int i = 0; i < 500; ++i) {
+        l = 0.f; r = 0.f;
+        b.process(tape.view(), l, r);
+        CHECK(l == doctest::Approx(before).epsilon(1e-4)); // no envelope movement anywhere in the window
+    }
+}
+
+TEST_CASE("tap bank: a re-latch produces no discontinuity") {
+    // Two plateaus, not a DC-everywhere tape: a DC tape would make the old
+    // and new offsets read the identical value, so an unmitigated instant
+    // jump (the mutation this test exists to catch) would be silent and the
+    // test would pass for the wrong reason. Both offsets used below start in
+    // the +1 plateau; the re-latch below lands in the -1 plateau.
+    FakeTape tape;
+    for (int32_t o = 0; o < 20000; ++o) tape.poke(o, 1.f);
+    for (int32_t o = 20000; o < 40000; ++o) tape.poke(o, -1.f);
+    TapBank b = make_bank(1.f);
+    int32_t off[2] = { 6000, 10500 };     // both inside the +1 plateau
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);
+
+    off[0] = 30000;                        // the -1 plateau
+    b.set_offsets(off);
+    float prev = l;
+    for (int i = 0; i < 1000; ++i) {
+        l = 0.f; r = 0.f;
+        b.process(tape.view(), l, r);
+        CHECK(std::fabs(l - prev) < 0.05f);     // no step, only the dip's ramp
+        prev = l;
+    }
+}
+
+TEST_CASE("tap bank: ROT separates the two taps spectrally") {
+    // Tap 0 is low-passed, tap 1 high-passed. Feed alternating (Nyquist)
+    // content and let the write head actually advance (run_moving) so the
+    // taps see time-varying material instead of one frozen sample: at ROT 1
+    // tap 0's contribution (dominant in L, panned near) must shrink hard and
+    // tap 1's (dominant in R, panned near) must largely survive.
+    FakeTape open_tape, split_tape;
+    for (int32_t o = 0; o < 40000; ++o) {
+        const float v = (o & 1) ? 1.f : -1.f;
+        open_tape.poke(o, v);
+        split_tape.poke(o, v);
+    }
+
+    TapBank open = make_bank(1.f, 0.f);
+    TapBank split = make_bank(1.f, 1.f);
+    const int32_t off[2] = { 6000, 10500 };
+    open.set_offsets(off);
+    split.set_offsets(off);
+
+    float ol = 0.f, orr = 0.f, sl = 0.f, sr = 0.f;
+    settle(open, open_tape.view(), ol, orr);    // gain slew: content doesn't matter
+    settle(split, split_tape.view(), sl, sr);
+    // Let each filter reach its periodic steady state against genuinely
+    // alternating input. 4000 samples is far past 5 time constants of even
+    // the slowest filter here (tap 1's open-side one-pole at 20 Hz, tau ~=
+    // 382 samples).
+    run_moving(open, open_tape, ol, orr, 4000);
+    run_moving(split, split_tape, sl, sr, 4000);
+
+    // Steady-state one-pole gain at Nyquist is a/(2-a); working that out for
+    // the tuned cutoffs (kLpOpenHz/kLpSplitHz for tap 0, kHpOpenHz/
+    // kHpSplitHz for tap 1) gives a computed L ratio (split/open) of ~0.32
+    // and R ratio of ~0.68. Pinned here as fixed thresholds, not recomputed
+    // from those constants, so a moved cutoff shows up as a failure instead
+    // of silently moving the expectation with it. Both channels must be
+    // checked: tap 0's own separation is steep enough on its own to pull the
+    // L-channel sum under any single "must shrink" threshold even if tap 1's
+    // filter were broken (e.g. swapped for a second low-pass) -- only the
+    // R-channel "must survive" check is sensitive to tap 1 specifically.
+    CHECK(std::fabs(sl) < std::fabs(ol) * 0.5f);   // tap 0 (dominates L) shrinks hard
+    CHECK(std::fabs(sr) > std::fabs(orr) * 0.5f);  // tap 1 (dominates R) mostly survives
 }
