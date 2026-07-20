@@ -25,11 +25,7 @@ void Part::init(float sample_rate, uint32_t seed_base,
     _engine->set_flow(true);                    // lanes boot in FLOW -> drone
     _last_master_hz = -1.f;                     // force a cycle forward on
                                                 // the first process()
-    // Dust seed derived from the same seed_base A/B already gets for the mod
-    // plane and the synth's drift decorrelation (0x1234abcdu / 0x9e3779b9u,
-    // see Instrument::init) -- distinct per part, fixed regardless of where
-    // echo_l/echo_r actually live (I1).
-    _fx.init(sample_rate, echo_l, echo_r, seed_base ^ 0xD0571u);
+    _fx.init(sample_rate, echo_l, echo_r);
     _gate_len = static_cast<int>(sample_rate * 0.005f);
     _gate_ctr = 0;
     _inhibit = false;

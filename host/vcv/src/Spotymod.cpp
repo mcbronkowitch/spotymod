@@ -8,7 +8,6 @@
 // and (later) the Daisy firmware use. No hardware type crosses this boundary.
 #include "instrument.h"
 #include "fx/flux.h"
-#include "fx/dust.h"
 #include "mod/divisions.h"
 
 using namespace spkyvcv;
@@ -47,27 +46,23 @@ struct FluxFbQuantity : ParamQuantity {
     }
 };
 
-// ROT tooltip: name the zone the knob is in, then the position inside it.
-// SYNC = grid-locked stutter, FREE = classic scatter, ROT = reverse + writeback.
+// ROT tooltip: how far apart the two taps are spread spectrally. 0 = both
+// filters open and the taps read as a plain two-tap delay; 1 = tap 0 dark,
+// tap 1 bright, which is what stops them sounding like the echo.
 struct RotQuantity : ParamQuantity {
     std::string getDisplayValueString() override {
-        const float r = getValue();
-        if (r < spky::dust_tuning::kZoneSEnd)
-            return string::f("SYNC %.0f%%", r / spky::dust_tuning::kZoneSEnd * 100.f);
-        if (r < spky::dust_tuning::kZoneFEnd)
-            return string::f("FREE %.0f%%",
-                (r - spky::dust_tuning::kZoneSEnd)
-                / (spky::dust_tuning::kZoneFEnd - spky::dust_tuning::kZoneSEnd) * 100.f);
-        return string::f("ROT %.0f%%",
-            (r - spky::dust_tuning::kZoneFEnd)
-            / (1.f - spky::dust_tuning::kZoneFEnd) * 100.f);
+        return string::f("SPREAD %.0f%%", getValue() * 100.f);
     }
 };
 
-// DUST tooltip: plain percent of grain activity.
+// DUST tooltip: the tap morph. Tap 0 fades in over the first half of the
+// knob, tap 1 over the second, so the middle is an accent hierarchy.
 struct DustQuantity : ParamQuantity {
     std::string getDisplayValueString() override {
-        return string::f("%.0f%%", getValue() * 100.f);
+        const float d = getValue();
+        if (d <= 0.f) return "OFF";
+        if (d < 0.5f) return string::f("1 TAP %.0f%%", d * 200.f);
+        return string::f("2 TAPS %.0f%%", (d - 0.5f) * 200.f);
     }
 };
 

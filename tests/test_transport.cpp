@@ -36,12 +36,12 @@ TEST_CASE("transport: reset zeroes the downbeat") {
 }
 
 TEST_CASE("transport: set_bpm rejects non-positive and non-finite values") {
-    // Guards the source that feeds Center::beat_samples() (DUST zone S's
-    // grid, spec task 12) and nearest_division()/division_hz() (COUPLE's
-    // grid gravity): a scenario-file `bpm: 0` (host/render/scenario.cpp
-    // forwards it unvalidated) must not reach a divide and produce a
-    // non-finite grid. The last good tempo is kept rather than clamped to an
-    // arbitrary floor -- 0/negative/NaN/Inf are bad input, not a real tempo.
+    // Guards the source that feeds nearest_division()/division_hz() (COUPLE's
+    // grid gravity) and the transport's own beat_phase()/beats() readers: a
+    // scenario-file `bpm: 0` (host/render/scenario.cpp forwards it
+    // unvalidated) must not reach a divide and produce a non-finite grid.
+    // The last good tempo is kept rather than clamped to an arbitrary floor
+    // -- 0/negative/NaN/Inf are bad input, not a real tempo.
     Transport t;
     t.init(500.f);
     t.set_bpm(140.f);

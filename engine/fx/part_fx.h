@@ -28,10 +28,7 @@ enum class FxBlock { Flux, Grit };
 // whole chain is skipped, so "FX off" costs nothing and changes nothing.
 class PartFx {
 public:
-    // `dust_seed`: forwarded to Flux::init -- see its comment for why this is
-    // a caller-supplied constant, not derived from echo_l/echo_r's address.
-    void init(float sample_rate, float* echo_l, float* echo_r,
-              uint32_t dust_seed);
+    void init(float sample_rate, float* echo_l, float* echo_r);
 
     Grit& grit() { return _grit; }
     Flux& flux() { return _flux; }
@@ -49,7 +46,9 @@ public:
     void set_flux_rate(int slice_idx) { _flux.set_rate(slice_idx); }
     void set_dust(float n) { _flux.set_dust(n); }
     void set_rot(float n)  { _flux.set_rot(n); }
-    void sync_beat(float beat_samples) { _flux.sync_beat(beat_samples); }
+    void set_tap_offsets(const int32_t off[tap_tuning::kTaps]) {
+        _flux.set_tap_offsets(off);
+    }
 
     // fxv[FXT_COUNT]: already-modulated values from Part::fx_target_value().
     void process(float& l, float& r, float& send_l, float& send_r,

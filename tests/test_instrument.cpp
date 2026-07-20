@@ -5,6 +5,7 @@
 #include <limits>
 #include "instrument.h"
 #include "fx/reverb.h"
+#include "fx/taps.h"
 #include "mod/super_modulator.h"
 using namespace spky;
 
@@ -150,16 +151,33 @@ TEST_CASE("instrument: set_dust forwards to the named part only") {
     // if set_dust(PART_A, .) actually wrote PART_B's Flux (silent, morph 0),
     // base_a and dust_a would come out identical and CHECK(base_a != dust_a)
     // would fail -- likewise for the B-audible half below.
+    // TapBank (unlike DustCloud) needs a valid rhythm before it sounds at
+    // all -- offsets come from the OTHER part's published PITCH-lane rhythm
+    // (cross-feed, instrument.cpp), and a rhythm is valid only after 3
+    // onsets have been recorded (rhythm_view.h) and published at the 4th
+    // cycle wrap after that (ModLane::_wrap_events runs BEFORE the current
+    // wrap's own _on_boundary, so onsets==3 first becomes visible one wrap
+    // later). Both parts boot in FLOW, where an onset IS a cycle wrap
+    // (spec: part.cpp "lanes boot in FLOW -> drone"), so both PITCH lanes
+    // need an explicit, known-fast rate rather than the default (which would
+    // take ~2.6 s to latch, most of it outside this test's window). rate
+    // norm 1.0 is free_hz's top end (30 Hz); the PITCH lane's own rate ratio
+    // is x1 (super_modulator.cpp kLaneRatio[LANE_PITCH]), so the lane runs
+    // at exactly 30 Hz -> 1600 samples/cycle at 48 kHz, and 4 wraps = 6400
+    // samples: comfortably inside the existing 20000-sample settle window
+    // below.
     auto run = [](float dust_a, float dust_b, float morph) {
         Instrument inst;
         inst.init(48000.f, pp_fx_mem());
+        inst.set_rate(PART_A, 1.f);
+        inst.set_rate(PART_B, 1.f);
         inst.set_morph(morph);
         inst.set_fx_on(PART_A, FxBlock::Flux, true);
         inst.set_fx_on(PART_B, FxBlock::Flux, true);
         inst.set_flux_mix(PART_A, 1.f);
         inst.set_flux_mix(PART_B, 1.f);
         float l, r;
-        for (int i = 0; i < 20000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);  // settle morph snap + fx fade
+        for (int i = 0; i < 20000; ++i) inst.process(nullptr, nullptr, &l, &r, 1);  // settle morph snap + fx fade + both rhythms latch
         inst.set_dust(PART_A, dust_a);
         inst.set_dust(PART_B, dust_b);
         std::vector<float> out(20000);
@@ -196,12 +214,18 @@ TEST_CASE("instrument: set_dust forwards to the named part only") {
 }
 
 TEST_CASE("instrument: set_rot forwards to the named part only") {
-    // Same isolation idiom as set_dust above. ROT only affects DustCloud
+    // Same isolation idiom as set_dust above. ROT only affects TapBank
     // behaviour while DUST is active, so both parts get a common DUST > 0
-    // baseline first and the runs diverge only in the ROT value.
+    // baseline first and the runs diverge only in the ROT value. As in
+    // set_dust's case above, TapBank needs a valid cross-fed rhythm before
+    // ROT has anything to filter -- see that test's comment for the rate
+    // math (rate norm 1.0 -> 1600 samples/PITCH-cycle, latched well inside
+    // the 20000-sample settle loop below).
     auto run = [](float rot_a, float rot_b, float morph) {
         Instrument inst;
         inst.init(48000.f, pp_fx_mem());
+        inst.set_rate(PART_A, 1.f);
+        inst.set_rate(PART_B, 1.f);
         inst.set_morph(morph);
         inst.set_fx_on(PART_A, FxBlock::Flux, true);
         inst.set_fx_on(PART_B, FxBlock::Flux, true);
@@ -718,4 +742,89 @@ TEST_CASE("instrument: set_tempo_bpm guards a non-positive or non-finite bpm at 
             REQUIRE(dr[i] == rr[i]);
         }
     }
+}
+
+TEST_CASE("instrument cross-feed: a bank's taps are placed by the OTHER bank's rhythm") {
+    // H2, as an automated observable.
+    //
+    // The first cut of this test only re-derived offsets from inst.rhythm(
+    // PART_B) inside the test body -- a pure function of PART_B's OWN onset
+    // ring, entirely blind to which part instrument.cpp's cross-feed
+    // actually WIRES that view to. Verified by mutation (swap the two
+    // derive_offsets lines in instrument.cpp, i.e. make each part hear
+    // itself): that version kept passing, because inst.rhythm(PART_B) is
+    // identical either way -- the bug is in the wiring, not in ModLane, and
+    // that assertion never touched the wiring. Offsets are not readable off
+    // Flux by design (see the note below), so the only way left to observe
+    // the wiring is real audio: does A's tap bank ever produce a nonzero
+    // contribution at all.
+    //
+    // Part A's own PITCH lane is pinned so slow (rate norm 0 -> free_hz(0) =
+    // 0.02 Hz -> ~50 s/cycle) that it cannot complete even one cycle inside
+    // this test, so its own rhythm never validates (needs 3 onsets, i.e. at
+    // least 3 full FLOW cycles -- rhythm_view.h, ModLane::_on_boundary).
+    // Under a self-feed bug, A's taps would therefore stay muted for the
+    // entire run: DUST > 0 but derive_offsets(invalid rhythm) is always
+    // tap_tuning::kMuted (taps.cpp), so TapBank contributes exactly 0 no
+    // matter how long the test runs -- bit-identical to a DUST = 0 reference.
+    // Part B runs fast (rate norm 1 -> free_hz(1) x the PITCH lane's x1
+    // ratio, super_modulator.cpp kLaneRatio[LANE_PITCH] -- = 30 Hz -> a
+    // 1600-sample cycle), so B's rhythm validates at the 4th wrap (~6400
+    // samples: ModLane::_wrap_events publishes using the ONSET COUNT FROM
+    // BEFORE the current wrap's own _on_boundary, so onsets==3 first becomes
+    // visible one wrap later) -- comfortably inside the 30000-sample window
+    // below, and under correct cross-feed gives A's taps something real to
+    // read from that point on.
+    auto setup = [](Instrument& inst) {
+        inst.init(48000.f, pp_fx_mem());
+        inst.set_rate(PART_A, 0.f);
+        inst.set_rate(PART_B, 1.f);
+        inst.set_morph(0.f);                    // A audible (gain_b is exact 0 at morph 0)
+        inst.set_fx_on(PART_A, FxBlock::Flux, true);
+        inst.set_flux_mix(PART_A, 1.f);
+    };
+
+    // Precondition, asserted rather than assumed (a later change to the rate
+    // curve or the wrap-latch timing must not silently make this vacuous):
+    // by 30000 samples B's rhythm has validated and A's has not.
+    {
+        Instrument probe;
+        setup(probe);
+        std::vector<float> l(30000), r(30000);
+        probe.process(nullptr, nullptr, l.data(), r.data(), 30000);
+        REQUIRE(probe.rhythm(PART_B).valid);
+        REQUIRE_FALSE(probe.rhythm(PART_A).valid);
+    }
+
+    Instrument tapped;
+    setup(tapped);
+    tapped.set_dust(PART_A, 1.f);               // taps fully open -- only the
+                                                 // offsets can still mute them
+    std::vector<float> out(30000);
+    float l, r;
+    for (size_t i = 0; i < out.size(); ++i) {
+        tapped.process(nullptr, nullptr, &l, &r, 1);
+        out[i] = l;
+    }
+
+    // Reference: identical setup, DUST left at 0 -- the tap-free baseline.
+    // TapBank carries no RNG (Task 3), so with DUST the only difference,
+    // any deviation from this baseline can only be the tap contribution.
+    Instrument ref;
+    setup(ref);
+    std::vector<float> base(30000);
+    for (size_t i = 0; i < base.size(); ++i) {
+        ref.process(nullptr, nullptr, &l, &r, 1);
+        base[i] = l;
+    }
+
+    double sum_sq = 0.0;
+    for (size_t i = 0; i < out.size(); ++i) {
+        const double diff = (double)out[i] - (double)base[i];
+        sum_sq += diff * diff;
+    }
+    const double rms = std::sqrt(sum_sq / (double)out.size());
+    // Real signal reached A's taps -- only possible if A's offsets came from
+    // B's (valid) rhythm, since A's own rhythm never validates in this run.
+    CHECK(rms > 1e-4);
 }

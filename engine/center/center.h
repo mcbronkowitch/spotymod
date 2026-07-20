@@ -32,15 +32,6 @@ public:
     // STEPS turn left behind, so the servo pulls the loops back onto the bar.
     void reset_transport()        { _transport.reset(); _grid_off[0] = _grid_off[1] = 0.f; }
     const Transport& transport() const { return _transport; }
-    // Beat edge for the FX chain's synced grain cloud (DUST zone S, spec
-    // task 11): true for exactly one control tick when the transport's
-    // fractional beat wraps past an integer -- recomputed every tick, never
-    // latched. clock_pulse() can also snap the accumulator BACKWARDS across
-    // a tick (it mutates the transport immediately, independent of update()'s
-    // cadence); that reads as an edge too, deliberately: an external clock
-    // pulse IS a downbeat.
-    bool  beat_edge()    const { return _beat_edge; }
-    float beat_samples() const { return 60.f / _transport.bpm() * _sr; }
 
     // one control tick: read both banks, write hooks, advance weather + morph
     void update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb);
@@ -65,14 +56,6 @@ private:
 
     Transport _transport;
     bool      _sync = false;
-    // Beat-edge bookkeeping (task 11): the phase as Center itself last
-    // observed it, at the end of the previous update() call. Deliberately
-    // NOT re-derived from a fresh _transport.beat_phase() query at the top
-    // of update() -- clock_pulse() can mutate the transport asynchronously,
-    // between control ticks, and a fresh query would already reflect that
-    // snap, hiding the very backward jump the edge is supposed to catch.
-    float _beat_phase_prev = 0.f;
-    bool  _beat_edge = false;
     // Grid-servo rebase (live STEPS turns, spec 2026-07-17): per-bank target
     // offset in cycles, and the last seen step-clock factor to detect a turn.
     float _grid_off[2] = { 0.f, 0.f };

@@ -92,6 +92,9 @@ public:
     bool  gate(int p)  const { return _parts[p].gate(); }
     float pitch_cv(int p) const { return _parts[p].pitch_cv(); }
     bool  pitch_gate(int p) const { return _parts[p].mod().pitch_gate(); }
+    // The bank's own published rhythm (see mod/rhythm_view.h). Read by the
+    // control tick to place the OTHER bank's taps -- and by tests.
+    const RhythmView& rhythm(int p) const { return _parts[p].mod().rhythm(); }
 
     // --- M4 center section ---
     void set_morph(float m)  { _center.set_morph(m); }

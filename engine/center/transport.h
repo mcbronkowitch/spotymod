@@ -11,10 +11,10 @@ class Transport {
 public:
     void init(float ctrl_rate) { _cr = ctrl_rate; _beats = 0.0; }
     // Guarded at the source, not at each reader: bpm() feeds a divide in
-    // every consumer (Center::beat_samples() -- DUST zone S's grid, spec
-    // task 12 -- and nearest_division()/division_hz() for COUPLE's grid
-    // gravity), so a single non-positive value stored here would otherwise
-    // reach all of them as a non-finite result. A non-positive or non-finite
+    // every consumer (nearest_division()/division_hz() for COUPLE's grid
+    // gravity, and the transport's own beat_phase()/beats() readers), so a
+    // single non-positive value stored here would otherwise reach all of
+    // them as a non-finite result. A non-positive or non-finite
     // request is dropped and the last good tempo (default 120) is kept,
     // rather than clamped to some arbitrary floor BPM: scenario files forward
     // their `bpm` field unvalidated (host/render/scenario.cpp), and a

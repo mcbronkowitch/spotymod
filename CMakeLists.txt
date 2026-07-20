@@ -72,8 +72,6 @@ add_executable(spky_tests
     tests/test_flux.cpp
     engine/fx/taps.cpp
     tests/test_taps.cpp
-    engine/fx/dust.cpp
-    tests/test_dust.cpp
     engine/fx/reverb.cpp
     tests/test_reverb.cpp
     tests/test_oliverb.cpp
@@ -110,7 +108,7 @@ add_executable(render
     engine/center/center.cpp
     engine/fx/grit.cpp
     engine/fx/flux.cpp
-    engine/fx/dust.cpp
+    engine/fx/taps.cpp
     engine/fx/reverb.cpp
     engine/fx/part_fx.cpp
     engine/fx/comp.cpp

@@ -4,7 +4,7 @@
 #include <cstring>
 #include <cmath>
 #include "Utility/dsp.h"
-#include "fx/dust.h"
+#include "fx/taps.h"
 #include "fx/fx_util.h"
 #include "mod/divisions.h"
 #include "util/fast_tanh.h"
@@ -194,27 +194,24 @@ public:
     // buffer is the price of the mask.
     static constexpr size_t kMaxSamples = 262144;
 
-    // `seed` is a caller-supplied constant, not derived from `buf_l`/`buf_r`'s
-    // address (see the comment on the call to _dust.init() in flux.cpp for
-    // why: the address is not reproducible in the VCV plugin). Part::init
-    // (via PartFx::init) hands each part a distinct constant, the same
-    // idiom Instrument::init already uses for SynthEngine's drift seed.
-    void init(float sample_rate, float* buf_l, float* buf_r, uint32_t seed);
+    void init(float sample_rate, float* buf_l, float* buf_r);
     void set_on(bool on, bool immediate = false) { _sw.set_on(on, immediate); }
     bool is_on() const { return _sw.is_on(); }
     bool engaged() const {
         return _buf_ok && (_sw.is_on() || !_sw.is_idle());
     }
     bool has_buffers() const { return _buf_ok; }
-    void set_bpm(float bpm);              // recompute synced delay time on change
-    void set_rate(int slice_idx);         // 0..kFluxRateCount-1 -> kDivisions slice
-    float delay_time() const { return _delay_time; }   // seconds, clamped (test/meter)
-    void set_feedback(float norm);                       // 0 .. 1.2 (tanh-bounded bloom)
-    void set_mix(float norm);                            // -40 .. 0 dBFS
-    void set_dust(float norm);                           // 0 .. 1 grain amount
-    void set_rot(float norm);                            // 0 .. 1 character
-    void sync_beat(float beat_samples);                  // transport beat edge -> DustCloud
-    bool dust_active() const { return _dust.active(); }
+    void set_bpm(float bpm);
+    void set_rate(int slice_idx);
+    float delay_time() const { return _delay_time; }
+    void set_feedback(float norm);
+    void set_mix(float norm);
+    void set_dust(float norm);                           // 0..1 tap morph
+    void set_rot(float norm);                            // 0..1 spectral spread
+    // Tap offsets in samples behind the write head, from the OTHER bank's
+    // rhythm. Pushed at control rate by Instrument; see fx/taps.h.
+    void set_tap_offsets(const int32_t off[tap_tuning::kTaps]);
+    bool taps_active() const { return _taps.active(); }
     void process(float& l, float& r);
 
 private:
@@ -222,7 +219,7 @@ private:
 
     EchoDelay<kMaxSamples> _echo_l;
     EchoDelay<kMaxSamples> _echo_r;
-    DustCloud _dust;
+    TapBank _taps;
     SoftSwitch _sw;
     float _mix_lin = 0.f;
     bool _buf_ok = false;
@@ -235,9 +232,9 @@ private:
     float _dt_target = 0.05f;
     float _dt_coef = 1.f;
     // Unchanged-value guards for set_dust/set_rot (I3), mirroring set_bpm/
-    // set_rate: DustCloud::_remap() runs a pow + a cos, and once these are
+    // set_rate: TapBank::set_rot runs two powf calls, and once these are
     // forwarded at control rate every tick would pay that whether or not the
-    // knob moved. Defaults match DustCloud::init's own _dust=0/_rot=0, so the
+    // knob moved. Defaults match TapBank::init's own _dust=0/_rot=0, so the
     // first real call after init() only skips forwarding when it is a no-op.
     float _dust_norm = 0.f;
     float _rot_norm = 0.f;

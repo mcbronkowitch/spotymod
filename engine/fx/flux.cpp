@@ -7,7 +7,7 @@ namespace {
 inline float dbfs2lin(float db) { return daisysp::pow10f(db * 0.05f); }
 }
 
-void Flux::init(float sample_rate, float* buf_l, float* buf_r, uint32_t seed) {
+void Flux::init(float sample_rate, float* buf_l, float* buf_r) {
     _sw.init(sample_rate);
     _sr = sample_rate;
     _buf_ok = (buf_l != nullptr && buf_r != nullptr);
@@ -18,25 +18,7 @@ void Flux::init(float sample_rate, float* buf_l, float* buf_r, uint32_t seed) {
     _dt_coef = daisysp::fmin(1.f / (0.03f * sample_rate), 1.f);
     _rate_idx = 3;               // boot "1/4"
     _bpm = 120.f;
-    // `seed` is a caller-supplied constant (I1), NOT hashed from buf_l's
-    // address: that used to be "0xD0571u ^ (uint32_t)(uintptr_t)buf_l", which
-    // reads as bit-reproducible but is not, off desktop. host/render/main.cpp
-    // gives the echo memory a stable file-scope `static` address, but
-    // host/vcv/src/Spotymod.cpp declares it as a member of `struct Spotymod :
-    // Module`, which Rack heap-allocates per instance -- the address (and
-    // therefore the whole grain stream) changed on every patch load and under
-    // ASLR. Part::init now hands each part a fixed, distinct constant instead
-    // (engine/parts/part.cpp), the same idiom Instrument::init already uses
-    // for SynthEngine's per-part drift seed.
-    //
-    // recompute_time() no longer touches `_dust` at all (task 12 finding 6
-    // removed the `_dust.set_delay_time()` call it used to end with): zone
-    // S's grid now follows the transport's beat via DustCloud::sync_beat(),
-    // not the echo's delay time -- see fx/dust.cpp. The init-ordering
-    // constraint that call used to impose (DustCloud::init() before this
-    // recompute_time(true)) is gone with it; the order below is kept only
-    // because it reads naturally, not because anything still depends on it.
-    _dust.init(sample_rate, seed);
+    _taps.init(sample_rate);
     recompute_time(true);        // snap the boot delay time
     set_feedback(0.45f);
     set_mix(0.5f);
@@ -81,9 +63,9 @@ void Flux::set_mix(float norm) {
 void Flux::set_dust(float norm) {
     if (!_buf_ok) return;
     const float d = clampf(norm, 0.f, 1.f);
-    if (d == _dust_norm) return;   // I3: DustCloud::_remap() runs pow + cos
+    if (d == _dust_norm) return;   // I3: see the guard comment on _dust_norm
     _dust_norm = d;
-    _dust.set_dust(d);
+    _taps.set_dust(d);
 }
 
 void Flux::set_rot(float norm) {
@@ -91,12 +73,12 @@ void Flux::set_rot(float norm) {
     const float r = clampf(norm, 0.f, 1.f);
     if (r == _rot_norm) return;    // I3: same guard as set_dust
     _rot_norm = r;
-    _dust.set_rot(r);
+    _taps.set_rot(r);
 }
 
-void Flux::sync_beat(float beat_samples) {
+void Flux::set_tap_offsets(const int32_t off[tap_tuning::kTaps]) {
     if (!_buf_ok) return;
-    _dust.sync_beat(beat_samples);
+    _taps.set_offsets(off);
 }
 
 void Flux::process(float& l, float& r) {
@@ -110,36 +92,31 @@ void Flux::process(float& l, float& r) {
     daisysp::fonepole(_dt_current, _dt_target, _dt_coef);
     const float ds = _dt_current * _sr;
 
-    if (!_dust.active()) {       // DUST = 0: bit-exact with the pre-DUST path
+    if (!_taps.active()) {       // DUST = 0: bit-exact with the pre-DUST path
         l += _echo_l.Process(l * send, ds) * _mix_lin;
         r += _echo_r.Process(r * send, ds) * _mix_lin;
         return;
     }
 
-    // The grain taps read the tape as it stands at the START of this sample —
-    // built before Process() advances the write head. Both channels share one
-    // write pointer (they are written in lockstep).
-    const TapeTap tap{_echo_l.line(), _echo_r.line(), _echo_l.write_ptr(),
-                      static_cast<int32_t>(kMaxSamples) - 1};
-    float gl = 0.f, gr = 0.f;
-    const float wb = _dust.process(tap, gl, gr);
+    // The taps read the tape as it stands at the START of this sample -- built
+    // before Process() advances the write head. Both channels share one write
+    // pointer (they are written in lockstep).
+    const TapeTap tape{_echo_l.line(), _echo_r.line(), _echo_l.write_ptr(),
+                       static_cast<int32_t>(kMaxSamples) - 1};
+    float tl = 0.f, tr = 0.f;
+    _taps.process(tape, tl, tr);
 
-    const float e_l = _echo_l.Process(l * send, ds, wb);
-    const float e_r = _echo_r.Process(r * send, ds, wb);
+    const float e_l = _echo_l.Process(l * send, ds);
+    const float e_r = _echo_r.Process(r * send, ds);
 
-    // Grain sum joins BEFORE _mix_lin: FLUX MIX stays the single wet control
-    // for everything coming off the tape. Grain reads deliberately skip the
-    // band-pass and tanh — the cloud is rawer and brighter than the echo.
-    //
-    // Deliberate behaviour change vs. the first Task 6 cut: `gl`/`gr` are now
-    // scaled by `send` (the SoftSwitch fade level), same as the dry signal
-    // feeding the echo two lines up. The pre-existing echo tail fades with
-    // `send` too (it dies down through `e_l`/`e_r` because its own INPUT was
-    // already `l * send`), but grains are raw reads with no decay envelope of
-    // their own -- without this they would hold full level right up to
-    // is_idle()'s hard cut, clicking on the way out whenever DUST is up. One
-    // multiply, dust path only; the DUST = 0 bypass above never reaches here.
-    const float hg = _dust.head_gain();
-    l += (e_l * hg + gl * send) * _mix_lin;
-    r += (e_r * hg + gr * send) * _mix_lin;
+    // Taps join BEFORE _mix_lin: FLUX MIX stays the single wet control for
+    // everything coming off the tape. Tap reads deliberately skip the
+    // band-pass and tanh -- the taps are rawer and brighter than the echo.
+    // They are scaled by `send` (the SoftSwitch fade level) like the dry
+    // signal feeding the echo: a raw read has no decay envelope of its own
+    // and would otherwise hold full level right up to is_idle()'s hard cut.
+    // The taps sit BESIDE the echo, never in its place -- there is no head
+    // takeover any more.
+    l += (e_l + tl * send) * _mix_lin;
+    r += (e_r + tr * send) * _mix_lin;
 }

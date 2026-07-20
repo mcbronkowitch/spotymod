@@ -1,4 +1,5 @@
 #include "instrument.h"
+#include "fx/taps.h"
 #include "util/math.h"
 #include <cmath>
 
@@ -68,15 +69,17 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         if (_ctrl_ctr == 0) {                 // control-rate center update (per 96 samples)
             _center.update(_parts[PART_A].mod(), _parts[PART_B].mod(),
                            _parts[PART_A], _parts[PART_B]);
-            if (_center.beat_edge()) {
-                // Beat plumbing (task 11): forward the transport's beat edge
-                // and length to the FLUX grain cloud (DUST zone S's phase
-                // reference). No grain behaviour reads this yet -- that is
-                // the next task.
-                const float bs = _center.beat_samples();
-                _parts[PART_A].fx().sync_beat(bs);
-                _parts[PART_B].fx().sync_beat(bs);
-            }
+            // Cross-feed: each bank's taps are placed by the OTHER bank's
+            // groove. Instrument is the only scope where both parts are
+            // visible; no Part gets a pointer to its sibling. The views only
+            // change once per source-lane cycle, so this is a handful of
+            // integer ops at 500 Hz.
+            constexpr int32_t kTapeLen = static_cast<int32_t>(Flux::kMaxSamples);
+            int32_t off_a[tap_tuning::kTaps], off_b[tap_tuning::kTaps];
+            derive_offsets(_parts[PART_B].mod().rhythm(), kTapeLen, off_a);
+            derive_offsets(_parts[PART_A].mod().rhythm(), kTapeLen, off_b);
+            _parts[PART_A].fx().set_tap_offsets(off_a);
+            _parts[PART_B].fx().set_tap_offsets(off_b);
             _ctrl_ctr = Center::kCtrlInterval;
         }
         --_ctrl_ctr;

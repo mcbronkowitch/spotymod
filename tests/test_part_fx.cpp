@@ -17,7 +17,7 @@ static void fill(float* v, float grit, float time, float mix, float send, float 
 
 TEST_CASE("part_fx: both blocks off is bit-exact dry, send 0 is exact zero") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
+    fx.init(48000.f, s_pf_l, s_pf_r);
     float v[FXT_COUNT];
     fill(v, 0.3f, 0.4f, 1.f, 0.f, 0.45f);
     for (int i = 0; i < 2000; ++i) {
@@ -33,7 +33,7 @@ TEST_CASE("part_fx: both blocks off is bit-exact dry, send 0 is exact zero") {
 
 TEST_CASE("part_fx: FX MIX 0 keeps the dry signal even with grit engaged") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
+    fx.init(48000.f, s_pf_l, s_pf_r);
     fx.set_fx_on(FxBlock::Grit, true, true);
     float v[FXT_COUNT];
     fill(v, 0.9f, 0.4f, 0.f, 0.f, 0.f);
@@ -47,7 +47,7 @@ TEST_CASE("part_fx: FX MIX 0 keeps the dry signal even with grit engaged") {
 
 TEST_CASE("part_fx: FX MIX 1 with grit on changes the signal") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
+    fx.init(48000.f, s_pf_l, s_pf_r);
     fx.set_fx_on(FxBlock::Grit, true, true);
     float v[FXT_COUNT];
     fill(v, 0.9f, 0.4f, 1.f, 0.f, 0.f);
@@ -63,7 +63,7 @@ TEST_CASE("part_fx: FX MIX 1 with grit on changes the signal") {
 
 TEST_CASE("part_fx: send taps post-FX at the equal-power gain") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
+    fx.init(48000.f, s_pf_l, s_pf_r);
     float v[FXT_COUNT];
     fill(v, 0.3f, 0.4f, 1.f, 1.f, 0.45f);   // send fully open
     // prime the smoothers (first process snaps), then measure
@@ -79,7 +79,7 @@ TEST_CASE("part_fx: send taps post-FX at the equal-power gain") {
 
 TEST_CASE("part_fx: comp default 0 leaves chain and send bit-exact") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
+    fx.init(48000.f, s_pf_l, s_pf_r);
     const float fxv[FXT_COUNT] = {0.f, 0.5f, 1.f, 0.5f, 0.f};
     for (int i = 0; i < 4800; ++i) {
         float s = 0.5f * std::sin(6.2831853f * 220.f * i / 48000.f);
@@ -94,7 +94,7 @@ TEST_CASE("part_fx: comp sits BEFORE the send tap — the send gets louder too")
     const float fxv[FXT_COUNT] = {0.f, 0.5f, 1.f, 0.8f, 0.f};
     auto send_rms = [&](float amount) {
         PartFx fx;
-        fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
+        fx.init(48000.f, s_pf_l, s_pf_r);
         fx.set_comp(amount);
         double acc = 0.0;
         int n = 0;
@@ -111,7 +111,7 @@ TEST_CASE("part_fx: comp sits BEFORE the send tap — the send gets louder too")
 
 TEST_CASE("part_fx: synced rate + BPM place the echo, not FXT_FLUX_TIME") {
     PartFx fx;
-    fx.init(48000.f, s_pf_l, s_pf_r, 0xD0571u);
+    fx.init(48000.f, s_pf_l, s_pf_r);
     fx.set_fx_on(FxBlock::Flux, true, true);
     fx.set_flux_mix(1.f);              // 0 dB wet
     fx.set_bpm(120.f);
@@ -132,29 +132,40 @@ TEST_CASE("part_fx: synced rate + BPM place the echo, not FXT_FLUX_TIME") {
 TEST_CASE("part_fx: set_dust reaches the flux block") {
     static float s_pf_dust_l[Flux::kMaxSamples], s_pf_dust_r[Flux::kMaxSamples];
     PartFx fx;
-    fx.init(48000.f, s_pf_dust_l, s_pf_dust_r, 0xD0571u);
+    fx.init(48000.f, s_pf_dust_l, s_pf_dust_r);
     fx.set_fx_on(FxBlock::Flux, true, true);
     fx.set_flux_mix(1.f);
 
-    CHECK(!fx.flux().dust_active());
+    CHECK(!fx.flux().taps_active());
     fx.set_dust(0.5f);
-    CHECK(fx.flux().dust_active());     // the forwarded value actually landed
+    CHECK(fx.flux().taps_active());     // the forwarded value actually landed
     fx.set_dust(0.f);
-    CHECK(!fx.flux().dust_active());
+    CHECK(!fx.flux().taps_active());
 }
 
 TEST_CASE("part_fx: set_rot reaches the flux block") {
-    // dust_active()/head_gain() don't reflect ROT, so prove the forward the
+    // taps_active()/head_gain() don't reflect ROT, so prove the forward the
     // same way test_flux.cpp does for Flux::set_rot itself: run two otherwise
     // identical instances (same seed, same echo/dust settings) that differ
-    // ONLY in the ROT value PartFx::set_rot was given, and require the grain
+    // ONLY in the ROT value PartFx::set_rot was given, and require the tap
     // streams to diverge. A dropped/no-op forwarder leaves both at Flux's
     // default ROT = 0, so the streams would stay identical and this fails.
+    //
+    // TapBank (unlike DustCloud) reads nothing until offsets are pushed --
+    // in production those come from Instrument's cross-feed (the OTHER
+    // part's rhythm), but this test operates one layer below Instrument, so
+    // it pushes offsets straight through PartFx::set_tap_offsets, the real
+    // production API at this layer (not a test-only backdoor). With no prior
+    // signal on the tape, a read at `offset` samples behind the head stays
+    // exactly 0 -- and 0 through any linear filter is 0 regardless of ROT --
+    // until the write head has travelled `offset` samples into this same
+    // run, so the offsets are chosen well inside the 48000-sample loop.
     static float s_pf_rot_l0[Flux::kMaxSamples], s_pf_rot_r0[Flux::kMaxSamples];
     static float s_pf_rot_l1[Flux::kMaxSamples], s_pf_rot_r1[Flux::kMaxSamples];
     PartFx fx0, fx1;
-    fx0.init(48000.f, s_pf_rot_l0, s_pf_rot_r0, 0xABCDu);
-    fx1.init(48000.f, s_pf_rot_l1, s_pf_rot_r1, 0xABCDu);
+    fx0.init(48000.f, s_pf_rot_l0, s_pf_rot_r0);
+    fx1.init(48000.f, s_pf_rot_l1, s_pf_rot_r1);
+    const int32_t off[tap_tuning::kTaps] = { 2000, 3500 };
     for (PartFx* fx : {&fx0, &fx1}) {
         fx->set_fx_on(FxBlock::Flux, true, true);
         fx->flux().set_bpm(120.f);
@@ -162,11 +173,12 @@ TEST_CASE("part_fx: set_rot reaches the flux block") {
         fx->flux().set_feedback(0.6f);
         fx->flux().set_mix(1.f);
         fx->set_dust(0.9f);   // dust must be active for ROT to have anything to act on
+        fx->set_tap_offsets(off);
     }
     fx0.set_rot(0.f);
     fx1.set_rot(0.9f);
-    REQUIRE(fx0.flux().dust_active());
-    REQUIRE(fx1.flux().dust_active());
+    REQUIRE(fx0.flux().taps_active());
+    REQUIRE(fx1.flux().taps_active());
 
     bool any_diff = false;
     for (int i = 0; i < 48000; ++i) {
