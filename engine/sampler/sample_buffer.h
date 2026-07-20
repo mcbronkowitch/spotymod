@@ -25,7 +25,10 @@ public:
 
     // buf may be nullptr: the buffer then reports !valid() and every
     // operation is a no-op. Hosts that cannot spare the memory rely on this.
-    void init(Frame* buf, size_t length);
+    // sample_rate is forwarded to the overdub SoftSwitch -- without it the
+    // switch's fade coefficient stays 1.0 and its Hann lookup runs off the
+    // end of the table on the first overdub.
+    void init(Frame* buf, size_t length, float sample_rate);
 
     // Linear-interpolated stereo read at a fractional frame index. Folds
     // out-of-range positions back into [0, rec_size). Silent when empty.

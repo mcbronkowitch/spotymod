@@ -10,20 +10,19 @@ namespace {
 constexpr float kFadeKof = 1.f / static_cast<float>(sampler_cfg::kRecordFade);
 }
 
-void SampleBuffer::init(Frame* buf, size_t length) {
+void SampleBuffer::init(Frame* buf, size_t length, float sample_rate) {
     _buffer      = buf;
     _buffer_size = buf ? length : 0;
     _feedback    = std::pow(10.f, (60.f * (sampler_cfg::kDefaultFeedback - 1.f)) * 0.05f);
-    // Hardcoded, matching the original (src/core/buffer.cpp:26): _cut is a
-    // SoftSwitch and its 4 ms fade timing (_kof) is meaningless until
-    // init()'d with a sample rate. Left uninitialized, _kof defaults to 1.0
-    // (fx_util.h), so process()'s hann_value_at() call is fed integer
+    // _cut is a SoftSwitch and its 4 ms fade timing (_kof) is meaningless
+    // until init()'d with a sample rate. Left uninitialized, _kof defaults to
+    // 1.0 (fx_util.h), so process()'s hann_value_at() call is fed integer
     // positions instead of a 0..1 ramp and reads past the end of the static
     // 192-entry Hann table -- undefined behavior, reproduced as an
     // out-of-bounds assertion under the MSVC STL. This line is not one of
     // the plan's six listed changes; it was a silent omission in the
     // brief's draft, restored here rather than left as UB in the audio path.
-    _cut.init(48000.f);
+    _cut.init(sample_rate);   // REQUIRED: see plan Task 1, change 7
     clear();
 }
 

@@ -11,7 +11,7 @@ static constexpr size_t kCap = 4800;   // 100 ms @ 48k -- plenty, and fast
 struct Fixture {
     std::vector<SampleBuffer::Frame> mem{kCap};
     SampleBuffer buf;
-    Fixture() { buf.init(mem.data(), kCap); }
+    Fixture() { buf.init(mem.data(), kCap, 48000.f); }
 };
 
 // Record `n` samples of a constant value; returns the peak |delta| between
