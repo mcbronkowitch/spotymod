@@ -172,12 +172,50 @@ TEST_CASE("rhythm ring: init() clears a stale ring") {
     // change (super_modulator.cpp). A lane carrying a saturated _onsets and
     // gaps measured in the old sample rate's units must not republish that
     // stale rhythm as valid at its first post-init wrap.
+    //
+    // Checking CHECK_FALSE immediately after init() alone doesn't exercise
+    // the onset counter: init() sets _rhythm = RhythmView{} directly, so
+    // that assertion holds even if a stale, saturated _onsets survived the
+    // rest of init(). This is the same gap "reset invalidates and the ring
+    // re-fills from scratch" (above) closes for reset() -- drive the lane
+    // to just past the first post-init wrap and check there instead, where
+    // a fresh ring (2 onsets) reads invalid but a stale, carried-over
+    // _onsets (>=3 from before re-init) would read valid.
     ModLane l = make_lane(4);
     for (int i = 0; i < 4 * 24000; ++i) l.process();
     REQUIRE(l.rhythm().valid);          // ring is full and latched before re-init
 
     l.init(48000.f, 0xC0FFEEu);
-    CHECK_FALSE(l.rhythm().valid);      // must not carry the stale ring across init()
+    CHECK_FALSE(l.rhythm().valid);      // immediate post-init: _rhythm was reset directly
+
+    // set_step() must follow init() -- init() only re-seeds the phrase/groove
+    // generator, it doesn't touch the step configuration set on the lane
+    // instance. Reconfigure to 2 steps/cycle so the first post-init wrap
+    // sees exactly two onsets, as in "invalid until three onsets have been
+    // seen" and "reset invalidates" above.
+    l.set_step(true, 2);
+    l.set_rate_hz(1.f);
+    l.set_density(1.f);
+    l.set_variation(0.f);
+
+    // First post-init wrap: two onsets since init() -- one real gap, not a
+    // rhythm, unless a stale _onsets carried across init() makes it look
+    // like one. clock_scale = 8/2 = 4, phase_inc = 4/48000 = 1/12000,
+    // cycle = 12000 samples; +500 covers float32's rounding of phase_inc
+    // landing the wrap a couple of samples past the ideal 12000.
+    for (int i = 0; i < 12000 + 500; ++i) l.process();
+    // Pin the precondition itself: just past the first post-init wrap, not
+    // short of it -- see the identical margin-loop note in "invalid until
+    // three onsets have been seen" above. Without this, if phase arithmetic
+    // ever shifted the wrap outside this window, the CHECK_FALSE below
+    // would pass vacuously.
+    REQUIRE(l.phase() < 0.1f);
+    CHECK_FALSE(l.rhythm().valid);      // must not republish the stale ring at the first post-init wrap
+
+    // Second post-init wrap: the ring has genuinely re-filled from scratch.
+    for (int i = 0; i < 12000; ++i) l.process();
+    CHECK(l.rhythm().valid);
+    CHECK(l.rhythm().gap[0] == doctest::Approx(6000).epsilon(0.01));
 }
 
 TEST_CASE("rhythm ring: the tick() path never publishes a zero gap") {
