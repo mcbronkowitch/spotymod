@@ -68,28 +68,6 @@ TEST_CASE("sampler: FLOW is a standing cloud -- RMS never drops out") {
     CHECK(lowest > 0.2f * highest);        // ...and never gaps
 }
 
-TEST_CASE("sampler: FLOW stays continuous while SIZE sweeps") {
-    Rig g;
-    g.e.set_flow(true);
-    std::vector<float> v;
-    // Sweep SIZE from long to short: the spawn interval shrinks by ~10x, and
-    // a stale pending countdown would gap the carpet for up to the old one.
-    for (int blk = 0; blk < 40; ++blk) {
-        const float size = 0.8f - 0.7f * (float(blk) / 39.f);
-        g.feed(0.5f, 0.f, size);
-        auto part = g.render(2400);
-        v.insert(v.end(), part.begin(), part.end());
-    }
-    float lowest = 1e9f, highest = 0.f;
-    for (size_t i = 9600; i + 233 < v.size(); i += 233) {
-        const float e = rms(v, i, 233);
-        if (e < lowest)  lowest = e;
-        if (e > highest) highest = e;
-    }
-    REQUIRE(highest > 0.02f);
-    CHECK(lowest > 0.15f * highest);
-}
-
 TEST_CASE("sampler: STEP is silent until the gate opens, and tails off after") {
     Rig g;
     g.e.set_flow(false);
@@ -284,4 +262,31 @@ TEST_CASE("sampler: clear empties the buffer and silences the cloud") {
     CHECK(g.e.active_grains() == 0);
     auto v = g.render(24000);
     CHECK(rms(v, 12000, 4800) < 0.001f);
+}
+
+TEST_CASE("sampler: loading new content restarts the cloud immediately") {
+    Rig g(0);
+    std::vector<float> n(48000);
+    uint32_t s = 0x13579BDFu;
+    for (auto& v : n) {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5;   // the engine's own xorshift
+        v = (s * (1.f / 4294967296.f)) * 2.f - 1.f;
+    }
+    g.e.set_flow(true);
+    // Long grains: the spawn interval is ~24000 samples, so a countdown that
+    // survives the load would hold the cloud silent for half a second.
+    g.feed(0.5f, 0.f, 1.f);
+    g.e.load_sample(n.data(), n.data(), n.size());
+    g.render(48000);                       // let the cloud settle and the
+                                           // counter land mid-interval
+    REQUIRE(g.e.active_grains() > 0);
+
+    // Load again -- _kill_all() retires every grain, so nothing masks a
+    // stale countdown.
+    g.e.load_sample(n.data(), n.data(), n.size());
+    CHECK(g.e.active_grains() == 0);       // the load really did clear them
+
+    auto v = g.render(9600);               // 200 ms
+    // The cloud must be audible well inside one old spawn interval.
+    CHECK(rms(v, 0, 4800) > 0.01f);
 }

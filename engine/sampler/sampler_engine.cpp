@@ -127,6 +127,12 @@ int SamplerEngine::active_grains() const {
 
 void SamplerEngine::_kill_all() {
     for (int i = 0; i < kGrains; ++i) _grains[i].kill();
+    // The scheduler must restart with the grains. Every caller of _kill_all
+    // (init, clear, load_sample) leaves no running grain behind to mask a
+    // pending countdown, so a stale _spawn_ctr would hold the cloud silent
+    // for up to one spawn interval -- half a second at long SIZE, on the
+    // ordinary load path. Unlike the SIZE-drop case, nothing masks this.
+    _spawn_ctr = 0.f;
 }
 
 void SamplerEngine::_release_all() {
