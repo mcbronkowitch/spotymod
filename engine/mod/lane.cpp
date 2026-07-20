@@ -31,6 +31,10 @@ void ModLane::init(float sample_rate, uint32_t seed) {
     _frozen = false;
     _note_age = 0;
     _note_hold = 0;
+    _since_onset = 0;
+    _onsets = 0;
+    _gap[0] = _gap[1] = 0;
+    _rhythm = RhythmView{};
     _ev_phase = 0.f;
     _ev_shape = 0.f;
     _ev_rate  = 0.f;
@@ -176,7 +180,11 @@ void ModLane::_on_boundary() {
     _frozen = !gated;
     if (gated) {
         _gap[1] = _gap[0];
-        _gap[0] = _since_onset;
+        // Clamp to 1: on the tick() path several onsets can land inside one
+        // kTickInterval window (see tick()'s edge walk), so _since_onset can
+        // read 0 here. A published gap of 0 is not a duration -- see the
+        // tick()-path contract in rhythm_view.h.
+        _gap[0] = _since_onset > 0 ? _since_onset : 1;
         _since_onset = 0;
         if (_onsets < 3) ++_onsets;
         _fired = true;

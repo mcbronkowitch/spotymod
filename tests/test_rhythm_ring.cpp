@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "mod/lane.h"
+#include "mod/super_modulator.h"
 #include <cmath>
 
 using namespace spky;
@@ -51,6 +52,10 @@ TEST_CASE("rhythm ring: a rest step lengthens the gap instead of writing an onse
     // one step at 8 steps/cycle: cycle = 24000*? -- clock_scale = 8/8 = 1, so
     // phase_inc = 1/48000, cycle = 48000 samples, step = 6000 samples.
     CHECK((rv.gap[0] > 6100 || rv.gap[1] > 6100));
+    // Shared premise this test and "the view only moves at a cycle wrap"
+    // both rest on: seed 0xC0FFEE at density 0.5 produces at least two
+    // distinct gap lengths per cycle (not just a uniformly-longer one).
+    CHECK(rv.gap[0] != rv.gap[1]);
 }
 
 TEST_CASE("rhythm ring: invalid until three onsets have been seen") {
@@ -70,6 +75,11 @@ TEST_CASE("rhythm ring: invalid until three onsets have been seen") {
     // couple of samples past the ideal 12000, well short of the next step
     // boundary at ~18000.
     for (int i = 0; i < 12000 + 500; ++i) l.process();
+    // Pin the precondition itself: we are just past the first real wrap, not
+    // just short of one. Without this, if phase arithmetic ever shifted the
+    // wrap outside this window, CHECK_FALSE below would pass against a
+    // never-latched default _rhythm -- proving nothing.
+    REQUIRE(l.phase() < 0.1f);
     CHECK_FALSE(l.rhythm().valid);          // two onsets seen -- one gap, not a rhythm
 
     // Second wrap: that cycle-2-opening onset is now the ring's third onset,
@@ -97,14 +107,26 @@ TEST_CASE("rhythm ring: the view only moves at a cycle wrap") {
     // Advance most of the next cycle (3rd real wrap is ~47969 samples later,
     // ~143908) -- several onsets of varying gap length fire, but no wrap.
     for (int i = 0; i < 40000; ++i) l.process();
+    // Pin the precondition itself: comfortably short of the next wrap, not
+    // past it. Without this, if phase arithmetic ever shifted the 3rd real
+    // wrap into this window, the CHECKs below would pass vacuously -- the
+    // ring would have re-latched to the same values by coincidence rather
+    // than the test having caught "latch only moves at a wrap".
+    REQUIRE(l.phase() > 0.5f);
     CHECK(l.rhythm().gap[0] == before.gap[0]);
     CHECK(l.rhythm().gap[1] == before.gap[1]);
 }
 
 TEST_CASE("rhythm ring: FLOW lanes fill the ring from cycle wraps") {
     ModLane l;
-    l.init(48000.f, 0xC0FFEEu);
+    // set_melodic() before init(): see make_lane()'s comment above. Harmless
+    // here today -- FLOW's `gated` is unconditionally true (lane.cpp) so the
+    // groove ranking this ordering protects is never consulted -- but
+    // reordering it anyway keeps this file free of the anti-pattern its own
+    // fix targets, so a later edit that adds set_density() here doesn't
+    // silently get no DENSE effect.
     l.set_melodic(true);
+    l.init(48000.f, 0xC0FFEEu);
     l.set_step(false, 4);        // FLOW: clock_scale = 1, cycle = 48000 samples
     l.set_rate_hz(1.f);
     l.set_variation(0.f);
@@ -133,10 +155,75 @@ TEST_CASE("rhythm ring: reset invalidates and the ring re-fills from scratch") {
 
     // First post-reset wrap: two onsets since reset -- one real gap.
     for (int i = 0; i < 12000 + 500; ++i) l.process();
+    // Pin the precondition: just past the first post-reset wrap, not short
+    // of it -- see the identical margin-loop note in "invalid until three
+    // onsets have been seen" above.
+    REQUIRE(l.phase() < 0.1f);
     CHECK_FALSE(l.rhythm().valid);
 
     // Second post-reset wrap: the ring has genuinely re-filled from scratch.
     for (int i = 0; i < 12000; ++i) l.process();
     CHECK(l.rhythm().valid);
     CHECK(l.rhythm().gap[0] == doctest::Approx(6000).epsilon(0.01));
+}
+
+TEST_CASE("rhythm ring: init() clears a stale ring") {
+    // SuperModulator::init() re-inits every lane on a host sample-rate
+    // change (super_modulator.cpp). A lane carrying a saturated _onsets and
+    // gaps measured in the old sample rate's units must not republish that
+    // stale rhythm as valid at its first post-init wrap.
+    ModLane l = make_lane(4);
+    for (int i = 0; i < 4 * 24000; ++i) l.process();
+    REQUIRE(l.rhythm().valid);          // ring is full and latched before re-init
+
+    l.init(48000.f, 0xC0FFEEu);
+    CHECK_FALSE(l.rhythm().valid);      // must not carry the stale ring across init()
+}
+
+TEST_CASE("rhythm ring: the tick() path never publishes a zero gap") {
+    // _since_onset only advances once per 96-sample tick() window, but the
+    // edge walk inside tick() can call _on_boundary() several times in that
+    // same window (lane.cpp: "Panel-reachable worst case is ~8 edges"). A
+    // fast STEP rate with every slot gated forces multiple onsets per
+    // window; the second and later onsets must never record/publish a gap
+    // of exactly 0 samples.
+    ModLane l = make_lane(8);
+    l.set_rate_hz(300.f);   // step length ~20 samples: several onsets land
+                             // inside one 96-sample tick() window.
+    bool saw_valid = false;
+    for (int i = 0; i < 2000; ++i) {
+        l.tick();
+        if (l.rhythm().valid) {
+            saw_valid = true;
+            CHECK(l.rhythm().gap[0] != 0);
+            CHECK(l.rhythm().gap[1] != 0);
+        }
+    }
+    REQUIRE(saw_valid);   // the loop must actually have exercised the ring
+}
+
+TEST_CASE("rhythm ring: SuperModulator::rhythm() forwards the PITCH lane") {
+    // The texture lanes run at different ratios of the same base rate
+    // (kLaneRatio in super_modulator.cpp: SOURCE x2, SIZE x0.5, PITCH x1,
+    // MOTION x0.75, LEVEL x1.5), so their FLOW cycle periods differ from
+    // PITCH's. If rhythm() ever forwarded a different lane, this gap would
+    // come out at 12000 (SOURCE), 48000 (SIZE), 32000 (MOTION) or 16000
+    // (LEVEL) instead of PITCH's 24000, and the CHECKs below would fail.
+    SuperModulator m;
+    m.init(48000.f, 1u);
+    m.set_synced(true);
+    m.set_tempo_bpm(120.f);
+    m.set_rate(0.5f);   // division idx 8 ("1/4", cpb=1) -> base_hz = 2 Hz ->
+                         // PITCH (ratio x1) cycles every 48000/2 = 24000 samples.
+    // _wrap_events() latches _rhythm from the PREVIOUS cycle's onset count
+    // before _on_boundary() records the current wrap's onset, so validity
+    // (_onsets >= 3) needs a 4th wrap, not a 3rd; +500 covers float32's
+    // rounding of phase_inc landing real cycles a hair past the ideal 24000.
+    for (int i = 0; i < 4 * 24000 + 500; ++i) m.process();
+    REQUIRE(m.pitch_phase() < 0.1f);   // just past the 4th real wrap, not short of it
+
+    const RhythmView& rv = m.rhythm();
+    REQUIRE(rv.valid);
+    CHECK(rv.gap[0] == doctest::Approx(24000).epsilon(0.01));
+    CHECK(rv.gap[1] == doctest::Approx(24000).epsilon(0.01));
 }
