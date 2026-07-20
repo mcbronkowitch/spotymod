@@ -1471,6 +1471,23 @@ EOF
 
 ### Task 5: Cross-feed — A hears B, B hears A
 
+> **FOLDED INTO TASK 4 during execution (2026-07-20).** The split was a
+> planning error. After Task 4 alone the taps stay muted, because nothing
+> pushes real offsets until this task's cross-feed lands — so DUST and ROT go
+> inert, which is a genuine behavioural regression against the grain cloud
+> (which needed no external anchor to sound) and correctly fails three
+> pre-existing forwarding tests. A reviewer cannot reject one of these tasks
+> while approving the other, which is precisely the test for whether a split
+> is legitimate. The content below is unchanged and was implemented as part of
+> Task 4; it is kept here as the specification of that work.
+>
+> The tempting fixes were both refused: weakening the three forwarding tests,
+> and adding an `Instrument::set_tap_offsets` passthrough for the tests to
+> call. Offsets are derived internally by design — an external setter would be
+> API grown to serve a test, and would let a caller place a bank's taps where
+> its partner's rhythm never asked for them. The tests instead run long enough
+> for both onset rings to fill and latch, then assert forwarding as before.
+
 **Files:**
 - Modify: `engine/instrument.h`, `engine/instrument.cpp`
 - Test: `tests/test_instrument.cpp` (append)
@@ -1687,6 +1704,17 @@ EOF
 ---
 
 ### Task 7: Host tooltips and the bench workload
+
+> **Step 1 (the `Spotymod.cpp` tooltip rewrite) was pulled forward into Task 4
+> during execution (2026-07-20).** Task 4 deletes `engine/fx/dust.h`, which
+> `Spotymod.cpp` includes for the zone constants — leaving the edit here would
+> have made the VCV plugin unbuildable for three tasks. Since the plugin is
+> what the listening gate is played on, a branch where every commit builds is
+> worth more than a tidy task boundary. Step 1 below is therefore already
+> done; this task covers the bench workload, plus **verifying** that the
+> plugin still builds (which Task 4 could not do — that build needs the Rack
+> SDK and a separate mingw toolchain outside its gate, and Task 4 declared it
+> unverified).
 
 **Files:**
 - Modify: `host/vcv/src/Spotymod.cpp:50-71`
