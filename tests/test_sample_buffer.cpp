@@ -39,8 +39,11 @@ TEST_CASE("sample_buffer: record fades in and out with no discontinuity") {
     }
     // The steepest point of a 192-sample Hann rise is ~pi/(2*192) ~= 0.0082.
     CHECK(worst < 0.02f);
-    // ...and the fade really happened: the first frame is near silence.
-    CHECK(f.mem[0].l < 0.05f);
+    // ...and the loop seam is a real crossfade (Fix 1): stopping without a
+    // prior cut() writes the fade-out back over frame 0, and a Hann fade-in
+    // at position x plus the complementary fade-out sum to sin^2+cos^2 == 1,
+    // so frame 0 sits at full level, not near silence.
+    CHECK(f.mem[0].l > 0.9f);
     // ...while the middle is at full level (else "no discontinuity" is
     // trivially satisfied by recording nothing at all).
     CHECK(f.mem[1200].l > 0.95f);
@@ -127,6 +130,52 @@ TEST_CASE("sample_buffer: recording past capacity auto-stops with the loop locke
     CHECK(f.buf.rec_size() == kCap);
     CHECK(f.buf.fill() == doctest::Approx(1.f));
     CHECK(f.buf.is_overdubbing());   // the loop is locked; further writes overdub
+}
+
+TEST_CASE("sample_buffer: the loop seam is crossfaded, not two dips") {
+    Fixture f;
+    // Record and stop WITHOUT cutting first: the fade-out must be written
+    // over the fade-in at frame 0, so the wrap point is continuous.
+    f.buf.set_recording(true);
+    for (size_t i = 0; i < 2400; ++i) f.buf.write(1.f, 1.f);
+    f.buf.set_recording(false);
+    for (size_t i = 0; i < sampler_cfg::kRecordFade + 2; ++i) f.buf.write(1.f, 1.f);
+
+    const size_t n = f.buf.rec_size();
+    REQUIRE(n > sampler_cfg::kRecordFade * 4);
+
+    // The seam: reading across the wrap must not step. Without the
+    // write-head reset the head is a fade-in ramp from ~0 and the tail is a
+    // fade-out ramp to ~0, so the wrap shows a deep notch instead.
+    float l0 = 0.f, r0 = 0.f, ln = 0.f, rn = 0.f;
+    f.buf.read_linear(0.f, l0, r0);
+    f.buf.read_linear(float(n - 1), ln, rn);
+    CHECK(l0 > 0.9f);                    // the head is at full level...
+    CHECK(ln > 0.9f);                    // ...and so is the tail
+    CHECK(std::fabs(l0 - ln) < 0.1f);    // ...and they meet without a step
+
+    // And the content did not grow by a fade's worth: stopping crossfades
+    // into the existing material rather than appending to it.
+    CHECK(n < 2400 + sampler_cfg::kRecordFade);
+}
+
+TEST_CASE("sample_buffer: NaN and absurd read positions yield silence") {
+    Fixture f;
+    record_const(f.buf, 1.f, 2400);
+    REQUIRE_FALSE(f.buf.is_empty());
+    const float nan = std::nanf("");
+    float l = 1.f, r = 1.f;
+    f.buf.read_linear(nan, l, r);
+    CHECK(l == 0.f);
+    CHECK(r == 0.f);
+    l = 1.f; r = 1.f;
+    f.buf.read_linear(1e30f, l, r);
+    CHECK(l == 0.f);
+    CHECK(r == 0.f);
+    // ...while an ordinary in-range read still works (else "silence" is
+    // trivially satisfied by a broken reader).
+    f.buf.read_linear(1200.f, l, r);
+    CHECK(l > 0.9f);
 }
 
 TEST_CASE("sample_buffer: clear returns it to empty") {

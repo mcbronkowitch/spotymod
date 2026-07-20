@@ -49,7 +49,15 @@ void SampleBuffer::set_recording(bool on) {
         case State::fadeout:
             break;                       // already stopping; ignore
         default:
-            if (!on) _state = State::fadeout;
+            if (!on) {
+                _state = State::fadeout;
+                // Wrap around and fade out OVER the fade-in, so the loop
+                // point is a real crossfade rather than two dips with a
+                // seam between them. This matters MORE here than in the
+                // original: read_linear folds, so every grain that wanders
+                // across the seam runs through it (src/core/buffer.cpp:45).
+                if (!_cut.is_on()) _write_head = 0;
+            }
             break;
     }
 }
@@ -68,9 +76,12 @@ void SampleBuffer::write(float in0, float in1) {
             if (++_fade_ctr >= sampler_cfg::kRecordFade - 1) _state = State::sustain;
             break;
         case State::fadeout:
+            // Decrement THEN test, matching the original exactly
+            // (src/core/buffer.cpp:137): the last effective write uses
+            // counter 2, not 1. Keeping the arithmetic identical matters
+            // because the fade-out is crossfaded over the fade-in.
             fade = hann_value_at(static_cast<float>(_fade_ctr) * kFadeKof);
-            if (_fade_ctr == 0) { cut(); _state = State::idle; return; }
-            --_fade_ctr;
+            if (--_fade_ctr == 0) { cut(); _state = State::idle; return; }
             break;
     }
 
@@ -121,6 +132,14 @@ void SampleBuffer::read_linear(float frame, float& out0, float& out1) const {
     // Empty or un-init'ed: silence. The original divides by zero on the
     // first branch and spins forever on the second (plan Task 1, change 5).
     if (_size == 0 || _buffer == nullptr) { out0 = 0.f; out1 = 0.f; return; }
+
+    // NaN or an absurd magnitude: silence, same contract. Two compares, and
+    // NaN fails both (every NaN comparison is false), so this closes the
+    // static_cast<size_t>(NaN) undefined behaviour below AND bounds the fold
+    // loops for any finite input. Deliberately NOT fmodf: eight grains x two
+    // parts x 48 kHz is ~768k fmodf/s, which is real CPU on the M6 hardware
+    // for a case that cannot currently occur.
+    if (!(frame > -1e9f && frame < 1e9f)) { out0 = 0.f; out1 = 0.f; return; }
 
     const float fsz = static_cast<float>(_size);
     // Bounded: a grain advances by at most ~4 frames per sample (+24 st) and
