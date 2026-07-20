@@ -1584,7 +1584,14 @@ inline float cutoff_hz(float n) {
 void SamplerEngine::init(float sample_rate) {
     _sr = sample_rate;
     _buf.init(_mem, _mem_frames, sample_rate);
-    _rng.seed(_seed ^ 0x5A11E20Du);
+    // MUST differ from the constant Part::init XORs in (0x5A11E20Du). With
+    // the same constant on both sides the XOR cancels and the sampler is
+    // seeded with seed_base exactly -- which is also what SuperModulator
+    // gives lane 0 (seed_base + 0). Both are xorshift32, so MOTION scatter
+    // would run on a bit-identical stream to the PITCH lane. The synth
+    // avoids this by using two different constants (part.cpp:17,
+    // synth_engine.cpp:39); follow that.
+    _rng.seed(_seed ^ 0xC0FFEE11u);
 
     _svf_l.Init(sample_rate);
     _svf_r.Init(sample_rate);
