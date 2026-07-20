@@ -63,7 +63,10 @@ void SamplerEngine::set_gate(bool on) {
     if (on == _gate) return;
     _gate = on;
     if (!on) {
-        _release_ctr = static_cast<int>(kBurstReleaseS * _sr);
+        // DEC stretches the burst tail: a long decay leaves a longer trail
+        // after the composed note ends (spec, voice-row table).
+        const float rel = kBurstReleaseS * (0.5f + 1.5f * _dec_n);
+        _release_ctr = static_cast<int>(rel * _sr);
     } else {
         // Start the burst on the edge, not up to _spawn_every samples late:
         // leaving FLOW mid-cycle (or a prior STEP burst) can leave _spawn_ctr
@@ -234,20 +237,42 @@ void SamplerEngine::_spawn_one() {
 
     const float pan = _rng.next_bipolar() * motion;
 
-    const float ratio = _next_ratio();          // draws the octave roll
+    const float ratio_base = _next_ratio();     // draws the octave roll
 
-    const int len  = static_cast<int>(_grain_len);
-    const int half = static_cast<int>(_grain_len * kWindowHalfMin);
-    const int atk  = half < 1 ? 1 : half;
-
-    _grains[slot].spawn(centre, ratio, pan, len, atk, atk, _reverse);
-
-    // Spawn-timing jitter, applied to the NEXT interval. Drawn last.
+    // Spawn-timing jitter, applied to the NEXT interval. Drawn 4th.
     _spawn_jitter = _rng.next_bipolar() * motion * kScatterTimeFrac;
+
+    // SUB: a share of grains an octave down. Drawn 5th.
+    float ratio = ratio_base;
+    if (_rng.next_unipolar() < _sub_n * kSubMaxShare) ratio *= 0.5f;
+
+    // DTUN: per-grain detune spread, +-kDetuneCeilCt at full. Drawn 6th.
+    const float cents = _rng.next_bipolar() * _detune_n * kDetuneCeilCt;
+    if (cents != 0.f) ratio *= std::pow(2.f, cents / 1200.f);
+
+    // Tape: the grain covers a fixed SIZE OF MATERIAL and so lasts
+    // SIZE / ratio -- low notes smear long, high notes are fleeting.
+    // Digital: fixed output duration; the grain reads SIZE * ratio.
+    float lenf = _tape ? _grain_len / (ratio > 0.001f ? ratio : 0.001f)
+                       : _grain_len;
+    if (lenf < 2.f) lenf = 2.f;
+    const int len = static_cast<int>(lenf);
+
+    // ATK/DEC: the two window halves, each from kWindowHalfMin to
+    // kWindowHalfMax of the grain. An unequal split IS the skew control.
+    const float atk_f = lerpf(kWindowHalfMin, kWindowHalfMax, _atk_n);
+    const float dec_f = lerpf(kWindowHalfMin, kWindowHalfMax, _dec_n);
+    int atk = static_cast<int>(lenf * atk_f);
+    int dec = static_cast<int>(lenf * dec_f);
+    if (atk < 1) atk = 1;
+    if (dec < 1) dec = 1;
+
+    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse);
 
     _last_ratio = ratio;
     _last_pan   = pan;
     _last_pos   = centre;
+    _last_len   = len;
     ++_spawn_count;
 }
 

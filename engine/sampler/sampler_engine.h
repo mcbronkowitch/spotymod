@@ -79,6 +79,7 @@ public:
     float last_spawn_ratio() const  { return _last_ratio; }
     float last_spawn_pan() const    { return _last_pan; }
     float last_spawn_pos() const    { return _last_pos; }
+    int   last_spawn_len() const    { return _last_len; }
 
 private:
     void  _update_control();     // recompute derived values on the raster
@@ -125,6 +126,7 @@ private:
     int   _spawn_count = 0;
     float _last_ratio  = 1.f;
     float _last_pan    = 0.f;
+    int   _last_len    = 0;
     float _spawn_jitter = 0.f;   // spawn-interval jitter applied to the NEXT interval
 
     float _in_l = 0.f, _in_r = 0.f;

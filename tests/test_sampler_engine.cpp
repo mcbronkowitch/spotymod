@@ -465,3 +465,161 @@ TEST_CASE("sampler: a different seed changes the scattered render") {
     for (size_t i = 0; i < va.size(); ++i) diff += std::fabs(va[i] - vb[i]);
     CHECK(diff > 1.f);
 }
+
+// --- Task 5: tape/digital, reverse, voice row -----------------------------
+
+TEST_CASE("sampler: Digital holds the grain length; Tape scales it by 1/ratio") {
+    Rig g;
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.3f, 0.f);          // MOTION 0: no octave scatter
+    const float up[1] = { 0.5f + 1.f / 6.f };   // +6 semitones -> ratio ~1.414
+    g.e.set_chord(up, 1);
+
+    g.e.set_tape_mode(false);
+    auto d = collect(g, 40);
+    REQUIRE(d.ratio.size() == 40);
+    const int digital_len = g.e.last_spawn_len();
+
+    g.e.set_tape_mode(true);
+    auto t = collect(g, 40);
+    REQUIRE(t.ratio.size() == 40);
+    const int tape_len = g.e.last_spawn_len();
+
+    const float ratio = g.e.last_spawn_ratio();
+    REQUIRE(ratio > 1.3f);                  // the precondition the test rests on
+    CHECK(tape_len == doctest::Approx(float(digital_len) / ratio).epsilon(0.05));
+
+    // And at unity ratio the two modes agree (else "scales by 1/ratio" could
+    // be any constant scaling).
+    const float unity[1] = { 0.5f };
+    g.e.set_chord(unity, 1);
+    g.e.set_tape_mode(false);
+    collect(g, 20);
+    const int d2 = g.e.last_spawn_len();
+    g.e.set_tape_mode(true);
+    collect(g, 20);
+    CHECK(g.e.last_spawn_len() == doctest::Approx(float(d2)).epsilon(0.05));
+}
+
+TEST_CASE("sampler: ATK and DEC shape the window from soft to percussive") {
+    auto peak_at = [](Rig& g, float atk, float dec, int probe) {
+        g.e.set_window_attack(atk);
+        g.e.set_window_decay(dec);
+        g.e.set_flow(true);
+        g.feed(0.5f, 0.f, 0.5f, 0.f);
+        return g.render(probe);
+    };
+    // A long attack must reach a lower level early in the grain than a short
+    // one. Measured on the first 20 ms of a fresh cloud.
+    Rig soft, hard;
+    auto s = peak_at(soft, 1.f, 1.f, 960);
+    auto h = peak_at(hard, 0.f, 0.f, 960);
+    float se = 0.f, he = 0.f;
+    for (int i = 0; i < 480; ++i) { se += std::fabs(s[i]); he += std::fabs(h[i]); }
+    CHECK(he > se * 1.3f);
+}
+
+TEST_CASE("sampler: SUB sends a share of grains an octave down") {
+    Rig none;
+    none.e.set_flow(true);
+    none.feed(0.5f, 0.f, 0.2f, 0.f);
+    const float root[1] = { 0.5f };
+    none.e.set_chord(root, 1);
+    none.e.set_sub(0.f);
+    auto a = collect(none, 300);
+    REQUIRE(a.ratio.size() == 300);
+    for (float rr : a.ratio) CHECK(rr == doctest::Approx(1.f).epsilon(0.001));
+
+    Rig half;
+    half.e.set_flow(true);
+    half.feed(0.5f, 0.f, 0.2f, 0.f);
+    half.e.set_chord(root, 1);
+    half.e.set_sub(0.5f);
+    auto b = collect(half, 400);
+    REQUIRE(b.ratio.size() == 400);
+    int down = 0;
+    for (float rr : b.ratio) if (rr < 0.75f) ++down;
+    CHECK(down > 400 * 0.5f * 0.6f);
+    CHECK(down < 400 * 0.5f * 1.4f);
+}
+
+TEST_CASE("sampler: DTUN spreads grain ratios in cents, 0 is exact") {
+    Rig none;
+    none.e.set_flow(true);
+    none.feed(0.5f, 0.f, 0.2f, 0.f);
+    const float root[1] = { 0.5f };
+    none.e.set_chord(root, 1);
+    none.e.set_detune(0.f);
+    auto a = collect(none, 200);
+    REQUIRE(a.ratio.size() == 200);
+    for (float rr : a.ratio) CHECK(rr == doctest::Approx(1.f).epsilon(0.0005));
+
+    Rig wide;
+    wide.e.set_flow(true);
+    wide.feed(0.5f, 0.f, 0.2f, 0.f);
+    wide.e.set_chord(root, 1);
+    wide.e.set_detune(1.f);
+    auto b = collect(wide, 300);
+    REQUIRE(b.ratio.size() == 300);
+    float lo = 1e9f, hi = -1e9f;
+    for (float rr : b.ratio) { if (rr < lo) lo = rr; if (rr > hi) hi = rr; }
+    // +-35 cents -> ratio band of 2^(70/1200) ~= 1.041 wide.
+    const float band = std::pow(2.f, 2.f * sampler_cfg::kDetuneCeilCt / 1200.f);
+    // band is only ~4% above unity (2^(70/1200)), so a lower bound expressed
+    // as a fraction OF band (as first drafted -- band * 0.7) stays below 1.0
+    // and is satisfied by hi/lo == 1.0, the exact value produced when the
+    // detune multiply is a no-op. That let a dropped-multiply mutation
+    // survive. Bounding the reach relative to unity instead -- at least
+    // halfway from 1.0 to the full band -- makes the spread itself the
+    // observable, so a no-op detune fails this assertion.
+    CHECK(hi / lo > 1.f + (band - 1.f) * 0.5f);
+    CHECK(hi / lo < band * 1.15f);
+}
+
+TEST_CASE("sampler: FILT full left fades to silence at ANY lane position") {
+    // The FILT invariant, mirrored from the synth (tests/test_filt.cpp).
+    for (float lane : { 0.f, 0.25f, 0.5f, 0.75f, 1.f }) {
+        Rig g;
+        g.e.set_flow(true);
+        g.feed(0.5f, 0.f, lane, 0.f);       // lane == the FILTER/SIZE slot
+        g.e.set_filt(-1.f);
+        auto v = g.render(24000);
+        CHECK(rms(v, 12000, 4800) < 0.001f);
+    }
+    // ...and full right is emphatically not silent, at the same lane values.
+    Rig open;
+    open.e.set_flow(true);
+    open.feed(0.5f, 0.f, 0.5f, 0.f);
+    open.e.set_filt(1.f);
+    auto v = open.render(24000);
+    CHECK(rms(v, 12000, 4800) > 0.01f);
+}
+
+TEST_CASE("sampler: Reverse plays the material backwards") {
+    Rig fwd(24000, 555), rev(24000, 555);
+    // SOURCE must be off zero here. The rig's content is a stationary 441 Hz
+    // sine over exactly 220.5 cycles in 24000 samples, so content[k] ==
+    // content[N-k] for every k (sin(w(N-k)) = sin(wN - wk) = sin(pi - wk) =
+    // sin(wk) when wN == pi mod 2pi, which holds exactly for this N/frequency
+    // pair). At SOURCE 0 a reverse grain folds its negative position to
+    // content[N-k], which by that identity equals forward's content[k] --
+    // sample for sample -- so the two renders coincide almost exactly and
+    // the property under test is unobservable, whatever the implementation
+    // does. A nonzero SOURCE reads content[p-k] vs content[p+k], which only
+    // coincide for the measure-zero set of p with cos(w*p) == 0; 0.3 is not
+    // one of them.
+    fwd.feed(0.5f, 0.3f);
+    rev.feed(0.5f, 0.3f);
+    fwd.e.set_flow(true);
+    rev.e.set_flow(true);
+    rev.e.set_reverse(true);
+    auto a = fwd.render(24000);
+    auto b = rev.render(24000);
+    float diff = 0.f, energy = 0.f;
+    for (size_t i = 0; i < a.size(); ++i) {
+        diff   += std::fabs(a[i] - b[i]);
+        energy += std::fabs(b[i]);
+    }
+    CHECK(diff > 10.f);                     // genuinely different...
+    CHECK(energy > 10.f);                   // ...and not just silent
+}
