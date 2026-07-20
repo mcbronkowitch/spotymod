@@ -204,6 +204,13 @@ float SamplerEngine::_next_ratio() {
 void SamplerEngine::_update_control() {
     // --- SIZE: exponential 20 ms .. 2 s, clamped to what we actually have ---
     float len = size_seconds(_targets[LANE_SIZE]) * _sr;
+    // MOTION stretches grain length on top of SIZE (spec amendment 2026-07-20
+    // (2)): applied before the content clamp, so a long SIZE at full MOTION
+    // still bottoms out at the available content, and _spawn_every (derived
+    // from _grain_len below) scales together with it -- keeping the overlap
+    // ratio at kOverlap rather than climbing toward the kGrains ceiling.
+    const float motion = clampf(_targets[LANE_MOTION], 0.f, 1.f);
+    len *= 1.f + motion * kScatterSmear;
     const float content = static_cast<float>(_buf.rec_size());
     if (content > 1.f && len > content) len = content;
     // Floored well above the degenerate case (first samples of a punch-in,

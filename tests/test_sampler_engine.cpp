@@ -760,28 +760,35 @@ TEST_CASE("sampler: golden vector -- Rng draw order and SOURCE mapping are locke
     // last_spawn_ratio, last_spawn_len) for the first 20 spawns under FLOW.
     // Captured once from a known-good build -- see the file-level comment
     // above this test before changing any of these numbers.
+    // MOTION also stretches grain length on top of SIZE as of the 2026-07-20
+    // (2) spec amendment (sampler_cfg::kScatterSmear): at MOTION 1.0 (this
+    // test's setting) len is ~4x the pre-amendment value (3821 -> 15287).
+    // pos/pan/ratio are untouched -- the smear only scales _grain_len, which
+    // does not feed any Rng draw, so the draw order and every other column
+    // stay exactly as before. Regenerated from a known-good build after the
+    // amendment; see the file-level comment above this test.
     static const Spawn golden[20] = {
         // pos,            pan,          ratio,        len
-        { 12200.50781250f, -0.69252360f, 0.20196824f, 3821 },
-        {  9559.03320312f,  0.98490131f, 0.55502838f, 3821 },
-        { 12429.85449219f, -0.30681819f, 1.53079367f, 3821 },
-        {  9426.72070312f, -0.88041586f, 0.40453154f, 3821 },
-        { 13792.33007812f, -0.11837190f, 0.55053788f, 3821 },
-        { 12621.92773438f,  0.86559057f, 0.75218982f, 3821 },
-        {  6792.23632812f,  0.43894804f, 0.40997744f, 3821 },
-        { 10227.70507812f,  0.79144990f, 0.55878091f, 3821 },
-        {  9217.20214844f,  0.07455552f, 1.52497661f, 3821 },
-        {  9639.77636719f,  0.83863580f, 0.40733621f, 3821 },
-        { 16812.86328125f, -0.27693748f, 0.55035543f, 3821 },
-        {  7372.13427734f, -0.75745511f, 1.52152061f, 3821 },
-        { 15622.36425781f,  0.96780789f, 0.40774995f, 3821 },
-        { 15633.29101562f,  0.42561364f, 0.55428278f, 3821 },
-        {  6173.71435547f, -0.26600885f, 1.51086748f, 3821 },
-        { 12693.93164062f, -0.27030134f, 0.81130999f, 3821 },
-        { 13349.57031250f, -0.78998744f, 1.10466695f, 3821 },
-        { 12683.76660156f, -0.03883266f, 0.76514953f, 3821 },
-        {  7273.89355469f, -0.89893818f, 0.81913930f, 3821 },
-        {  8740.55468750f, -0.89280307f, 2.21407151f, 3821 },
+        { 12200.50781250f, -0.69252360f, 0.20196824f, 15287 },
+        {  9559.03320312f,  0.98490131f, 0.55502838f, 15287 },
+        { 12429.85449219f, -0.30681819f, 1.53079367f, 15287 },
+        {  9426.72070312f, -0.88041586f, 0.40453154f, 15287 },
+        { 13792.33007812f, -0.11837190f, 0.55053788f, 15287 },
+        { 12621.92773438f,  0.86559057f, 0.75218982f, 15287 },
+        {  6792.23632812f,  0.43894804f, 0.40997744f, 15287 },
+        { 10227.70507812f,  0.79144990f, 0.55878091f, 15287 },
+        {  9217.20214844f,  0.07455552f, 1.52497661f, 15287 },
+        {  9639.77636719f,  0.83863580f, 0.40733621f, 15287 },
+        { 16812.86328125f, -0.27693748f, 0.55035543f, 15287 },
+        {  7372.13427734f, -0.75745511f, 1.52152061f, 15287 },
+        { 15622.36425781f,  0.96780789f, 0.40774995f, 15287 },
+        { 15633.29101562f,  0.42561364f, 0.55428278f, 15287 },
+        {  6173.71435547f, -0.26600885f, 1.51086748f, 15287 },
+        { 12693.93164062f, -0.27030134f, 0.81130999f, 15287 },
+        { 13349.57031250f, -0.78998744f, 1.10466695f, 15287 },
+        { 12683.76660156f, -0.03883266f, 0.76514953f, 15287 },
+        {  7273.89355469f, -0.89893818f, 0.81913930f, 15287 },
+        {  8740.55468750f, -0.89280307f, 2.21407151f, 15287 },
     };
 
     // Absolute, not relative, tolerance: the regression this test exists to
@@ -800,4 +807,32 @@ TEST_CASE("sampler: golden vector -- Rng draw order and SOURCE mapping are locke
         CHECK(std::fabs(got[i].ratio - golden[i].ratio) < 0.00002f);
         CHECK(got[i].len == golden[i].len);
     }
+}
+
+// --- MOTION stretches grain length on top of SIZE (spec amendment 2026-07-20 (2)) ---
+TEST_CASE("sampler: MOTION stretches grain length by 1 + MOTION * kScatterSmear on top of SIZE") {
+    // A mid SIZE with plenty of headroom below the content clamp, so the
+    // smeared length at MOTION 1 is observed unclamped.
+    Rig g(kFrames);                        // full 2 s of content
+    g.e.set_flow(true);
+
+    g.feed(0.5f, 0.f, 0.3f, 0.f);          // MOTION 0: the SIZE base value
+    g.render(200);
+    const float base = g.e.grain_len_samples();
+
+    g.feed(0.5f, 0.f, 0.3f, 1.f);          // MOTION 1: stretched
+    g.render(200);
+    const float stretched = g.e.grain_len_samples();
+
+    const float expect_factor = 1.f + sampler_cfg::kScatterSmear;
+    CHECK(stretched == doctest::Approx(base * expect_factor).epsilon(0.02));
+
+    // The content clamp still applies after the smear: ask for a SIZE/MOTION
+    // combination whose smeared length would exceed the available content,
+    // and confirm it is bounded to it.
+    Rig small(4800);                       // 100 ms of content
+    small.e.set_flow(true);
+    small.feed(0.5f, 0.f, 1.f, 1.f);       // SIZE 1 (2 s) * ~4x MOTION smear
+    small.render(200);
+    CHECK(small.e.grain_len_samples() <= 4800.f);
 }

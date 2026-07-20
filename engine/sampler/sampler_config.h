@@ -37,6 +37,13 @@ constexpr float  kScatterPosFrac  = 0.25f;   // +-1/4 of content length
 constexpr float  kScatterTimeFrac = 0.75f;   // spawn-interval jitter, fraction of interval
 constexpr float  kScatterOctProb  = 0.25f;   // chance a chord note jumps an octave
 
+// MOTION stretches grain length on top of SIZE: len *= 1 + MOTION * kScatterSmear.
+// Grain LENGTH, not more position scatter, is what turns the cloud from a
+// mangled loop into fog -- established by a listening probe that held MOTION
+// at 1 and stepped SIZE, where fog arrived around SIZE 0.8 (~800 ms grains).
+// 3.0 gives ~4x at full MOTION. Ear-tunable; SIZE stays the base value.
+constexpr float kScatterSmear = 3.0f;
+
 // --- voice row, remapped ---
 constexpr float  kCutoffMinHz   = 60.f;      // same rails as the synth FILTER
 constexpr float  kCutoffMaxHz   = 14000.f;
