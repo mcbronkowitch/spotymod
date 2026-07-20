@@ -488,10 +488,14 @@ void SampleBuffer::set_recording(bool on) {
     switch (_state) {
         case State::idle:
             if (on) {
-                // No playhead in a cloud, so an overdub punches in at 0
+                // No playhead in a cloud, so a record punches in at frame 0
                 // rather than at a read cursor (plan Task 1, change 6).
-                if (!_cut.is_on()) _write_head = _size;
-                else               _write_head = 0;
+                // Unconditional: the branch this replaced evaluated to 0 in
+                // both arms for every reachable state, while its comment
+                // claimed frame 0 and its code said _size -- the exact
+                // code-says-one-thing-comment-says-another shape that
+                // produced five defects in this file already.
+                _write_head = 0;
                 _state     = State::fadein;
                 _fade_ctr  = 0;
             }
@@ -582,6 +586,15 @@ void SampleBuffer::cut() {
 
 void SampleBuffer::set_rec_size(size_t frames) {
     if (!valid()) return;
+    if (frames == 0) {
+        // Never cut() at zero length: that locks the loop at zero, after
+        // which write()'s locked-loop branch pins _write_head to 0 and
+        // _size can never grow -- the part is permanently unable to record
+        // until clear(). Reachable through the load path (an empty or
+        // zero-length WAV), which is why this is not merely defensive.
+        clear();
+        return;
+    }
     _size = frames > _buffer_size ? _buffer_size : frames;
     cut();
 }
@@ -610,10 +623,16 @@ void SampleBuffer::read_linear(float frame, float& out0, float& out1) const {
     if (!(frame > -1e9f && frame < 1e9f)) { out0 = 0.f; out1 = 0.f; return; }
 
     const float fsz = static_cast<float>(_size);
-    // Bounded: a grain advances by at most ~4 frames per sample (+24 st) and
-    // is folded every sample, so these loops run at most a couple of times.
-    while (frame >= fsz) frame -= fsz;
-    while (frame < 0.f)  frame += fsz;
+    // O(1) fold, replacing the original's `frame %= _size` without an
+    // integer division. NOT a subtract loop: that would be O(frame/_size),
+    // and a grain holding a position latched against a longer previous
+    // content length (set_rec_size shrinks it, or a load lands mid-cloud)
+    // would then spin hundreds of thousands of times on the audio thread.
+    // std::floor is a single instruction on both targets -- roundsd on x86,
+    // VRINTM on the Daisy's Cortex-M7 FPv5 -- not a libm call, and cheaper
+    // than the loop even in the common case.
+    frame -= fsz * std::floor(frame / fsz);
+    if (frame < 0.f) frame = 0.f;         // -0.0 and rounding at the seam
 
     size_t i0 = static_cast<size_t>(frame);
     if (i0 >= _size) i0 = 0;                     // float edge at fsz - epsilon
@@ -718,12 +737,14 @@ struct SineBuf {
     std::vector<SampleBuffer::Frame> mem{kCap};
     SampleBuffer buf;
     explicit SineBuf(float hz = 441.f, size_t len = 48000) {
+        // init() FIRST: it clear()s, which memsets the whole buffer. Writing
+        // content before init wipes it and every assertion sees silence.
+        buf.init(mem.data(), kCap, 48000.f);
         for (size_t i = 0; i < len; ++i) {
             const float s = std::sin(6.2831853f * hz * float(i) / 48000.f);
             mem[i].l = s;
             mem[i].r = s;
         }
-        buf.init(mem.data(), kCap, 48000.f);
         buf.set_rec_size(len);
     }
 };
@@ -734,8 +755,8 @@ struct FlatBuf {
     std::vector<SampleBuffer::Frame> mem{kCap};
     SampleBuffer buf;
     FlatBuf() {
+        buf.init(mem.data(), kCap, 48000.f);   // init FIRST -- it memsets
         for (size_t i = 0; i < kCap; ++i) { mem[i].l = 1.f; mem[i].r = -1.f; }
-        buf.init(mem.data(), kCap, 48000.f);
         buf.set_rec_size(kCap);
     }
 };
@@ -1005,10 +1026,17 @@ public:
         if (_rel_len > 0) {
             // Scale the frozen level by a falling Hann -- continuous at the
             // moment release() was called, and reaching exactly zero.
-            w = _rel_from * hann_value_at(static_cast<float>(_rel_ctr)
-                                          / static_cast<float>(_rel_len));
-            if (_rel_ctr == 0) _active = false;
-            else               --_rel_ctr;
+            // Decrement BEFORE the lookup: checking first would need
+            // fade_len + 1 process() calls to retire the grain, so a
+            // release(n) would not actually be n samples long.
+            if (_rel_ctr == 0) {
+                _active = false;
+                w = 0.f;
+            } else {
+                --_rel_ctr;
+                w = _rel_from * hann_value_at(static_cast<float>(_rel_ctr)
+                                              / static_cast<float>(_rel_len));
+            }
         } else {
             w = _window();
         }
