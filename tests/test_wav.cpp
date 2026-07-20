@@ -490,6 +490,222 @@ TEST_CASE("wav: WAVE_FORMAT_EXTENSIBLE with an unrecognized SubFormat GUID is an
 // See the comment on the bad-GUID test above: a trailing decodable data
 // chunk is required so a reader that fails to validate the SubFormat tag
 // doesn't pass this test merely by running out of file.
+// --- Fix 1/2/4 hardening tests -----------------------------------------
+//
+// These exercise the final-review fixes to read_wav: a declared size must
+// never be trusted for an allocation or a seek before it's checked against
+// the bytes actually left in the file.
+
+// A truncated file that claims a data chunk near the top of the uint32_t
+// range (~4 GB). The pre-fix reader computed frames from csize and called
+// out.l.resize(frames)/out.r.resize(frames)/std::vector<uint8_t> raw(csize)
+// before ever checking the file was that big, which would attempt a ~4-8 GB
+// allocation and either throw std::bad_alloc (uncaught at main.cpp's call
+// site -> std::terminate) or, if it somehow succeeded, silently eat huge
+// amounts of memory. The fix checks the declared size against the real
+// remaining byte count first and rejects by name -- this test proves that
+// happens promptly (no crash, no hang, no multi-GB allocation) rather than
+// merely "the process didn't visibly explode".
+TEST_CASE("wav: a data chunk declaring ~4GB is rejected without a huge allocation or crash") {
+    const std::string path = "test_huge_data_claim.wav";
+    {
+        FILE* f = std::fopen(path.c_str(), "wb");
+        REQUIRE(f != nullptr);
+        auto wu32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+        auto wu16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+        auto wtag = [&](const char* s) { std::fwrite(s, 1, 4, f); };
+
+        const uint32_t claimed_data_bytes = 0xFFFFFFFFu;  // ~4 GB, way past EOF
+        const uint32_t fmt_bytes = 16;
+        // riff_size deliberately not checked by the reader against claimed
+        // size; what matters is the actual bytes on disk after this header.
+        const uint32_t riff_size = 4 + 8 + fmt_bytes + 8;
+
+        wtag("RIFF"); wu32(riff_size); wtag("WAVE");
+        wtag("fmt "); wu32(fmt_bytes);
+        wu16(1); wu16(2); wu32(48000); wu32(48000u * 2u * 2u); wu16(4); wu16(16);
+        wtag("data"); wu32(claimed_data_bytes);
+        const int16_t pcm[2] = { 7, -7 };  // a handful of real bytes, nowhere near 4GB
+        std::fwrite(pcm, 1, sizeof(pcm), f);
+        std::fclose(f);
+    }
+    spky::WavData d;
+    std::string err;
+    CHECK_FALSE(spky::read_wav(path, d, err));
+    CHECK_FALSE(err.empty());
+    // Must fail via Fix 1's own remaining-bytes guard, not merely because
+    // fread() later notices too few bytes came back -- that fallback still
+    // fires *after* out.l/out.r/raw have already been sized to ~4GB worth
+    // of frames, which is exactly the allocation this fix exists to avoid.
+    // A vague "err contains 'data'" check passes for either reason, so
+    // require the specific wording of the Fix 1 guard.
+    CHECK(err.find("remain in") != std::string::npos);
+    std::remove(path.c_str());
+}
+
+// A generic (non-fmt, non-data) chunk whose declared size has the high bit
+// set. csize is uint32_t and `long` is 32-bit on Windows, so the old skip
+// computation `long(csize + (csize & 1))` silently became negative for any
+// csize >= 0x80000000: fseek would then walk backwards and the read loop
+// could re-parse the same bytes as a "new" chunk forever. The fix computes
+// the skip in a 64-bit type and validates it against real remaining bytes
+// before seeking at all, so this must return false promptly instead of
+// looping. (If the old bug regresses, this test hangs rather than fails
+// cleanly -- that itself is the signal.)
+TEST_CASE("wav: an unknown chunk with the high bit set in its size is rejected, not looped") {
+    const std::string path = "test_high_bit_chunk.wav";
+    {
+        FILE* f = std::fopen(path.c_str(), "wb");
+        REQUIRE(f != nullptr);
+        auto wu32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+        auto wu16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+        auto wtag = [&](const char* s) { std::fwrite(s, 1, 4, f); };
+
+        const uint32_t fmt_bytes = 16;
+        const uint32_t junk_claimed = 0x80000000u;  // high bit set
+        const uint32_t riff_size = 4 + 8 + fmt_bytes + 8;  // junk payload not included
+
+        wtag("RIFF"); wu32(riff_size); wtag("WAVE");
+        wtag("fmt "); wu32(fmt_bytes);
+        wu16(1); wu16(2); wu32(48000); wu32(48000u * 2u * 2u); wu16(4); wu16(16);
+        wtag("JUNK"); wu32(junk_claimed);
+        // No payload follows -- file ends right after the chunk header, so
+        // "junk_claimed" bytes are nowhere near actually present.
+        std::fclose(f);
+    }
+    spky::WavData d;
+    std::string err;
+    CHECK_FALSE(spky::read_wav(path, d, err));
+    CHECK_FALSE(err.empty());
+    // Without the fix, `long(csize + (csize & 1))` truncates to a negative
+    // seek offset; fseek() then fails to seek before the start of the file,
+    // leaves the position unchanged, and the next fread() simply hits EOF
+    // -- so an unguarded reader still returns false, just via the generic
+    // "no data chunk" message rather than by ever recognizing the
+    // oversized chunk. Require the specific wording Fix 2's own guard
+    // produces so this test can't pass for that wrong reason.
+    CHECK(err.find("runs past end of file") != std::string::npos);
+    std::remove(path.c_str());
+}
+
+// fmt chunks shorter than the 16 mandatory base fields desync every
+// subsequent read (the reader would try to read fmt/channels/rate/etc past
+// where the chunk actually ends). Must be rejected immediately by the
+// declared size, not merely because too few bytes happen to follow.
+//
+// To make this decisive rather than incidental: the file below actually
+// contains a full, valid-looking 16-byte fmt payload plus a real, decodable
+// data chunk right after it -- so a reader that skips the size check would
+// happily parse the fmt fields, compute a non-positive/skipped extension,
+// and go on to successfully decode the data chunk (returning true). Only
+// checking the declared size (10 < 16) catches the lie.
+TEST_CASE("wav: a fmt chunk shorter than 16 bytes is rejected") {
+    const std::string path = "test_short_fmt.wav";
+    {
+        FILE* f = std::fopen(path.c_str(), "wb");
+        REQUIRE(f != nullptr);
+        auto wu32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+        auto wu16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+        auto wtag = [&](const char* s) { std::fwrite(s, 1, 4, f); };
+
+        const uint32_t declared_fmt_bytes = 10;   // lies: < 16, malformed
+        const int16_t pcm[2] = { 111, -222 };      // 1 stereo frame, decodable if not rejected
+        const uint32_t data_bytes = sizeof(pcm);
+        const uint32_t riff_size = 4 + 8 + 16 + 8 + data_bytes;
+
+        wtag("RIFF"); wu32(riff_size); wtag("WAVE");
+        wtag("fmt "); wu32(declared_fmt_bytes);
+        // A full, otherwise-valid 16-byte base fmt payload follows anyway.
+        wu16(1); wu16(2); wu32(48000); wu32(48000u * 2u * 2u); wu16(4); wu16(16);
+        wtag("data"); wu32(data_bytes);
+        std::fwrite(pcm, 1, sizeof(pcm), f);
+        std::fclose(f);
+    }
+    spky::WavData d;
+    std::string err;
+    CHECK_FALSE(spky::read_wav(path, d, err));
+    CHECK_FALSE(err.empty());
+    CHECK(err.find("too short") != std::string::npos);
+    std::remove(path.c_str());
+}
+
+// An unsupported bit depth (12) with an otherwise well-formed, fully
+// present data chunk -- the data bytes match the declared size exactly, so
+// a pass here can only be explained by the bit-depth check itself, not by
+// truncation or "no data chunk" falling through.
+TEST_CASE("wav: an unsupported bit depth (12) is rejected by name") {
+    const std::string path = "test_bits12.wav";
+    {
+        FILE* f = std::fopen(path.c_str(), "wb");
+        REQUIRE(f != nullptr);
+        auto wu32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+        auto wu16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+        auto wtag = [&](const char* s) { std::fwrite(s, 1, 4, f); };
+
+        const uint8_t pcm[2] = { 0x12, 0x03 };  // 2 real bytes; matches data_bytes exactly
+        const uint32_t data_bytes = sizeof(pcm);
+        const uint32_t fmt_bytes = 16;
+        const uint32_t riff_size = 4 + 8 + fmt_bytes + 8 + data_bytes;
+
+        wtag("RIFF"); wu32(riff_size); wtag("WAVE");
+        wtag("fmt "); wu32(fmt_bytes);
+        wu16(1); wu16(1); wu32(48000); wu32(48000u * 1u * 2u); wu16(2); wu16(12);  // 12-bit
+        wtag("data"); wu32(data_bytes);
+        std::fwrite(pcm, 1, sizeof(pcm), f);
+        std::fclose(f);
+    }
+    spky::WavData d;
+    std::string err;
+    CHECK_FALSE(spky::read_wav(path, d, err));
+    CHECK_FALSE(err.empty());
+    CHECK(err.find("12") != std::string::npos);
+    std::remove(path.c_str());
+}
+
+// The existing 24-bit test already covers 0x800000 (min) landing at exactly
+// -1.0f, but the UB was in how the value is *constructed* (signed left
+// shift of the top byte into the sign bit), not just in the final shift --
+// so cover a second, distinct negative encoding here to make sure the Fix 4
+// rewrite (build in uint32_t, convert to signed explicitly) didn't just
+// happen to still work for the one value already under test.
+// Hand-verified: 0xC00000 as 24-bit two's complement = 12582912 - 2^24
+// = -4194304 = -2^22. Dividing by 2^23 (8388608) gives exactly -0.5f, a
+// power-of-two fraction that's bit-exact in binary32 -- no epsilon needed.
+TEST_CASE("wav: 24-bit PCM decodes a second negative value to an exact float") {
+    const std::string path = "test_pcm24_neg2.wav";
+    {
+        FILE* f = std::fopen(path.c_str(), "wb");
+        REQUIRE(f != nullptr);
+        auto wu32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+        auto wu16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+        auto wtag = [&](const char* s) { std::fwrite(s, 1, 4, f); };
+        auto w24 = [&](uint8_t b0, uint8_t b1, uint8_t b2) {
+            uint8_t b[3] = { b0, b1, b2 };
+            std::fwrite(b, 1, 3, f);
+        };
+
+        const uint32_t data_bytes = 1 /*frame*/ * 1 /*channel*/ * 3 /*bytes*/;  // = 3
+        const uint32_t fmt_bytes = 16;
+        const uint32_t riff_size = 4 + 8 + fmt_bytes + 8 + data_bytes;
+
+        wtag("RIFF"); wu32(riff_size); wtag("WAVE");
+        wtag("fmt "); wu32(fmt_bytes);
+        wu16(1); wu16(1); wu32(48000); wu32(48000u * 1u * 3u); wu16(3); wu16(24);  // mono
+        wtag("data"); wu32(data_bytes);
+        w24(0x00, 0x00, 0xC0);  // 0xC00000 = -4194304
+        std::fclose(f);
+    }
+    spky::WavData d;
+    std::string err;
+    REQUIRE(spky::read_wav(path, d, err));
+    CHECK(err.empty());
+    REQUIRE(d.l.size() == 1);
+    REQUIRE(d.r.size() == 1);
+    CHECK(d.l[0] == -0.5f);   // exact: -4194304 / 8388608
+    CHECK(d.r[0] == -0.5f);   // mono normals to both channels
+    std::remove(path.c_str());
+}
+
 TEST_CASE("wav: WAVE_FORMAT_EXTENSIBLE with an unsupported SubFormat tag is an error") {
     const std::string path = "test_ext_bad_tag.wav";
     {

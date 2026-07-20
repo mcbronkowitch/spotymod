@@ -64,6 +64,15 @@ int main(int argc, char** argv) {
             std::printf("input_wav: %s\n", in_err.c_str());
             return 4;
         }
+        // Fix 5: samples are fed in per-sample below with no resampling, so
+        // a rate mismatch silently plays the input at the wrong pitch.
+        // Resampling is out of scope here -- just make the mismatch loud.
+        if (in_wav.sample_rate != scen.sample_rate) {
+            std::fprintf(stderr,
+                "warning: input_wav %s is %d Hz but the scenario runs at %d Hz; "
+                "no resampling is performed, so the input will play at the wrong pitch\n",
+                scen.input_wav.c_str(), in_wav.sample_rate, scen.sample_rate);
+        }
     }
 
     WavWriter wav(scen.sample_rate);
