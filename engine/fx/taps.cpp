@@ -54,6 +54,7 @@ void TapBank::init(float sample_rate) {
     _dust = 0.f;
     _rot = -1.f;
     _reads = 0;
+    _active = false;
     for (auto& t : _t) t = Tap{};
     set_rot(0.f);
 }
@@ -67,6 +68,19 @@ void TapBank::set_dust(float d) {
         const float g = clampf(2.f * _dust - static_cast<float>(i), 0.f, 1.f);
         _t[i].gain_target = g * tap_tuning::kTapGain;
     }
+    // Recompute the cached active() flag right here, not just at process()'s
+    // tail: _dust and t.gain (untouched above -- only gain_target moved) are
+    // the only two things active()'s formula depends on, and this is the
+    // only other place either of them changes. Two back-to-back set_dust
+    // calls with no process() in between (e.g. DUST up then straight back
+    // down before the next sample) must see active() go true then false
+    // again exactly like the old live scan -- caching only in process()
+    // would leave it stuck true until a process() call that may not come
+    // before the next read. This scan is control-rate (set_dust, not
+    // active()), so its cost is irrelevant to the block budget.
+    bool any_gain = false;
+    for (const auto& t : _t) if (t.gain > 0.f) any_gain = true;
+    _active = (_dust > 0.f) || any_gain;
 }
 
 void TapBank::set_rot(float r) {
@@ -153,6 +167,7 @@ void TapBank::set_offsets(const int32_t off[tap_tuning::kTaps]) {
 void TapBank::process(const TapeTap& tape, float& l, float& r) {
     _reads = 0;
     float sum_l = 0.f, sum_r = 0.f;
+    bool any_gain = false;
     for (int i = 0; i < tap_tuning::kTaps; ++i) {
         Tap& t = _t[i];
 
@@ -161,6 +176,7 @@ void TapBank::process(const TapeTap& tape, float& l, float& r) {
         // read would never actually be skipped and CPU would never follow the
         // knob down.
         if (t.gain_target == 0.f && t.gain < 1e-4f) t.gain = 0.f;
+        if (t.gain > 0.f) any_gain = true;
 
         float env = 1.f;
         switch (t.dip) {
@@ -198,4 +214,9 @@ void TapBank::process(const TapeTap& tape, float& l, float& r) {
 
     l += sum_l;
     r += sum_r;
+
+    // Recompute the cached flag from what this call already knows: it costs
+    // nothing extra since the loop above just visited every tap's gain.
+    // Reproduces the old scan exactly (`_dust > 0` OR any tap gain > 0).
+    _active = (_dust > 0.f) || any_gain;
 }

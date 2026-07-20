@@ -98,11 +98,24 @@ public:
     // slew that exists to prevent it. Staying active until the slews have
     // snapped to 0 lets the taps ride out, and the bypass is then reached
     // with nothing left to lose.
-    bool active() const {
-        if (_dust > 0.f) return true;
-        for (const auto& t : _t) if (t.gain > 0.f) return true;
-        return false;
-    }
+    //
+    // Backed by a flag, not a per-call scan: `_t[]` is otherwise cold on the
+    // DUST=0 path (nothing else touches it once every gain has snapped to
+    // 0), and Flux::process calls active() every sample per part, so walking
+    // two otherwise-untouched 32-byte structs here was a cache miss on a
+    // hot path for what reads like two compares.
+    //
+    // `_dust` and each tap's `gain` are the only inputs to the formula
+    // below, and set_dust()/process() are the only places either one
+    // changes -- so recomputing the flag at the tail of both keeps it exact
+    // at every read, with no dependency on call order or on process() ever
+    // running: set_dust() recomputes it directly (control-rate, so the
+    // small scan there costs nothing), independent of whether Flux is even
+    // calling process() right now (it stops exactly when !active(), which
+    // is the scenario this must keep working across). process() recomputes
+    // it again from the real, decayed gains once it does run, since a
+    // scan it already performs for other reasons costs nothing extra there.
+    bool active() const { return _active; }
 
     // Reads the tape as it stands at the START of the sample; adds into l/r.
     void process(const TapeTap& tape, float& l, float& r);
@@ -137,6 +150,7 @@ private:
     int32_t _dip_len = 96;
     float _gain_coef = 1.f;
     int   _reads = 0;
+    bool  _active = false;      // cached active(); see active()'s comment
 };
 
 }  // namespace spky
