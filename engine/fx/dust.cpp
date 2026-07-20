@@ -5,14 +5,6 @@
 using namespace spky;
 using namespace spky::dust_tuning;
 
-// TapeTap's `mask` is only ever a valid wrap mask if production's FLUX tape
-// length is a power of two; this is the one-time, compile-time check that
-// used to be a per-construction runtime assert on TapeTap itself (see
-// fx/dust.h). Checked here, once, against the actual constant Flux::process
-// will build a TapeTap over.
-static_assert((Flux::kMaxSamples & (Flux::kMaxSamples - 1)) == 0,
-              "Flux::kMaxSamples must be a power of two (TapeTap::mask contract)");
-
 void DustCloud::init(float sample_rate, uint32_t seed) {
     _sr = sample_rate > 0.f ? sample_rate : 48000.f;
     _rng.seed(seed);
@@ -145,7 +137,7 @@ void DustCloud::_remap() {
         // to saturate in the first place. The /2 is because the octave grain
         // traverses 2 * len; Flux::kMaxSamples (not a literal) is the actual
         // tape length every production TapeTap is built over -- see the
-        // static_assert at the top of this file.
+        // static_assert in fx/taps.cpp.
         constexpr int32_t kGridMax = (int32_t)((Flux::kMaxSamples - 4) / 2);
         if (_grid_period > kGridMax) _grid_period = kGridMax;
         if (_grid_countdown > _grid_period) _grid_countdown = _grid_period;

@@ -70,6 +70,8 @@ add_executable(spky_tests
     tests/test_grit.cpp
     engine/fx/flux.cpp
     tests/test_flux.cpp
+    engine/fx/taps.cpp
+    tests/test_taps.cpp
     engine/fx/dust.cpp
     tests/test_dust.cpp
     engine/fx/reverb.cpp
