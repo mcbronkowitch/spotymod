@@ -93,15 +93,60 @@ void TapBank::set_offsets(const int32_t off[tap_tuning::kTaps]) {
     for (int i = 0; i < tap_tuning::kTaps; ++i) {
         Tap& t = _t[i];
         const int32_t want = off[i];
-        if (want == t.off && t.dip == Dip::run) continue;
-        const int32_t d = want > t.off ? want - t.off : t.off - want;
-        if (d < tap_tuning::kRelatchMin && t.dip == Dip::run) continue;
+
+        // The pending target: where this tap is already headed. At rest
+        // (Dip::run) that IS its current position; mid-dip (Dip::out or
+        // Dip::in) it's next_off -- Dip::run never looks at next_off, so
+        // this one expression covers all three states without a switch.
+        const int32_t cur = (t.dip == Dip::run) ? t.off : t.next_off;
+        if (want == cur) continue;   // already there, or already going there
+
+        // Mute/un-mute is an on/off event, not a position nudge, and must
+        // never be distance-gated: kMuted (0) can be arbitrarily far from a
+        // legitimate offset as small as kMinGap (32), which sits inside
+        // kRelatchMin (64) -- gating it would strand a tap muted (or
+        // sounding) forever whenever the other side of the transition lands
+        // in [1, kRelatchMin - 1].
+        const bool mute_edge =
+            (want == tap_tuning::kMuted) || (cur == tap_tuning::kMuted);
+        if (!mute_edge) {
+            const int32_t d = want > cur ? want - cur : cur - want;
+            if (d < tap_tuning::kRelatchMin) continue;
+        }
+
         // Dip, never crossfade: at no point may a tap read two positions.
         // Doubling a bank's reads whenever the source pattern changes is a
         // data-dependent worst case, which is the disease this design cures.
         t.next_off = want;
-        t.dip = Dip::out;
-        t.dip_ctr = _dip_len;
+        if (t.dip == Dip::run) {
+            t.dip = Dip::out;
+            t.dip_ctr = _dip_len;
+        }
+        // Else: already dipping. Retarget without disturbing dip_ctr or
+        // resetting the envelope.
+        //
+        // - Mid Dip::out: t.dip is already `out`; leaving dip_ctr alone
+        //   means the fade already in progress keeps running unchanged --
+        //   only its destination (next_off) has moved. No envelope value
+        //   is touched.
+        // - Mid Dip::in: the tap is climbing back up at the OLD next_off
+        //   (already written into t.off when the prior Dip::out finished).
+        //   Resetting to a fresh Dip::out (dip_ctr = _dip_len) would jump
+        //   the envelope from wherever the climb currently sits straight to
+        //   hann_value_at(1.0) == 1.0 -- exactly the click a dip exists to
+        //   prevent. Instead, flip the state to Dip::out at the SAME
+        //   dip_ctr: hann_value_at(dip_ctr / _dip_len) is the identical
+        //   expression in both branches, so the envelope value is
+        //   continuous across the flip and only its direction reverses --
+        //   it keeps descending from its current level back to 0 (instead
+        //   of continuing up), t.off then jumps to the new next_off, and a
+        //   fresh Dip::in climbs from there. t.off itself -- the only
+        //   position actually read -- does not change until that reversed
+        //   fade-out reaches zero, so two positions are never read in the
+        //   same sample either.
+        else if (t.dip == Dip::in) {
+            t.dip = Dip::out;
+        }
     }
 }
 

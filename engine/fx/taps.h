@@ -109,7 +109,6 @@ private:
     struct OnePoleLp {
         float z = 0.f, a = 1.f;
         float process(float x) { z += a * (x - z); return z; }
-        void  reset() { z = 0.f; }
     };
 
     enum class Dip { run, out, in };

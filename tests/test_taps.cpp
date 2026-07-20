@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "fx/taps.h"
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -315,13 +316,20 @@ TEST_CASE("tap bank: dropping DUST to 0 rides the taps out instead of cutting th
     // 8000 samples undershoots: kGainSlewS=0.02s @ 48kHz gives a gain_coef of
     // ~1/960, and 0.7*(1-1/960)^8000 ~= 1.68e-4, still above the 1e-4 snap
     // threshold. >8495 samples are needed; 10000 leaves comfortable margin.
+    //
+    // One CHECK after the loop, not one per sample (10000 assertions for a
+    // single property is noise): accumulate the worst step over the decay
+    // and report it via INFO so a failure still shows the offending value.
     float prev = l;
+    float worst_step = 0.f;
     for (int i = 0; i < 10000; ++i) {
         l = 0.f; r = 0.f;
         b.process(tape.view(), l, r);
-        CHECK(std::fabs(l - prev) < 0.01f);   // no step anywhere in the decay
+        worst_step = std::max(worst_step, std::fabs(l - prev));
         prev = l;
     }
+    INFO("worst per-sample step during the ride-out = " << worst_step);
+    CHECK(worst_step < 0.01f);          // no step anywhere in the decay
     CHECK_FALSE(b.active());            // settled: the bypass is now safe
     CHECK(b.reads() == 0);
 }
@@ -373,10 +381,16 @@ TEST_CASE("tap bank: a tap reads its own offset and nothing else") {
     settle(b, tape.view(), l, r);
     CHECK(std::fabs(l) > 1e-3f);        // tap 0 (reads L, panned left) hears it
 
-    // Move the impulse somewhere neither tap looks; output must collapse.
-    FakeTape empty;
+    // Move the impulse to an offset NEITHER tap targets (off = {6000,
+    // 10500}): clear the original 6000 sample and place new material at
+    // 7000 instead. A tap that (incorrectly) read some offset other than
+    // its own configured one would still catch this signal, unlike an
+    // all-zero substitute tape, which removes the property under test
+    // (there being a signal at all) rather than probing it.
+    tape.poke(6000, 0.f);
+    tape.poke(7000, 1.f);
     float l2 = 0.f, r2 = 0.f;
-    settle(b, empty.view(), l2, r2, 2000);
+    settle(b, tape.view(), l2, r2, 2000);
     CHECK(std::fabs(l2) < 1e-4f);
 }
 
@@ -392,12 +406,17 @@ TEST_CASE("tap bank: a re-latch dips instead of crossfading -- reads never excee
     off[0] = 20000;                     // far more than kRelatchMin
     off[1] = 31000;
     b.set_offsets(off);
-    // Through the whole dip, the bank must never read more than two positions.
+    // Through the whole dip, the bank must never read more than two
+    // positions. One CHECK after the loop (not 1000): track the worst
+    // (highest) reads() seen and report it via INFO.
+    int worst_reads = 0;
     for (int i = 0; i < 1000; ++i) {
         l = 0.f; r = 0.f;
         b.process(tape.view(), l, r);
-        CHECK(b.reads() <= 2);
+        worst_reads = std::max(worst_reads, b.reads());
     }
+    INFO("worst reads() seen during the dip = " << worst_reads);
+    CHECK(worst_reads <= 2);
 }
 
 TEST_CASE("tap bank: an offset change below kRelatchMin does not dip") {
@@ -429,11 +448,20 @@ TEST_CASE("tap bank: an offset change below kRelatchMin does not dip") {
     // Dip::out's envelope is hann_value_at(1.0) == 1.0 on its very first
     // sample regardless of whether a dip just started. Run past a full dip
     // cycle (2*dip_len + 1 = 193 samples) instead.
+    //
+    // One CHECK after the loop, not 500: keep the sample that deviated most
+    // from `before` and Approx-compare only that one, reporting the worst
+    // deviation via INFO so a failure is still diagnosable.
+    float worst = before;
+    float worst_dev = 0.f;
     for (int i = 0; i < 500; ++i) {
         l = 0.f; r = 0.f;
         b.process(tape.view(), l, r);
-        CHECK(l == doctest::Approx(before).epsilon(1e-4)); // no envelope movement anywhere in the window
+        const float dev = std::fabs(l - before);
+        if (dev > worst_dev) { worst_dev = dev; worst = l; }
     }
+    INFO("worst deviation from `before` over the window = " << worst_dev);
+    CHECK(worst == doctest::Approx(before).epsilon(1e-4)); // no envelope movement anywhere in the window
 }
 
 TEST_CASE("tap bank: a re-latch produces no discontinuity") {
@@ -453,13 +481,191 @@ TEST_CASE("tap bank: a re-latch produces no discontinuity") {
 
     off[0] = 30000;                        // the -1 plateau
     b.set_offsets(off);
+    // One CHECK after the loop, not 1000: accumulate the worst per-sample
+    // step and report it via INFO.
     float prev = l;
+    float worst_step = 0.f;
     for (int i = 0; i < 1000; ++i) {
         l = 0.f; r = 0.f;
         b.process(tape.view(), l, r);
-        CHECK(std::fabs(l - prev) < 0.05f);     // no step, only the dip's ramp
+        worst_step = std::max(worst_step, std::fabs(l - prev));
         prev = l;
     }
+    INFO("worst per-sample step across the re-latch = " << worst_step);
+    CHECK(worst_step < 0.05f);              // no step, only the dip's ramp
+}
+
+TEST_CASE("tap bank: a repeated unchanged offset during a running dip does not restart it") {
+    // Two plateaus (same trick as "a re-latch produces no discontinuity"
+    // above): old and new offsets read genuinely different content, so both
+    // "did the dip finish" and "did a no-op push re-trigger it" are
+    // observable in l, not masked by a DC tape reading the same value
+    // regardless of position.
+    FakeTape tape;
+    for (int32_t o = 0; o < 20000; ++o) tape.poke(o, 1.f);
+    for (int32_t o = 20000; o < 40000; ++o) tape.poke(o, -1.f);
+    TapBank b = make_bank(1.f);
+    // Tap 1 muted: isolate the signal to tap 0 alone, so l unambiguously
+    // reports what tap 0 is reading.
+    int32_t off[2] = { 6000, tap_tuning::kMuted };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r, 20000);
+    REQUIRE(l == doctest::Approx(0.7f * tap_tuning::kPanNear).epsilon(0.05));
+
+    off[0] = 25000;   // far into the -1 plateau, well past kRelatchMin
+    b.set_offsets(off);
+
+    // Model the real caller (Instrument's control tick, every 96 samples --
+    // exactly _dip_len at 48 kHz, per the brief): re-push the SAME target on
+    // every tick while the dip is running. At this moment, what would the
+    // un-fixed code do? Its early-out guards require `t.dip == Dip::run`,
+    // so a no-op push mid-dip falls through and unconditionally resets
+    // dip_ctr to _dip_len -- the envelope jumps back to hann_value_at(1.0)
+    // == 1.0 from wherever it was, every single tick, forever. That is a
+    // world apart from a single smooth dip settling once, so this is
+    // observable both as a per-sample step far above a single dip's ramp
+    // and as the tap never actually converging on the new plateau's value.
+    float worst_delta = 0.f;
+    float prev = l;
+    for (int tick = 0; tick < 30; ++tick) {
+        for (int i = 0; i < 96; ++i) {
+            l = 0.f; r = 0.f;
+            b.process(tape.view(), l, r);
+            worst_delta = std::max(worst_delta, std::fabs(l - prev));
+            prev = l;
+        }
+        b.set_offsets(off);   // unchanged target -- must be a no-op
+    }
+    INFO("worst per-sample delta over 30 ticks (2880 samples) = " << worst_delta);
+    CHECK(worst_delta < 0.05f);
+
+    // And the tap must actually have arrived at the new offset -- not just
+    // "not stepping", but genuinely reading the -1 plateau now.
+    CHECK(l == doctest::Approx(-0.7f * tap_tuning::kPanNear).epsilon(0.05));
+}
+
+TEST_CASE("tap bank: a re-latch arriving mid-dip (during Dip::out and during "
+          "Dip::in) never steps the envelope or exceeds live-tap reads") {
+    FakeTape tape;
+    for (int32_t o = 0; o < 20000; ++o) tape.poke(o, 1.f);
+    for (int32_t o = 20000; o < 40000; ++o) tape.poke(o, -1.f);
+    for (int32_t o = 40000; o < 60000; ++o) tape.poke(o, 0.5f);
+    TapBank b = make_bank(1.f);
+    int32_t off[2] = { 6000, tap_tuning::kMuted };   // isolate to tap 0
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r, 20000);
+
+    float worst_delta = 0.f;
+    int worst_reads = 0;
+    float prev = l;
+    auto run = [&](int n) {
+        for (int i = 0; i < n; ++i) {
+            l = 0.f; r = 0.f;
+            b.process(tape.view(), l, r);
+            worst_delta = std::max(worst_delta, std::fabs(l - prev));
+            worst_reads = std::max(worst_reads, b.reads());
+            prev = l;
+        }
+    };
+
+    // _dip_len is 96 at 48 kHz (kDipSeconds=0.002s). First retarget starts
+    // a fresh Dip::out (dip_ctr=96).
+    off[0] = 25000;
+    b.set_offsets(off);
+    run(30);   // dip_ctr now ~66: comfortably mid Dip::out, not near an edge.
+
+    // Interrupt AGAIN while still mid Dip::out with a third target.
+    off[0] = 45000;
+    b.set_offsets(off);
+    // 66 more samples finish the fade-out and flip to Dip::in (t.off jumps
+    // to 45000); 40 more climb partway up -- dip_ctr now ~40, comfortably
+    // mid Dip::in, not near either edge.
+    run(106);
+
+    // Interrupt a SECOND time, now mid Dip::in.
+    off[0] = 25000;
+    b.set_offsets(off);
+    // Past a full dip cycle (2*96) with margin: enough for the reversed
+    // fade-out to finish, the jump to 25000, and a fresh fade-in to settle.
+    run(300);
+
+    INFO("worst per-sample |delta| = " << worst_delta
+         << ", worst reads() = " << worst_reads);
+    // No envelope step anywhere, at either interruption. What would the
+    // un-fixed code produce here? Both mid-dip pushes fall through its
+    // Dip::run-only guards and unconditionally reset dip_ctr to _dip_len,
+    // so the envelope snaps back to 1.0 from whatever it was at each
+    // interruption -- a jump far above a single dip's smooth ramp. Differs.
+    CHECK(worst_delta < 0.05f);
+    // Standing invariant, not specific to this bug: with tap 1 muted, only
+    // one tap is ever live, so reads() must never exceed 1 regardless of
+    // how many re-latches land mid-dip. A crossfade-style regression (not
+    // what Important 1 is about) is what this would actually catch.
+    CHECK(worst_reads <= 1);
+
+    // And the tap must genuinely have settled on the final target's value.
+    CHECK(l == doctest::Approx(-0.7f * tap_tuning::kPanNear).epsilon(0.05));
+}
+
+TEST_CASE("tap bank: un-muting to an offset inside [kMinGap, kRelatchMin) "
+          "still dips and sounds") {
+    FakeTape tape;
+    tape.poke(40, 1.f);   // 40 sits in [kMinGap(32), kRelatchMin(64)) -- a
+                          // value derive_offsets can legitimately emit.
+    TapBank b = make_bank(1.f);
+    int32_t off[2] = { tap_tuning::kMuted, tap_tuning::kMuted };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);   // gain slew converges; tap stays muted
+    CHECK(b.reads() == 0);
+
+    off[0] = 40;
+    b.set_offsets(off);
+    // At this moment, what would the un-fixed code produce? want=40,
+    // t.off=kMuted(0): d=40 < kRelatchMin(64) and t.dip==Dip::run, so its
+    // distance guard swallows the request outright -- reads() stays 0 and
+    // l stays 0 forever, regardless of how long this runs. Differs from a
+    // fixed implementation, which dips and settles at 40 within one dip
+    // cycle (2*96 samples). 300 is comfortably past that.
+    settle(b, tape.view(), l, r, 300);
+    CHECK(b.reads() == 1);
+    CHECK(std::fabs(l) > 1e-3f);
+}
+
+TEST_CASE("tap bank: muting from an offset inside [kMinGap, kRelatchMin) "
+          "still dips and silences") {
+    FakeTape tape;
+    tape.poke(40, 1.f);
+    TapBank b = make_bank(1.f);
+    // Reach offset 40 via an ordinary large jump first: kMuted(0) -> 1000
+    // (d=1000), then 1000 -> 40 (d=960). Both distances are comfortably
+    // clear of kRelatchMin on their own, so this setup cannot itself
+    // exercise the bug under test -- it exists only to get the tap sitting
+    // at 40 so the MUTE direction can be tested in isolation from the
+    // UN-MUTE direction (covered by the test above).
+    int32_t off[2] = { 1000, tap_tuning::kMuted };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r, 300);
+
+    off[0] = 40;
+    b.set_offsets(off);
+    settle(b, tape.view(), l, r, 300);
+    REQUIRE(b.reads() == 1);
+    REQUIRE(std::fabs(l) > 1e-3f);          // confirm the tap really is at 40
+
+    off[0] = tap_tuning::kMuted;            // mute FROM inside [32,63]
+    b.set_offsets(off);
+    // At this moment, what would the un-fixed code produce? want=kMuted(0),
+    // t.off=40: d=40 < kRelatchMin(64) and t.dip==Dip::run, so the distance
+    // guard blocks the mute -- reads() stays 1 and l stays nonzero forever.
+    // Differs from a fixed implementation, which dips to silence within one
+    // dip cycle.
+    settle(b, tape.view(), l, r, 300);
+    CHECK(b.reads() == 0);
+    CHECK(l == 0.f);
 }
 
 TEST_CASE("tap bank: ROT separates the two taps spectrally") {
@@ -491,16 +697,38 @@ TEST_CASE("tap bank: ROT separates the two taps spectrally") {
     run_moving(open, open_tape, ol, orr, 4000);
     run_moving(split, split_tape, sl, sr, 4000);
 
-    // Steady-state one-pole gain at Nyquist is a/(2-a); working that out for
-    // the tuned cutoffs (kLpOpenHz/kLpSplitHz for tap 0, kHpOpenHz/
-    // kHpSplitHz for tap 1) gives a computed L ratio (split/open) of ~0.32
-    // and R ratio of ~0.68. Pinned here as fixed thresholds, not recomputed
-    // from those constants, so a moved cutoff shows up as a failure instead
-    // of silently moving the expectation with it. Both channels must be
-    // checked: tap 0's own separation is steep enough on its own to pull the
-    // L-channel sum under any single "must shrink" threshold even if tap 1's
-    // filter were broken (e.g. swapped for a second low-pass) -- only the
-    // R-channel "must survive" check is sensitive to tap 1 specifically.
-    CHECK(std::fabs(sl) < std::fabs(ol) * 0.5f);   // tap 0 (dominates L) shrinks hard
-    CHECK(std::fabs(sr) > std::fabs(orr) * 0.5f);  // tap 1 (dominates R) mostly survives
+    // Steady-state one-pole gain at Nyquist is a/(2-a), and the complementary
+    // high-pass (x - lp(x)) gain is (2-2a)/(2-a). Working those out for the
+    // tuned cutoffs (kLpOpenHz/kLpSplitHz for tap 0, kHpOpenHz/kHpSplitHz for
+    // tap 1) and combining through the pan weights (kPanNear/kPanFar) gives a
+    // computed split/open ratio of L ~= 0.322 and R ~= 0.681 -- confirmed
+    // against this test's own measured output (0.3223 / 0.6809) to 3 decimal
+    // places.
+    //
+    // The old thresholds (ratio < 0.5 / > 0.5) were so loose that kLpSplitHz
+    // had to rise ~10x (400 -> ~3850 Hz) before the L check even noticed, and
+    // kHpOpenHz could move anywhere without the R check reacting at all.
+    // These four bounds are pinned as LITERALS -- not recomputed from
+    // kLpOpenHz/kLpSplitHz/kHpOpenHz/kHpSplitHz, or mutating a cutoff would
+    // silently drag the expectation along with it -- each placed at the
+    // midpoint between the correct ratio and the nearest value produced by
+    // halving or doubling one of the three OBSERVABLE cutoffs (see the
+    // mutation matrix in the task-3 report's Fix wave section): the tightest
+    // gap is kLpSplitHz halved, landing L at 0.3118, only ~0.0052 below the
+    // L-lo bound -- still >>1e-4, comfortably clear of float noise in this
+    // fully deterministic computation.
+    //
+    // kHpOpenHz is NOT covered by any bound: at Nyquist a high-pass is
+    // already at (or extremely near) unity gain regardless of a 20 Hz vs.
+    // 2000 Hz cutoff, so halving/doubling it moves neither ratio measurably
+    // (confirmed by mutation: L 0.3223 -> 0.3223/0.3225, R 0.6807 ->
+    // 0.6804/0.6814, both static to 3 decimals). It is unobservable through
+    // this test by construction, not by an oversight in the bounds below.
+    const float ratio_l = std::fabs(sl) / std::fabs(ol);
+    const float ratio_r = std::fabs(sr) / std::fabs(orr);
+    INFO("ratio_l=" << ratio_l << " ratio_r=" << ratio_r);
+    CHECK(ratio_l > 0.317f);   // catches kLpOpenHz x2, kLpSplitHz /2
+    CHECK(ratio_l < 0.330f);   // catches kLpOpenHz /2, kLpSplitHz x2, kHpSplitHz /2
+    CHECK(ratio_r > 0.665f);   // catches kLpOpenHz x2, kHpSplitHz x2
+    CHECK(ratio_r < 0.699f);   // catches kLpOpenHz /2, kHpSplitHz /2
 }
