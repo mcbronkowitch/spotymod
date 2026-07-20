@@ -2,6 +2,7 @@
 #include <cmath>
 #include <vector>
 #include "instrument.h"
+#include "mod/rng.h"
 #include "sampler/sampler_config.h"
 using namespace spky;
 
@@ -45,6 +46,38 @@ static float rms_of(const std::vector<float>& v, size_t from, size_t n) {
     return float(std::sqrt(acc / double(n)));
 }
 
+TEST_CASE("sampler rng: MOTION-scatter stream is decorrelated from mod lane 0") {
+    // Part::init (part.cpp:15,19) seeds SuperModulator's lane 0 with
+    // seed_base + 0 * 2654435761u == seed_base (super_modulator.cpp:15),
+    // and seeds the sampler's Rng with seed_base ^ <a constant>
+    // (SamplerEngine::init, sampler_engine.cpp). Both are the same
+    // xorshift32 generator (mod/rng.h). A Task-6-review regression had the
+    // sampler XOR in the SAME constant Part::init itself XORs seed_base
+    // with before handing it to SamplerEngine::set_seed -- which cancels,
+    // leaving the sampler seeded with seed_base exactly, bit-identical to
+    // lane 0. Left uncaught, MOTION's grain-position jitter, pan, and
+    // octave-scatter draws would silently retrace lane 0's own PITCH
+    // modulation every time -- the exact correlation the decorrelation
+    // constant exists to prevent, invisible in any single render because
+    // both streams individually look like ordinary noise.
+    //
+    // This is a correlation property, not a correctness one: neither stream
+    // is "wrong" in isolation, so a reader unaware of that history may look
+    // at this test and call it trivial. It is not -- it is the only check
+    // in the suite that would catch the two constants colliding again.
+    const uint32_t seed_base = 0xabcd1234u;
+    Rng lane0;
+    lane0.seed(seed_base);                      // SuperModulator lane 0 (i == 0)
+    Rng sampler_rng;
+    sampler_rng.seed(seed_base ^ 0xC0FFEE11u);  // SamplerEngine::init's constant
+
+    bool differed = false;
+    for (int i = 0; i < 256; ++i) {
+        if (lane0.next_u32() != sampler_rng.next_u32()) { differed = true; break; }
+    }
+    CHECK(differed);
+}
+
 TEST_CASE("part: ENGINE_SAMPLER is selectable and records from the input") {
     InstRig g;
     g.inst.set_engine(PART_A, ENGINE_SAMPLER);
@@ -71,14 +104,34 @@ TEST_CASE("part: ENGINE_SAMPLER is selectable and records from the input") {
     CHECK(g.sbuf[PART_A][5000].r == doctest::Approx(0.5f));
 }
 
-TEST_CASE("part: input reaches ONLY the sampler engine, and only when routed") {
+TEST_CASE("part: input reaches a part's SamplerEngine only while that part is routed to it") {
+    // Every Part owns BOTH a SynthEngine and a SamplerEngine (part.h), and
+    // Instrument::sampler_record()/sampler_fill() always address a part's
+    // _sampler member directly, regardless of which engine is currently
+    // active (instrument.h). Part::process(), however, only ever calls
+    // process_in() on the ACTIVE engine (part.cpp: `_engine->process_in(...)`,
+    // where `_engine` tracks set_engine()). So a part's SamplerEngine can
+    // only actually receive input while that part is routed to
+    // ENGINE_SAMPLER -- arming its recording is necessary but not
+    // sufficient.
+    //
+    // The previous version of this test left B's recording UNARMED, so
+    // sampler_fill(PART_B) == 0 was guaranteed by the recording gate alone
+    // (SampleBuffer::write no-ops unless recording) and said nothing about
+    // routing -- it would have passed identically even if input reached
+    // every part's sampler unconditionally. Arming B's recording too, while
+    // leaving B on the synth, removes that confound: B's sampler is now
+    // willing to record, so a fill > 0 here could only be explained by input
+    // reaching a part whose active engine is not the sampler -- the bug this
+    // test claims to guard against.
     InstRig g;
-    // Part B stays on the synth. Recording is armed on A only.
-    g.inst.set_engine(PART_A, ENGINE_SAMPLER);
+    g.inst.set_engine(PART_A, ENGINE_SAMPLER);   // A routed to the sampler...
     g.render(960);
     g.inst.sampler_record(PART_A, true);
+    g.inst.sampler_record(PART_B, true);         // ...B stays on the synth, but arm it too
     g.render(9600, 0.5f);
     g.inst.sampler_record(PART_A, false);
+    g.inst.sampler_record(PART_B, false);
     CHECK(g.inst.sampler_fill(PART_A) > 0.f);
     CHECK(g.inst.sampler_fill(PART_B) == doctest::Approx(0.f));
 }
@@ -218,21 +271,39 @@ TEST_CASE("part: voice-row edits stick on the sampler while the synth is active"
 }
 
 TEST_CASE("part: CHOKE holds a sampler drone like a synth drone") {
+    // Part A stays on its ENGINE_SYNTH boot-default FLOW drone, exactly the
+    // way test_choke.cpp's arm_both()/"choke -1: the yielding FLOW drone
+    // ducks out and comes back" leaves it. Left at full LEVEL and never
+    // silenced, A's own drone alone satisfies an instrument-level hi/lo RMS
+    // spread whether or not B's sampler is ducking at all -- that was this
+    // case's bug (Task 6 review). Muting A's LEVEL target removes that
+    // confound; it does not touch gate()/flow(), which is what the CHOKE
+    // priority window (instrument.cpp) actually reads, so A still "holds"
+    // for CHOKE purposes.
+    //
+    // The observable is sampler_grains(PART_B), not instrument-level RMS:
+    // it reads the cloud's own scheduler state directly, with no dependence
+    // on A's contribution to the mix, the reverb tail, or the FILT/LEVEL
+    // chain -- the same reasoning the STEP-gate case above uses for
+    // active_grains().
     InstRig g;
     g.inst.set_engine(PART_B, ENGINE_SAMPLER);
     g.render(960);
     std::vector<float> tone(24000, 0.6f);
     g.inst.load_sample(PART_B, tone.data(), tone.data(), tone.size());
     g.inst.set_target_base(PART_B, LANE_LEVEL, 1.f);
-    // Full A priority: B must duck whenever A holds.
-    g.inst.set_choke(-1.f);
-    auto v = g.render(48000 * 3);
-    float lo = 1e9f, hi = 0.f;
-    for (size_t i = 4800; i + 2400 < v.size(); i += 2400) {
-        const float e = rms_of(v, i, 2400);
-        if (e < lo) lo = e;
-        if (e > hi) hi = e;
-    }
-    CHECK(hi > 0.005f);
-    CHECK(lo < 0.6f * hi);       // the cloud really ducks
+
+    g.inst.set_target_active(PART_A, LANE_LEVEL, false);
+    g.inst.set_target_base(PART_A, LANE_LEVEL, 0.f);
+
+    g.render(24000);                 // let B's cloud establish, unchoked (default choke = 0)
+    CHECK(g.inst.sampler_grains(PART_B) > 0);
+
+    g.inst.set_choke(-1.f);          // full A priority: B must duck while A holds
+    g.render(48000);                 // A's FLOW drone holds forever, so this decays out and stays out
+    CHECK(g.inst.sampler_grains(PART_B) == 0);
+
+    g.inst.set_choke(0.f);           // floor free again
+    g.render(48000);
+    CHECK(g.inst.sampler_grains(PART_B) > 0);   // the cloud re-arms and comes back
 }
