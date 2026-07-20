@@ -2,16 +2,29 @@
 
 **Date:** 2026-07-18
 **Status:** approved (brainstorm with Bastian, 2026-07-18)
-**Amended:** 2026-07-20 (2) — **MOTION now stretches grain length as well.** The
-first listening test of the M5a engine found the identity section's promise
-("one axis from focused loop to **diffuse fog**") and the lane table's ceiling
-("up to ±¼ of content length") did not meet: at full MOTION the cloud read as a
-clearly mangled loop, not as fog. A probe holding MOTION at 1 while stepping
-SIZE showed the missing lever is grain **length**, not more position scatter —
-fog arrives around SIZE 0.8 (~800 ms grains). MOTION therefore scales grain
-length up to ~4× on top of SIZE, which keeps SIZE as the base value and makes
-MOTION the single order→chaos macro the identity section describes. Decided by
-ear with Bastian, 2026-07-20.
+**Open, 2026-07-20 — MOTION does not reach "diffuse fog" on its own.** The first
+listening test of the M5a engine found the identity section's promise ("one axis
+from focused loop to **diffuse fog**") and the lane table's ceiling ("up to ±¼ of
+content length") do not meet: at full MOTION the cloud reads as a clearly mangled
+loop, not as fog. A probe holding MOTION at 1 while stepping SIZE showed the
+missing lever is grain **length** — fog arrives around SIZE 0.8 (~800 ms grains).
+
+**An attempt to fold that into MOTION was tried and reverted the same evening.**
+Scaling grain length up to ~4× with MOTION (`kScatterSmear`) did not produce fog;
+it produced an audible tremolo — the cloud dipping in and out every few hundred
+ms. The implementer's unit measurement had flagged the risk (FLOW continuity
+0.748 → 0.015 at MOTION 1) and was right; the controller's follow-up measurement
+on real material (50 ms RMS windows) averaged the dips away and wrongly read as
+mild. **The ear was correct and the metric was not** — worth remembering before
+trusting a continuity number over a listen. Ruled out as the cause: SIZE-lane
+modulation compounding with the stretch (measured identical with the lane frozen).
+
+So MOTION stays position/pan/timing/octave only, and fog needs SIZE as well —
+two knobs, not one. Whether to close the gap differently (raising `kOverlap` so
+density rises with grain length, a gentler stretch, or rewording the identity
+section) is undecided. Do not re-attempt the plain stretch without a listen.
+
+**Amended:** 2026-07-20 (2) — superseded by the paragraph above.
 
 **Amended:** 2026-07-20 — the DUST dependency was rewritten after DUST shipped
 as rhythm-fed delay taps instead of a grain cloud
