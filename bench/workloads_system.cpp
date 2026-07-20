@@ -7,6 +7,7 @@
 #include "parts/part.h"
 #include "synth/synth_engine.h"
 #include "fx/part_fx.h"
+#include "fx/taps.h"
 
 namespace bench {
 namespace {
@@ -255,6 +256,83 @@ float proc_inst()
     return acc;
 }
 
+// --- 10. the whole instrument, taps engaged --------------------------------
+// instrument_worst never calls set_dust/set_rot -- the tap bank's isolated
+// cost is measured separately (taps_2_opt, bench/workloads_taps.cpp) -- so
+// the combined worst case has only ever been an extrapolation (~92.6 + ~7).
+// This row measures instrument_worst's exact configuration plus DUST 1
+// (both taps at full gain) and ROT 0.5 (mid spread, so neither one-pole's
+// coefficient collapses to a cheap 0/1 edge) on both parts.
+//
+// TapBank::process (fx/taps.h) skips a tap's read the instant its offset is
+// tap_tuning::kMuted OR its gain is 0. A part's offsets are placed by the
+// OTHER part's PITCH-lane rhythm (fx/taps.cpp's derive_offsets, cross-fed at
+// Instrument's control tick, instrument.cpp), and that rhythm is not valid
+// until its lane has recorded 3 onsets AND wrapped a 4th time --
+// SuperModulator::process latches `valid = onsets>=3` BEFORE folding in the
+// current wrap's own onset (mod/super_modulator.cpp), so the 3rd onset only
+// becomes visible one wrap later. Both parts boot in FLOW (neither
+// setup_inst_common nor setup_inst_worst calls set_step), where a wrap IS an
+// onset, at the RATE 0.8 setup_inst_worst already sets: free_hz(0.8) is
+// ~6.95 Hz, a ~6907-sample cycle, so validity needs ~4 * 6907 ~= 27600
+// samples -- an order of magnitude past the runner's fixed 100-block
+// (9600-sample) warm-up (workload.h), which is shared across every row and
+// not this row's to change. So this setup runs its own extra process()
+// blocks first: it polls Instrument::rhythm() on both parts and re-derives
+// the offsets with the exact same pure function instrument.cpp itself calls
+// (derive_offsets), stopping only once BOTH parts' derived offsets are
+// non-muted -- established, not assumed -- then runs a further fixed margin
+// so the control tick and TapBank's own re-latch dip (each a mute->live
+// transition, answered by an immediate dip-out + dip-in of kDipSeconds each,
+// tap_tuning.h) have cleared before returning.
+//
+// Verified against the real engine on the desktop host (this exact setup,
+// outside the bench toolchain, not committed): offsets go live at block 287
+// (sample 27648), matching the estimate above, and an FNV checksum folded
+// the same way runner.cpp does, over the runner's own warm-up+measure window
+// (1100 blocks) starting from this setup, differs from the identical row
+// with DUST/ROT left at 0. See .superpowers/sdd/worst-taps-workload.md.
+void setup_inst_worst_taps()
+{
+    setup_inst_worst();
+    for (int p = 0; p < PART_COUNT; ++p) {
+        g_inst.set_dust(p, 1.f);   // both taps at full gain
+        g_inst.set_rot(p, 0.5f);   // mid spread -- neither one-pole collapses
+    }
+
+    const float* in = test_input();
+    constexpr int32_t kTapeLen = static_cast<int32_t>(Flux::kMaxSamples);
+    // Generous safety cap: ~7x the ~288 blocks this configuration actually
+    // needs (verified above). If this cap is ever hit -- a future change to
+    // RATE, STEP mode, or the onset-gap ring's arithmetic -- the loop simply
+    // gives up with the taps still muted, which the checksum guard this row
+    // exists for (see the design doc) is what catches: a silently identical
+    // checksum to instrument_worst means this cap was hit and the row needs
+    // re-deriving, not trusting.
+    constexpr int kSafetyBlocks = 2000;
+    bool ready = false;
+    for (int b = 0; b < kSafetyBlocks && !ready; ++b) {
+        g_inst.process(in, in, g_out_l, g_out_r, kBlock);
+        const RhythmView& ra = g_inst.rhythm(PART_A);
+        const RhythmView& rb = g_inst.rhythm(PART_B);
+        if (ra.valid && rb.valid) {
+            int32_t off_a[tap_tuning::kTaps], off_b[tap_tuning::kTaps];
+            derive_offsets(rb, kTapeLen, off_a);   // A's taps read B's rhythm
+            derive_offsets(ra, kTapeLen, off_b);   // B's taps read A's rhythm
+            const bool a_live = off_a[0] != tap_tuning::kMuted || off_a[1] != tap_tuning::kMuted;
+            const bool b_live = off_b[0] != tap_tuning::kMuted || off_b[1] != tap_tuning::kMuted;
+            ready = a_live && b_live;
+        }
+    }
+    // Settle margin: the control tick that pushes the now-valid offsets into
+    // each TapBank runs at the start of the next 96-sample block
+    // (Center::kCtrlInterval == kBlock), and TapBank::set_offsets answers
+    // the mute->live transition with an immediate dip-out + dip-in (2 x
+    // kDipSeconds = 2 x 96 samples @ 48 kHz) before the first live read. 50
+    // blocks (4800 samples) is >15x that ~288-sample worst case.
+    for (int b = 0; b < 50; ++b) g_inst.process(in, in, g_out_l, g_out_r, kBlock);
+}
+
 } // namespace
 
 const Workload kCoreWorkloads[] = {
@@ -270,6 +348,7 @@ const Workload kCoreWorkloads[] = {
     { "system", "oliverb_solo_sram",  setup_reverb,    proc_reverb  },
     { "system", "instrument_init",    setup_inst_init, proc_inst    },
     { "system", "instrument_worst",   setup_inst_worst,proc_inst    },
+    { "system", "instrument_worst_taps", setup_inst_worst_taps, proc_inst },
 };
 const int kCoreCount = sizeof(kCoreWorkloads) / sizeof(kCoreWorkloads[0]);
 
