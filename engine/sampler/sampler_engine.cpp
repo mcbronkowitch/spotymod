@@ -42,6 +42,8 @@ void SamplerEngine::init(float sample_rate) {
     _svf_r.SetDrive(0.f);
 
     _level.init(sample_rate, 0.01f);   // 10 ms, as the synth's LEVEL
+    _norm.init(sample_rate, kNormSmoothS);
+    _norm.reset(1.f);   // no grains yet == the n==0 baseline _update_control gives
     _kill_all();
     _spawn_ctr   = 0.f;
     _ctrl_ctr    = 0;
@@ -221,10 +223,17 @@ void SamplerEngine::_update_control() {
     // interval while grains retire at the new, much shorter length.
     if (_spawn_ctr > _spawn_every) _spawn_ctr = _spawn_every;
 
-    // Overlap normalization (1/sqrt(active), the COLOR loudness law) is NOT
-    // computed here any more -- see _spawn_one(), which latches it per grain
-    // at spawn time instead of recomputing and re-applying it globally every
-    // control tick.
+    // Overlap normalization: 1/sqrt(active), the COLOR loudness law. Computed
+    // globally here, once per control tick, from the currently-sounding
+    // grain count -- NOT latched per grain (see grain.h for why that
+    // analogy to SynthEngine::trigger_chord fails: grains overlap
+    // independently, with no group whose count stays fixed for a latched
+    // grain's whole life). Recomputing this every tick and applying it raw
+    // to the summed cloud steps the output audibly on every spawn/retire, so
+    // process() feeds the target through _norm (a OnePole) instead of
+    // assigning it directly.
+    const int n = active_grains();
+    _norm_target = n > 0 ? 1.f / std::sqrt(static_cast<float>(n)) : 1.f;
 
     // --- FILT: same bipolar rails as the synth; set_filt() is the knob ---
     const float off   = _filt_amt < 0.f ? kFiltLeftScale * _filt_amt : _filt_amt;
@@ -242,14 +251,6 @@ void SamplerEngine::_spawn_one() {
     for (int i = 0; i < kGrains; ++i)
         if (!_grains[i].active()) { slot = i; break; }
     if (slot < 0) return;                       // all busy: skip this spawn
-
-    // Overlap normalization: 1/sqrt(active), the COLOR loudness law -- latched
-    // into THIS grain now, not recomputed globally every control tick (see
-    // Grain::spawn's `gain` parameter). active_grains() here counts the
-    // grains already sounding, before this one joins them, so +1 accounts
-    // for the grain about to spawn.
-    const int n_active = active_grains() + 1;
-    const float norm_gain = 1.f / std::sqrt(static_cast<float>(n_active));
 
     const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
     // Fill-follows: SOURCE maps into the CURRENT content length, so while a
@@ -303,7 +304,7 @@ void SamplerEngine::_spawn_one() {
     if (atk < 1) atk = 1;
     if (dec < 1) dec = 1;
 
-    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse, norm_gain);
+    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse);
 
     _last_ratio = ratio;
     _last_pan   = pan;
@@ -333,9 +334,6 @@ void SamplerEngine::process(float& outL, float& outR) {
     }
 
     // --- the cloud ---
-    // Overlap normalization (1/sqrt(active)) is already folded into each
-    // grain's own gain at spawn time (_spawn_one), so the sum here needs no
-    // further scaling.
     float l = 0.f, r = 0.f;
     for (int i = 0; i < kGrains; ++i) {
         if (!_grains[i].active()) continue;
@@ -344,6 +342,15 @@ void SamplerEngine::process(float& outL, float& outR) {
         l += gl;
         r += gr;
     }
+
+    // Overlap normalization (1/sqrt(active)): the target is recomputed once
+    // per control tick above, but applied here through a OnePole, advanced
+    // every sample toward that tick-rate target -- same idiom as _level just
+    // below. Without the smoothing the raw target steps the whole cloud
+    // audibly on every grain spawn/retire.
+    const float norm = _norm.process(_norm_target);
+    l *= norm;
+    r *= norm;
 
     // --- filter, then LEVEL with the FILT silence fade folded in ---
     _svf_l.Process(l);

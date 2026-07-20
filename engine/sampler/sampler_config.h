@@ -55,5 +55,22 @@ constexpr float  kFiltNeutral = 0.75f;
 constexpr float  kDetuneCeilCt  = 35.f;      // DTUN spread ceiling, matches the synth
 constexpr float  kSubMaxShare   = 1.f;       // SUB 1 = every grain an octave down
 
+// Overlap-normalization (1/sqrt(active)) smoothing time constant. Ear-tunable,
+// but chosen from measurement, not taste: "sampler: FLOW is a standing
+// cloud" 's continuity ratio (lowest/highest RMS window) and the max
+// sample-to-sample delta over the same 3 s FLOW render, at kFiltNeutral =
+// 0.75f, for candidate values against the two references (raw/unsmoothed
+// _norm: ratio 0.64, delta 0.073; per-grain latched gain, since reverted:
+// ratio 0.56, delta 0.102):
+//   2 ms:  ratio 0.693, delta 0.0728
+//   5 ms:  ratio 0.725, delta 0.0729
+//   10 ms: ratio 0.748, delta 0.0738   <- chosen
+//   20 ms: ratio 0.744, delta 0.0767
+// 10 ms gives the best ratio of the four while its delta is still within ~1%
+// of the unsmoothed reference; 20 ms's ratio drops back below 10 ms's while
+// its delta clearly worsens -- the "lags real density changes" failure mode
+// starting to show. Also matches _level's own 10 ms constant.
+constexpr float  kNormSmoothS   = 0.01f;
+
 }  // namespace sampler_cfg
 }  // namespace spky

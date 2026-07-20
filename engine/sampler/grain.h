@@ -22,16 +22,19 @@ public:
     // cannot overlap -- a caller asking for more than the grain has gets
     // both halves scaled proportionally, never a fold-over.
     //
-    // `gain` is the overlap-normalization factor (1/sqrt(active-grain-count)
-    // at spawn time), latched here and folded into the pan gains alongside
-    // the equal-power split -- the same "latch once at trigger, never step
-    // it" idiom SynthEngine::trigger_chord uses for its own 1/sqrt(n) chord
-    // compensation (synth_engine.cpp:116). Recomputing and re-applying this
-    // factor globally, every control tick, would make the grain count's
-    // natural churn an audible amplitude step on every spawn/retire instead
-    // of a level each grain simply carries for its own lifetime.
+    // No overlap-normalization gain is latched here. That was tried (a
+    // `gain` parameter folded into the pan gains below, by analogy with
+    // SynthEngine::trigger_chord's per-trigger 1/sqrt(n) latch) and measured
+    // worse: a chord's notes are triggered together and share one group that
+    // never outlives its count, but grains spawn independently and overlap
+    // arbitrarily -- there is no group. A gain latched at spawn is correct
+    // only at that instant and stale for the rest of the grain's life, so
+    // the summed cloud stops matching the live grain count. The
+    // overlap-normalization factor (1/sqrt(active), the COLOR loudness law)
+    // is instead computed globally and smoothed in SamplerEngine, and
+    // applied once to the summed cloud (see SamplerEngine::_norm).
     void spawn(float start, float ratio, float pan, int len,
-               int atk, int dec, bool reverse, float gain = 1.f) {
+               int atk, int dec, bool reverse) {
         _len     = len < 2 ? 2 : len;
         if (atk < 1) atk = 1;
         if (dec < 1) dec = 1;
@@ -56,8 +59,8 @@ public:
         // Equal-power pan, the Voice idiom (synth/voice.cpp:89-93):
         // angle 0..0.25 turns, gr = sin(a), gl = sin(a + quarter turn).
         const float a = (clampf(pan, -1.f, 1.f) + 1.f) * 0.125f;
-        _gr = fast_sin(a) * gain;
-        _gl = fast_sin(a + 0.25f) * gain;
+        _gr = fast_sin(a);
+        _gl = fast_sin(a + 0.25f);
     }
 
     bool active() const { return _active; }

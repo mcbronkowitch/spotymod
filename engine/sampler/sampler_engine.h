@@ -98,6 +98,7 @@ private:
 
     daisysp::Svf _svf_l, _svf_r;
     OnePole _level;
+    OnePole _norm;          // smoothed 1/sqrt(active) -- see _update_control
 
     float _sr = 48000.f;
     float _targets[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 0.8f };
@@ -106,6 +107,7 @@ private:
     float _grain_len   = 960.f;   // output samples
     float _spawn_every = 240.f;   // samples between spawns
     float _filt_gain   = 1.f;
+    float _norm_target = 1.f;     // 1/sqrt(active), fed through _norm per sample
 
     float _spawn_ctr   = 0.f;
     int   _ctrl_ctr    = 0;
