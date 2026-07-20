@@ -539,8 +539,11 @@ TEST_CASE("sampler: SUB sends a share of grains an octave down") {
     REQUIRE(b.ratio.size() == 400);
     int down = 0;
     for (float rr : b.ratio) if (rr < 0.75f) ++down;
-    CHECK(down > 400 * 0.5f * 0.6f);
-    CHECK(down < 400 * 0.5f * 1.4f);
+    // Expected share is sub_n (0.5 here) * kSubMaxShare, not a bare 0.5: tie
+    // the bounds to the constant so they track it if it is ever retuned.
+    const float expect = 400 * 0.5f * sampler_cfg::kSubMaxShare;
+    CHECK(down > expect * 0.6f);
+    CHECK(down < expect * 1.4f);
 }
 
 TEST_CASE("sampler: DTUN spreads grain ratios in cents, 0 is exact") {
@@ -593,6 +596,37 @@ TEST_CASE("sampler: FILT full left fades to silence at ANY lane position") {
     open.e.set_filt(1.f);
     auto v = open.render(24000);
     CHECK(rms(v, 12000, 4800) > 0.01f);
+}
+
+TEST_CASE("sampler: RES boosts content parked at the cutoff") {
+    // A resonant SVF lowpass peaks near its own cutoff: content sitting right
+    // at that frequency comes out louder than through the same filter flat.
+    // Solve cutoff_hz(n) = kCutoffMinHz * (kCutoffMaxHz/kCutoffMinHz)^n for the
+    // LANE_SIZE value (the FILTER/SIZE slot, lane_id.h:9) that puts the
+    // cutoff right on the Rig's 441 Hz content.
+    const float lane_n =
+        std::log(441.f / sampler_cfg::kCutoffMinHz) /
+        std::log(sampler_cfg::kCutoffMaxHz / sampler_cfg::kCutoffMinHz);
+
+    Rig flat;
+    flat.e.set_flow(true);
+    flat.feed(0.5f, 0.5f, lane_n, 0.f, 1.f);   // PITCH unity, MOTION 0: steady tone
+    flat.e.set_resonance(0.f);
+    auto vf = flat.render(96000);
+    const float rms_flat = rms(vf, 48000, 48000);
+
+    Rig res(24000, 4242);                      // same content, seed and calls as `flat`
+    res.e.set_flow(true);
+    res.feed(0.5f, 0.5f, lane_n, 0.f, 1.f);
+    res.e.set_resonance(0.9f);
+    auto vr = res.render(96000);
+    const float rms_res = rms(vr, 48000, 48000);
+
+    // Measured ~0.32 (flat) vs ~11.7 (resonant) -- a ~36x lift, comfortably
+    // clear of a 2x bar, so 2x leaves ample margin while still failing a
+    // no-op SetRes.
+    CHECK(rms_flat > 0.02f);           // the tone is actually there to boost
+    CHECK(rms_res > rms_flat * 2.f);   // ...and resonance measurably lifts it
 }
 
 TEST_CASE("sampler: Reverse plays the material backwards") {
