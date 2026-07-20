@@ -721,7 +721,7 @@ void settle(TapBank& b, const TapeTap& t, float& l, float& r, int n = 8000) {
 }
 }  // namespace
 
-TEST_CASE("tap bank: dust 0 is silent and performs no reads") {
+TEST_CASE("tap bank: dust 0 from init is silent and performs no reads") {
     FakeTape tape;
     tape.poke(6000, 1.f);
     TapBank b = make_bank(0.f);
@@ -733,6 +733,32 @@ TEST_CASE("tap bank: dust 0 is silent and performs no reads") {
     settle(b, tape.view(), l, r);
     CHECK(l == 0.f);
     CHECK(r == 0.f);
+    CHECK(b.reads() == 0);
+}
+
+TEST_CASE("tap bank: dropping DUST to 0 rides the taps out instead of cutting them") {
+    // Flux takes its bit-exact bypass on !active(). If active() went false the
+    // instant the knob hit 0, a full-level tap sum would vanish in one sample.
+    FakeTape tape;
+    for (int32_t o = 0; o < 40000; ++o) tape.poke(o, 0.5f);   // DC everywhere
+    TapBank b = make_bank(1.f);
+    const int32_t off[2] = { 6000, 10500 };
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r);
+    REQUIRE(std::fabs(l) > 1e-3f);
+
+    b.set_dust(0.f);
+    CHECK(b.active());                  // still riding out, not cut
+
+    float prev = l;
+    for (int i = 0; i < 8000; ++i) {
+        l = 0.f; r = 0.f;
+        b.process(tape.view(), l, r);
+        CHECK(std::fabs(l - prev) < 0.01f);   // no step anywhere in the decay
+        prev = l;
+    }
+    CHECK_FALSE(b.active());            // settled: the bypass is now safe
     CHECK(b.reads() == 0);
 }
 
@@ -908,7 +934,18 @@ public:
     void set_rot(float r);                      // 0..1 spectral spread
     void set_offsets(const int32_t off[tap_tuning::kTaps]);
 
-    bool active() const { return _dust > 0.f; }
+    // True while the bank still has anything to contribute. Deliberately NOT
+    // `_dust > 0`: Flux takes its bit-exact bypass when this is false, so
+    // reporting inactive the instant the knob hits zero would drop a
+    // full-level tap sum in one sample -- a click, defeating the very gain
+    // slew that exists to prevent it. Staying active until the slews have
+    // snapped to 0 lets the taps ride out, and the bypass is then reached
+    // with nothing left to lose.
+    bool active() const {
+        if (_dust > 0.f) return true;
+        for (const auto& t : _t) if (t.gain > 0.f) return true;
+        return false;
+    }
 
     // Reads the tape as it stands at the START of the sample; adds into l/r.
     void process(const TapeTap& tape, float& l, float& r);
@@ -1014,11 +1051,6 @@ void TapBank::set_offsets(const int32_t off[tap_tuning::kTaps]) {
 
 void TapBank::process(const TapeTap& tape, float& l, float& r) {
     _reads = 0;
-    if (_dust <= 0.f) {
-        for (auto& t : _t) { t.gain = 0.f; t.lp.reset(); }
-        return;
-    }
-
     float sum_l = 0.f, sum_r = 0.f;
     for (int i = 0; i < tap_tuning::kTaps; ++i) {
         Tap& t = _t[i];
@@ -1086,8 +1118,9 @@ Expected: **0 failed**.
 
 | Mutation | Must break |
 |---|---|
-| Delete the `if (t.gain <= 0.f \|\| t.off == kMuted) continue;` line | "a muted offset costs no read" and "dust 0 is silent and performs no reads" |
-| Delete the gain snap (`if (t.gain_target == 0.f && ...)`) | "dust morphs tap 0 in over the first half..." |
+| Delete the `if (t.gain <= 0.f \|\| t.off == kMuted) continue;` line | "a muted offset costs no read" and "dust 0 from init is silent and performs no reads" |
+| Make `active()` return `_dust > 0.f` only | "dropping DUST to 0 rides the taps out instead of cutting them" |
+| Delete the gain snap (`if (t.gain_target == 0.f && ...)`) | "dust morphs tap 0 in over the first half..." **and** "dropping DUST to 0..." (without the snap, `active()` never goes false again) |
 | Replace the dip with a crossfade (read both `t.off` and `t.next_off`, sum them, `++_reads` twice) | "a re-latch dips instead of crossfading -- reads never exceed live taps" |
 | Apply the new offset immediately in `set_offsets` (`t.off = want;` with no dip) | "a re-latch produces no discontinuity" |
 | Change `kRelatchMin` to `1` | "an offset change below kRelatchMin does not dip" |
