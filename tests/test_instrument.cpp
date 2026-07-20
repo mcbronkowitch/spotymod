@@ -828,3 +828,61 @@ TEST_CASE("instrument cross-feed: a bank's taps are placed by the OTHER bank's r
     // B's (valid) rhythm, since A's own rhythm never validates in this run.
     CHECK(rms > 1e-4);
 }
+
+TEST_CASE("instrument cross-feed: the OTHER leg -- B's taps are placed by A's rhythm") {
+    // The case above only pins the A<-B leg. A ONE-SIDED mutation --
+    // instrument.cpp's off_b also derived from PART_B's OWN rhythm (i.e.
+    // both derive_offsets calls read B, leaving off_a, and therefore the case
+    // above, untouched) -- would leave that test green while the B<-A leg
+    // silently self-feeds. "Each bank hears the other" is a claim about both
+    // legs, so both need a guard. Mirrors the A-leg case exactly, with the
+    // fast/slow rates and DUST/morph swapped to the other part.
+    auto setup = [](Instrument& inst) {
+        inst.init(48000.f, pp_fx_mem());
+        inst.set_rate(PART_A, 1.f);             // A fast: A's rhythm validates
+        inst.set_rate(PART_B, 0.f);             // B slow: B's own rhythm never does
+        inst.set_morph(1.f);                    // B audible (gain_a -> ~0 at morph 1)
+        inst.set_fx_on(PART_B, FxBlock::Flux, true);
+        inst.set_flux_mix(PART_B, 1.f);
+    };
+
+    // Precondition, asserted rather than assumed, mirroring the A-leg case.
+    {
+        Instrument probe;
+        setup(probe);
+        std::vector<float> l(30000), r(30000);
+        probe.process(nullptr, nullptr, l.data(), r.data(), 30000);
+        REQUIRE(probe.rhythm(PART_A).valid);
+        REQUIRE_FALSE(probe.rhythm(PART_B).valid);
+    }
+
+    Instrument tapped;
+    setup(tapped);
+    tapped.set_dust(PART_B, 1.f);               // taps fully open on B -- only the
+                                                 // offsets can still mute them
+    std::vector<float> out(30000);
+    float l, r;
+    for (size_t i = 0; i < out.size(); ++i) {
+        tapped.process(nullptr, nullptr, &l, &r, 1);
+        out[i] = l;
+    }
+
+    // Reference: identical setup, DUST left at 0 on B -- the tap-free baseline.
+    Instrument ref;
+    setup(ref);
+    std::vector<float> base(30000);
+    for (size_t i = 0; i < base.size(); ++i) {
+        ref.process(nullptr, nullptr, &l, &r, 1);
+        base[i] = l;
+    }
+
+    double sum_sq = 0.0;
+    for (size_t i = 0; i < out.size(); ++i) {
+        const double diff = (double)out[i] - (double)base[i];
+        sum_sq += diff * diff;
+    }
+    const double rms = std::sqrt(sum_sq / (double)out.size());
+    // Real signal reached B's taps -- only possible if B's offsets came from
+    // A's (valid) rhythm, since B's own rhythm never validates in this run.
+    CHECK(rms > 1e-4);
+}

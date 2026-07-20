@@ -53,8 +53,8 @@ public:
         return a + (b - a) * frac_;
     }
 
-    // Raw access for the grain taps (DustCloud reads integer offsets behind
-    // the write head; no interpolation, no state).
+    // Raw access for TapBank's read taps (TapBank reads integer offsets
+    // behind the write head; no interpolation, no state).
     const T* data() const { return line_; }
     int32_t write_ptr() const { return write_ptr_; }
 

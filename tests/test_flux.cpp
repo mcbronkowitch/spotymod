@@ -367,27 +367,77 @@ TEST_CASE("flux slice: norm endpoints hit 1/2 and 1/32") {
     CHECK(std::string(kDivisions[kFluxRateOffset + flux_division_index(3.f/11.f)].name) == "1/4");
 }
 
-TEST_CASE("flux: dust 0 is bit-exact with the pre-DUST path at any rot") {
-    // The DUST = 0 bypass must remain byte-identical, whatever ROT says --
-    // ROT only configures filters that the bypass never reaches.
-    static float a_l[Flux::kMaxSamples], a_r[Flux::kMaxSamples];
-    static float b_l[Flux::kMaxSamples], b_r[Flux::kMaxSamples];
+TEST_CASE("flux: dust 0 stays inert at any rot -- against a never-touched reference, output AND tape") {
+    // Recovered after review: the previous version of this test compared two
+    // LIVE `Flux` instances that were both at DUST = 0, i.e. both took the
+    // bypass branch (flux.cpp's `if (!_taps.active())`). ROT only writes
+    // TapBank's one-pole coefficients (taps.cpp's `_update_filters`), which
+    // the bypass never reads -- so that comparison was bypass-against-bypass,
+    // tautologically equal by construction, regardless of what set_rot did.
+    //
+    // The only way to state "DUST = 0 leaves ROT inert" without begging the
+    // question is a reference on which set_dust/set_rot are NEVER called at
+    // all -- so a bug in set_rot's OWN side effects (e.g. corrupting _mix_lin
+    // or _dt_target, not just TapBank's filters) has somewhere to show up.
+    // Rate pinned to the ladder's shortest synced division ("1/32" -- slice
+    // 11, kFluxRateOffset+11) so the delay is ~3000 samples @120 BPM/48 kHz,
+    // not the 3-boot default's ~24000. A delay longer than the test window
+    // (as the boot default is) means the tape read lands in never-written
+    // territory for the ENTIRE run -- EchoDelay::Process() returns bit-exact
+    // 0.0f regardless of _dt_current/_mix_lin, which would make this test
+    // structurally blind to any corruption of either (confirmed empirically:
+    // nudging _dt_target and separately _mix_lin by one ULP inside set_rot
+    // both survived undetected at the boot rate). At ~3000 samples the 20000-
+    // sample window covers several feedback cycles, so real, nonzero, tape-
+    // derived material actually reaches the output and is available to
+    // diverge.
+    static float ref_l[Flux::kMaxSamples], ref_r[Flux::kMaxSamples];
+    Flux ref;
+    ref.init(48000.f, ref_l, ref_r);
+    ref.set_on(true, true);
+    ref.set_rate(11);
+    // set_dust/set_rot: deliberately never called on `ref`.
 
-    Flux a, b;
-    a.init(48000.f, a_l, a_r);
-    b.init(48000.f, b_l, b_r);
-    a.set_on(true, true);
-    b.set_on(true, true);
-    a.set_dust(0.f); a.set_rot(0.f);
-    b.set_dust(0.f); b.set_rot(1.f);
-
+    static float ref_out_l[20000], ref_out_r[20000];
     for (int i = 0; i < 20000; ++i) {
         const float x = std::sin(static_cast<float>(i) * 0.01f);
-        float al = x, ar = x, bl = x, br = x;
-        a.process(al, ar);
-        b.process(bl, br);
-        REQUIRE(al == bl);          // exact ==, not Approx
-        REQUIRE(ar == br);
+        float l = x, r = x;
+        ref.process(l, r);
+        ref_out_l[i] = l;
+        ref_out_r[i] = r;
+    }
+    // Not a vacuous silence-vs-silence comparison: the caller's `l`/`r` start
+    // as the dry input `x` itself (process() only adds to them), so the
+    // reference trace is real signal from sample 0, not an untouched buffer.
+    bool ref_nonzero = false;
+    for (int i = 0; i < 20000; ++i) if (ref_out_l[i] != 0.f) { ref_nonzero = true; break; }
+    REQUIRE(ref_nonzero);
+
+    const float rots[] = { 0.f, 0.33f, 0.5f, 0.9f, 1.f };
+    for (float rot : rots) {
+        static float f_l[Flux::kMaxSamples], f_r[Flux::kMaxSamples];
+        Flux f;
+        f.init(48000.f, f_l, f_r);
+        f.set_on(true, true);
+        f.set_rate(11);
+        f.set_dust(0.f);
+        f.set_rot(rot);
+
+        for (int i = 0; i < 20000; ++i) {
+            const float x = std::sin(static_cast<float>(i) * 0.01f);
+            float l = x, r = x;
+            f.process(l, r);
+            REQUIRE(l == ref_out_l[i]);   // exact ==, not Approx
+            REQUIRE(r == ref_out_r[i]);
+        }
+
+        // Compare the tape itself, not only what was read off it. A store
+        // that diverges (e.g. ROT's filters leaking into the echo's write
+        // path) can hide behind identical output indefinitely -- output only
+        // reveals a bad store once something reads that region back, which
+        // may be thousands of samples later, or never inside this window.
+        CHECK(std::memcmp(f_l, ref_l, sizeof(f_l)) == 0);
+        CHECK(std::memcmp(f_r, ref_r, sizeof(f_r)) == 0);
     }
 }
 
@@ -425,5 +475,13 @@ TEST_CASE("flux: taps sound only once offsets have been pushed") {
         f.process(l, r);
         if (i > 55000) loud += std::fabs(static_cast<double>(l - x));
     }
-    CHECK(loud > quiet);
+    CHECK(quiet == 0.0);
+    // A real floor, not just `loud > quiet`: with quiet == 0.0 exactly, a tap
+    // contribution as small as 1e-30 would also satisfy `loud > quiet` and
+    // the assertion would prove nothing about audibility. Measured `loud` for
+    // this offsets/window pair is ~123.2 (5000-sample sum of |l - x|,
+    // kTapGain = 0.7 read straight off a primed tape) -- pinned as a literal,
+    // not an expression over tap_tuning constants, so this floor doesn't
+    // silently track a future gain-constant change.
+    CHECK(loud > 1.0);
 }
