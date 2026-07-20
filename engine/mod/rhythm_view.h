@@ -15,20 +15,31 @@ namespace spky {
 // onsets, and the first onset after init/reset measures from an arbitrary
 // starting point rather than from a predecessor, so it is not a rhythm.
 //
-// A gap is never 0: `ModLane` clamps it to 1 sample at the point it is
+// A gap is never 0: the ring clamps it to 1 sample at the point it is
 // recorded, so a consumer can safely divide by or delay on it without a
 // zero-length special case.
 //
-// Contract for lanes driven through `ModLane::tick()` (the texture-lane
-// control-rate path, spec 2026-07-19 mod-plane-control-rate): `tick()`
-// advances `_since_onset` once per kTickInterval-sample (96-sample) window,
-// but its edge walk can call the boundary handler several times inside that
-// same window. Gaps recorded on that path are therefore quantised to
-// multiples of kTickInterval, and any onsets after the first one in a
-// window collapse to the 1-sample clamp above rather than their true
-// intra-window distance. `rhythm()` is only fully sample-accurate on a
-// lane driven by `process()`; on a `tick()`-driven lane it is a coarse,
-// still-monotonic-with-tempo approximation, not a sample-accurate one.
+// Ownership (as of the taps-plumbing cost pass, 2026-07-20): the onset-gap
+// ring that produces this view lives on `SuperModulator`, not `ModLane` --
+// moved up because only the PITCH/master lane's rhythm was ever consumed
+// (`SuperModulator::rhythm()` forwards exactly that lane), so keeping a full
+// ring on all five lanes of both parts was nine unread copies. `ModLane`
+// itself carries none of this state; it only exposes `fired()` (a gated
+// boundary) and `wrapped()` (a cycle wrap), which `SuperModulator::process()`
+// consumes to drive the ring -- see mod/super_modulator.cpp.
+//
+// Consequence: the ring is now fed exclusively from `ModLane::process()`,
+// the per-sample path the PITCH lane is always driven through
+// (`SuperModulator::process()` never calls `tick()` on it). The `tick()`
+// path (the texture-lane control-rate path, spec 2026-07-19
+// mod-plane-control-rate) no longer feeds any ring at all, so the
+// quantisation contract this comment used to document for it no longer
+// describes a reachable situation. The zero-gap clamp above is kept as
+// insurance for a future consumer that might feed the ring from `tick()`
+// again -- if one appears, its onsets will need the same clamp `process()`'s
+// path already relies on, for the same reason: `tick()`'s edge walk can call
+// the boundary handler several times inside one kTickInterval window, so a
+// naive "samples since the last boundary" read can come out as 0 there.
 struct RhythmView {
     int32_t gap[2] = { 0, 0 };
     bool    valid  = false;

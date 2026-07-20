@@ -3,7 +3,6 @@
 #include "util/onepole.h"
 #include "mod/rng.h"
 #include "mod/phrase_gen.h"
-#include "mod/rhythm_view.h"
 
 namespace spky {
 
@@ -34,7 +33,14 @@ public:
     float process();                  // advance one sample, return post-range value
     float tick();                     // advance kTickInterval samples in one call
 
-    bool  fired()  const { return _fired; }   // true on the sample a boundary fired
+    bool  fired()   const { return _fired; }    // true on the sample a gated boundary fired
+    // True on the sample the cycle phase wrapped (0 <= _phase < 1 crossing
+    // back through 0). Distinct from fired(): a STEP lane can fire a
+    // boundary on every step without wrapping, and a wrap in FLOW mode fires
+    // exactly one boundary, so the two coincide there but not in STEP. Exists
+    // so SuperModulator can maintain the onset-gap ring for LANE_PITCH
+    // without ModLane itself carrying that state -- see super_modulator.cpp.
+    bool  wrapped() const { return _wrapped; }
     bool  frozen() const { return _frozen; }  // last dice failed -> holding
     // GATE: melodic STEP sustains the composed note (age < hold); else high.
     bool  gate_state() const { return _step_mode ? (!_melodic || _note_age < _note_hold) : true; }
@@ -49,9 +55,6 @@ public:
     float clock_scale() const { return _step_mode ? 8.f / static_cast<float>(_steps) : 1.f; }
     float phase_eff() const;                  // audible phase = (_phase + EVOLVE offset), wrapped
     float target() const { return _target; }  // pre-smooth, pre-range held value
-
-    // The lane's own rhythm, latched at the last cycle wrap. See rhythm_view.h.
-    const RhythmView& rhythm() const { return _rhythm; }
 
     void reset(float phase = 0.f);
 
@@ -108,6 +111,7 @@ private:
     bool      _regen_pending = false;
     float _target = 0.f;     // pre-smooth held value
     bool  _fired = false;
+    bool  _wrapped = false;
     bool  _frozen = false;
     int   _note_age  = 0;    // steps since the current note fired
     int   _note_hold = 0;    // composed note length (capped at the next note)
@@ -124,16 +128,6 @@ private:
     float _settle_coef  = 1.f;   // per-sample settle glide (tau ~ 0.3 s)
     float _kick_coef_tick   = 1.f;   // _kick_coef ^ kTickInterval
     float _settle_coef_tick = 1.f;   // _settle_coef ^ kTickInterval
-
-    // Onset-gap ring. _since_onset counts samples since the last gated
-    // boundary; _gap holds the last two completed gaps, most recent first;
-    // _onsets saturates at 3 (the count that makes two gaps real).
-    // _rhythm is the snapshot consumers see, copied from the ring at a wrap.
-    static constexpr int32_t kSinceOnsetMax = 1 << 24;   // ~5.8 min @ 48 kHz
-    int32_t    _since_onset = 0;
-    int32_t    _gap[2] = { 0, 0 };
-    int        _onsets = 0;
-    RhythmView _rhythm;
 };
 
 } // namespace spky

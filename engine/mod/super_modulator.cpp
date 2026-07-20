@@ -17,6 +17,10 @@ void SuperModulator::init(float sample_rate, uint32_t seed_base) {
     }
     _tick_ctr = 0;
     _pitch_scale = 1.f; _mod_scale = 1.f;
+    _since_onset = 0;
+    _onsets = 0;
+    _gap[0] = _gap[1] = 0;
+    _rhythm = RhythmView{};
     _update_rate();
 }
 
@@ -69,6 +73,30 @@ void SuperModulator::process() {
     // grids happen to coincide again. Documented as the spec's "Accepted
     // asymmetry"; see also part.h.
     _out[LANE_PITCH] = _lanes[LANE_PITCH].process();
+
+    // Onset-gap ring, moved up from ModLane (see the field comments in
+    // super_modulator.h): fed only by LANE_PITCH's per-sample process()
+    // above, since that is the only path that ever drives it.
+    if (_since_onset < kSinceOnsetMax) ++_since_onset;
+    // Latch BEFORE record, exactly mirroring ModLane's old internal order
+    // (_wrap_events() ran before that same wrap's _on_boundary() in both
+    // process() and tick() -- lane.cpp). Latching first publishes the ring
+    // as it stood BEFORE this sample's own onset (if any) is folded in, so
+    // a wrap that also happens to be a fresh onset still publishes the
+    // PREVIOUS cycle's gaps, not one that already includes itself.
+    if (_lanes[LANE_PITCH].wrapped()) {
+        _rhythm.gap[0] = _gap[0];
+        _rhythm.gap[1] = _gap[1];
+        _rhythm.valid  = _onsets >= 3;
+    }
+    if (_lanes[LANE_PITCH].fired()) {
+        _gap[1] = _gap[0];
+        // Clamp to 1: a gap of 0 is not a duration -- see rhythm_view.h.
+        _gap[0] = _since_onset > 0 ? _since_onset : 1;
+        _since_onset = 0;
+        if (_onsets < 3) ++_onsets;
+    }
+
     if (_tick_ctr == 0) {
         _tick_ctr = ModLane::kTickInterval;
         for (int i = 0; i < LANE_COUNT; ++i)

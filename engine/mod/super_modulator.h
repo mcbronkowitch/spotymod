@@ -4,6 +4,7 @@
 #include "mod/lane.h"
 #include "mod/lane_id.h"
 #include "mod/divisions.h"
+#include "mod/rhythm_view.h"
 
 namespace spky {
 
@@ -57,7 +58,19 @@ public:
     // ahead of the reset pitch lane until that tick -- same accepted-
     // asymmetry class as the engine-swap case (see the spec's "Accepted
     // asymmetry" and part.h).
-    void reset_phases()          { for (auto& l : _lanes) l.reset(0.f); }
+    // Resets every lane's phase AND this object's own onset-gap ring (moved
+    // up from ModLane -- see the ring's declaration below): ModLane::reset()
+    // no longer clears any rhythm state of its own, so the ring's reset must
+    // happen here alongside it, the same way it used to happen inside
+    // ModLane::reset() for every lane (even though only LANE_PITCH's ring
+    // was ever read).
+    void reset_phases() {
+        for (auto& l : _lanes) l.reset(0.f);
+        _since_onset = 0;
+        _onsets = 0;
+        _gap[0] = _gap[1] = 0;
+        _rhythm = RhythmView{};
+    }
     float base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
     bool  synced()    const { return _synced; }
     int   division()  const { return division_index(_rate_norm); }
@@ -65,7 +78,7 @@ public:
     // the grid servo scales its transport target by this (spec 2026-07-17).
     float clock_scale() const { return _lanes[LANE_PITCH].clock_scale(); }
     // The master lane's rhythm (mod-plane rhythm source for the FX taps).
-    const RhythmView& rhythm() const { return _lanes[LANE_PITCH].rhythm(); }
+    const RhythmView& rhythm() const { return _rhythm; }
 
 private:
     void _update_rate();
@@ -86,6 +99,26 @@ private:
     float    _tide_norm = 0.5f;   // TIDE knob position (0..1)
     float    _tide_mult = 1.f;    // effective factor: ladder rung or free curve
     int      _tick_ctr = 0;        // texture-lane raster; 0 = tick on next process()
+
+    // Onset-gap ring for the PITCH lane only. Was 5 copies (one per lane) on
+    // ModLane -- 28 bytes each, 10 total across both parts' lanes, of which
+    // 9 were never read (only LANE_PITCH's rhythm ever reaches rhythm(),
+    // above). Moved up here: this is also the object that actually knows
+    // which lane is the master, so it is the structurally right owner, not
+    // just a cheaper one.
+    //
+    // _since_onset counts samples since the last gated boundary; _gap holds
+    // the last two completed gaps, most recent first; _onsets saturates at 3
+    // (the count that makes two gaps real). _rhythm is the snapshot
+    // consumers see, latched from the ring at a wrap. Fed from
+    // _lanes[LANE_PITCH].wrapped()/.fired() in process() -- see there for
+    // the load-bearing latch-then-record order this mirrors from ModLane's
+    // old _wrap_events()-before-_on_boundary() sequence.
+    static constexpr int32_t kSinceOnsetMax = 1 << 24;   // ~5.8 min @ 48 kHz
+    int32_t    _since_onset = 0;
+    int32_t    _gap[2] = { 0, 0 };
+    int        _onsets = 0;
+    RhythmView _rhythm;
 };
 
 } // namespace spky
