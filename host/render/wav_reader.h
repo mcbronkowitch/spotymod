@@ -61,9 +61,44 @@ inline bool read_wav(const std::string& path, WavData& out, std::string& err) {
                 !rd_u32(byterate) || !rd_u16(block) || !rd_u16(bits)) {
                 err = "truncated fmt chunk"; return false;
             }
+            uint32_t consumed = 16;
+            if (fmt == 0xFFFE) {
+                // WAVE_FORMAT_EXTENSIBLE: the real format tag is the leading
+                // uint16 of a 16-byte SubFormat GUID that follows cbSize,
+                // validBitsPerSample and the channel mask. Total fmt chunk
+                // is 16 (base) + 2 (cbSize) + 22 (extension) = 40 bytes.
+                if (csize < 40) {
+                    err = "malformed WAVE_FORMAT_EXTENSIBLE fmt chunk (too short)";
+                    return false;
+                }
+                uint16_t cb_size = 0, valid_bits = 0, sub_fmt = 0;
+                uint32_t channel_mask = 0;
+                uint8_t guid_suffix[14];
+                if (!rd_u16(cb_size) || !rd_u16(valid_bits) || !rd_u32(channel_mask) ||
+                    !rd_u16(sub_fmt) || std::fread(guid_suffix, 1, 14, f) != 14) {
+                    err = "truncated WAVE_FORMAT_EXTENSIBLE fmt chunk"; return false;
+                }
+                consumed += 2 + 2 + 4 + 2 + 14;  // == 40
+                static const uint8_t kGuidSuffix[14] = {
+                    0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00,
+                    0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71
+                };
+                if (cb_size < 22 || std::memcmp(guid_suffix, kGuidSuffix, 14) != 0) {
+                    err = "WAVE_FORMAT_EXTENSIBLE with unrecognized SubFormat GUID";
+                    return false;
+                }
+                if (sub_fmt != 1 && sub_fmt != 3) {
+                    err = "WAVE_FORMAT_EXTENSIBLE SubFormat is neither PCM nor IEEE float";
+                    return false;
+                }
+                fmt = sub_fmt;  // decode as the effective (real) format tag
+            }
             have_fmt = true;
-            // Skip any fmt extension (WAVE_FORMAT_EXTENSIBLE carries one).
-            if (csize > 16) std::fseek(f, long(csize - 16), SEEK_CUR);
+            // Skip any remaining fmt extension bytes, plus the RIFF pad
+            // byte if the chunk size is odd (same rule the generic
+            // chunk-skip branch below applies).
+            const long skip = long(csize) - long(consumed) + long(csize & 1);
+            if (skip > 0) std::fseek(f, skip, SEEK_CUR);
         } else if (std::memcmp(cid, "data", 4) == 0) {
             if (!have_fmt) { err = "data chunk before fmt chunk"; return false; }
             if (channels < 1 || channels > 2) {
@@ -86,8 +121,10 @@ inline bool read_wav(const std::string& path, WavData& out, std::string& err) {
                 for (int c = 0; c < channels; ++c) {
                     float v = 0.f;
                     if (fmt == 3 && bytes == 4) {           // IEEE float
+                        uint32_t bits32 = uint32_t(p[0]) | (uint32_t(p[1]) << 8) |
+                                          (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
                         float tmp;
-                        std::memcpy(&tmp, p, 4);
+                        std::memcpy(&tmp, &bits32, 4);
                         v = tmp;
                     } else if (bytes == 2) {
                         int16_t s = int16_t(uint16_t(p[0]) | (uint16_t(p[1]) << 8));
