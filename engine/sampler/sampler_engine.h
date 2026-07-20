@@ -59,12 +59,12 @@ public:
     void   set_monitor(bool on) { _monitor = on; }
     void   load_sample(const float* l, const float* r, size_t frames);
 
-    // --- edit layer (Task 5) ---
+    // --- edit layer ---
     void set_tape_mode(bool tape) { _tape = tape; }
     void set_reverse(bool on)     { _reverse = on; }
     void set_feedback(float knob) { _buf.set_feedback(knob); }
 
-    // --- voice row, remapped (Task 5) ---
+    // --- voice row, remapped ---
     void set_window_attack(float n);
     void set_window_decay(float n);
     void set_filt(float n);
@@ -86,7 +86,7 @@ private:
     void  _spawn_one();          // spawn into a free slot, if any
     void  _kill_all();
     void  _release_all();
-    float _next_ratio();         // Task 4: chord round-robin + octave scatter
+    float _next_ratio();         // chord round-robin + octave scatter
 
     SampleBuffer _buf;
     SampleBuffer::Frame* _mem = nullptr;
@@ -101,12 +101,10 @@ private:
 
     float _sr = 48000.f;
     float _targets[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 0.8f };
-    float _tune = 0.5f;
 
     // derived at the control tick
     float _grain_len   = 960.f;   // output samples
     float _spawn_every = 240.f;   // samples between spawns
-    float _norm        = 1.f;     // 1/sqrt(active)
     float _filt_gain   = 1.f;
 
     float _spawn_ctr   = 0.f;
@@ -119,8 +117,8 @@ private:
     float _burst_pitch   = 0.5f;
     // Set by trigger/trigger_chord, persists until the next trigger -- that
     // is what "trigger latches the pitch for the burst" means. Part::process
-    // (Task 6) calls trigger_chord BEFORE forwarding the gate, so set_gate
-    // must not clear this or the latch would be wiped every time.
+    // calls trigger_chord BEFORE forwarding the gate, so set_gate must not
+    // clear this or the latch would be wiped every time.
     bool  _burst_latched = false;
     float _last_pos = 0.f;
     int   _spawn_count = 0;
@@ -138,7 +136,7 @@ private:
     bool _tape    = false;
     bool _reverse = false;
 
-    // voice row (Task 5)
+    // voice row
     float _atk_n = 0.3f, _dec_n = 0.3f;
     float _filt_amt = 0.f, _res_n = 0.15f, _sub_n = 0.f, _detune_n = 0.f;
 };

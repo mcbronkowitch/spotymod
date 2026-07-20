@@ -45,6 +45,13 @@ constexpr float  kCutoffMaxHz   = 14000.f;
 // lands in silence at ANY lane position. Invariant: kFiltLeftScale >= 1 + kFiltFadeRange.
 constexpr float  kFiltLeftScale = 1.25f;
 constexpr float  kFiltFadeRange = 0.25f;
+// The cloud's resting cutoff, as a normalized position on the 60 Hz..14 kHz
+// rail. The sampler has no FILTER lane -- lane 1 is SIZE (grain length) --
+// so FILT trims from this fixed neutral instead of from a lane value.
+// Wiring it to LANE_SIZE (as the synth does, where lane 1 IS filter) welded
+// grain length to brightness and left the cloud behind a ~916 Hz lowpass at
+// the boot base. Ear-tunable: 0.75 -> ~3.6 kHz.
+constexpr float  kFiltNeutral = 0.75f;
 constexpr float  kDetuneCeilCt  = 35.f;      // DTUN spread ceiling, matches the synth
 constexpr float  kSubMaxShare   = 1.f;       // SUB 1 = every grain an octave down
 

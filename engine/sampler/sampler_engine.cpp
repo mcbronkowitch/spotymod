@@ -49,9 +49,11 @@ void SamplerEngine::init(float sample_rate) {
     _update_control();
 }
 
-void SamplerEngine::set_targets(const float* t, float tune) {
+void SamplerEngine::set_targets(const float* t, float /*tune*/) {
     for (int i = 0; i < LANE_COUNT; ++i) _targets[i] = t[i];
-    _tune = tune;
+    // tune is already summed into the quantized PITCH target upstream
+    // (Part::pitch_pre_quant), same as SynthEngine::set_targets
+    // (synth_engine.cpp:67-68) -- nothing left for this engine to do with it.
 }
 
 void SamplerEngine::set_flow(bool flow) {
@@ -156,8 +158,14 @@ void SamplerEngine::_release_all() {
 // chord layer's bit-identity promise, carried into the cloud.
 //
 // MOTION adds a mild octave scatter on top: at full scatter, kScatterOctProb
-// of grains jump an octave up or down. The draw happens for every spawn
-// regardless of MOTION so the Rng stream does not change shape with the knob.
+// of grains jump an octave up or down. The roll draw (next_unipolar() below)
+// happens for every spawn regardless of MOTION, so THAT draw does not change
+// the Rng stream's shape with the knob. The octave-DIRECTION draw right
+// after it does not share that property: it only runs when the roll
+// succeeds, so how far into the stream the following draws (timing, sub,
+// detune) land shifts with MOTION and with luck on the roll. This is known
+// and accepted -- it is not the same "every spawn draws the same shape"
+// guarantee the roll itself has.
 float SamplerEngine::_next_ratio() {
     const bool  latched = (!_flow && _burst_latched);
     const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
@@ -166,6 +174,18 @@ float SamplerEngine::_next_ratio() {
     if (latched && _chord_n <= 1) {
         p = _burst_pitch;
     } else {
+        // COLOR > 0 (_chord_n > 1) takes this branch even during a latched
+        // STEP burst, and reads _chord[] live rather than a value frozen at
+        // trigger time. Part::_control_tick refreshes _chord[] every 96
+        // samples, so the note set a round-robin burst is drawing from can
+        // change mid-burst if the composed chord changes underneath it. The
+        // spec (sampler-texture-deck-design.md) says trigger "latches the
+        // pitch (or chord set) for the burst" -- for chords (COLOR > 0) the
+        // current code does not do that; only the single-note path above
+        // (_chord_n <= 1) is actually latched. This is a known deviation,
+        // not a bug to silently fix: whether a burst should freeze its whole
+        // chord set at the gate edge is a musical call for the instrument's
+        // author, not an engine-layer decision.
         p = _chord[_rr % _chord_n];
         _rr = (_rr + 1) % _chord_n;
     }
@@ -201,13 +221,14 @@ void SamplerEngine::_update_control() {
     // interval while grains retire at the new, much shorter length.
     if (_spawn_ctr > _spawn_every) _spawn_ctr = _spawn_every;
 
-    // --- overlap normalization: 1/sqrt(active), the COLOR loudness law ---
-    const int n = active_grains();
-    _norm = n > 0 ? 1.f / std::sqrt(static_cast<float>(n)) : 1.f;
+    // Overlap normalization (1/sqrt(active), the COLOR loudness law) is NOT
+    // computed here any more -- see _spawn_one(), which latches it per grain
+    // at spawn time instead of recomputing and re-applying it globally every
+    // control tick.
 
-    // --- FILT: same bipolar rails as the synth (Task 5 gives it a knob) ---
+    // --- FILT: same bipolar rails as the synth; set_filt() is the knob ---
     const float off   = _filt_amt < 0.f ? kFiltLeftScale * _filt_amt : _filt_amt;
-    const float n_raw = _targets[LANE_SIZE] + off;
+    const float n_raw = kFiltNeutral + off;
     _filt_gain = clampf(1.f + n_raw / kFiltFadeRange, 0.f, 1.f);
     const float hz = cutoff_hz(n_raw);
     _svf_l.SetFreq(clampf(hz, 20.f, 0.3f * _sr));
@@ -221,6 +242,14 @@ void SamplerEngine::_spawn_one() {
     for (int i = 0; i < kGrains; ++i)
         if (!_grains[i].active()) { slot = i; break; }
     if (slot < 0) return;                       // all busy: skip this spawn
+
+    // Overlap normalization: 1/sqrt(active), the COLOR loudness law -- latched
+    // into THIS grain now, not recomputed globally every control tick (see
+    // Grain::spawn's `gain` parameter). active_grains() here counts the
+    // grains already sounding, before this one joins them, so +1 accounts
+    // for the grain about to spawn.
+    const int n_active = active_grains() + 1;
+    const float norm_gain = 1.f / std::sqrt(static_cast<float>(n_active));
 
     const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
     // Fill-follows: SOURCE maps into the CURRENT content length, so while a
@@ -274,7 +303,7 @@ void SamplerEngine::_spawn_one() {
     if (atk < 1) atk = 1;
     if (dec < 1) dec = 1;
 
-    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse);
+    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse, norm_gain);
 
     _last_ratio = ratio;
     _last_pan   = pan;
@@ -304,6 +333,9 @@ void SamplerEngine::process(float& outL, float& outR) {
     }
 
     // --- the cloud ---
+    // Overlap normalization (1/sqrt(active)) is already folded into each
+    // grain's own gain at spawn time (_spawn_one), so the sum here needs no
+    // further scaling.
     float l = 0.f, r = 0.f;
     for (int i = 0; i < kGrains; ++i) {
         if (!_grains[i].active()) continue;
@@ -312,8 +344,6 @@ void SamplerEngine::process(float& outL, float& outR) {
         l += gl;
         r += gr;
     }
-    l *= _norm;
-    r *= _norm;
 
     // --- filter, then LEVEL with the FILT silence fade folded in ---
     _svf_l.Process(l);
@@ -332,7 +362,7 @@ void SamplerEngine::process(float& outL, float& outR) {
     outR = r;
 }
 
-// --- voice row: behaviour lands in Task 5; the state is stored here ---
+// --- voice row: setters below, the state they write is declared in the header ---
 void SamplerEngine::set_window_attack(float n) { _atk_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_window_decay(float n)  { _dec_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_filt(float n)          { _filt_amt = clampf(n, -1.f, 1.f); }

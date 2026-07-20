@@ -207,18 +207,43 @@ TEST_CASE("sampler: grains never read past the write head while recording") {
 }
 
 TEST_CASE("sampler: monitoring passes the dry input at unity") {
-    Rig g(0);
-    g.e.set_monitor(true);
-    float a = 0.f, b = 0.f;
-    g.e.process_in(0.37f, -0.21f);
-    g.e.process(a, b);
-    CHECK(a == doctest::Approx(0.37f).epsilon(0.001));
-    CHECK(b == doctest::Approx(-0.21f).epsilon(0.001));
+    // A non-empty, FLOW-active rig, so the cloud itself is not silence --
+    // on an empty buffer (the previous form of this test) the monitor-off
+    // branch asserts output == 0, which is true whether or not the monitor
+    // flag is actually honoured: read_linear() on an empty SampleBuffer is
+    // 0 regardless, so that assertion could not have failed either way.
+    //
+    // Two identically-seeded rigs, same FLOW/render call sequence, one with
+    // monitor on and one off. process_in()'s dry values feed nothing but the
+    // monitor mix here (recording is never armed), so the two clouds are
+    // bit-identical (the seeded-determinism property, proven separately
+    // above) and any difference between `on` and `off` at a given sample can
+    // only be the monitor path's own contribution -- exactly the unity dry
+    // term if honoured, exactly nothing if the flag leaked or was ignored.
+    Rig on(24000, 909), off(24000, 909);
+    on.e.set_flow(true);
+    off.e.set_flow(true);
+    on.e.set_monitor(true);
+    off.e.set_monitor(false);
 
-    g.e.set_monitor(false);
-    g.e.process_in(0.37f, -0.21f);
-    g.e.process(a, b);
-    CHECK(a == doctest::Approx(0.f).epsilon(0.001));
+    on.render(4800);      // let the cloud establish, identically, on both
+    off.render(4800);
+
+    bool cloud_heard = false;
+    for (int i = 0; i < 2000; ++i) {
+        float al = 0.f, ar = 0.f, bl = 0.f, br = 0.f;
+        on.e.process_in(0.37f, -0.21f);
+        on.e.process(al, ar);
+        off.e.process_in(0.37f, -0.21f);
+        off.e.process(bl, br);
+        if (std::fabs(bl) > 0.01f) cloud_heard = true;
+        CHECK(al == doctest::Approx(bl + 0.37f).epsilon(0.001));
+        CHECK(ar == doctest::Approx(br - 0.21f).epsilon(0.001));
+    }
+    // The branch under test (monitor off) actually has cloud content to
+    // hide the monitor path behind -- the property the old empty-buffer rig
+    // could not exercise.
+    CHECK(cloud_heard);
 }
 
 TEST_CASE("sampler: CHOKE hold fades the cloud out and re-arms on release") {
@@ -601,23 +626,34 @@ TEST_CASE("sampler: FILT full left fades to silence at ANY lane position") {
 TEST_CASE("sampler: RES boosts content parked at the cutoff") {
     // A resonant SVF lowpass peaks near its own cutoff: content sitting right
     // at that frequency comes out louder than through the same filter flat.
-    // Solve cutoff_hz(n) = kCutoffMinHz * (kCutoffMaxHz/kCutoffMinHz)^n for the
-    // LANE_SIZE value (the FILTER/SIZE slot, lane_id.h:9) that puts the
-    // cutoff right on the Rig's 441 Hz content.
-    const float lane_n =
+    // The cutoff is FILT's to move (sampler_config.h: kFiltNeutral is the
+    // resting position, LANE_SIZE plays no part -- lane 1 is grain length,
+    // not filter, in the sampler). Solve cutoff_hz(n) = kCutoffMinHz *
+    // (kCutoffMaxHz/kCutoffMinHz)^n for the normalized rail position n that
+    // puts the cutoff right on the Rig's 441 Hz content, then invert
+    // _update_control's `n_raw = kFiltNeutral + off` / FILT-knob mapping to
+    // find the set_filt() value that produces that n.
+    const float target_n =
         std::log(441.f / sampler_cfg::kCutoffMinHz) /
         std::log(sampler_cfg::kCutoffMaxHz / sampler_cfg::kCutoffMinHz);
+    const float off = target_n - sampler_cfg::kFiltNeutral;
+    // off = filt_amt directly on the right half; off = kFiltLeftScale *
+    // filt_amt on the left half (sampler_engine.cpp's _update_control), so
+    // dividing back out on that side recovers the knob value.
+    const float filt_amt = off < 0.f ? off / sampler_cfg::kFiltLeftScale : off;
 
     Rig flat;
     flat.e.set_flow(true);
-    flat.feed(0.5f, 0.5f, lane_n, 0.f, 1.f);   // PITCH unity, MOTION 0: steady tone
+    flat.feed(0.5f, 0.5f, 0.5f, 0.f, 1.f);     // PITCH unity, MOTION 0: steady tone
+    flat.e.set_filt(filt_amt);
     flat.e.set_resonance(0.f);
     auto vf = flat.render(96000);
     const float rms_flat = rms(vf, 48000, 48000);
 
     Rig res(24000, 4242);                      // same content, seed and calls as `flat`
     res.e.set_flow(true);
-    res.feed(0.5f, 0.5f, lane_n, 0.f, 1.f);
+    res.feed(0.5f, 0.5f, 0.5f, 0.f, 1.f);
+    res.e.set_filt(filt_amt);
     res.e.set_resonance(0.9f);
     auto vr = res.render(96000);
     const float rms_res = rms(vr, 48000, 48000);
@@ -656,4 +692,112 @@ TEST_CASE("sampler: Reverse plays the material backwards") {
     }
     CHECK(diff > 10.f);                     // genuinely different...
     CHECK(energy > 10.f);                   // ...and not just silent
+}
+
+// --- golden vector: the Rng draw order is a hard contract -----------------
+//
+// Every other test in this suite (and in test_sampler_part.cpp) checks a
+// MARGINAL distribution: position spread, octave share, timing jitter, sub
+// share, detune band. Successive xorshift32 outputs are all uniform, so
+// swapping the order of any two draws in _spawn_one()/_next_ratio() leaves
+// every one of those marginal distributions unchanged -- the whole suite
+// stays green under a reorder. The determinism test ("identical seed and
+// call sequence render bit-identically") compares two instances of the SAME
+// build against each other, so it cannot see a reorder either: both
+// instances would still agree with each other, just not with a differently
+// ordered build.
+//
+// This test pins down the actual SEQUENCE of drawn values -- position, pan,
+// ratio and length together, per spawn, in order -- so a reordering of the
+// draws (position, pan, octave, timing, sub, detune -- the contract stated
+// in _spawn_one()'s comment), a change to the seed decorrelation constant,
+// or a change to the SOURCE-to-position mapping all show up as a changed
+// tuple somewhere in the first 20 spawns, even though none of them would
+// move any marginal statistic.
+//
+// The numbers below are a GOLDEN VECTOR: captured once from a known-good
+// build, not derived from first principles. If you are reading this because
+// the test just failed after a change that looks unrelated to the sampler
+// (e.g. a draw got reordered, added, or removed anywhere in _spawn_one() or
+// _next_ratio(), the seed-decorrelation constant in SamplerEngine::init
+// changed, or the `- 1.f` in the SOURCE/span mapping moved) -- STOP. Ask
+// *why* the numbers changed before updating them. Updating them to make the
+// test pass again silently re-opens exactly the hole this test exists to
+// close.
+TEST_CASE("sampler: golden vector -- Rng draw order and SOURCE mapping are locked") {
+    Rig g(24000, 20260718u);
+    g.e.set_flow(true);
+    // MOTION > 0 so position jitter, pan spread and octave scatter are all
+    // live; a multi-note chord so the round-robin draw is exercised too;
+    // SUB and DTUN nonzero so their draws leave a mark on the ratio as well
+    // (both draw from the Rng every spawn regardless of knob value, but a
+    // zero knob makes the draw's RESULT invisible in the ratio -- nonzero
+    // makes the whole draw order observable in one number).
+    g.feed(/*pitch*/0.5f, /*source*/0.5f, /*size*/0.3f, /*motion*/1.0f);
+    const float chord[3] = { 0.40f, 0.55f, 0.70f };
+    g.e.set_chord(chord, 3);
+    g.e.set_sub(0.4f);
+    g.e.set_detune(0.5f);
+
+    struct Spawn { float pos, pan, ratio; int len; };
+    std::vector<Spawn> got;
+    int last = g.e.spawn_count();
+    int guard = 0;
+    while (int(got.size()) < 20 && guard++ < 4000000) {
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        if (g.e.spawn_count() != last) {
+            last = g.e.spawn_count();
+            got.push_back({ g.e.last_spawn_pos(), g.e.last_spawn_pan(),
+                             g.e.last_spawn_ratio(), g.e.last_spawn_len() });
+        }
+    }
+    REQUIRE(got.size() == 20);
+
+    // Golden vector: seed 20260718, content 24000 (441 Hz sine, Rig
+    // default), pitch 0.5 / source 0.5 / size 0.3 / motion 1.0, chord
+    // {0.40, 0.55, 0.70}, sub 0.4, detune 0.5. (last_spawn_pos, last_spawn_pan,
+    // last_spawn_ratio, last_spawn_len) for the first 20 spawns under FLOW.
+    // Captured once from a known-good build -- see the file-level comment
+    // above this test before changing any of these numbers.
+    static const Spawn golden[20] = {
+        // pos,            pan,          ratio,        len
+        { 12200.50781250f, -0.69252360f, 0.20196824f, 3821 },
+        {  9559.03320312f,  0.98490131f, 0.55502838f, 3821 },
+        { 12429.85449219f, -0.30681819f, 1.53079367f, 3821 },
+        {  9426.72070312f, -0.88041586f, 0.40453154f, 3821 },
+        { 13792.33007812f, -0.11837190f, 0.55053788f, 3821 },
+        { 12621.92773438f,  0.86559057f, 0.75218982f, 3821 },
+        {  6792.23632812f,  0.43894804f, 0.40997744f, 3821 },
+        { 10227.70507812f,  0.79144990f, 0.55878091f, 3821 },
+        {  9217.20214844f,  0.07455552f, 1.52497661f, 3821 },
+        {  9639.77636719f,  0.83863580f, 0.40733621f, 3821 },
+        { 16812.86328125f, -0.27693748f, 0.55035543f, 3821 },
+        {  7372.13427734f, -0.75745511f, 1.52152061f, 3821 },
+        { 15622.36425781f,  0.96780789f, 0.40774995f, 3821 },
+        { 15633.29101562f,  0.42561364f, 0.55428278f, 3821 },
+        {  6173.71435547f, -0.26600885f, 1.51086748f, 3821 },
+        { 12693.93164062f, -0.27030134f, 0.81130999f, 3821 },
+        { 13349.57031250f, -0.78998744f, 1.10466695f, 3821 },
+        { 12683.76660156f, -0.03883266f, 0.76514953f, 3821 },
+        {  7273.89355469f, -0.89893818f, 0.81913930f, 3821 },
+        {  8740.55468750f, -0.89280307f, 2.21407151f, 3821 },
+    };
+
+    // Absolute, not relative, tolerance: the regression this test exists to
+    // catch (the `- 1.f` dropped from the SOURCE/span mapping) shifts pos by
+    // only ~0.5 samples out of a value in the thousands -- a RELATIVE
+    // epsilon like doctest::Approx's default (eps * max(|a|,|b|,1)) would
+    // swallow that shift completely at pos's magnitude and defeat the whole
+    // point of this test. Bounds are tight enough to fail on a half-sample
+    // pos shift, a detectable pan/ratio change from a swapped draw, or a
+    // rescaled draw from a changed seed constant, while leaving room for
+    // ordinary cross-build float rounding in the last couple of ULPs.
+    for (size_t i = 0; i < 20; ++i) {
+        INFO("spawn #", i);
+        CHECK(std::fabs(got[i].pos   - golden[i].pos)   < 0.01f);
+        CHECK(std::fabs(got[i].pan   - golden[i].pan)   < 0.00002f);
+        CHECK(std::fabs(got[i].ratio - golden[i].ratio) < 0.00002f);
+        CHECK(got[i].len == golden[i].len);
+    }
 }
