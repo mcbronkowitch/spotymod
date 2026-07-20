@@ -49,33 +49,23 @@ TEST_CASE("sample_buffer: record fades in and out with no discontinuity") {
     CHECK(f.mem[1200].l > 0.95f);
 }
 
-TEST_CASE("sample_buffer: stopping with zero writes does not strand the fade") {
+TEST_CASE("sample_buffer: stopping with zero writes leaves the buffer usable") {
     Fixture f;
     f.buf.set_recording(true);
     f.buf.set_recording(false);          // no write() in between
     REQUIRE(f.buf.is_recording());        // the fadeout state is armed
-    f.buf.write(1.f, 1.f);                // one write must resolve it
-    CHECK_FALSE(f.buf.is_recording());    // ...not wrap the counter
+    f.buf.write(1.f, 1.f);                // one write must resolve it...
+    CHECK_FALSE(f.buf.is_recording());    // ...without wrapping the counter
+    CHECK(f.buf.is_empty());              // ...and nothing was captured
 
-    // And the buffer is still usable afterwards -- but "usable" here means
-    // what this class's contract actually promises, not free-run growth.
-    // The resolving write() above ran the SAME cut() call every completed
-    // fadeout runs (that line is untouched by this guard: see write()'s
-    // fadeout case), so the buffer is now locked into overdub mode with
-    // rec_size() == 0, exactly as it would be after ANY normal stop -- e.g.
-    // "overdub attenuates the old content by the feedback" below calls
-    // cut() again post-stop and finds it a no-op for the same reason. A
-    // free-run record therefore cannot resume without an explicit clear(),
-    // regardless of whether the stop that preceded it hit this guard at
-    // all. clear() is this class's documented full reset (fx_util-backed
-    // _cut included), so it is the correct way to prove the buffer was not
-    // left corrupted -- not stuck, not still fading, just back to empty.
-    f.buf.clear();
+    // The buffer must still work afterwards WITHOUT clear(): cutting an
+    // empty buffer would have locked the loop at zero length forever.
     f.buf.set_recording(true);
     for (size_t i = 0; i < 2400; ++i) f.buf.write(1.f, 1.f);
     f.buf.set_recording(false);
     for (size_t i = 0; i < sampler_cfg::kRecordFade + 2; ++i) f.buf.write(1.f, 1.f);
     CHECK(f.buf.rec_size() > 2000);
+    CHECK(f.mem[1200].l > 0.9f);          // and it really captured the signal
 }
 
 TEST_CASE("sample_buffer: overdub attenuates the old content by the feedback") {

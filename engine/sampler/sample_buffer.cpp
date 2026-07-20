@@ -77,19 +77,25 @@ void SampleBuffer::write(float in0, float in1) {
             break;
         case State::fadeout:
             fade = hann_value_at(static_cast<float>(_fade_ctr) * kFadeKof);
-            // The `_fade_ctr == 0` arm guards an underflow the ORIGINAL has
-            // too: _fade_ctr is size_t, so stopping a recording with zero
-            // intervening write() calls wraps it to SIZE_MAX and strands the
-            // buffer in fadeout forever. Unreachable in the original's
-            // usage; reachable here, because the render host applies all
-            // scenario events sharing a timestamp back-to-back before the
-            // next process() call, and a host can toggle REC twice inside
-            // one audio block. Identical arithmetic for every _fade_ctr >= 1.
-            if (_fade_ctr == 0 || --_fade_ctr == 0) {
-                cut();
+            if (_fade_ctr == 0) {
+                // Stopped with nothing written -- two REC toggles inside one
+                // audio block. Reachable here though not in the original:
+                // the render host applies all scenario events sharing a
+                // timestamp back-to-back before the next process() call, and
+                // a plugin host can toggle REC twice within one block.
+                //
+                // Return to idle WITHOUT cutting. Two bugs are guarded at
+                // once: _fade_ctr is size_t, so `--_fade_ctr` here would wrap
+                // to SIZE_MAX and strand the buffer in fadeout forever; and
+                // cut() at _size == 0 would lock the loop at zero length,
+                // after which the _cut.is_on() branch below pins _write_head
+                // to 0 and _size can never grow -- the part could never
+                // record again until clear(). Nothing was recorded, so there
+                // is nothing to lock.
                 _state = State::idle;
                 return;
             }
+            if (--_fade_ctr == 0) { cut(); _state = State::idle; return; }
             break;
     }
 
