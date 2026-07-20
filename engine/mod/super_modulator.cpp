@@ -92,6 +92,14 @@ void SuperModulator::process() {
     if (_lanes[LANE_PITCH].fired()) {
         _gap[1] = _gap[0];
         // Clamp to 1: a gap of 0 is not a duration -- see rhythm_view.h.
+        // Currently unreachable: the increment a few lines up (this
+        // function) runs unconditionally before this read, on every call,
+        // and this line is the only place `_since_onset` is reset to 0 -- so
+        // `_since_onset >= 1` always holds by the time it lands here, and
+        // the `: 1` branch never executes. Kept as a guard for a
+        // hypothetical future `tick()`-fed accumulator, not because this one
+        // needs it -- do not read this clamp as license to drop the
+        // increment above.
         _gap[0] = _since_onset > 0 ? _since_onset : 1;
         _since_onset = 0;
         if (_onsets < 3) ++_onsets;

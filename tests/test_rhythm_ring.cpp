@@ -270,11 +270,19 @@ TEST_CASE("rhythm ring: SuperModulator::rhythm() forwards the PITCH lane") {
     m.set_tempo_bpm(120.f);
     m.set_rate(0.5f);   // division idx 8 ("1/4", cpb=1) -> base_hz = 2 Hz ->
                          // PITCH (ratio x1) cycles every 48000/2 = 24000 samples.
-    // The ring's latch (on wrapped()) reads the ring from BEFORE the current
-    // wrap's own record (on fired()) -- see SuperModulator::process() -- so
-    // validity (>= 3 onsets) needs a 4th wrap, not a 3rd; +500 covers
-    // float32's rounding of phase_inc landing real cycles a hair past the
-    // ideal 24000.
+    // Validity (>= 3 onsets) needs a 4th wrap, not a 3rd, because the ring's
+    // latch (on wrapped()) reads the ring from BEFORE the current wrap's own
+    // record (on fired()) -- see SuperModulator::process(). That ordering
+    // itself is not what this case is pinning, though: this case only needs
+    // *some* wrap by which validity has caught up, and a record-before-latch
+    // swap still reaches valid by the 4th wrap here, so these CHECKs pass
+    // either way -- confirmed by swapping the two `if` blocks in
+    // SuperModulator::process() and rebuilding: this case still passed. The
+    // ordering is actually pinned by "invalid until three onsets have been
+    // seen" (that swap makes its CHECK_FALSE, taken one wrap earlier than
+    // here, read `true` instead) and by "reset invalidates" (same failure
+    // mode, post-reset). +500 below covers float32's rounding of phase_inc
+    // landing real cycles a hair past the ideal 24000.
     for (int i = 0; i < 4 * 24000 + 500; ++i) m.process();
     REQUIRE(m.pitch_phase() < 0.1f);   // just past the 4th real wrap, not short of it
 

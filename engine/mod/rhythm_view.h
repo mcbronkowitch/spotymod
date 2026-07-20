@@ -34,12 +34,20 @@ namespace spky {
 // path (the texture-lane control-rate path, spec 2026-07-19
 // mod-plane-control-rate) no longer feeds any ring at all, so the
 // quantisation contract this comment used to document for it no longer
-// describes a reachable situation. The zero-gap clamp above is kept as
-// insurance for a future consumer that might feed the ring from `tick()`
-// again -- if one appears, its onsets will need the same clamp `process()`'s
-// path already relies on, for the same reason: `tick()`'s edge walk can call
-// the boundary handler several times inside one kTickInterval window, so a
-// naive "samples since the last boundary" read can come out as 0 there.
+// describes a reachable situation. The zero-gap clamp above is kept, but
+// `SuperModulator::process()`'s path does not rely on it -- it cannot reach
+// it: that function increments its accumulator (`_since_onset`) once,
+// unconditionally, before the point where it reads that accumulator to
+// record a gap, and the record point is the only place the accumulator is
+// reset to 0. So the accumulator is always >= 1 by the time it is read
+// there, and the clamp's `: 1` branch is dead code on this path -- provably
+// so from the ordering of those three lines alone, not just because nothing
+// currently drives the ring from `tick()`. A future `tick()`-fed consumer
+// would need its own accumulator (`tick()`'s edge walk can call the boundary
+// handler several times inside one kTickInterval window, so a naive "samples
+// since the last boundary" counter there really can read 0) and, with it,
+// its own clamp -- it could not inherit this one's, since this one belongs
+// to an accumulator that structurally never hits zero at its own read.
 struct RhythmView {
     int32_t gap[2] = { 0, 0 };
     bool    valid  = false;
