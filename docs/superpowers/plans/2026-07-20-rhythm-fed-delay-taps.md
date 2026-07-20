@@ -461,7 +461,14 @@ TEST_CASE("derive_offsets: an offset past the tape mutes that tap, never clamps"
 
 TEST_CASE("derive_offsets: sub-musical gaps mute rather than produce a buzz") {
     int32_t out[2];
-    derive_offsets(view(4, 4), kTapeLen, out);
+    // NON-uniform on purpose. A uniform sub-musical pair like (4, 4) would be
+    // caught by the guard's own `g1 < kMinGap` bail-out even with the entry
+    // guard deleted, so the test would survive its own mutation and prove
+    // nothing. This pair reaches the tail only if the entry guard is gone.
+    derive_offsets(view(4, 100), kTapeLen, out);
+    CHECK(out[0] == tap_tuning::kMuted);
+    CHECK(out[1] == tap_tuning::kMuted);
+    derive_offsets(view(100, 4), kTapeLen, out);
     CHECK(out[0] == tap_tuning::kMuted);
     CHECK(out[1] == tap_tuning::kMuted);
 }
