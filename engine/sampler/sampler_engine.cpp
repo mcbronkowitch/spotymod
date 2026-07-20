@@ -141,11 +141,32 @@ void SamplerEngine::_release_all() {
         if (_grains[i].active()) _grains[i].release(fade);
 }
 
-// Task 4 replaces this body with the chord round-robin and octave scatter.
-// Until then: the latched burst pitch in STEP, the live lane in FLOW.
+// Round-robin over the current chord. COLOR 0 leaves _chord_n == 1, so every
+// grain lands on the root and the single-note world is untouched -- the
+// chord layer's bit-identity promise, carried into the cloud.
+//
+// MOTION adds a mild octave scatter on top: at full scatter, kScatterOctProb
+// of grains jump an octave up or down. The draw happens for every spawn
+// regardless of MOTION so the Rng stream does not change shape with the knob.
 float SamplerEngine::_next_ratio() {
-    const float p = (!_flow && _burst_latched) ? _burst_pitch : _targets[LANE_PITCH];
-    return ratio_for(p);
+    const bool  latched = (!_flow && _burst_latched);
+    const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
+
+    float p;
+    if (latched && _chord_n <= 1) {
+        p = _burst_pitch;
+    } else {
+        p = _chord[_rr % _chord_n];
+        _rr = (_rr + 1) % _chord_n;
+    }
+
+    float ratio = ratio_for(p);
+
+    const float roll = _rng.next_unipolar();
+    if (motion * kScatterOctProb > roll)
+        ratio *= _rng.next_unipolar() < 0.5f ? 0.5f : 2.f;
+
+    return ratio;
 }
 
 void SamplerEngine::_update_control() {
@@ -191,18 +212,43 @@ void SamplerEngine::_spawn_one() {
         if (!_grains[i].active()) { slot = i; break; }
     if (slot < 0) return;                       // all busy: skip this spawn
 
+    const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
     // Fill-follows: SOURCE maps into the CURRENT content length, so while a
     // recording runs the cloud granulates only what is already captured.
     const float content = static_cast<float>(_buf.rec_size());
-    const float centre  = clampf(_targets[LANE_SOURCE], 0.f, 1.f) * content;
 
-    const float ratio = _next_ratio();
-    const int   len   = static_cast<int>(_grain_len);
-    const int   half  = static_cast<int>(_grain_len * kWindowHalfMin);
-    const int   atk   = half < 1 ? 1 : half;
+    // SOURCE maps into [0, content) -- the spec's half-open interval, and the
+    // `- 1.f` is load-bearing, not cosmetic. Mapping SOURCE = 1.0 onto exactly
+    // `content` puts the read position on the write head, and during recording
+    // the two then advance at the identical rate (one write per sample, ratio
+    // 1.0), so `frame == fsz` holds every sample and read_linear folds to 0
+    // forever: the cloud goes near-silent at exactly SOURCE = 1.0 while
+    // recording, and behaves normally a hair below it. Found in Task 3.
+    const float span = content > 1.f ? content - 1.f : 0.f;
 
-    _grains[slot].spawn(centre, ratio, 0.f, len, atk, atk, _reverse);
-    _last_pos = centre;
+    // --- Rng draw order is contract: position, pan, octave, timing. ---
+    const float jitter = _rng.next_bipolar() * motion * kScatterPosFrac * content;
+    float centre = clampf(_targets[LANE_SOURCE], 0.f, 1.f) * span + jitter;
+    while (centre >= content) centre -= content;
+    while (centre < 0.f)      centre += content;
+
+    const float pan = _rng.next_bipolar() * motion;
+
+    const float ratio = _next_ratio();          // draws the octave roll
+
+    const int len  = static_cast<int>(_grain_len);
+    const int half = static_cast<int>(_grain_len * kWindowHalfMin);
+    const int atk  = half < 1 ? 1 : half;
+
+    _grains[slot].spawn(centre, ratio, pan, len, atk, atk, _reverse);
+
+    // Spawn-timing jitter, applied to the NEXT interval. Drawn last.
+    _spawn_jitter = _rng.next_bipolar() * motion * kScatterTimeFrac;
+
+    _last_ratio = ratio;
+    _last_pan   = pan;
+    _last_pos   = centre;
+    ++_spawn_count;
 }
 
 void SamplerEngine::process(float& outL, float& outR) {
@@ -220,7 +266,7 @@ void SamplerEngine::process(float& outL, float& outR) {
         _spawn_ctr -= 1.f;
         if (_spawn_ctr <= 0.f) {
             _spawn_one();
-            _spawn_ctr += _spawn_every;
+            _spawn_ctr += _spawn_every * (1.f + _spawn_jitter);
             if (_spawn_ctr < 1.f) _spawn_ctr = 1.f;
         }
     }

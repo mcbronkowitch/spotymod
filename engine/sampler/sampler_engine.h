@@ -75,7 +75,10 @@ public:
     // --- observation (CSV, tests) ---
     int   active_grains() const;
     float grain_len_samples() const { return _grain_len; }
-    float last_spawn_pos() const { return _last_pos; }
+    int   spawn_count() const       { return _spawn_count; }
+    float last_spawn_ratio() const  { return _last_ratio; }
+    float last_spawn_pan() const    { return _last_pan; }
+    float last_spawn_pos() const    { return _last_pos; }
 
 private:
     void  _update_control();     // recompute derived values on the raster
@@ -119,6 +122,10 @@ private:
     // must not clear this or the latch would be wiped every time.
     bool  _burst_latched = false;
     float _last_pos = 0.f;
+    int   _spawn_count = 0;
+    float _last_ratio  = 1.f;
+    float _last_pan    = 0.f;
+    float _spawn_jitter = 0.f;   // spawn-interval jitter applied to the NEXT interval
 
     float _in_l = 0.f, _in_r = 0.f;
 
