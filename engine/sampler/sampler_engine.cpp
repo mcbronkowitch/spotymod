@@ -178,6 +178,7 @@ void SamplerEngine::_spawn_one() {
     const int   atk   = half < 1 ? 1 : half;
 
     _grains[slot].spawn(centre, ratio, 0.f, len, atk, atk, _reverse);
+    _last_pos = centre;
 }
 
 void SamplerEngine::process(float& outL, float& outR) {

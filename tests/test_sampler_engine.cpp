@@ -174,46 +174,30 @@ TEST_CASE("sampler: recording grows the content and the cloud plays while it doe
 TEST_CASE("sampler: grains never read past the write head while recording") {
     Rig g(0);
     g.e.set_flow(true);
-    // SOURCE at the far end (1.0) is what makes this observable, but not for
-    // the reason it first looks like. read_linear() folds EVERY read into
-    // [0, rec_size) no matter what position a grain asks for, so a literal
-    // read of memset-zero memory can never happen either way -- silence is
-    // not the tell here.
+    // SOURCE at the far end: mapped against the CURRENT fill it stays inside
+    // the captured region; mapped against capacity it points two seconds past
+    // the write head, into memory that has not been recorded yet.
     //
-    // The real tell is an exact-lockstep degeneracy. With SOURCE=1.0 and
-    // recording continuously active, the correct (rec_size()-based) centre
-    // is, at every grain's spawn, EXACTLY equal to the buffer's current
-    // fill. Because both the read position and the fill then advance by
-    // ~1 sample/sample for the rest of that grain's life, they stay
-    // EXACTLY equal the whole time -- so every single read folds to
-    // position 0 (the quiet start of the record fade-in), for every grain,
-    // deterministically. Measured RMS: 0.0 exactly (no RNG is drawn yet in
-    // this task, so this is not a coincidence of the seed).
-    //
-    // The mutant (capacity()-based) centre is instead a huge, effectively
-    // fixed offset (0.98x of the full 2 s buffer) that the small, still-
-    // growing rec_size() never catches up to. It never hits the exact
-    // lockstep, so it never gets folded to the same quiet seam -- it lands
-    // on ordinary, already-recorded DC content instead. Measured RMS: 1.378.
-    //
-    // So the assertion direction is inverted from first intuition: LOW RMS
-    // is what the correct implementation produces here, not high.
+    // This is asserted on the spawn POSITION, not on loudness. read_linear
+    // folds against rec_size(), so an out-of-range position still lands on
+    // valid audio after folding -- no amplitude assertion can distinguish the
+    // two, and with DC content every position sounds the same.
     g.feed(0.5f, 1.f, 0.3f);
     g.e.set_recording(true);
 
-    std::vector<float> out;
+    float worst = 0.f;
     for (int i = 0; i < 24000; ++i) {
-        g.e.process_in(1.f, 1.f);          // DC, so any real (non-degenerate) read is loud
+        g.e.process_in(1.f, 1.f);
         float a = 0.f, b = 0.f;
         g.e.process(a, b);
-        out.push_back(a);
+        const float over = g.e.last_spawn_pos() - float(g.e.rec_size());
+        if (over > worst) worst = over;
     }
     g.e.set_recording(false);
     REQUIRE(g.e.rec_size() > 4800);
 
-    // Correct: exactly 0.0 (deterministic lockstep fold to the fade-in seam).
-    // Mutant (capacity() instead of rec_size()): ~1.378 -- comfortably above.
-    CHECK(rms(out, 12000, 6000) < 0.1f);
+    // Not one grain was placed past the write head.
+    CHECK(worst <= 0.f);
 }
 
 TEST_CASE("sampler: monitoring passes the dry input at unity") {

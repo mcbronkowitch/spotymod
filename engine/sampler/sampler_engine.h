@@ -75,6 +75,7 @@ public:
     // --- observation (CSV, tests) ---
     int   active_grains() const;
     float grain_len_samples() const { return _grain_len; }
+    float last_spawn_pos() const { return _last_pos; }
 
 private:
     void  _update_control();     // recompute derived values on the raster
@@ -113,6 +114,7 @@ private:
     int   _chord_n = 1;
     float _burst_pitch   = 0.5f;
     bool  _burst_latched = false;
+    float _last_pos = 0.f;
 
     float _in_l = 0.f, _in_r = 0.f;
 
