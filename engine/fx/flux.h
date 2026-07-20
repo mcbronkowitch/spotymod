@@ -197,8 +197,13 @@ private:
     // Unchanged-value guards for set_dust/set_rot (I3), mirroring set_bpm/
     // set_rate: TapBank::set_rot runs two powf calls, and once these are
     // forwarded at control rate every tick would pay that whether or not the
-    // knob moved. Defaults match TapBank::init's own _dust=0/_rot=0, so the
-    // first real call after init() only skips forwarding when it is a no-op.
+    // knob moved. Defaults match TapBank::init's own _dust=0/_rot=0 so the
+    // first real call after a FRESH Flux only skips forwarding when it is a
+    // no-op -- but init() can also run again later (a sample-rate change),
+    // and TapBank::init resets _dust/_rot back to 0 every time. Flux::init
+    // resets these two guards to 0 right alongside them (flux.cpp), same as
+    // it does for _bpm/_rate_idx, so a re-init never leaves a guard stale
+    // against a TapBank that just went back to its own defaults.
     float _dust_norm = 0.f;
     float _rot_norm = 0.f;
 };

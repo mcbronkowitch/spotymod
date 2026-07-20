@@ -18,6 +18,8 @@ void Flux::init(float sample_rate, float* buf_l, float* buf_r) {
     _dt_coef = daisysp::fmin(1.f / (0.03f * sample_rate), 1.f);
     _rate_idx = 3;               // boot "1/4"
     _bpm = 120.f;
+    _dust_norm = 0.f;            // TapBank::init resets its own _dust to 0 --
+    _rot_norm = 0.f;             // these guards must restart from the same place
     _taps.init(sample_rate);
     recompute_time(true);        // snap the boot delay time
     set_feedback(0.45f);

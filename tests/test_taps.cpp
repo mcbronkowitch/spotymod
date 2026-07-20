@@ -609,6 +609,57 @@ TEST_CASE("tap bank: a re-latch arriving mid-dip (during Dip::out and during "
     CHECK(l == doctest::Approx(-0.7f * tap_tuning::kPanNear).epsilon(0.05));
 }
 
+TEST_CASE("tap bank: a push mid-dip back to the pre-dip offset is not swallowed "
+          "by a stale pending target") {
+    // set_offsets' fix has two halves: the pending-target computation
+    // (`cur = dip==run ? t.off : t.next_off`, taps.cpp:101) and the
+    // retarget-without-restart body below it. Reverting ONLY the body is
+    // caught by the "re-latch arriving mid-dip" test above. Reverting ONLY
+    // the guard -- back to the old unconditional `cur = t.off` -- is caught
+    // by nothing else in this file: "a repeated unchanged offset" above
+    // re-pushes the value the dip is already headed to (next_off), which a
+    // reverted `cur = t.off` guard also treats as a no-op, just for the
+    // wrong reason, so that test still passes against the revert.
+    //
+    // This test instead pushes a value mid-dip that equals the tap's
+    // PRE-dip position (t.off, which a Dip::out hasn't overwritten yet) but
+    // NOT where the tap is actually headed (t.next_off). A reverted guard
+    // reads `cur` as t.off, sees `want == cur`, and silently drops the
+    // push -- next_off is never updated, so the running dip-out completes
+    // on its ORIGINAL, now-abandoned target instead.
+    FakeTape tape;
+    for (int32_t o = 0; o < 20000; ++o) tape.poke(o, 1.f);
+    for (int32_t o = 20000; o < 40000; ++o) tape.poke(o, -1.f);
+    TapBank b = make_bank(1.f);
+    int32_t off[2] = { 6000, tap_tuning::kMuted };   // isolate to tap 0
+    b.set_offsets(off);
+    float l = 0.f, r = 0.f;
+    settle(b, tape.view(), l, r, 20000);
+    REQUIRE(l == doctest::Approx(0.7f * tap_tuning::kPanNear).epsilon(0.05));
+
+    off[0] = 25000;             // start a dip toward the -1 plateau
+    b.set_offsets(off);
+    for (int i = 0; i < 30; ++i) { l = 0.f; r = 0.f; b.process(tape.view(), l, r); }
+    // ~30 of _dip_len=96 samples in: comfortably mid Dip::out. t.off is
+    // STILL 6000 here -- a Dip::out only writes t.off when it completes.
+
+    off[0] = 6000;               // back to the PRE-dip position -- NOT next_off (25000)
+    b.set_offsets(off);
+
+    // Past a full dip cycle (fade-out finishes, t.off <- next_off, a fresh
+    // fade-in climbs and settles), with margin.
+    for (int i = 0; i < 300; ++i) { l = 0.f; r = 0.f; b.process(tape.view(), l, r); }
+
+    // Fixed code: mid Dip::out, `cur` tracked next_off (25000), so
+    // want(6000) != cur triggered a real retarget -- the tap lands back on
+    // the 6000 plateau's value (+1). Reverted guard: `cur` read t.off
+    // (still 6000 at push time), want == cur looked like a no-op, the push
+    // was dropped, and the abandoned 25000 target -- the -1 plateau --
+    // wins instead. Differs.
+    INFO("l = " << l);
+    CHECK(l == doctest::Approx(0.7f * tap_tuning::kPanNear).epsilon(0.05));
+}
+
 TEST_CASE("tap bank: un-muting to an offset inside [kMinGap, kRelatchMin) "
           "still dips and sounds") {
     FakeTape tape;

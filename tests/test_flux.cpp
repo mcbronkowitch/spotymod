@@ -175,7 +175,8 @@ TEST_CASE("deline: N samples behind the head reads the sample written N steps ag
     // time as it advances forward in address space. "N samples behind the
     // head" is therefore data()[(write_ptr() + N) & mask] -- an INCREASING
     // index for further into the past, the opposite of the naive
-    // "head - N" reading. Task 2's grain reads build directly on this.
+    // "head - N" reading. TapBank's tap reads (fx/taps.h) build directly on
+    // this.
     static float buf[Flux::kMaxSamples];
     DeLine<float, Flux::kMaxSamples> line;
     line.Init(buf);
@@ -323,4 +324,116 @@ TEST_CASE("flux: taps sound only once offsets have been pushed") {
     // not an expression over tap_tuning constants, so this floor doesn't
     // silently track a future gain-constant change.
     CHECK(loud > 1.0);
+}
+
+TEST_CASE("flux: init resets the DUST guard so a re-init's repeated push isn't swallowed") {
+    // Reproduces Spotymod::reinit() -> Instrument::init() -> Flux::init(): a
+    // sample-rate change re-initialises TapBank, whose own _dust resets to 0
+    // (taps.cpp), but Flux::init must ALSO reset _dust_norm, or the guard on
+    // set_dust (I3) sees the next push of the SAME value the user already
+    // had dialled in as a no-op and swallows it.
+    static float buf_l[Flux::kMaxSamples], buf_r[Flux::kMaxSamples];
+    Flux f;
+    f.init(48000.f, buf_l, buf_r);
+    f.set_on(true, true);
+    f.set_dust(0.7f);
+
+    // Simulate the re-init.
+    f.init(48000.f, buf_l, buf_r);
+    f.set_on(true, true);
+    CHECK_FALSE(f.taps_active());   // sanity: the re-init really did go inert
+
+    f.set_bpm(20.f);                // push the echo's own arrival out of the window
+    f.set_rate(0);
+    const int32_t off[2] = { 6000, 10500 };
+    f.set_tap_offsets(off);
+
+    f.set_dust(0.7f);                // SAME value as before the re-init
+
+    // At this moment, what would the un-fixed code produce? _dust_norm is
+    // still 0.7f from before the re-init (Flux::init never touched it), so
+    // `d == _dust_norm` is true and set_dust returns early: _taps.set_dust()
+    // is never called, TapBank's OWN _dust (reset to 0 by TapBank::init)
+    // never leaves 0, and taps_active() stays false -- forever, since
+    // nothing will ever again push a DIFFERENT dust value in this scenario
+    // (the user's knob hasn't moved). That is different from the fixed
+    // code's true.
+    CHECK(f.taps_active());
+
+    double loud = 0.0;
+    for (int i = 0; i < 30000; ++i) {
+        const float x = std::sin(static_cast<float>(i) * 0.03f);
+        float l = x, r = x;
+        f.process(l, r);
+        if (i > 25000) loud += std::fabs(static_cast<double>(l - x));
+    }
+    // Same floor technique as "flux: taps sound only once offsets have been
+    // pushed" above: a real audibility floor, not just `loud > 0`.
+    CHECK(loud > 1.0);
+}
+
+TEST_CASE("flux: init resets the ROT guard so a re-init's repeated push isn't swallowed") {
+    // Isolates ROT from DUST: DUST is pushed to a DIFFERENT value after the
+    // re-init (0.3 -> 0.7), so it always forwards regardless of its OWN
+    // guard's state -- any difference measured below is attributable to ROT
+    // alone. ROT is pushed to the SAME value (0.9) before and after the
+    // re-init, which is exactly the shape that trips a stale guard.
+    static float ref_l[Flux::kMaxSamples], ref_r[Flux::kMaxSamples];
+    static float act_l[Flux::kMaxSamples], act_r[Flux::kMaxSamples];
+    const int32_t off[2] = { 6000, tap_tuning::kMuted };   // tap 0 only: the LP branch
+
+    // Reference: a FRESH Flux, dialled straight to the target state once.
+    Flux ref;
+    ref.init(48000.f, ref_l, ref_r);
+    ref.set_on(true, true);
+    ref.set_bpm(20.f);
+    ref.set_rate(0);                // push the echo's own arrival out of the window
+    ref.set_tap_offsets(off);
+    ref.set_dust(0.7f);
+    ref.set_rot(0.9f);              // strong LP: cutoff ~590 Hz, heavily attenuates 6 kHz
+
+    // Actual: dial in a state, simulate a re-init, then dial in the target
+    // state a second time -- ROT repeats 0.9, DUST does not repeat 0.3.
+    Flux act;
+    act.init(48000.f, act_l, act_r);
+    act.set_on(true, true);
+    act.set_dust(0.3f);
+    act.set_rot(0.9f);
+    act.init(48000.f, act_l, act_r);   // re-init
+    act.set_on(true, true);
+    act.set_bpm(20.f);
+    act.set_rate(0);
+    act.set_tap_offsets(off);
+    act.set_dust(0.7f);             // different from the pre-reinit 0.3f -- always forwards
+    act.set_rot(0.9f);               // SAME as the pre-reinit 0.9f -- swallowed if stale
+
+    // 6 kHz probe (2*pi*6000/48000 rad/sample). The offset (6000) reads
+    // material written 6000 samples ago, so the read position holds real
+    // in-run signal -- not the pristine zero-initialised tape -- only once
+    // at least 6000 samples have elapsed; the gain slew (~960 samples) and
+    // offset dip (~192 samples) settle well before that. Run to 16000 and
+    // measure the last 4000 samples for a wide settle margin.
+    double ref_energy = 0.0, act_energy = 0.0;
+    for (int i = 0; i < 16000; ++i) {
+        const float x = std::sin(static_cast<float>(i) * 0.785398f);
+        float rl = x, rr = x;
+        ref.process(rl, rr);
+        float al = x, ar = x;
+        act.process(al, ar);
+        if (i > 12000) {
+            ref_energy += std::fabs(static_cast<double>(rl - x));
+            act_energy += std::fabs(static_cast<double>(al - x));
+        }
+    }
+    REQUIRE(ref_energy > 1.0);   // the reference itself must be audible and settled
+
+    // At this moment, what would the un-fixed code produce? act's ROT push
+    // is swallowed by the stale guard (_rot_norm still 0.9f from before the
+    // re-init), so TapBank's OWN _rot -- reset to 0 by TapBank::init -- is
+    // never told about 0.9f and stays at 0 (LP cutoff ~18 kHz, barely
+    // touches a 6 kHz tone). act_energy would then sit close to an
+    // UNFILTERED tap's level, several times ref_energy's heavily-filtered
+    // level -- not close to ref_energy as asserted below.
+    INFO("ref_energy=" << ref_energy << " act_energy=" << act_energy);
+    CHECK(act_energy == doctest::Approx(ref_energy).epsilon(0.05));
 }

@@ -340,10 +340,12 @@ PARAMS = PART_A + PART_B + SHARED + [
     # sits in the PITCH sector. Still appended LAST: order defines the param id.
     color_ctl("_A", False),
     color_ctl("_B", True),
-    # DUST / ROT: the grain cloud on the FLUX tape (spec 2026-07-18
-    # dust-grain-cloud). Appended LAST like FILT/TIDE/FLUXRATE/COLOR so existing
-    # .vcv patches keep their param ids; the coordinates fill slots 3 and 4 of
-    # the widened FX bottom row, right under the delay cluster they feed off.
+    # DUST / ROT: two read taps on the FLUX tape, placed by the other bank's
+    # rhythm (spec 2026-07-20 rhythm-fed-delay-taps; supersedes the 2026-07-18
+    # dust-grain-cloud design). Appended LAST like FILT/TIDE/FLUXRATE/COLOR so
+    # existing .vcv patches keep their param ids; the coordinates fill slots 3
+    # and 4 of the widened FX bottom row, right under the delay cluster they
+    # feed off.
     Ctl("DUST_A", SMKNOB, FX_BOT[2],     ROW_V2, "DUST"),
     Ctl("DUST_B", SMKNOB, W - FX_BOT[2], ROW_V2, "DUST"),
     Ctl("ROT_A",  SMKNOB, FX_BOT[3],     ROW_V2, "ROT"),

@@ -14,8 +14,6 @@ struct TapeTap {
     int32_t write_ptr = 0;
     int32_t mask = 0;
 
-    int32_t size() const { return mask + 1; }
-
     // `offset` is samples BEHIND the write head; the head decrements, so a
     // constant offset is exactly 1x forward playback of material that old.
     float read(bool right, int32_t offset) const {
@@ -51,6 +49,14 @@ constexpr float kTapGain     = 0.7f;
 // Below this, a jump is inaudible against the tape's own band-limit (64
 // samples = 1.3 ms at 48 kHz) and dipping for it would be pure cost.
 constexpr int32_t kRelatchMin = 64;
+// kDipSeconds * 48000 == 96 == Center::kCtrlInterval (engine/center/center.h)
+// at 48 kHz -- a coincidence between two constants defined in different
+// files, only equal at that one sample rate. Correctness does NOT depend on
+// it: set_offsets' retarget-without-restart path (taps.cpp) makes a re-push
+// of an already-pending target a genuine no-op regardless of how the push
+// cadence (Instrument's control tick, engine/instrument.cpp) relates to the
+// dip length. Noted here only so a future editor changing either constant
+// knows this was already considered.
 constexpr float kDipSeconds  = 0.002f;   // each side of the jump
 constexpr float kGainSlewS   = 0.02f;
 // Filter endpoints, ROT 0 -> ROT 1, interpolated geometrically.

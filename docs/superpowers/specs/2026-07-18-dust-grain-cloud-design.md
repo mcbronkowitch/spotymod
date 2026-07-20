@@ -1,5 +1,7 @@
 # DUST / ROT — grain cloud, tape rot + erosion freeze on the FLUX echo
 
+**Superseded by:** 2026-07-20-rhythm-fed-delay-taps-design.md
+
 **Date:** 2026-07-18 (rev 3 — control surface reduced to what the hardware will
 actually have, same day); **rev 6 2026-07-19 — CPU budget MEASURED + optimized, §8**
 **Status:** design approved, **implementation BLOCKED on budget** — but the
