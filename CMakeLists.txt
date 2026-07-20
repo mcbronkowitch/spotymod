@@ -94,6 +94,7 @@ add_executable(spky_tests
     tests/test_mod_tide.cpp
     engine/sampler/sample_buffer.cpp
     tests/test_sample_buffer.cpp
+    tests/test_grain.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)
