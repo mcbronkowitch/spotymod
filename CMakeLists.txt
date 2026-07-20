@@ -97,6 +97,7 @@ add_executable(spky_tests
     tests/test_grain.cpp
     engine/sampler/sampler_engine.cpp
     tests/test_sampler_engine.cpp
+    tests/test_sampler_part.cpp
 )
 target_link_libraries(spky_tests PRIVATE spky_engine doctest nlohmann_json daisysp_min)
 target_include_directories(spky_tests PRIVATE host)
@@ -119,6 +120,8 @@ add_executable(render
     engine/fx/comp.cpp
     engine/synth/voice.cpp
     engine/synth/synth_engine.cpp
+    engine/sampler/sample_buffer.cpp
+    engine/sampler/sampler_engine.cpp
 )
 target_include_directories(render PRIVATE host engine third_party)
 target_link_libraries(render PRIVATE nlohmann_json daisysp_min)

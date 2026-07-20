@@ -43,7 +43,9 @@ SOURCES += \
 	$(REPO)/engine/fx/part_fx.cpp \
 	$(REPO)/engine/fx/comp.cpp \
 	$(REPO)/engine/synth/voice.cpp \
-	$(REPO)/engine/synth/synth_engine.cpp
+	$(REPO)/engine/synth/synth_engine.cpp \
+	$(REPO)/engine/sampler/sample_buffer.cpp \
+	$(REPO)/engine/sampler/sampler_engine.cpp
 
 # minimal DaisySP slice the FX chain needs
 SOURCES += \

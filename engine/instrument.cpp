@@ -21,9 +21,11 @@ void Instrument::init(float sample_rate, const FxMem& mem) {
     _sr = sample_rate;
     _reverb = mem.reverb;
     _parts[PART_A].init(sample_rate, 0x1234abcdu,
-                        mem.echo[PART_A][0], mem.echo[PART_A][1]);
+                        mem.echo[PART_A][0], mem.echo[PART_A][1],
+                        mem.sampler_buf[PART_A], mem.sampler_frames);
     _parts[PART_B].init(sample_rate, 0x9e3779b9u,
-                        mem.echo[PART_B][0], mem.echo[PART_B][1]);
+                        mem.echo[PART_B][0], mem.echo[PART_B][1],
+                        mem.sampler_buf[PART_B], mem.sampler_frames);
     if (_reverb) _reverb->init(sample_rate);
     _rev_dry.init(sample_rate, kMixSmoothS);
     _rev_wet.init(sample_rate, kMixSmoothS);
@@ -63,9 +65,11 @@ void Instrument::set_tempo_bpm(float bpm) {
     for (auto& p : _parts) p.fx().set_bpm(bpm);
 }
 
-void Instrument::process(const float* /*inL*/, const float* /*inR*/,
+void Instrument::process(const float* inL, const float* inR,
                          float* outL, float* outR, size_t n) {
     for (size_t i = 0; i < n; ++i) {
+        const float in_l = inL ? inL[i] : 0.f;
+        const float in_r = inR ? inR[i] : 0.f;
         if (_ctrl_ctr == 0) {                 // control-rate center update (per 96 samples)
             _center.update(_parts[PART_A].mod(), _parts[PART_B].mod(),
                            _parts[PART_A], _parts[PART_B]);
@@ -94,7 +98,7 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         float pl[PART_COUNT], prr[PART_COUNT];
         float psl[PART_COUNT], psr[PART_COUNT];
         _parts[pri].set_inhibit(false);   // knob flips must never strand a part
-        _parts[pri].process(pl[pri], prr[pri], psl[pri], psr[pri]);
+        _parts[pri].process(in_l, in_r, pl[pri], prr[pri], psl[pri], psr[pri]);
         if (amt > 0.f) {
             // Stage 1 (|c| <= 0.5): blocked while the priority side HOLDS a
             // note — STEP: gate high (note + sustain, the tail is free);
@@ -107,7 +111,7 @@ void Instrument::process(const float* /*inL*/, const float* /*inR*/,
         } else {
             _parts[yld].set_inhibit(false);
         }
-        _parts[yld].process(pl[yld], prr[yld], psl[yld], psr[yld]);
+        _parts[yld].process(in_l, in_r, pl[yld], prr[yld], psl[yld], psr[yld]);
 
         const float al = pl[PART_A],  ar = prr[PART_A];
         const float bl = pl[PART_B],  br = prr[PART_B];

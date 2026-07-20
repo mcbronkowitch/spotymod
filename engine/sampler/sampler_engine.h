@@ -46,8 +46,8 @@ public:
     void process(float& outL, float& outR) override;
     void set_flow(bool flow) override;
     void set_hold(bool on) override;
-    void set_gate(bool on);        // Task 6 adds the virtual + override
-    void process_in(float inL, float inR);   // Task 6 adds the virtual + override
+    void set_gate(bool on) override;
+    void process_in(float inL, float inR) override;
 
     // --- material ---
     void   set_recording(bool on);
