@@ -1,0 +1,35 @@
+{
+  "_comment": "M5 acceptance demo, revision 3 -- fed a real field recording. Revisions 1 and 2 fed the deck material rendered from Spotykach itself, which shares its oscillators, filters and grit, so the deck and the synth were hard to tell apart. This uses 96_Stormy_Noise_Loop_01.wav (48 kHz, 24-bit stereo): atonal, spectrally dense, no pitch of its own. That is the point -- the cloud is pitch-quantized and chord-locked, so it MAKES harmony out of unpitched material, and that trick is invisible when the source is already tonal. Timeline: record 1-9s, MOTION opens 10/16/22/28, STEP chop from 32s.",
+  "sample_rate": 48000,
+  "bpm": 96,
+  "duration_s": 40.0,
+  "input_wav": "host/render/scenarios/assets/96_Stormy_Noise_Loop_01.wav",
+  "init": [
+    { "action": "set_engine", "part": 1, "value": "sampler" },
+    { "action": "set_color", "part": 0, "value": 0.6 },
+
+    { "_comment": "part A (the music) sits back so the cloud is not buried -- rev 1 had the synth ~8 dB above the deck",
+      "action": "set_target_base", "part": 0, "slot": 4, "value": 0.55 },
+
+    { "_comment": "part B (the room) at full LEVEL, MOTION parked and unmodulated so the sweep below is the only thing moving it",
+      "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
+    { "action": "set_target_base", "part": 1, "slot": 3, "value": 0.0 },
+    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
+    { "action": "sampler_feedback", "part": 1, "value": 0.95 }
+  ],
+  "events": [
+    { "_comment": "1-9s: record the storm live. The cloud should be audible and GROWING while this runs -- the fill-follows promise.",
+      "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },
+    { "t": 9.0,  "action": "sampler_record", "part": 1, "flag": false },
+
+    { "_comment": "10-31s: MOTION opens the scatter from a tight loop to fog. The spec's acceptance criterion.",
+      "t": 10.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.0 },
+    { "t": 16.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.35 },
+    { "t": 22.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.7 },
+    { "t": 28.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 1.0 },
+
+    { "_comment": "32s: the groove chops the texture into bursts.",
+      "t": 32.0, "action": "set_step", "part": 1, "flag": true, "ivalue": 8 },
+    { "t": 32.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.5 }
+  ]
+}

@@ -37,7 +37,8 @@ is actually built today, and what is still design-only.
 | **M4.10** | Chord layer — COLOR knob, diatonic stacks, voice-leading, live FLOW surface | ✅ done (engine + hosts; hardware placement deferred to the reduction round) |
 | **+ COLOR-MOTION** | MOTION becomes COLOR's third destination — bipolar additive with a zero-gate, density varies per note | ✅ **done** (engine only; no new surface) |
 | **Bench** | Bench firmware — DWT cycle measurement of the engine, nine DaisySP candidates and SRAM-vs-SDRAM buffer access on real hardware | ✅ **done** (`bench/`, results in `docs/bench/`) |
-| **M5** | Sampler — the texture deck (granular cloud, live resampling) | ⬜ planned |
+| **M5a** | Sampler — the texture deck: engine + render host (granular cloud, live resampling) | ✅ **done** (engine + desktop host; VCV wiring is M5b) |
+| **M5b** | Sampler on the panel — ENG remap, REC pad, WAV load/save, patch persistence, factory sample | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
 Milestone order follows the design spec's build order (audible first, hardware

@@ -2,6 +2,17 @@
 
 **Date:** 2026-07-18
 **Status:** approved (brainstorm with Bastian, 2026-07-18)
+**Amended:** 2026-07-20 (2) — **MOTION now stretches grain length as well.** The
+first listening test of the M5a engine found the identity section's promise
+("one axis from focused loop to **diffuse fog**") and the lane table's ceiling
+("up to ±¼ of content length") did not meet: at full MOTION the cloud read as a
+clearly mangled loop, not as fog. A probe holding MOTION at 1 while stepping
+SIZE showed the missing lever is grain **length**, not more position scatter —
+fog arrives around SIZE 0.8 (~800 ms grains). MOTION therefore scales grain
+length up to ~4× on top of SIZE, which keeps SIZE as the base value and makes
+MOTION the single order→chaos macro the identity section describes. Decided by
+ear with Bastian, 2026-07-20.
+
 **Amended:** 2026-07-20 — the DUST dependency was rewritten after DUST shipped
 as rhythm-fed delay taps instead of a grain cloud
 (`2026-07-20-rhythm-fed-delay-taps-design.md`). Affects the `grain.h` and
@@ -123,7 +134,7 @@ carpet never pulses at any SIZE.
 | SOURCE | Cloud center: 0..1 → position in `[0, recorded length)`. Grains latch at spawn — the lane wanders, the cloud audibly drags behind. |
 | SIZE | Grain length, exponential **20 ms → 2 s** (`0.02 · 100^n` s), clamped to content length. |
 | PITCH | Same path as the synth: lane + TUNE → quantizer → semitones → ratio `2^(semi/12)`. **Chord distribution:** `Part` feeds the current COLOR notes via `set_chord` (already refreshed every sample); each spawning grain takes the next chord note round-robin. COLOR 0 = all grains on the root — behavior identical to the single-note world. |
-| MOTION | **Scatter macro, order→chaos:** 0 = all grains tight on the SOURCE point, stereo-centered, regular spawn timing (loop-like); 1 = position jitter (up to ±¼ of content length), full stereo spread, spawn-timing jitter, and a mild octave scatter on chord notes. All jitter draws from the part's seeded `Rng`. |
+| MOTION | **Scatter macro, order→chaos:** 0 = all grains tight on the SOURCE point, stereo-centered, regular spawn timing (loop-like); 1 = position jitter (up to ±¼ of content length), full stereo spread, spawn-timing jitter, a mild octave scatter on chord notes, **and grains stretched to ~4× their SIZE length**. All jitter draws from the part's seeded `Rng`. |
 | LEVEL | Master gain through a `OnePole` (10 ms), exactly as the synth. The LEVEL floor applies in `Part` as for every engine. |
 
 ### Tape/Digital, translated to the cloud

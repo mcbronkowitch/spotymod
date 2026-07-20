@@ -1,0 +1,39 @@
+{
+  "_comment": "LISTENING PROBE, not a demo. MOTION is pinned at 1.0 (maximum scatter) for the whole render while SIZE steps through four values. Question it answers: is grain LENGTH the missing lever for 'fog', or is the position-scatter ceiling (kScatterPosFrac = 0.25) the thing holding it back? MOTION currently scatters position, pan, spawn timing and octave but changes neither grain length nor density, so if a longer SIZE reads as fog here, the fix is cheap and needs no retuning of the scatter constants. Synth silenced throughout.",
+  "sample_rate": 48000,
+  "bpm": 96,
+  "duration_s": 42.0,
+  "input_wav": "host/render/scenarios/assets/96_Stormy_Noise_Loop_01.wav",
+  "init": [
+    { "action": "set_engine", "part": 1, "value": "sampler" },
+
+    { "_comment": "part A silenced: zero base AND LEVEL modulation off",
+      "action": "set_target_base", "part": 0, "slot": 4, "value": 0.0 },
+    { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
+
+    { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
+
+    { "_comment": "MOTION pinned at maximum scatter, unmodulated, for the entire render",
+      "action": "set_target_base", "part": 1, "slot": 3, "value": 1.0 },
+    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
+
+    { "_comment": "SIZE parked and unmodulated too, so the steps below are the only thing moving it",
+      "action": "set_target_base", "part": 1, "slot": 1, "value": 0.2 },
+    { "action": "set_target_active", "part": 1, "slot": 1, "flag": false },
+
+    { "action": "sampler_feedback", "part": 1, "value": 0.95 }
+  ],
+  "events": [
+    { "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },
+    { "t": 9.0,  "action": "sampler_record", "part": 1, "flag": false },
+
+    { "_comment": "10-19s: SIZE 0.2 -> ~80 ms grains (dust)",
+      "t": 10.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.2 },
+    { "_comment": "19-28s: SIZE 0.5 -> ~200 ms (what the demo uses)",
+      "t": 19.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.5 },
+    { "_comment": "28-35s: SIZE 0.8 -> ~800 ms (long smear)",
+      "t": 28.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.8 },
+    { "_comment": "35-42s: SIZE 1.0 -> 2 s, clamped to the ~8 s of content",
+      "t": 35.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 1.0 }
+  ]
+}
