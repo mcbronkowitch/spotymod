@@ -90,7 +90,7 @@ Do not re-implement these; verify and move on.
 - Consumes: `spky::SoftSwitch` and `spky::hann_value_at` from `engine/fx/fx_util.h`; `spky::clampf`, `spky::lerpf` from `engine/util/math.h`.
 - Produces:
   - `struct SampleBuffer::Frame { float l; float r; };`
-  - `void init(Frame* buf, size_t length)` — pointer injection, no ownership
+  - `void init(Frame* buf, size_t length, float sample_rate)` — pointer injection, no ownership. The sample rate is needed by the `SoftSwitch` that gates the overdub crossfade; see change 7 below.
   - `void read_linear(float frame, float& out0, float& out1) const`
   - `void set_recording(bool on)`, `bool is_recording() const`, `bool is_overdubbing() const`
   - `void set_feedback(float knob)` (0..1 → −60..0 dB), `void write(float in0, float in1)`
@@ -106,6 +106,7 @@ Do not re-implement these; verify and move on.
 4. `_target_length` and `_wrap_counter` are dropped — declared in the original, never referenced.
 5. **Empty-buffer hardening.** The original's `_read` does `frame %= _size` (division by zero when empty) and `read_linear` does `while (frame < 0) frame += _size` (infinite loop when empty). Both are unreachable in the original's slice-player usage and both are reachable here, because the cloud runs while the buffer is still filling. The port guards `_size == 0` before either.
 6. **Punch-in position.** The original starts an overdub at the read head (`_write_head = _read_head - min(1, _read_head)`). A cloud has no single playhead, so an overdub starts at frame 0. Simpler, and the only defensible choice without a playhead.
+7. **`init` takes the sample rate** (added 2026-07-20 after Task 1's first run). `SoftSwitch::init(sr)` sets `_kof = 1/(0.004·sr)`; left at its default `_kof = 1.f`, `SoftSwitch::process` calls `hann_value_at(iterator)` with an iterator up to 191, which indexes far past the 192-entry table — an out-of-bounds read on the first overdub, reproduced as a crash. The original firmware calls `_cut.init(...)` (`src/core/buffer.cpp:26`); the port must too. Pass the **real** sample rate, not a literal 48000: `Part::init` already threads it to every other engine object (`part.cpp:22`), VCV runs at whatever rate the rack is set to, and a hardcoded rate silently halves the overdub crossfade at 96 kHz.
 
 - [ ] **Step 1: Write the constants header**
 
@@ -184,7 +185,7 @@ static constexpr size_t kCap = 4800;   // 100 ms @ 48k -- plenty, and fast
 struct Fixture {
     std::vector<SampleBuffer::Frame> mem{kCap};
     SampleBuffer buf;
-    Fixture() { buf.init(mem.data(), kCap); }
+    Fixture() { buf.init(mem.data(), kCap, 48000.f); }
 };
 
 // Record `n` samples of a constant value; returns the peak |delta| between
@@ -302,6 +303,52 @@ TEST_CASE("sample_buffer: recording past capacity auto-stops with the loop locke
     CHECK(f.buf.is_overdubbing());   // the loop is locked; further writes overdub
 }
 
+TEST_CASE("sample_buffer: the loop seam is crossfaded, not two dips") {
+    Fixture f;
+    // Record and stop WITHOUT cutting first: the fade-out must be written
+    // over the fade-in at frame 0, so the wrap point is continuous.
+    f.buf.set_recording(true);
+    for (size_t i = 0; i < 2400; ++i) f.buf.write(1.f, 1.f);
+    f.buf.set_recording(false);
+    for (size_t i = 0; i < sampler_cfg::kRecordFade + 2; ++i) f.buf.write(1.f, 1.f);
+
+    const size_t n = f.buf.rec_size();
+    REQUIRE(n > sampler_cfg::kRecordFade * 4);
+
+    // The seam: reading across the wrap must not step. Without the
+    // write-head reset the head is a fade-in ramp from ~0 and the tail is a
+    // fade-out ramp to ~0, so the wrap shows a deep notch instead.
+    float l0 = 0.f, r0 = 0.f, ln = 0.f, rn = 0.f;
+    f.buf.read_linear(0.f, l0, r0);
+    f.buf.read_linear(float(n - 1), ln, rn);
+    CHECK(l0 > 0.9f);                    // the head is at full level...
+    CHECK(ln > 0.9f);                    // ...and so is the tail
+    CHECK(std::fabs(l0 - ln) < 0.1f);    // ...and they meet without a step
+
+    // And the content did not grow by a fade's worth: stopping crossfades
+    // into the existing material rather than appending to it.
+    CHECK(n < 2400 + sampler_cfg::kRecordFade);
+}
+
+TEST_CASE("sample_buffer: NaN and absurd read positions yield silence") {
+    Fixture f;
+    record_const(f.buf, 1.f, 2400);
+    REQUIRE_FALSE(f.buf.is_empty());
+    const float nan = std::nanf("");
+    float l = 1.f, r = 1.f;
+    f.buf.read_linear(nan, l, r);
+    CHECK(l == 0.f);
+    CHECK(r == 0.f);
+    l = 1.f; r = 1.f;
+    f.buf.read_linear(1e30f, l, r);
+    CHECK(l == 0.f);
+    CHECK(r == 0.f);
+    // ...while an ordinary in-range read still works (else "silence" is
+    // trivially satisfied by a broken reader).
+    f.buf.read_linear(1200.f, l, r);
+    CHECK(l > 0.9f);
+}
+
 TEST_CASE("sample_buffer: clear returns it to empty") {
     Fixture f;
     record_const(f.buf, 1.f, 2400);
@@ -361,7 +408,10 @@ public:
 
     // buf may be nullptr: the buffer then reports !valid() and every
     // operation is a no-op. Hosts that cannot spare the memory rely on this.
-    void init(Frame* buf, size_t length);
+    // sample_rate is forwarded to the overdub SoftSwitch -- without it the
+    // switch's fade coefficient stays 1.0 and its Hann lookup runs off the
+    // end of the table on the first overdub.
+    void init(Frame* buf, size_t length, float sample_rate);
 
     // Linear-interpolated stereo read at a fractional frame index. Folds
     // out-of-range positions back into [0, rec_size). Silent when empty.
@@ -418,10 +468,11 @@ namespace {
 constexpr float kFadeKof = 1.f / static_cast<float>(sampler_cfg::kRecordFade);
 }
 
-void SampleBuffer::init(Frame* buf, size_t length) {
+void SampleBuffer::init(Frame* buf, size_t length, float sample_rate) {
     _buffer      = buf;
     _buffer_size = buf ? length : 0;
     _feedback    = std::pow(10.f, (60.f * (sampler_cfg::kDefaultFeedback - 1.f)) * 0.05f);
+    _cut.init(sample_rate);   // REQUIRED: see plan Task 1, change 7
     clear();
 }
 
@@ -448,7 +499,15 @@ void SampleBuffer::set_recording(bool on) {
         case State::fadeout:
             break;                       // already stopping; ignore
         default:
-            if (!on) _state = State::fadeout;
+            if (!on) {
+                _state = State::fadeout;
+                // Wrap around and fade out OVER the fade-in, so the loop
+                // point is a real crossfade rather than two dips with a
+                // seam between them. This matters MORE here than in the
+                // original: read_linear folds, so every grain that wanders
+                // across the seam runs through it (src/core/buffer.cpp:45).
+                if (!_cut.is_on()) _write_head = 0;
+            }
             break;
     }
 }
@@ -467,9 +526,30 @@ void SampleBuffer::write(float in0, float in1) {
             if (++_fade_ctr >= sampler_cfg::kRecordFade - 1) _state = State::sustain;
             break;
         case State::fadeout:
+            // Decrement THEN test, matching the original exactly
+            // (src/core/buffer.cpp:137): the last effective write uses
+            // counter 2, not 1. Keeping the arithmetic identical matters
+            // because the fade-out is crossfaded over the fade-in.
             fade = hann_value_at(static_cast<float>(_fade_ctr) * kFadeKof);
-            if (_fade_ctr == 0) { cut(); _state = State::idle; return; }
-            --_fade_ctr;
+            if (_fade_ctr == 0) {
+                // Stopped with nothing written -- two REC toggles inside one
+                // audio block. Reachable here though not in the original:
+                // the render host applies all scenario events sharing a
+                // timestamp back-to-back before the next process() call, and
+                // a plugin host can toggle REC twice within one block.
+                //
+                // Return to idle WITHOUT cutting. Two bugs are guarded at
+                // once: _fade_ctr is size_t, so `--_fade_ctr` here would wrap
+                // to SIZE_MAX and strand the buffer in fadeout forever; and
+                // cut() at _size == 0 would lock the loop at zero length,
+                // after which the _cut.is_on() branch below pins _write_head
+                // to 0 and _size can never grow -- the part could never
+                // record again until clear(). Nothing was recorded, so there
+                // is nothing to lock.
+                _state = State::idle;
+                return;
+            }
+            if (--_fade_ctr == 0) { cut(); _state = State::idle; return; }
             break;
     }
 
@@ -520,6 +600,14 @@ void SampleBuffer::read_linear(float frame, float& out0, float& out1) const {
     // Empty or un-init'ed: silence. The original divides by zero on the
     // first branch and spins forever on the second (plan Task 1, change 5).
     if (_size == 0 || _buffer == nullptr) { out0 = 0.f; out1 = 0.f; return; }
+
+    // NaN or an absurd magnitude: silence, same contract. Two compares, and
+    // NaN fails both (every NaN comparison is false), so this closes the
+    // static_cast<size_t>(NaN) undefined behaviour below AND bounds the fold
+    // loops for any finite input. Deliberately NOT fmodf: eight grains x two
+    // parts x 48 kHz is ~768k fmodf/s, which is real CPU on the M6 hardware
+    // for a case that cannot currently occur.
+    if (!(frame > -1e9f && frame < 1e9f)) { out0 = 0.f; out1 = 0.f; return; }
 
     const float fsz = static_cast<float>(_size);
     // Bounded: a grain advances by at most ~4 frames per sample (+24 st) and
@@ -635,7 +723,7 @@ struct SineBuf {
             mem[i].l = s;
             mem[i].r = s;
         }
-        buf.init(mem.data(), kCap);
+        buf.init(mem.data(), kCap, 48000.f);
         buf.set_rec_size(len);
     }
 };
@@ -647,7 +735,7 @@ struct FlatBuf {
     SampleBuffer buf;
     FlatBuf() {
         for (size_t i = 0; i < kCap; ++i) { mem[i].l = 1.f; mem[i].r = -1.f; }
-        buf.init(mem.data(), kCap);
+        buf.init(mem.data(), kCap, 48000.f);
         buf.set_rec_size(kCap);
     }
 };
@@ -1448,7 +1536,7 @@ inline float cutoff_hz(float n) {
 
 void SamplerEngine::init(float sample_rate) {
     _sr = sample_rate;
-    _buf.init(_mem, _mem_frames);
+    _buf.init(_mem, _mem_frames, sample_rate);
     _rng.seed(_seed ^ 0x5A11E20Du);
 
     _svf_l.Init(sample_rate);
