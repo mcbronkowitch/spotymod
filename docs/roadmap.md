@@ -37,7 +37,7 @@ is actually built today, and what is still design-only.
 | **M4.10** | Chord layer — COLOR knob, diatonic stacks, voice-leading, live FLOW surface | ✅ done (engine + hosts; hardware placement deferred to the reduction round) |
 | **+ COLOR-MOTION** | MOTION becomes COLOR's third destination — bipolar additive with a zero-gate, density varies per note | ✅ **done** (engine only; no new surface) |
 | **Bench** | Bench firmware — DWT cycle measurement of the engine, nine DaisySP candidates and SRAM-vs-SDRAM buffer access on real hardware | ✅ **done** (`bench/`, results in `docs/bench/`) |
-| **M5** | Sampler engine adapter (granular Deck/Vox) | ⬜ planned |
+| **M5** | Sampler — the texture deck (granular cloud, live resampling) | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
 Milestone order follows the design spec's build order (audible first, hardware
@@ -571,10 +571,19 @@ Numbers, method and the full nine-candidate DaisySP table live in
 
 ## Planned
 
-### M5 — Sampler engine adapter ⬜
-Adapter around the existing granular Deck/Vox engine (depends only on `Buffer`)
-behind `engine_iface`. Targets: POSITION, SIZE, PITCH, SHAPE, LEVEL. Record-arm
-transport; desktop host loads WAVs from disk instead of SD.
+### M5 — Sampler: the texture deck ⬜
+A granular cloud as a third engine behind `engine_iface` — not a second
+melodic instrument, but the room the synth part plays in. Fresh grain
+scheduler (8 grains/part, chord-locked and scale-quantized, MOTION as an
+order→chaos scatter macro) over a copied `Buffer` record core; live IN L/R
+recording is the primary path, WAV loading the second, and the cloud plays
+while recording. The voice row (ATK DEC FILT RES SUB DTUN) is remapped to
+analogous cloud meanings so no knob goes dead. Panel cost: the existing ENG
+pad plus one REC button per part.
+
+Spec: `docs/superpowers/specs/2026-07-18-sampler-texture-deck-design.md`
+(supersedes the older Deck/Vox adapter spec, whose slice-player trigger model
+predates the melody rework, the groove engine, CHOKE and the chord layer).
 
 ### M6 — Firmware shell ⬜
 Thin Daisy shell hosting `engine/` next to the original `app.cpp` (kept
