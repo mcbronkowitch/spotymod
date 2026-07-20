@@ -58,21 +58,6 @@ public:
     const T* data() const { return line_; }
     int32_t write_ptr() const { return write_ptr_; }
 
-    // Move the head without storing — FREEZE: the tape keeps rolling under
-    // the read heads, but nothing is written onto it.
-    void Advance() {
-        write_ptr_ = (write_ptr_ - 1) & kMask;
-    }
-
-    // EROSION: abrade what is on the tape and burn `sample` into it. `wear`
-    // slightly below 1 is what makes the frozen loop decompose per pass.
-    void WriteBlend(T sample, float wear) {
-        // fast_tanh, not std::tanh: this runs per sample in the audio path
-        // while frozen, and flux.h already includes util/fast_tanh.h.
-        line_[write_ptr_] = fast_tanh(line_[write_ptr_] * wear + sample);
-        write_ptr_ = (write_ptr_ - 1) & kMask;
-    }
-
 private:
     float frac_ = 0.f;
     int32_t write_ptr_ = 0;
@@ -129,31 +114,19 @@ public:
         delay_line_.Init(buf);
         bpf_.Init(sample_rate);
         feedback_ = 0.f;
-        frozen_ = false;
-        wear_ = 1.f;
     }
 
     void SetFeedback(float feedback) { feedback_ = feedback; }
     float Feedback() const { return feedback_; }
 
-    void set_freeze(bool on) { frozen_ = on; }
-    bool frozen() const { return frozen_; }
-    // Per-sample erosion coefficient applied to the tape while frozen.
-    // 1.0 = preserving looper; slightly below 1 = the loop decomposes.
-    void set_wear(float w) { wear_ = w; }
-
     const float* line() const { return delay_line_.data(); }
     int32_t write_ptr() const { return delay_line_.write_ptr(); }
 
-    // `wb` is the DustCloud writeback (already bounded by the caller); it is 0
-    // outside ROT zone R, and the store is then bit-identical to the pre-DUST
-    // path. DEFAULTED, so every existing call site compiles unchanged.
-    //
     // Mind the parameter ORDER: `delay_samples` is the second argument and has
     // been since 8723bc5 lifted the delay-time slew into Flux -- one shared
     // one-pole for both channels instead of two. EchoDelay owns no sample rate
     // and no smoother; the caller passes an already-slewed length in samples.
-    float Process(float in, float delay_samples, float wb = 0.f) {
+    float Process(float in, float delay_samples) {
         delay_line_.SetDelay(delay_samples);
         float out = delay_line_.Read();
         out = bpf_.Process(out);
@@ -163,22 +136,12 @@ public:
                                 // rather than tanh's asymptote -- feedback runs
                                 // to 1.2, so |y| <= 1 is what keeps this loop
                                 // stable (util/fast_tanh.h).
-        if (!frozen_) {
-            float store = out * feedback_ + in;
-            if (wb != 0.f) store += wb;   // explicit: keeps the wb == 0 path
-            delay_line_.Write(store);     // bit-identical, not merely equal
-        } else if (wear_ >= 1.f && wb == 0.f) {
-            delay_line_.Advance();        // preserving looper
-        } else {
-            delay_line_.WriteBlend(wb, wear_);   // erosion
-        }
+        delay_line_.Write(out * feedback_ + in);
         return out;
     }
 
 private:
     float feedback_ = 0.f;
-    bool  frozen_ = false;
-    float wear_ = 1.f;
 
     DeLine<float, max_size> delay_line_;
     TapeBpf bpf_;
