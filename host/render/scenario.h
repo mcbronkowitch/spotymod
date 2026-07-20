@@ -20,6 +20,7 @@ struct Scenario {
     int    sample_rate = 48000;
     float  bpm = 120.f;
     double duration_s = 10.0;
+    std::string input_wav;            // fed into Instrument::process inputs
     std::vector<Event> init_events;   // applied at t = 0
     std::vector<Event> events;        // timeline, sorted by time_s
 };

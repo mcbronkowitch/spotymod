@@ -1,8 +1,10 @@
 #include "render/scenario.h"
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <exception>
 #include "nlohmann/json.hpp"
+#include "render/wav_reader.h"
 
 using namespace spky;
 using json = nlohmann::json;
@@ -32,6 +34,7 @@ bool spky::load_scenario(const std::string& path, Scenario& out, std::string& er
     out.sample_rate = j.value("sample_rate", 48000);
     out.bpm         = j.value("bpm", 120.f);
     out.duration_s  = j.value("duration_s", 10.0);
+    out.input_wav   = j.value("input_wav", std::string());
 
     if (j.contains("init"))
         for (const auto& e : j["init"]) out.init_events.push_back(parse_event(e, false));
@@ -58,7 +61,9 @@ static GritMode parse_grit_mode(const std::string& s) {
 }
 
 static EngineId parse_engine(const std::string& s) {
-    return s == "test_tone" ? ENGINE_TEST_TONE : ENGINE_SYNTH;
+    if (s == "test_tone") return ENGINE_TEST_TONE;
+    if (s == "sampler")   return ENGINE_SAMPLER;
+    return ENGINE_SYNTH;
 }
 
 static int parse_scale_name(const std::string& s) {
@@ -123,5 +128,19 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "set_drift")           inst.set_drift(e.value);
     else if (a == "spot")                inst.spot();
     else if (a == "settle")              inst.settle();
+    else if (a == "sampler_record")     inst.sampler_record(e.part, e.flag);
+    else if (a == "sampler_clear")      inst.sampler_clear(e.part);
+    else if (a == "sampler_monitor")    inst.sampler_monitor(e.part, e.flag);
+    else if (a == "sampler_speed_mode") inst.sampler_speed_mode(e.part, e.svalue == "tape");
+    else if (a == "sampler_reverse")    inst.sampler_reverse(e.part, e.flag);
+    else if (a == "sampler_feedback")   inst.sampler_feedback(e.part, e.value);
+    else if (a == "load_wav") {
+        WavData d;
+        std::string err;
+        if (read_wav(e.svalue, d, err))
+            inst.load_sample(e.part, d.l.data(), d.r.data(), d.l.size());
+        else
+            std::fprintf(stderr, "load_wav: %s\n", err.c_str());
+    }
     // unknown actions are ignored on purpose (forward-compatible scenarios)
 }

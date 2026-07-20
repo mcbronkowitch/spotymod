@@ -1,8 +1,10 @@
 #include <cstdio>
 #include <cstddef>
 #include <string>
+#include <vector>
 #include "instrument.h"
 #include "render/scenario.h"
+#include "render/wav_reader.h"
 #include "render/wav_writer.h"
 
 using namespace spky;
@@ -10,6 +12,15 @@ using namespace spky;
 // FX memory, injected per the engine's no-heap contract (FxMem pattern).
 static float s_echo[spky::PART_COUNT][2][spky::Flux::kMaxSamples];
 static spky::AmbientReverb s_reverb;
+
+// M5 texture deck: one 42 s stereo record buffer per part (spec 2026-07-18
+// sampler-texture-deck-design.md: "Sizing follows the original: 42 s stereo
+// per part... Desktop: heap"). Left unallocated, FxMem::sampler_buf stays
+// nullptr and every part's sampler runs silent -- the render host would
+// "succeed" while recording nothing, which is exactly the silent-failure
+// shape this task is supposed to avoid. Heap (not the echo idiom's static
+// arrays): two of these are ~32 MB, too large to want living in the binary.
+static constexpr double kSamplerBufferSeconds = 42.0;
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -32,18 +43,37 @@ int main(int argc, char** argv) {
     for (int p = 0; p < PART_COUNT; ++p)
         for (int c = 0; c < 2; ++c) fx_mem.echo[p][c] = s_echo[p][c];
     fx_mem.reverb = &s_reverb;
+
+    const size_t sampler_frames =
+        static_cast<size_t>(kSamplerBufferSeconds * scen.sample_rate);
+    std::vector<SampleBuffer::Frame> sampler_mem[PART_COUNT];
+    for (int p = 0; p < PART_COUNT; ++p) {
+        sampler_mem[p].assign(sampler_frames, SampleBuffer::Frame{ 0.f, 0.f });
+        fx_mem.sampler_buf[p] = sampler_mem[p].data();
+    }
+    fx_mem.sampler_frames = sampler_frames;
+
     inst.init(static_cast<float>(scen.sample_rate), fx_mem);
     inst.set_tempo_bpm(scen.bpm);
     for (const auto& e : scen.init_events) apply_event(inst, e);
+
+    WavData in_wav;
+    if (!scen.input_wav.empty()) {
+        std::string in_err;
+        if (!read_wav(scen.input_wav, in_wav, in_err)) {
+            std::printf("input_wav: %s\n", in_err.c_str());
+            return 4;
+        }
+    }
 
     WavWriter wav(scen.sample_rate);
     FILE* csv = std::fopen(csv_path.c_str(), "wb");
     if (csv) {
         std::fprintf(csv, "t,"
             "a_src,a_size,a_pitch,a_motion,a_level,a_pcv,a_gate,"
-            "a_fx0,a_fx1,a_fx2,a_fx3,a_fx4,a_voices,a_v0,a_v1,a_v2,a_v3,a_pgate,"
+            "a_fx0,a_fx1,a_fx2,a_fx3,a_fx4,a_voices,a_v0,a_v1,a_v2,a_v3,a_pgate,a_fill,a_grains,"
             "b_src,b_size,b_pitch,b_motion,b_level,b_pcv,b_gate,"
-            "b_fx0,b_fx1,b_fx2,b_fx3,b_fx4,b_voices,b_v0,b_v1,b_v2,b_v3,b_pgate,"
+            "b_fx0,b_fx1,b_fx2,b_fx3,b_fx4,b_voices,b_v0,b_v1,b_v2,b_v3,b_pgate,b_fill,b_grains,"
             "morph,couple,drift,weather,phase_err\n");
     }
 
@@ -58,8 +88,10 @@ int main(int argc, char** argv) {
             ++next_event;
         }
 
+        const float in_l = i < in_wav.l.size() ? in_wav.l[i] : 0.f;
+        const float in_r = i < in_wav.r.size() ? in_wav.r[i] : 0.f;
         float l = 0.f, r = 0.f;
-        inst.process(nullptr, nullptr, &l, &r, 1);
+        inst.process(&in_l, &in_r, &l, &r, 1);
         wav.push(l, r);
 
         if (csv && (i % csv_decim == 0)) {
@@ -74,6 +106,7 @@ int main(int argc, char** argv) {
                 for (int v = 0; v < 4; ++v)
                     std::fprintf(csv, ",%.4f", inst.voice_env(p, v));
                 std::fprintf(csv, ",%d", inst.pitch_gate(p) ? 1 : 0);
+                std::fprintf(csv, ",%.4f,%d", inst.sampler_fill(p), inst.sampler_grains(p));
             }
             std::fprintf(csv, ",%.4f,%.4f,%.4f,%.4f,%.4f",
                          inst.morph(), inst.couple(), inst.drift(),
