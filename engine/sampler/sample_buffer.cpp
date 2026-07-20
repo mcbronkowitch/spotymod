@@ -13,6 +13,12 @@ constexpr float kFadeKof = 1.f / static_cast<float>(sampler_cfg::kRecordFade);
 void SampleBuffer::init(Frame* buf, size_t length, float sample_rate) {
     _buffer      = buf;
     _buffer_size = buf ? length : 0;
+    // Deliberately NOT src/core/buffer.cpp:13's `_feedback = 0.95` (a linear
+    // factor, ~-0.45 dB, despite that line's own "-3dB" comment). Here
+    // kDefaultFeedback is a knob position (sampler_config.h) run through the
+    // same -60..0 dB curve as set_feedback(), giving a linear factor of
+    // ~0.708 (-3 dB) -- the self-consistent reading, but an intentional
+    // behavioural change from the original's inconsistent one.
     _feedback    = std::pow(10.f, (60.f * (sampler_cfg::kDefaultFeedback - 1.f)) * 0.05f);
     // _cut is a SoftSwitch and its 4 ms fade timing (_kof) is meaningless
     // until init()'d with a sample rate. Left uninitialized, _kof defaults to
@@ -38,10 +44,12 @@ void SampleBuffer::set_recording(bool on) {
     switch (_state) {
         case State::idle:
             if (on) {
-                // No playhead in a cloud, so an overdub punches in at 0
+                // No playhead in a cloud, so a record punches in at frame 0
                 // rather than at a read cursor (plan Task 1, change 6).
-                if (!_cut.is_on()) _write_head = _size;
-                else               _write_head = 0;
+                // Unconditional: the branch this replaced evaluated to 0 in
+                // both arms for every reachable state, while its comment
+                // claimed frame 0 and its code said _size.
+                _write_head = 0;
                 _state     = State::fadein;
                 _fade_ctr  = 0;
             }
@@ -128,6 +136,15 @@ void SampleBuffer::cut() {
 
 void SampleBuffer::set_rec_size(size_t frames) {
     if (!valid()) return;
+    if (frames == 0) {
+        // Never cut() at zero length: that locks the loop at zero, after
+        // which write()'s locked-loop branch pins _write_head to 0 and
+        // _size can never grow -- the part is permanently unable to record
+        // until clear(). Reachable through the load path (an empty or
+        // zero-length WAV), which is why this is not merely defensive.
+        clear();
+        return;
+    }
     _size = frames > _buffer_size ? _buffer_size : frames;
     cut();
 }
@@ -156,10 +173,16 @@ void SampleBuffer::read_linear(float frame, float& out0, float& out1) const {
     if (!(frame > -1e9f && frame < 1e9f)) { out0 = 0.f; out1 = 0.f; return; }
 
     const float fsz = static_cast<float>(_size);
-    // Bounded: a grain advances by at most ~4 frames per sample (+24 st) and
-    // is folded every sample, so these loops run at most a couple of times.
-    while (frame >= fsz) frame -= fsz;
-    while (frame < 0.f)  frame += fsz;
+    // O(1) fold, replacing the original's `frame %= _size` without an
+    // integer division. NOT a subtract loop: that would be O(frame/_size),
+    // and a grain holding a position latched against a longer previous
+    // content length (set_rec_size shrinks it, or a load lands mid-cloud)
+    // would then spin hundreds of thousands of times on the audio thread.
+    // std::floor is a single instruction on both targets -- roundsd on x86,
+    // VRINTM on the Daisy's Cortex-M7 FPv5 -- not a libm call, and cheaper
+    // than the loop even in the common case.
+    frame -= fsz * std::floor(frame / fsz);
+    if (frame < 0.f) frame = 0.f;         // -0.0 and rounding at the seam
 
     size_t i0 = static_cast<size_t>(frame);
     if (i0 >= _size) i0 = 0;                     // float edge at fsz - epsilon

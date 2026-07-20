@@ -207,3 +207,41 @@ TEST_CASE("sample_buffer: clear returns it to empty") {
     CHECK_FALSE(f.buf.is_recording());
     CHECK(f.mem[1200].l == 0.f);
 }
+
+TEST_CASE("sample_buffer: set_rec_size(0) does not lock the buffer") {
+    Fixture f;
+    f.buf.set_rec_size(0);
+    CHECK(f.buf.is_empty());
+    // The buffer must still record afterwards. Cutting at zero length would
+    // pin the write head and _size could never grow again.
+    f.buf.set_recording(true);
+    for (size_t i = 0; i < 2400; ++i) f.buf.write(1.f, 1.f);
+    f.buf.set_recording(false);
+    for (size_t i = 0; i < sampler_cfg::kRecordFade + 2; ++i) f.buf.write(1.f, 1.f);
+    CHECK(f.buf.rec_size() > 2000);
+    CHECK(f.mem[1200].l > 0.9f);
+}
+
+TEST_CASE("sample_buffer: set_rec_size clamps above capacity") {
+    Fixture f;
+    f.buf.set_rec_size(kCap * 10);
+    CHECK(f.buf.rec_size() == kCap);
+    CHECK(f.buf.fill() == doctest::Approx(1.f));
+}
+
+TEST_CASE("sample_buffer: a far out-of-range read folds correctly and cheaply") {
+    Fixture f;
+    for (size_t i = 0; i < 4; ++i) { f.mem[i].l = float(i); f.mem[i].r = -float(i); }
+    f.buf.set_rec_size(4);
+    float l = 0.f, r = 0.f;
+    // 1e6 frames past the end of a 4-frame buffer: 1000000 mod 4 == 0.
+    f.buf.read_linear(1000000.f, l, r);
+    CHECK(l == doctest::Approx(0.f));
+    // ...and far below zero: -999999.5 mod 4 == 0.5, not 2.5 as originally
+    // drafted here. Floored division: -999999.5 / 4 = -249999.875, whose
+    // floor is -250000, so the fold is -999999.5 - 4*(-250000) ==
+    // -999999.5 + 1000000 == 0.5. That lands between frame 0 (0.0) and
+    // frame 1 (1.0): 0 + 0.5*(1-0) == 0.5.
+    f.buf.read_linear(-999999.5f, l, r);
+    CHECK(l == doctest::Approx(0.5f));
+}
