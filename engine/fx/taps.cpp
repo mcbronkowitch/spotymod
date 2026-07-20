@@ -31,9 +31,13 @@ void spky::derive_offsets(const RhythmView& rv, int32_t tape_len, int32_t out[2]
 
     const int32_t limit = tape_len - 2;
     const int32_t o0 = g0;
-    const int32_t o1 = g0 + g1;
+    // int64_t: g0 and g1 are otherwise-unconstrained int32_t, so g0 + g1 can
+    // overflow int32_t (signed overflow is UB) for large inputs. Widening the
+    // sum keeps this comparison exact without narrowing before the bound
+    // check below, which is what actually decides whether o1 is representable.
+    const int64_t o1 = static_cast<int64_t>(g0) + static_cast<int64_t>(g1);
     // Mute, never clamp: clamping would put two taps at the same position,
     // turning a missing echo into a doubled one.
     if (o0 <= limit) out[0] = o0;
-    if (o1 <= limit) out[1] = o1;
+    if (o1 <= limit) out[1] = static_cast<int32_t>(o1);
 }
