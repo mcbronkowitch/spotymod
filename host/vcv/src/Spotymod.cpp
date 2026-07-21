@@ -591,7 +591,14 @@ struct Spotymod : Module {
             if (json_t* v = json_object_get(o, "feedback")) smp[p].feedback = (float)json_real_value(v);
             if (json_t* v = json_object_get(o, "testTone")) smp[p].testTone = json_boolean_value(v);
             if (json_t* v = json_object_get(o, "factory"))  smp[p].factoryLoaded = json_boolean_value(v);
-            if (json_t* v = json_object_get(o, "factoryTried")) factoryTried[p] = json_boolean_value(v);
+            // Explicit default (not the `if (v)` pattern used above): a
+            // legacy patch with no such key must still zero this out, not
+            // silently inherit whatever the live module's factoryTried
+            // happened to be before this load. Persisted intent otherwise
+            // always wins -- see restoreSamplerContent()'s terminal branch,
+            // which no longer overwrites this.
+            json_t* v = json_object_get(o, "factoryTried");
+            factoryTried[p] = v ? json_boolean_value(v) : false;
         }
         // On a whole-patch open, dataFromJson runs before the module is in
         // the engine (curSr == 0.f, reinit() hasn't sized the sampler
@@ -617,23 +624,54 @@ struct Spotymod : Module {
                             p ? "sample_b.wav" : "sample_a.wav");
     }
 
+    // Same target file as storedWavPath(), but never creates the patch
+    // storage directory. For check-and-delete callers: creating an empty
+    // modules/<id>/ directory on every save (via createPatchStorageDirectory)
+    // even for instances that never touched the sampler is pure litter.
+    std::string storedWavPathNoCreate(int p) {
+        return system::join(getPatchStorageDirectory(),
+                            p ? "sample_b.wav" : "sample_a.wav");
+    }
+
     void onSave(const SaveEvent& e) override {
         Module::onSave(e);
         // The recorded texture has no file of its own -- without this it dies
         // with the session. Only content that did not come from a file or the
         // factory WAV needs writing: those two reload from their source.
         for (int p = 0; p < spky::PART_COUNT; ++p) {
-            if (!smp[p].path.empty() || smp[p].factoryLoaded) continue;
-            if (!inst.sampler_rec_size(p)) {
-                // Nothing to write for this part -- e.g. it was recorded into,
-                // saved once (writing a stored WAV), then Cleared. Rack
-                // garbage-collects patch storage per MODULE, not per file, so
-                // that earlier WAV would otherwise sit on disk forever and
-                // restoreSamplerContent() would load the deleted recording
-                // right back on reopen (I-1a). Remove it so an empty part
-                // really does come back empty.
-                const std::string stored = storedWavPath(p);
-                if (system::isFile(stored)) system::remove(stored);
+            // Any part this save will NOT write its own stored WAV for --
+            // it now has a file path, is factory-loaded, or has nothing
+            // recorded -- must not be left holding a stale one from an
+            // earlier save. Rack garbage-collects patch storage per MODULE,
+            // not per file, so e.g. record -> save (writes a stored WAV) ->
+            // load a WAV over it -> save again would otherwise leave that
+            // first recording (up to 16 MB) sitting in patch storage
+            // forever, unreachable but real disk weight inside the user's
+            // patch (I-1a's empty-part case, generalised to every reason a
+            // part might skip writing). Hoisted above the old skip guard so
+            // it fires for the path/factory cases too, not just the empty
+            // one. Deliberately structured so this can never race the write
+            // below: willWrite and the delete are mutually exclusive by
+            // construction, so a part about to be (re)written this save
+            // never has its about-to-be-overwritten file deleted out from
+            // under it first.
+            const bool willWrite = smp[p].path.empty() && !smp[p].factoryLoaded
+                                  && inst.sampler_rec_size(p) != 0;
+            if (!willWrite) {
+                // Uses the no-create variant: a pure check-and-delete must
+                // not mkdir a patch storage directory that would otherwise
+                // never exist for an instance that never touched the
+                // sampler.
+                const std::string stored = storedWavPathNoCreate(p);
+                if (system::isFile(stored) && !system::remove(stored)) {
+                    // Windows in particular can leave a locked or read-only
+                    // file undeletable; failing silently here would let the
+                    // stale WAV survive and restoreSamplerContent() reload it
+                    // right back on reopen -- the original I-1a bug, with no
+                    // diagnostic to explain why.
+                    WARN("Spotymod: could not remove stale sampler %d WAV %s",
+                         p, stored.c_str());
+                }
                 continue;
             }
             std::string err;
@@ -664,10 +702,20 @@ struct Spotymod : Module {
         for (int p = 0; p < spky::PART_COUNT; ++p) {
             std::string err;
             if (!smp[p].path.empty()) {
-                if (!spkyvcv::load_wav_into(inst, p, smp[p].path, curSr, err))
-                    WARN("Spotymod: sampler %d could not reload %s: %s",
-                         p, smp[p].path.c_str(), err.c_str());
-                continue;
+                if (spkyvcv::load_wav_into(inst, p, smp[p].path, curSr, err))
+                    continue;
+                WARN("Spotymod: sampler %d could not reload %s: %s",
+                     p, smp[p].path.c_str(), err.c_str());
+                // Deliberately falls through instead of continue-ing: the
+                // file may have moved, been renamed, or the patch may have
+                // been opened on another machine -- the ordinary case for a
+                // user-loaded WAV, not a rare one. Without this the live
+                // buffer keeps whatever audio the module was already playing
+                // while path/menu/JSON all describe a load that never
+                // actually happened (the same I-2 symptom, surviving in this
+                // error path). Falls into the stored-WAV check below (fresh-
+                // add only, harmless no-op on the live path) and then the
+                // terminal clear if that also finds nothing.
             }
             // getPatchStorageDirectory() is scoped to the CURRENT patch and
             // module id, not to the preset being loaded. On a live preset
@@ -694,12 +742,17 @@ struct Spotymod : Module {
             // the menu, the JSON and the REC LED would all describe the new
             // preset while the old audio kept playing (I-2). Safe on the
             // fresh-add path too: the buffer there is already zeroed by the
-            // reinit() above. Also un-consumes the factory-autoload guard,
-            // so ENG->Sampler on this now-empty part can offer the factory
-            // drone again instead of staying silent forever (the deferred
-            // finding from Task 7's re-review).
+            // reinit() above.
+            //
+            // Deliberately does NOT touch factoryTried[p] here. dataFromJson
+            // just restored it from this same JSON (defaulting to false for
+            // legacy patches with no such key) -- overwriting it back to
+            // false would discard exactly the intent a deliberate Clear ->
+            // Save persisted, and the factory drone would refill a part the
+            // user emptied on purpose, on the very first control tick after
+            // reopen with no user gesture at all. onReset() (Rack
+            // Initialize) remains the only thing that un-consumes this guard.
             inst.sampler_clear(p);
-            factoryTried[p] = false;
         }
     }
 

@@ -74,15 +74,21 @@ part:
 A recorded or loaded texture **survives patch save/reopen**, but not through
 `dataToJson`/`dataFromJson` — those only carry the sample path, speed mode,
 reverse, feedback and a couple of internal flags (`factory`, `factoryTried`).
+`factoryTried` in particular is what makes a deliberate *Clear sample* stay
+cleared through save/reopen: it is persisted intent, restored verbatim from
+JSON, and nothing after that point overwrites it back to false — only Rack
+*Initialize* (`onReset`) resets it, letting the factory sample autoload
+again.
 The audio itself goes through Rack's **patch storage** instead: `onSave`
 writes any part that didn't come from a file or the factory WAV out as a WAV
 into the patch's own storage directory, and `dataFromJson`/`onAdd` reload it
 from there on reopen (a part whose content DID come from a file or the
 factory sample reloads from that source instead, so nothing is written for
-it). A part that ends up with nothing to write also has any leftover stored
-WAV from an earlier save deleted, so a deliberate *Clear sample* stays
-cleared through save/reopen rather than reloading whatever was last written
-to disk.
+it). Every part that this save does *not* write its own stored WAV for —
+because it now has a file path, is factory-loaded, or has nothing recorded —
+also has any leftover stored WAV from an earlier save deleted, so neither a
+deliberate *Clear sample* nor loading a file over an old recording leaves a
+stale WAV sitting in patch storage.
 
 ### Known limitations
 
@@ -106,8 +112,9 @@ to disk.
   either part — closer to **42 MB total**, not the 32 MB the record buffers
   alone account for:
   - ~32 MB — the two 42 s stereo sampler record buffers (`samplerMem`).
-  - ~3.8 MB — the per-part stereo echo buffers the FX chain requires
-    (`echo[]`), unrelated to the sampler.
+  - ~4.19 MB — the per-part stereo echo buffers the FX chain requires
+    (`echo[]`: `2 × 2 × 262144` floats = 4,194,304 B), unrelated to the
+    sampler.
   - ~130 KB — the shared reverb (`AmbientReverb`).
   - ~6.4 MB — the factory sample cache (`factoryNative`, decoded once in
     `onAdd()`, plus the rate-converted `factoryL`/`factoryR`, rebuilt in
