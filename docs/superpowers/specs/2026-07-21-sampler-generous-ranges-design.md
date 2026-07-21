@@ -69,8 +69,12 @@ today, so 0.9 still gives −6 dB. Above the knee, travel from 0.9 to 1.0 runs f
 This is deliberately *not* the reverb's construction. The reverb scales its whole
 knob by `1/0.9` (`reverb.cpp:53`), which moves every setting; that would violate
 "on top, not instead". The cost of the stricter version is that unity no longer
-sits at the top of travel but at roughly 0.926 — a narrow but findable spot where
-the loop sustains forever, with the last sliver of travel blooming past it.
+sits at the top of travel but at **0.971** — dB-linear interpolation from −6 dB
+to +2.5 dB crosses zero at 71 % of the segment. That is a narrow spot: about 3 %
+of travel, some five degrees of a panel pot. It is where the loop sustains
+forever, and the last sliver of travel blooms past it. Lowering the +2.5 dB
+ceiling widens the spot; that is the knob to turn if it proves unfindable by
+hand.
 
 Not just a note for the record: `kDefaultFeedback = 0.95f` (`sampler_config.h:14`)
 is above the knee and so changes meaning — from −3 dB to about −1.8 dB. It stays
