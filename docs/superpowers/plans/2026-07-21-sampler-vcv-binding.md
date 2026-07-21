@@ -361,10 +361,10 @@ does not change. Update only what actually names the old path.
 
 ```bash
 cmake --build build --target spky_tests && ./build/spky_tests -ts="*"
-cmake --build build --target spky_render
+cmake --build build --target render
 ```
 
-Expected: PASS, and `spky_render` links. `tests/test_wav.cpp` already covers
+Expected: PASS, and `render` links. `tests/test_wav.cpp` already covers
 the round-trip — this task must not change its assertions, only its includes.
 
 - [ ] **Step 5: Commit**
@@ -1316,7 +1316,7 @@ the right pitch whatever Rack is running at. Do not pre-convert it.
 - [ ] **Step 2: Check it before shipping it**
 
 Listen to it, or at minimum confirm it decodes and does not clip
-(`./build/spky_render` is not involved here; a quick read through
+(`./build/render` is not involved here; a quick read through
 `spky::read_wav` in a scratch program, or any audio player, is enough).
 This is the first sound a new user hears.
 
