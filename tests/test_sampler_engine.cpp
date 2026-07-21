@@ -1727,3 +1727,40 @@ TEST_CASE("sampler: SCAN moves what the grains actually read") {
     g.render(9600);
     CHECK(g.e.last_spawn_pos() > parked + 1000.f);
 }
+
+TEST_CASE("sampler: punch() forces a grain now, even where the next one is seconds away") {
+    // This is the test that carries the feature's reason for existing. At
+    // overlap 1 and a long SIZE the scheduler is idle for the whole grain
+    // length, so every knob is dead until the next spawn. punch() is the
+    // gesture that says "read again now".
+    Rig g(kFrames);
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 1.f);           // SIZE 1.0 -> 42 s
+    g.e.set_overlap(0.f);             // overlap 1 -> _spawn_every == grain length
+    g.render(4800);
+
+    const int before = g.e.spawn_count();
+    g.render(4800);                   // 100 ms: nowhere near the next spawn
+    REQUIRE(g.e.spawn_count() == before);
+
+    g.e.punch();
+    g.render(200);                    // a couple of control ticks
+    CHECK(g.e.spawn_count() > before);
+}
+
+TEST_CASE("sampler: punch() rewinds the playhead without killing what is sounding") {
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.5f);
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(9600);
+    REQUIRE(g.e.scan_pos() > 0.f);
+    const int sounding = g.e.active_grains();
+    REQUIRE(sounding > 0);
+
+    g.e.punch();
+    CHECK(g.e.scan_pos() == 0.f);
+    // The distinction from clear()/load_sample(): those go through _kill_all
+    // and silence the deck. punch() is a musical gesture on a running cloud.
+    CHECK(g.e.active_grains() == sounding);
+}

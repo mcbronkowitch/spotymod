@@ -580,4 +580,9 @@ void SamplerEngine::set_overlap(float n) {
 
 void SamplerEngine::set_scan(float bipolar) { _scan_rate = scan_rate(bipolar); }
 
+void SamplerEngine::punch() {
+    _scan_pos  = 0.f;
+    _spawn_ctr = 0.f;   // the next process() spawns; see the scheduling block
+}
+
 }  // namespace spky

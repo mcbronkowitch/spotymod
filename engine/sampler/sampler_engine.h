@@ -158,6 +158,17 @@ public:
     // _spawn_one, so ORGANIZE sets where the head starts and SCAN moves it.
     void set_scan(float bipolar);
 
+    // "New gene now" (spec 2026-07-21 morphagene-controls): the playhead
+    // returns to ORGANIZE and a grain spawns immediately. Wired to NEW and
+    // TRIG in the sampler.
+    //
+    // Deliberately NOT routed through _kill_all: this is a gesture on a
+    // running cloud, so grains that are already sounding keep sounding. It is
+    // what makes the long-grain end of SIZE playable at all -- without it,
+    // every knob is dead until the next scheduled spawn, which at overlap 1
+    // and SIZE near the top is tens of seconds away.
+    void punch();
+
     // --- voice row, remapped ---
     void set_window_attack(float n);
     void set_window_decay(float n);
