@@ -150,7 +150,13 @@ Kurve, nach dem Vorbild der vorhandenen SIZE-Kurve mit Knicken:
 - `|n| < 0.02`: echter Totbereich, Vorschub exakt 0. Ein eingefrorener Kopf muss auch bei
   Reglerrauschen eingefroren bleiben.
 - `0.02 ≤ |n| ≤ 0.75`: exponentiell von 0.001× bis 1.0× Realzeit.
-- `|n| > 0.75`: linear von 1.0× bis 4.0× Realzeit.
+- `|n| > 0.75`: linear von 1.0× bis 8.0× Realzeit.
+
+Das obere Viertel des Reglerwegs trägt damit den Faktor 8 statt 4 — es ist das steilste Stück
+der Kurve und der erste Kandidat, falls sich der Regler oben als zu nervös erweist. Die
+Gegenmaßnahme wäre dann nicht, den Bereich zurückzunehmen, sondern das obere Segment
+ebenfalls exponentiell zu führen. Das steht hier, damit beim Abhören klar ist, welche
+Schraube gemeint ist.
 
 Realzeit (1.0×) liegt damit auf einer festen, wiederfindbaren Reglerstellung statt irgendwo
 im Verlauf. Nahe der Mitte kriecht der Kopf langsam genug, um ein 42-s-Band über Minuten zu
