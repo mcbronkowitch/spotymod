@@ -1,0 +1,44 @@
+{
+  "_comment": "SOURCE MATERIAL for the M5 acceptance demo -- not a demo itself. Renders 12 s of percussive, bright, bit-crushed stabs, deliberately UNLIKE the sustained chord phrase the synth part plays in the demo. The point: granulating a synth drone with a synth playing over it makes the two roles indistinguishable. Transient-rich, chromatic, digitally gritty material granulates into glass and dust instead of into a second pad, so 'the synth makes the music, the sampler makes the room' becomes audible. Render this to host/render/scenarios/assets/in_percussive.wav.",
+  "sample_rate": 48000,
+  "bpm": 132,
+  "duration_s": 12.0,
+  "init": [
+    { "action": "set_engine", "part": 0, "value": "synth" },
+
+    { "_comment": "part B silent -- only A's material goes into the asset",
+      "action": "set_target_active", "part": 1, "slot": 4, "flag": false },
+    { "action": "set_target_base", "part": 1, "slot": 4, "value": 0.0 },
+
+    { "_comment": "hot and steady: percussive material has a low RMS by nature, so run LEVEL at the top with no modulation -- the asset should use its headroom, the deck sets the level later",
+      "action": "set_target_base", "part": 0, "slot": 4, "value": 1.0 },
+    { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
+
+    { "_comment": "dense 16-step stabs, some variation so it is not a loop",
+      "action": "set_step", "part": 0, "flag": true, "ivalue": 16 },
+    { "action": "set_density", "part": 0, "value": 1.0 },
+    { "action": "set_principle", "part": 0, "ivalue": 0 },
+    { "action": "set_variation", "part": 0, "value": 0.4 },
+
+    { "_comment": "percussive voice: instant attack, shortest decay, bright, wide detune",
+      "action": "set_voice_attack", "part": 0, "value": 0.0 },
+    { "action": "set_voice_decay", "part": 0, "value": 0.0 },
+    { "action": "set_voice_filt", "part": 0, "value": 0.9 },
+    { "action": "set_voice_detune", "part": 0, "value": 0.8 },
+    { "action": "set_voice_sub", "part": 0, "value": 0.0 },
+
+    { "_comment": "bright register, chromatic -- deliberately less tonal than the demo phrase",
+      "action": "set_tune", "part": 0, "value": 0.78 },
+    { "action": "set_quant_mode", "part": 0, "value": "chrom" },
+
+    { "_comment": "bit reduction: digital grit, so the grains read as glass rather than as drone",
+      "action": "set_fx_on", "part": 0, "value": "grit", "flag": true },
+    { "action": "set_grit_mode", "part": 0, "value": "reduce" },
+    { "action": "set_grit_mix", "part": 0, "value": 0.85 },
+
+    { "_comment": "bone dry -- the room must come from the deck, not be baked into its source",
+      "action": "set_reverb_mix", "value": 0.0 },
+    { "action": "set_fx_target_base", "part": 0, "slot": 3, "value": 0.0 }
+  ],
+  "events": []
+}

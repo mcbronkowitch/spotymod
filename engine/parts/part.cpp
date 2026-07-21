@@ -9,12 +9,17 @@ static_assert(ModLane::kTickInterval == SynthEngine::kCtrlInterval,
               "mod tick interval must equal the engine control raster");
 
 void Part::init(float sample_rate, uint32_t seed_base,
-                float* echo_l, float* echo_r) {
+                float* echo_l, float* echo_r,
+                SampleBuffer::Frame* sampler_mem, size_t sampler_frames) {
     _sr = sample_rate;
     _mod.init(sample_rate, seed_base);
     _tone.init(sample_rate);
     _synth.set_seed(seed_base ^ 0x5eedC0DEu);   // per-part drift decorrelation
     _synth.init(sample_rate);
+    _sampler.set_seed(seed_base ^ 0x5A11E20Du);
+    _sampler.set_memory(sampler_mem, sampler_frames);
+    _sampler.init(sample_rate);
+    _last_gate = false;
     _engine_id = ENGINE_SYNTH;                  // boot default (M2 spec)
     _pending_engine = _engine_id;
     _switching = false;
@@ -142,7 +147,8 @@ void Part::_control_tick() {
     for (int i = 0; i < FXT_COUNT; ++i) _fxv[i] = fx_target_value(i);
 }
 
-void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
+void Part::process(float inL, float inR, float& outL, float& outR,
+                   float& sendL, float& sendR) {
     _mod.process();
 
     // click-free engine switch: fade out (4 ms) -> swap -> fade in (4 ms).
@@ -154,6 +160,7 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
         _engine = _engine_for(_engine_id);
         _engine->set_flow(!_step_on);                          // re-sync state
         _engine->set_hold(_inhibit);
+        _engine->set_gate(_last_gate);   // the freshly swapped-in engine
         if (_last_master_hz > 0.f) _engine->set_cycle(1.f / _last_master_hz);
         _switching = false;
         _engine_fade.set_on(true);
@@ -217,6 +224,16 @@ void Part::process(float& outL, float& outR, float& sendL, float& sendR) {
                                      _quant.root_semis(), chord);
         _engine->trigger_chord(chord, nch);
     }
+
+    // Composed gate, forwarded on edges only (see engine_iface.h). Computed
+    // after _gate_ctr has been advanced, so it reflects THIS sample.
+    const bool g = gate();
+    if (g != _last_gate) {
+        _last_gate = g;
+        _engine->set_gate(g);
+    }
+
+    _engine->process_in(inL, inR);
     _engine->process(outL, outR);
     outL *= fade;
     outR *= fade;

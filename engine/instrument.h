@@ -7,6 +7,7 @@
 #include "fx/limiter.h"
 #include "center/center.h"
 #include "util/onepole.h"
+#include "sampler/sampler_engine.h"
 
 namespace spky {
 
@@ -18,6 +19,11 @@ enum PartId { PART_A = 0, PART_B = 1, PART_COUNT = 2 };
 struct FxMem {
     float* echo[PART_COUNT][2] = { { nullptr, nullptr }, { nullptr, nullptr } };
     AmbientReverb* reverb = nullptr;
+    // M5 texture deck: one stereo record buffer per part. Spec sizing is
+    // 42 s at 48 kHz (~16 MB/part) -- hosts allocate on the heap (desktop,
+    // Rack) or in SDRAM (M6). nullptr -> that part's sampler runs silent.
+    SampleBuffer::Frame* sampler_buf[PART_COUNT] = { nullptr, nullptr };
+    size_t sampler_frames = 0;
 };
 
 // The complete public API. No hardware type crosses this boundary; the same
@@ -85,6 +91,25 @@ public:
     int  active_voices(int p) const          { return _parts[p].active_voices(); }
     float voice_env(int p, int v) const      { return _parts[p].voice_env(v); }
     EngineId engine_id(int p) const          { return _parts[p].engine_id(); }
+
+    // --- M5 sampler API (spec "Instrument API") ---
+    void sampler_record(int p, bool on) {
+        _parts[p].sampler().set_recording(on);
+        // Monitoring follows REC automatically, in one place, so both hosts
+        // get it right (plan: deliberate deviation 3).
+        _parts[p].sampler().set_monitor(on);
+    }
+    void  sampler_clear(int p)              { _parts[p].sampler().clear(); }
+    float sampler_fill(int p) const         { return _parts[p].sampler().buffer_fill(); }
+    bool  sampler_empty(int p) const        { return _parts[p].sampler().is_empty(); }
+    void  sampler_monitor(int p, bool on)   { _parts[p].sampler().set_monitor(on); }
+    int   sampler_grains(int p) const       { return _parts[p].sampler().active_grains(); }
+    void  sampler_speed_mode(int p, bool tape) { _parts[p].sampler().set_tape_mode(tape); }
+    void  sampler_reverse(int p, bool on)   { _parts[p].sampler().set_reverse(on); }
+    void  sampler_feedback(int p, float n)  { _parts[p].sampler().set_feedback(n); }
+    void  load_sample(int p, const float* l, const float* r, size_t frames) {
+        _parts[p].sampler().load_sample(l, r, frames);
+    }
 
     float lane_output(int p, int s)  const { return _parts[p].lane_output(s); }
     float target_value(int p, int s) const { return _parts[p].target_value(s); }

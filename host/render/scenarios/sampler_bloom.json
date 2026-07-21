@@ -1,0 +1,37 @@
+{
+  "_comment": "LISTENING RENDER for the record-feedback bloom (spec 2026-07-21 section 1). Records 8 s of the storm, then walks the feedback knob across the knee: 0.9 (-6 dB, the old top of travel), 0.95 (the boot default, now ~-1.8 dB), 0.971 (unity -- the loop should sustain forever without growing), and 1.0 (the bloom, where the buffer saturates into itself and stops being a recording). Synth silenced throughout so the deck is the only thing sounding.",
+  "sample_rate": 48000,
+  "bpm": 96,
+  "duration_s": 60.0,
+  "input_wav": "host/render/scenarios/assets/96_Stormy_Noise_Loop_01.wav",
+  "init": [
+    { "action": "set_engine", "part": 1, "value": "sampler" },
+
+    { "_comment": "part A silenced: zero base AND LEVEL modulation off",
+      "action": "set_target_base", "part": 0, "slot": 4, "value": 0.0 },
+    { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
+
+    { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
+    { "action": "set_target_base", "part": 1, "slot": 1, "value": 0.5 },
+    { "action": "set_target_active", "part": 1, "slot": 1, "flag": false },
+    { "action": "set_target_base", "part": 1, "slot": 3, "value": 0.3 },
+    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false }
+  ],
+  "events": [
+    { "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },
+    { "t": 9.0,  "action": "sampler_record", "part": 1, "flag": false },
+
+    { "_comment": "10-22s: -6 dB, the old top of travel. Decays.",
+      "t": 10.0, "action": "sampler_feedback", "part": 1, "value": 0.9 },
+    { "t": 10.5, "action": "sampler_record", "part": 1, "flag": true },
+
+    { "_comment": "22-34s: the boot default, now ~-1.8 dB. Decays slowly.",
+      "t": 22.0, "action": "sampler_feedback", "part": 1, "value": 0.95 },
+
+    { "_comment": "34-46s: unity. Should hold without growing or fading.",
+      "t": 34.0, "action": "sampler_feedback", "part": 1, "value": 0.971 },
+
+    { "_comment": "46-60s: the bloom. Should saturate and stay bounded.",
+      "t": 46.0, "action": "sampler_feedback", "part": 1, "value": 1.0 }
+  ]
+}

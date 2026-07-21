@@ -1,0 +1,29 @@
+{
+  "_comment": "M5 listening aid: the texture deck ALONE. Identical to sampler_texture_deck.json except part A (the synth) is silenced, so the cloud can be judged without a synth phrase playing over it. Same timeline: record 1-9s, MOTION opens 10/16/22/28, STEP chop from 32s.",
+  "sample_rate": 48000,
+  "bpm": 96,
+  "duration_s": 40.0,
+  "input_wav": "host/render/scenarios/assets/in_drone.wav",
+  "init": [
+    { "action": "set_engine", "part": 1, "value": "sampler" },
+
+    { "_comment": "silence part A entirely -- LEVEL base 0, no LEVEL modulation",
+      "action": "set_target_base", "part": 0, "slot": 4, "value": 0.0 },
+    { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
+
+    { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
+    { "action": "set_target_base", "part": 1, "slot": 3, "value": 0.0 },
+    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
+    { "action": "sampler_feedback", "part": 1, "value": 0.95 }
+  ],
+  "events": [
+    { "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },
+    { "t": 9.0,  "action": "sampler_record", "part": 1, "flag": false },
+    { "t": 10.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.0 },
+    { "t": 16.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.35 },
+    { "t": 22.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.7 },
+    { "t": 28.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 1.0 },
+    { "t": 32.0, "action": "set_step", "part": 1, "flag": true, "ivalue": 8 },
+    { "t": 32.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.5 }
+  ]
+}

@@ -2,12 +2,59 @@
 
 **Date:** 2026-07-18
 **Status:** approved (brainstorm with Bastian, 2026-07-18)
+**Open, 2026-07-20 — MOTION does not reach "diffuse fog" on its own.** The first
+listening test of the M5a engine found the identity section's promise ("one axis
+from focused loop to **diffuse fog**") and the lane table's ceiling ("up to ±¼ of
+content length") do not meet: at full MOTION the cloud reads as a clearly mangled
+loop, not as fog. A probe holding MOTION at 1 while stepping SIZE showed the
+missing lever is grain **length** — fog arrives around SIZE 0.8 (~800 ms grains).
+
+**An attempt to fold that into MOTION was tried and reverted the same evening.**
+Scaling grain length up to ~4× with MOTION (`kScatterSmear`) did not produce fog;
+it produced an audible tremolo — the cloud dipping in and out every few hundred
+ms. The implementer's unit measurement had flagged the risk (FLOW continuity
+0.748 → 0.015 at MOTION 1) and was right; the controller's follow-up measurement
+on real material (50 ms RMS windows) averaged the dips away and wrongly read as
+mild. **The ear was correct and the metric was not** — worth remembering before
+trusting a continuity number over a listen. Ruled out as the cause: SIZE-lane
+modulation compounding with the stretch (measured identical with the lane frozen).
+
+So MOTION stays position/pan/timing/octave only, and fog needs SIZE as well —
+two knobs, not one. Whether to close the gap differently (raising `kOverlap` so
+density rises with grain length, a gentler stretch, or rewording the identity
+section) is undecided. Do not re-attempt the plain stretch without a listen.
+
+**Amended:** 2026-07-20 (2) — superseded by the paragraph above.
+
+**Amended:** 2026-07-20 — the DUST dependency was rewritten after DUST shipped
+as rhythm-fed delay taps instead of a grain cloud
+(`2026-07-20-rhythm-fed-delay-taps-design.md`). Affects the `grain.h` and
+`sample_buffer` origin rows and the *Relation to DUST/ROT* section; no design
+decision changed.
 **Supersedes:** the residency-repo spec
 `2026-07-12-spotykach-sampler-adapter-design.md`. That spec was written
 before the melody rework (M4.7), the groove engine, CHOKE, the chord layer
 and the VCV plugin existed; its slice-player trigger model no longer matches
 the instrument. Its proven pieces (Buffer record core, memory injection,
 42 s sizing, WAV plumbing) carry over; everything else is re-decided here.
+
+**Update, 2026-07-21 — a fourth lever, not on the list above.**
+`kScatterPosFrac` was 0.25 through M5a, confining MOTION's read position to
+a quarter of the buffer no matter how far the knob went. It is now 1.0
+(spec 2026-07-21, section 2).
+
+To be precise about where this came from, because a later spec and plan both
+got it wrong and called it "the first"/"the cheapest" of the three options
+this section leaves open: it is **none of them**. The three undecided options
+above are raising `kOverlap`, a gentler stretch, and rewording the identity
+section. The scatter ceiling is a fourth lever that nobody had listed — the
+2026-07-20 work went hunting for fog in grain *length* and never questioned
+that MOTION's own position range had been capped at a quarter of the buffer
+all along. That is the more interesting lesson than "we tried the cheap one
+first": the option that was missing from the list was the one worth trying.
+
+Whether it closes the fog gap is a listening question and the answer belongs
+here once it is known — do not record a verdict from a metric.
 
 ## Identity
 
@@ -50,8 +97,8 @@ heap, injected memory, own seeded `Rng` (the established engine rules):
 | File | Contents | Origin |
 |------|----------|--------|
 | `sampler_config.h` | constants: `kRecordFade` 192 (4 ms), `kDefaultFeedback` 0.95, `kGrains` 8, `kBurstRelease` (~60 ms), scatter ranges, size curve | new (record constants from `src/core/config.h`) |
-| `sample_buffer.h/.cpp` | record buffer: fadein→sustain→fadeout state machine, overdub feedback write, cut, fill/empty queries, clear | copy of `src/core/buffer.h/.cpp` + the `SoftSwitch`/`XFade` pieces it needs, `namespace spky` |
-| `grain.h` | one grain: latched start/ratio/pan/window, interpolated stereo read, Hann window with skew, forward/reverse | new (`vox.cpp` as math reference; window/pan/normalization follow the DUST grain idiom — see *Relation to DUST/ROT*) |
+| `sample_buffer.h/.cpp` | record buffer: fadein→sustain→fadeout state machine, overdub feedback write, cut, fill/empty queries, clear | copy of `src/core/buffer.h/.cpp`, `namespace spky`. `SoftSwitch`/`XFade` are **not** re-ported — they already exist ported in `engine/fx/fx_util.h`; include that. |
+| `grain.h` | one grain: latched start/ratio/pan/window, interpolated stereo read, Hann window with skew, forward/reverse | new (`vox.cpp` as math reference for the interpolated read only; window/pan/normalization reuse existing engine idioms — see *Grain math: what to reuse*) |
 | `sampler_engine.h/.cpp` | `IPartEngine`: scheduler, chord distribution, scatter, gating, transport | new |
 
 `src/` stays untouched and buildable — the frozen reference.
@@ -91,6 +138,22 @@ linear-interpolated stereo read under a Hann window with skew. Per-grain
 gain is scaled ~1/sqrt(active grains) (the COLOR loudness lesson) so
 density changes don't pump the compressor.
 
+### Grain math: what to reuse
+
+The sampler is the **first grain code in the engine** — DUST was expected to
+establish the idiom and did not (see *Relation to DUST/ROT*). But all three
+pieces already exist in the engine, in non-grain contexts; use them rather
+than deriving new ones from `vox.cpp`:
+
+| Piece | Reuse | Note |
+|-------|-------|------|
+| Window | `spky::hann_value_at(norm_pos)`, `engine/fx/fx_util.h:27` | A 192-point sin² table, linearly interpolated — a **rising half-window** (0→1), not a full Hann. That is exactly the shape the ATK/DEC halves need: attack = `hann_value_at(t/atk_len)`, decay = `hann_value_at(1 − t/dec_len)`. Skew comes from the atk/dec split, so no separate skew math. |
+| Equal-power pan | the `Voice::_apply_freq` idiom, `engine/synth/voice.cpp:89-93` | `a = (pan+1)·0.125` turns; `gain_r = fast_sin(a)`, `gain_l = fast_sin(a+0.25)`. Table-based, no `std::sin` in the audio path. |
+| Overlap normalization | the `1/sqrt(n)` in `SynthEngine::trigger_chord`, `engine/synth/synth_engine.cpp:116` | Same law the COLOR loudness lesson produced; apply it over active grains instead of chord notes. |
+
+If a second grain user appears later, extract these into `engine/util/` then —
+not speculatively now.
+
 Scheduling runs at the control tick (per 96 samples) with sample-accurate
 spawn offsets inside the block; grain start phases are staggered so the
 carpet never pulses at any SIZE.
@@ -102,7 +165,7 @@ carpet never pulses at any SIZE.
 | SOURCE | Cloud center: 0..1 → position in `[0, recorded length)`. Grains latch at spawn — the lane wanders, the cloud audibly drags behind. |
 | SIZE | Grain length, exponential **20 ms → 2 s** (`0.02 · 100^n` s), clamped to content length. |
 | PITCH | Same path as the synth: lane + TUNE → quantizer → semitones → ratio `2^(semi/12)`. **Chord distribution:** `Part` feeds the current COLOR notes via `set_chord` (already refreshed every sample); each spawning grain takes the next chord note round-robin. COLOR 0 = all grains on the root — behavior identical to the single-note world. |
-| MOTION | **Scatter macro, order→chaos:** 0 = all grains tight on the SOURCE point, stereo-centered, regular spawn timing (loop-like); 1 = position jitter (up to ±¼ of content length), full stereo spread, spawn-timing jitter, and a mild octave scatter on chord notes. All jitter draws from the part's seeded `Rng`. |
+| MOTION | **Scatter macro, order→chaos:** 0 = all grains tight on the SOURCE point, stereo-centered, regular spawn timing (loop-like); 1 = position jitter (up to ±¼ of content length), full stereo spread, spawn-timing jitter, a mild octave scatter on chord notes, **and grains stretched to ~4× their SIZE length**. All jitter draws from the part's seeded `Rng`. |
 | LEVEL | Master gain through a `OnePole` (10 ms), exactly as the synth. The LEVEL floor applies in `Part` as for every engine. |
 
 ### Tape/Digital, translated to the cloud
@@ -254,8 +317,13 @@ gains per-part `fill` columns.
   window is a multi-second buffer with a different multi-grain access
   pattern, so it names the exposure the deck's grain count must be
   budgeted against, not the deck's actual cost. Desktop numbers still do
-  not transfer; the combined worst case (sampler grains + DUST grains, see
-  below) still needs its own measurement once both engines exist.
+  not transfer; the combined worst case (sampler grains + FLUX delay taps,
+  see *Relation to DUST/ROT*) still needs its own measurement once the deck
+  exists. Note the bench's grain-read proxy has since been replaced by the
+  taps workload (`bench: taps workload replaces the dust grain-cloud proxy`),
+  so re-measuring the grain pattern means restoring a grain proxy — the
+  5.3× figure stands as recorded, but nothing in the current bench
+  reproduces it.
 
 ## Testing (doctest, TDD as established)
 
@@ -303,38 +371,48 @@ save/reopen with a recorded texture, MOTION sweep, COLOR shimmer, STEP
 chop under CHOKE, voice-row sweep (ATK/DEC grain shape, FILT fade to
 silence, SUB octave layer, DTUN spread).
 
-## Relation to DUST/ROT (FLUX grain stage)
+## Relation to DUST/ROT (FLUX delay taps)
 
-Designed the same day: `2026-07-18-dust-grain-cloud-design.md` adds a
-granular stage to the FLUX tape delay. The two do not overlap — the
-canonical distinction:
+**Rewritten 2026-07-20.** The original section assumed DUST would ship as a
+grain cloud (`2026-07-18-dust-grain-cloud-design.md`) and hand the sampler a
+ready grain idiom. That did not happen: DUST shipped in 2.7.0 as **rhythm-fed
+delay taps** — `TapBank` replaced `DustCloud`, two tape read taps placed by the
+other bank's rhythm, no grains at all
+(`2026-07-20-rhythm-fed-delay-taps-design.md`; the epitaph sits in
+`engine/fx/taps.h:47`: *"The grain cloud's 7.27 dB window/pan makeup died with
+the cloud."*).
 
-> **The sampler cloud is harmonic** — pitch-quantized, chord-locked, it
-> plays *in the scale*. **DUST is inharmonic** — no pitch shift, it
-> scatters *time on the tape*.
+What that changes, and what it does not:
 
-Consequences agreed for both specs:
-
-- **Sequencing: DUST ships first.** It is far smaller (no new audio
-  buffer), establishes the grain idiom (fixed pool, raised-cosine window
-  via `fast_sin`, equal-power pan, `1/sqrt(overlap)` normalization,
-  seeded-Rng statistics tests) cheaply, and — since both specs append
-  panel params at the end of `PARAMS` — release order fixes the param
-  ids: DUST/ROT/FRZ first, then M5's REC. The two must not be developed
-  in parallel branches touching `gen_panel.py`.
-- **Shared building blocks, separate read mechanics.** The read paths
-  stay distinct by design (sampler: interpolated, pitch-scaled read on a
-  static buffer; DUST: integer offsets behind a moving write head). But
-  window, pan and normalization are the same math — the sampler reuses
-  the DUST window/pan helpers (extracted to `engine/util/` if that is
-  cleaner once DUST lands) instead of re-deriving them from `vox.cpp`.
-- **Chaining is a feature, not a conflict:** a sampler part runs through
-  its part FX, so sampler cloud → DUST → erosion is a legitimate extreme
-  sound. The combined CPU/SDRAM worst case is named in the CPU section.
-- Considered and rejected: probabilistic reverse in sampler MOTION
-  (DUST borrow — MOTION is a full axis already, Reverse lives in the
-  edit layer) and writeback/erosion on the sampler buffer (self-eating
-  is DUST's signature; the sampler's tape variant is overdub feedback).
+- **The identity distinction still holds, and is now structural rather than
+  a matter of tuning:** the sampler cloud is *harmonic* — pitch-quantized,
+  chord-locked, playing in the scale. DUST is *rhythmic* — it places tape
+  reads on the groove. There was never a risk of the two converging; now
+  there is not even a shared mechanism.
+- **The sequencing constraint is discharged.** DUST shipped first as
+  planned, so its panel params (DUST/ROT) already sit in `PARAMS` and M5's
+  REC pair appends cleanly after them. The "must not develop in parallel
+  branches touching `gen_panel.py`" clause is spent — no live conflict.
+- **The shared-building-blocks clause is void.** No grain window, pan or
+  normalization helper was created; `engine/util/` holds only `fast_sin`,
+  `fast_tanh`, `math`, `onepole`, and taps' pan is two hardcoded constants
+  for one fixed ±22.5° spread (`tap_tuning::kPanNear/kPanFar`), not a
+  helper. The sampler sources these from the synth and FX code instead —
+  see *Grain math: what to reuse*. It therefore carries the cost of being
+  the first grain implementation: budget for the window/pan/normalization
+  work that this section previously assumed as already paid.
+- **Chaining is still a feature:** a sampler part runs through its part FX,
+  so sampler cloud → FLUX taps is a legitimate extreme sound. The combined
+  CPU/SDRAM worst case named in the CPU section stands — but its second
+  term is now taps, not DUST grains, and taps are far cheaper (integer
+  offsets on an existing buffer, no per-grain interpolation). The worst
+  case is therefore *lower* than the original spec assumed; still to be
+  measured once the deck exists.
+- Considered and rejected, unchanged: probabilistic reverse in sampler
+  MOTION (MOTION is a full axis already, Reverse lives in the edit layer)
+  and writeback/erosion on the sampler buffer (the sampler's tape variant
+  is overdub feedback). Note that FLUX's own erosion remnants were dropped
+  with zone R in 2.7.0, so there is no erosion to borrow from any more.
 
 ## Roadmap placement
 

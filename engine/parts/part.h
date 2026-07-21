@@ -7,6 +7,7 @@
 #include "parts/engine_iface.h"
 #include "parts/test_tone_engine.h"
 #include "synth/synth_engine.h"
+#include "sampler/sampler_engine.h"
 #include "fx/fx_util.h"
 #include "fx/part_fx.h"
 #include "util/math.h"
@@ -19,7 +20,8 @@ namespace spky {
 class Part {
 public:
     void init(float sample_rate, uint32_t seed_base,
-              float* echo_l = nullptr, float* echo_r = nullptr);
+              float* echo_l = nullptr, float* echo_r = nullptr,
+              SampleBuffer::Frame* sampler_mem = nullptr, size_t sampler_frames = 0);
 
     SuperModulator& mod() { return _mod; }
     const SuperModulator& mod() const { return _mod; }
@@ -73,14 +75,18 @@ public:
     }
     float max_voice_env() const;   // 0 when idle or on the test-tone engine
 
-    // VOICE edit layer - forwarded to the synth engine directly, so edits
-    // stick even while the test tone is the active engine
-    void set_voice_attack(float n)    { _synth.set_attack(n); }
-    void set_voice_decay(float n)     { _synth.set_decay(n); }
-    void set_voice_resonance(float n) { _synth.set_resonance(n); }
-    void set_voice_sub(float n)       { _synth.set_sub(n); }
-    void set_voice_detune(float n)    { _synth.set_detune(n); }
-    void set_voice_filt(float t)      { _synth.set_filt(t); }
+    // VOICE edit layer - forwarded to BOTH engines directly, so edits stick
+    // whichever engine is active. The sampler reinterprets each knob as its
+    // cloud analogue (spec: "no dead knobs"), so one panel row serves both.
+    void set_voice_attack(float n)    { _synth.set_attack(n);    _sampler.set_window_attack(n); }
+    void set_voice_decay(float n)     { _synth.set_decay(n);     _sampler.set_window_decay(n); }
+    void set_voice_resonance(float n) { _synth.set_resonance(n); _sampler.set_resonance(n); }
+    void set_voice_sub(float n)       { _synth.set_sub(n);       _sampler.set_sub(n); }
+    void set_voice_detune(float n)    { _synth.set_detune(n);    _sampler.set_detune(n); }
+    void set_voice_filt(float t)      { _synth.set_filt(t);      _sampler.set_filt(t); }
+
+    SamplerEngine& sampler() { return _sampler; }
+    const SamplerEngine& sampler() const { return _sampler; }
 
     int active_voices() const {
         return _engine_id == ENGINE_SYNTH ? _synth.active_voices() : 0;
@@ -103,10 +109,16 @@ public:
     float pitch_cv() const { return target_value(LANE_PITCH); }
 
     // advance mod one sample + engine + part FX; sends = post-FX x REVERB SEND
-    void process(float& outL, float& outR, float& sendL, float& sendR);
+    // The input-carrying form is the real one; the two legacy overloads feed
+    // silence, which keeps every existing caller and test bit-identical.
+    void process(float inL, float inR, float& outL, float& outR,
+                 float& sendL, float& sendR);
+    void process(float& outL, float& outR, float& sendL, float& sendR) {
+        process(0.f, 0.f, outL, outR, sendL, sendR);
+    }
     void process(float& outL, float& outR) {
         float sl, sr;
-        process(outL, outR, sl, sr);
+        process(0.f, 0.f, outL, outR, sl, sr);
     }
 
 private:
@@ -114,6 +126,8 @@ private:
     TestToneEngine _tone;
     IPartEngine*   _engine = nullptr;
     SynthEngine    _synth;
+    SamplerEngine  _sampler;
+    bool           _last_gate = false;
     SoftSwitch     _engine_fade;
     EngineId       _engine_id = ENGINE_SYNTH;
     EngineId       _pending_engine = ENGINE_SYNTH;
@@ -124,8 +138,11 @@ private:
     float          _last_master_hz = -1.f;
 
     IPartEngine* _engine_for(EngineId e) {
-        return e == ENGINE_SYNTH ? static_cast<IPartEngine*>(&_synth)
-                                 : static_cast<IPartEngine*>(&_tone);
+        switch (e) {
+            case ENGINE_SYNTH:   return static_cast<IPartEngine*>(&_synth);
+            case ENGINE_SAMPLER: return static_cast<IPartEngine*>(&_sampler);
+            default:             return static_cast<IPartEngine*>(&_tone);
+        }
     }
 
     // Everything the engine and FX consume at their own control rate -- see
