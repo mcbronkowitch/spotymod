@@ -33,7 +33,11 @@ constexpr float  kWindowHalfMin = 0.02f;
 constexpr float  kBurstReleaseS = 0.06f;
 
 // MOTION scatter, at MOTION = 1 (all ear-tunable):
-constexpr float  kScatterPosFrac  = 0.25f;   // +-1/4 of content length
+// +-the whole content length. Was 0.25 through M5a, which confined MOTION's
+// read position to a quarter of the buffer and is the likeliest reason the
+// cloud never reached "diffuse fog" (see the Open section in
+// 2026-07-18-sampler-texture-deck-design.md). Ear-tunable.
+constexpr float  kScatterPosFrac  = 1.0f;
 constexpr float  kScatterTimeFrac = 0.75f;   // spawn-interval jitter, fraction of interval
 constexpr float  kScatterOctProb  = 0.25f;   // chance a chord note jumps an octave
 

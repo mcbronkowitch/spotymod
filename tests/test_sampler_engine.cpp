@@ -2,6 +2,8 @@
 #include <cmath>
 #include <limits>
 #include <vector>
+#include <iostream>
+#include <iomanip>
 #include "sampler/sampler_engine.h"
 #include "sampler/sampler_config.h"
 using namespace spky;
@@ -874,26 +876,27 @@ TEST_CASE("sampler: golden vector -- Rng draw order and SOURCE mapping are locke
     // above this test before changing any of these numbers.
     static const Spawn golden[20] = {
         // pos,            pan,          ratio,        len
-        { 12200.50781250f, -0.69252360f, 0.20196824f, 3821 },
-        {  9559.03320312f,  0.98490131f, 0.55502838f, 3821 },
-        { 12429.85449219f, -0.30681819f, 1.53079367f, 3821 },
-        {  9426.72070312f, -0.88041586f, 0.40453154f, 3821 },
-        { 13792.33007812f, -0.11837190f, 0.55053788f, 3821 },
-        { 12621.92773438f,  0.86559057f, 0.75218982f, 3821 },
-        {  6792.23632812f,  0.43894804f, 0.40997744f, 3821 },
-        { 10227.70507812f,  0.79144990f, 0.55878091f, 3821 },
-        {  9217.20214844f,  0.07455552f, 1.52497661f, 3821 },
-        {  9639.77636719f,  0.83863580f, 0.40733621f, 3821 },
-        { 16812.86328125f, -0.27693748f, 0.55035543f, 3821 },
-        {  7372.13427734f, -0.75745511f, 1.52152061f, 3821 },
-        { 15622.36425781f,  0.96780789f, 0.40774995f, 3821 },
-        { 15633.29101562f,  0.42561364f, 0.55428278f, 3821 },
-        {  6173.71435547f, -0.26600885f, 1.51086748f, 3821 },
-        { 12693.93164062f, -0.27030134f, 0.81130999f, 3821 },
-        { 13349.57031250f, -0.78998744f, 1.10466695f, 3821 },
-        { 12683.76660156f, -0.03883266f, 0.76514953f, 3821 },
-        {  7273.89355469f, -0.89893818f, 0.81913930f, 3821 },
-        {  8740.55468750f, -0.89280307f, 2.21407151f, 3821 },
+        // Updated for kScatterPosFrac 0.25 -> 1.0
+        { 12803.53027344f, -0.69252360f, 0.20196824f, 3821 },
+        {  2237.63378906f,  0.98490131f, 0.55502838f, 3821 },
+        { 13720.91796875f, -0.30681819f, 1.53079367f, 3821 },
+        {  1708.38085938f, -0.88041586f, 0.40453154f, 3821 },
+        { 19170.82031250f, -0.11837190f, 0.55053788f, 3821 },
+        { 14489.21093750f,  0.86559057f, 0.75218982f, 3821 },
+        { 15170.44531250f,  0.43894804f, 0.40997744f, 3821 },
+        {  4912.32128906f,  0.79144990f, 0.55878091f, 3821 },
+        {   870.30957031f,  0.07455552f, 1.52497661f, 3821 },
+        {  2560.60449219f,  0.83863580f, 0.40733621f, 3821 },
+        {  7252.95117188f, -0.27693748f, 0.55035543f, 3821 },
+        { 17490.03710938f, -0.75745511f, 1.52152061f, 3821 },
+        {  2490.95703125f,  0.96780789f, 0.40774995f, 3821 },
+        {  2534.66406250f,  0.42561364f, 0.55428278f, 3821 },
+        { 12696.35742188f, -0.26600885f, 1.51086748f, 3821 },
+        { 14777.22656250f, -0.27030134f, 0.81130999f, 3821 },
+        { 17399.78125000f, -0.78998744f, 1.10466695f, 3821 },
+        { 14736.56640625f, -0.03883266f, 0.76514953f, 3821 },
+        { 17097.07421875f, -0.89893818f, 0.81913930f, 3821 },
+        { 22963.72070312f, -0.89280307f, 2.21407151f, 3821 },
     };
 
     // Absolute, not relative, tolerance: the regression this test exists to
@@ -912,4 +915,88 @@ TEST_CASE("sampler: golden vector -- Rng draw order and SOURCE mapping are locke
         CHECK(std::fabs(got[i].ratio - golden[i].ratio) < 0.00002f);
         CHECK(got[i].len == golden[i].len);
     }
+}
+
+// --- Task 5: MOTION scatter range ----
+
+TEST_CASE("sampler: MOTION at full scatters across the whole buffer") {
+    SamplerEngine eng;
+    std::vector<SampleBuffer::Frame> mem(48000);
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(0x77u);
+    eng.init(48000.f);
+
+    // Generate a 220 Hz sine wave and load it
+    std::vector<float> l(48000), r(48000);
+    for (size_t i = 0; i < 48000; ++i) {
+        l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    eng.load_sample(l.data(), r.data(), 48000);
+
+    // SOURCE=0.5, MOTION=1.0, SIZE=0.5
+    float targets[LANE_COUNT] = { 0.5f, 0.5f, 0.5f, 1.f, 0.8f };
+    eng.set_targets(targets, 0.5f);
+    eng.set_flow(true);
+
+    float lo = 1e9f, hi = -1e9f;
+    int seen = 0;
+    for (int i = 0; i < 48000 * 100 && seen < 400; ++i) {
+        float l = 0.f, r = 0.f;
+        const unsigned before = eng.spawn_count();
+        eng.process(l, r);
+        if (eng.spawn_count() != before) {
+            const float p = eng.last_spawn_pos();
+            lo = p < lo ? p : lo;
+            hi = p > hi ? p : hi;
+            ++seen;
+        }
+    }
+    REQUIRE(seen >= 400);
+
+    // SOURCE is pinned mid-buffer, so the reachable set is a window of width
+    // 2 * kScatterPosFrac * content centred there (the wrap only matters at
+    // the ends). At the old 0.25 that window spans half the buffer and this
+    // fails; at 1.0 it spans all of it.
+    const float content = 48000.f;
+    CHECK(lo < 0.10f * content);
+    CHECK(hi > 0.90f * content);
+}
+
+TEST_CASE("sampler: MOTION at zero does not scatter position at all") {
+    // The companion property. Without this, a test that only checks the
+    // spread passes just as well against a mapping that ignores MOTION and
+    // scatters everything all the time.
+    SamplerEngine eng;
+    std::vector<SampleBuffer::Frame> mem(48000);
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(0x77u);
+    eng.init(48000.f);
+
+    // Generate a 220 Hz sine wave and load it
+    std::vector<float> l(48000), r(48000);
+    for (size_t i = 0; i < 48000; ++i) {
+        l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    eng.load_sample(l.data(), r.data(), 48000);
+
+    // SOURCE=0.5, MOTION=0.0, SIZE=0.5
+    float targets[LANE_COUNT] = { 0.5f, 0.5f, 0.5f, 0.f, 0.8f };
+    eng.set_targets(targets, 0.5f);
+    eng.set_flow(true);
+
+    float first = -1.f;
+    int seen = 0;
+    for (int i = 0; i < 48000 * 50 && seen < 50; ++i) {
+        float l = 0.f, r = 0.f;
+        const unsigned before = eng.spawn_count();
+        eng.process(l, r);
+        if (eng.spawn_count() != before) {
+            if (first < 0.f) first = eng.last_spawn_pos();
+            CHECK(eng.last_spawn_pos() == doctest::Approx(first));
+            ++seen;
+        }
+    }
+    REQUIRE(seen >= 50);
 }
