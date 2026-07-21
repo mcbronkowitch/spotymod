@@ -72,6 +72,15 @@ constexpr float  kPitchOctaves = 4.f;
 // 8 samples caps the rate at 6 kHz per part. NOT ear-tunable.
 constexpr float  kSpawnMinSamples = 8.f;
 
+// Overlap range for the DENS knob in the sampler (spec 2026-07-21
+// morphagene-controls). The ceiling stays at kGrains / 2 = 8 and does NOT
+// rise to kGrains: above 8 the pool-throughput bound
+// len_ceil = _spawn_every * kGrains (sampler_engine.cpp) starts trimming
+// grain length silently. Downward the bound only gets looser, so lowering
+// overlap is safe under all conditions.
+constexpr float  kOverlapMin = 1.f;
+constexpr float  kOverlapMax = 8.f;
+
 // Grain window: the ATK/DEC halves each span at most this fraction of the
 // grain, so a fully-open ATK and DEC still leave the window a real shape
 // rather than two ramps meeting at a point.

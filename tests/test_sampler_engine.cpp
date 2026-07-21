@@ -1554,3 +1554,50 @@ TEST_CASE("sample_data is null without injected memory") {
     CHECK(bare.rec_size() == 0);
     CHECK(bare.is_empty());
 }
+
+TEST_CASE("sampler: DENS sets the grain overlap, and the spawn interval follows") {
+    Rig g;
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.5f);          // SIZE 0.5 -> 0.2 s -> 9600 samples
+    g.render(200);
+    const float len = g.e.grain_len_samples();
+    REQUIRE(len == doctest::Approx(9600.f).epsilon(0.05));
+
+    // Knob 1.0 -> overlap 8: the shipped density, unchanged from M5b.
+    g.e.set_overlap(1.f);
+    g.render(200);
+    CHECK(g.e.overlap() == doctest::Approx(8.f));
+    CHECK(g.e.spawn_interval_samples() == doctest::Approx(len / 8.f).epsilon(0.01));
+
+    // Knob 0.0 -> overlap 1: one grain at a time, back to back. This is the
+    // sparse regime where the ATK/DEC window shape becomes audible at all
+    // (measured: 23% crest-factor swing isolated vs 1-16% in the dense cloud).
+    g.e.set_overlap(0.f);
+    g.render(200);
+    CHECK(g.e.overlap() == doctest::Approx(1.f));
+    CHECK(g.e.spawn_interval_samples() == doctest::Approx(len).epsilon(0.01));
+}
+
+TEST_CASE("sampler: the CPU floor on the spawn interval survives at every overlap") {
+    // kSpawnMinSamples caps the spawn RATE, so it must bind hardest at the
+    // shortest grain and the highest overlap. 1 ms at 48 kHz is 48 samples;
+    // 48 / 8 = 6, which is below the floor of 8.
+    CHECK(test_spawn_interval(48.f, 8) == doctest::Approx(sampler_cfg::kSpawnMinSamples));
+    CHECK(test_spawn_interval(48.f, 1) == doctest::Approx(48.f));
+    CHECK(test_spawn_interval(9600.f, 8) == doctest::Approx(1200.f));
+    CHECK(test_spawn_interval(9600.f, 1) == doctest::Approx(9600.f));
+}
+
+TEST_CASE("sampler: lowering overlap only loosens the pool ceiling, never tightens it") {
+    // len_ceil = _spawn_every * kGrains, and _spawn_every grows as overlap
+    // falls -- so a lower overlap can never trim a grain that a higher one
+    // would have allowed. This is the invariant that makes DENS safe to turn
+    // down under any SIZE.
+    const float len = 9600.f;
+    float prev = 0.f;
+    for (int ov = 8; ov >= 1; --ov) {
+        const float ceil_v = test_spawn_interval(len, ov) * float(SamplerEngine::kGrains);
+        CHECK(ceil_v >= prev);
+        prev = ceil_v;
+    }
+}

@@ -140,6 +140,13 @@ public:
     void set_reverse(bool on)     { _reverse = on; }
     void set_feedback(float knob) { _buf.set_feedback(knob); }
 
+    // DENS in the sampler: grain overlap, 1..8 (spec 2026-07-21
+    // morphagene-controls). n is a knob position 0..1. This is the density
+    // control that kOverlap used to fix at compile time; at low overlap the
+    // grain window stops being a Constant-OverLap-Add system and ATK/DEC
+    // become audible.
+    void set_overlap(float n);
+
     // --- voice row, remapped ---
     void set_window_attack(float n);
     void set_window_decay(float n);
@@ -151,6 +158,8 @@ public:
     // --- observation (CSV, tests) ---
     int   active_grains() const;
     float grain_len_samples() const { return _grain_len; }
+    float overlap() const               { return _overlap; }
+    float spawn_interval_samples() const { return _spawn_every; }
     int   spawn_count() const       { return _spawn_count; }
     // Incremented in _spawn_one when every slot is busy and the spawn is
     // skipped -- the exact moment a spawn is lost. Never reset except by
@@ -186,6 +195,7 @@ private:
     // derived at the control tick
     float _grain_len   = 960.f;   // output samples
     float _spawn_every = 240.f;   // samples between spawns
+    float _overlap     = static_cast<float>(kOverlap);   // 1..8, DENS
     float _filt_gain   = 1.f;
     float _norm_target = 1.f;     // 1/sqrt(active), fed through _norm per sample
 

@@ -61,8 +61,8 @@ inline float detune_factor(float cents) {
 // already yielded 12 samples and nothing here ever fired. At today's
 // kOverlap = 8 it does fire on that same grain -- 48 / 8 = 6, lifted to
 // kSpawnMinSamples -- so this floor is now live on the ordinary path.
-inline float spawn_interval(float grain_len, int overlap) {
-    const float raw = grain_len / static_cast<float>(overlap);
+inline float spawn_interval(float grain_len, float overlap) {
+    const float raw = grain_len / (overlap > 0.f ? overlap : 1.f);
     return raw < kSpawnMinSamples ? kSpawnMinSamples : raw;
 }
 }  // namespace
@@ -272,7 +272,7 @@ void SamplerEngine::_update_control() {
     // this guards is per spawn, and kOverlap decouples the two: a length
     // floor stops bounding the spawn rate as soon as kOverlap rises. See
     // kSpawnMinSamples.
-    _spawn_every = spawn_interval(_grain_len, kOverlap);
+    _spawn_every = spawn_interval(_grain_len, _overlap);
 
     // A shrinking interval must not leave a stale long countdown pending:
     // sweeping SIZE down would otherwise gap the carpet for up to the old
@@ -527,5 +527,9 @@ void SamplerEngine::set_resonance(float n) {
 }
 void SamplerEngine::set_sub(float n)    { _sub_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_detune(float n) { _detune_n = clampf(n, 0.f, 1.f); }
+
+void SamplerEngine::set_overlap(float n) {
+    _overlap = lerpf(kOverlapMin, kOverlapMax, clampf(n, 0.f, 1.f));
+}
 
 }  // namespace spky
