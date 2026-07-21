@@ -98,13 +98,21 @@ struct Spotymod : Module {
     // part autoloads res/factory.wav so the deck sounds within one gesture.
     // factoryTried[p] stops a failed load or a deliberate Clear from
     // re-triggering on the next control tick -- only onReset() clears it.
-    // The WAV itself is read off disk (and resampled to the engine rate) at
-    // most once per module instance and cached here, shared by both parts --
-    // pushParams runs on the audio thread, so a second 3 MB file read must
-    // not happen.
+    //
+    // The WAV itself must never be read from disk on the audio thread, so the
+    // read is split from the decision: factoryNative holds the file decoded
+    // at its OWN (native) sample rate, read at most once per module instance
+    // in onAdd() (main thread, before process() ever runs for this
+    // instance -- see onAdd() below). factoryL/factoryR hold that same audio
+    // resampled to curSr, rebuilt in reinit() every time the engine rate
+    // changes (so a device-rate change between part A's and part B's first
+    // flip can't leave part B with audio pitched for the old rate).
+    // pushParams (audio thread) only ever reads factoryL/factoryR -- a
+    // memcpy via inst.load_sample, no disk I/O and no resample.
     bool factoryTried[spky::PART_COUNT] = {false, false};
-    spky::WavData factoryWav;
-    bool factoryWavTried = false;
+    spky::WavData factoryNative;
+    bool factoryNativeTried = false;
+    std::vector<float> factoryL, factoryR;
 
     float curSr = 0.f;
     dsp::ClockDivider ctrlDiv;              // throttle param push to control rate
@@ -279,6 +287,7 @@ struct Spotymod : Module {
             for (size_t i = 0; i < n; ++i) { snapL[p][i] = f[i].l; snapR[p][i] = f[i].r; }
         }
 
+        const float prevSr = curSr;
         curSr = sr;
         const size_t frames = (size_t)(kSamplerBufferSeconds * (double)sr);
         for (int p = 0; p < spky::PART_COUNT; ++p) {
@@ -292,6 +301,25 @@ struct Spotymod : Module {
         for (int p = 0; p < spky::PART_COUNT; ++p)
             if (!snapL[p].empty())
                 inst.load_sample(p, snapL[p].data(), snapR[p].data(), snapL[p].size());
+
+        // Rebuild the factory-drone cache for the (possibly new) rate.
+        // factoryNative is decoded from disk exactly once, in onAdd() --
+        // this only resamples the already-decoded buffer, so reinit() stays
+        // disk-free even when it's called from process()'s reactive
+        // sample-rate-change fallback. Skipped when the rate hasn't actually
+        // changed and the cache is already built, so calling reinit() twice
+        // in a row at the same rate (documented above, and onReset() does
+        // exactly this) doesn't redo the resample for nothing.
+        if (!factoryNative.l.empty() && (sr != prevSr || factoryL.empty())) {
+            factoryL = factoryNative.l;
+            factoryR = factoryNative.r;
+            if (factoryNative.sample_rate > 0
+                && (float)factoryNative.sample_rate != sr) {
+                const double ratio = (double)sr / (double)factoryNative.sample_rate;
+                spkyvcv::resample_linear(factoryL, ratio);
+                spkyvcv::resample_linear(factoryR, ratio);
+            }
+        }
     }
 
     void onSampleRateChange(const SampleRateChangeEvent& e) override {
@@ -357,29 +385,16 @@ struct Spotymod : Module {
             // once loaded it behaves like any other sample (REC overdubs it,
             // Clear clears it, and factoryLoaded keeps it out of patch
             // storage).
+            // factoryL/factoryR are prepared off the audio thread (onAdd()
+            // reads+decodes, reinit() resamples -- see the members' comment
+            // above); this is just a guard check plus a memcpy into the
+            // engine's pre-allocated sampler buffer.
             if (eng2 && !smp[p].testTone && inst.sampler_empty(p)
                      && !factoryTried[p]) {
                 factoryTried[p] = true;
-                if (!factoryWavTried) {
-                    factoryWavTried = true;
-                    std::string err;
-                    const std::string fp = asset::plugin(pluginInstance, "res/factory.wav");
-                    if (spky::read_wav(fp, factoryWav, err)) {
-                        if (factoryWav.sample_rate > 0 && curSr > 0.f
-                            && (float)factoryWav.sample_rate != curSr) {
-                            const double ratio = (double)curSr / (double)factoryWav.sample_rate;
-                            spkyvcv::resample_linear(factoryWav.l, ratio);
-                            spkyvcv::resample_linear(factoryWav.r, ratio);
-                        }
-                    } else {
-                        WARN("Spotymod: factory sample unavailable: %s", err.c_str());
-                        factoryWav.l.clear();
-                        factoryWav.r.clear();
-                    }
-                }
-                if (!factoryWav.l.empty()) {
-                    inst.load_sample(p, factoryWav.l.data(), factoryWav.r.data(),
-                                     factoryWav.l.size());
+                if (!factoryL.empty()) {
+                    inst.load_sample(p, factoryL.data(), factoryR.data(),
+                                     factoryL.size());
                     smp[p].factoryLoaded = true;
                 }
             }
@@ -632,8 +647,34 @@ struct Spotymod : Module {
         }
     }
 
+    // Decode res/factory.wav at its native rate, at most once per module
+    // instance. Must only ever be called from onAdd() (main thread): onAdd()
+    // completes as part of the synchronous addModule() call, before the
+    // module widget exists for the user to touch and before process() ever
+    // runs for this instance -- the same happens-before guarantee
+    // restoreSamplerContent()'s onAdd() call already relies on. reinit()
+    // deliberately does NOT read disk itself (only resamples this cache), so
+    // that process()'s reactive `sampleRate != curSr` fallback -- which does
+    // run on the audio thread -- can never trigger a file read.
+    void loadFactoryNative() {
+        if (factoryNativeTried) return;
+        factoryNativeTried = true;
+        std::string err;
+        const std::string fp = asset::plugin(pluginInstance, "res/factory.wav");
+        if (!spky::read_wav(fp, factoryNative, err)) {
+            WARN("Spotymod: factory sample unavailable: %s", err.c_str());
+            factoryNative.l.clear();
+            factoryNative.r.clear();
+        }
+    }
+
     void onAdd(const AddEvent& e) override {
         Module::onAdd(e);
+        // Must run before restoreSamplerContent() (which may force an
+        // immediate reinit() below): reinit() only resamples factoryNative,
+        // it doesn't read it, so the cache has to already be populated (or
+        // confirmed unreadable) by the time any reinit() call happens.
+        loadFactoryNative();
         if (!pendingRestore) return;
         pendingRestore = false;
         restoreSamplerContent();
