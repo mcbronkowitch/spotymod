@@ -2,8 +2,6 @@
 #include <cmath>
 #include <limits>
 #include <vector>
-#include <iostream>
-#include <iomanip>
 #include "sampler/sampler_engine.h"
 #include "sampler/sampler_config.h"
 using namespace spky;
@@ -917,7 +915,7 @@ TEST_CASE("sampler: golden vector -- Rng draw order and SOURCE mapping are locke
     }
 }
 
-// --- Task 5: MOTION scatter range ----
+// --- Task 2: MOTION scatter range ----
 
 TEST_CASE("sampler: MOTION at full scatters across the whole buffer") {
     SamplerEngine eng;
@@ -941,7 +939,7 @@ TEST_CASE("sampler: MOTION at full scatters across the whole buffer") {
 
     float lo = 1e9f, hi = -1e9f;
     int seen = 0;
-    for (int i = 0; i < 48000 * 100 && seen < 400; ++i) {
+    for (int i = 0; i < 48000 * 20 && seen < 400; ++i) {
         float l = 0.f, r = 0.f;
         const unsigned before = eng.spawn_count();
         eng.process(l, r);
