@@ -100,6 +100,7 @@ struct Spotymod : Module {
     int principleIdx[2] = {0, 0};   // current principle per part (0=TwoMotif)
     float clkSamples = 0.f;                 // samples since last external clock edge
     float gateFilt[2] = {0.f, 0.f};
+    float recPhase[2] = {0.f, 0.f};        // REC LED pulse while recording
     std::atomic<bool> resyncReq { false };  // menu "Resync to bar" -> audio thread
 
     Spotymod() {
@@ -156,7 +157,10 @@ struct Spotymod : Module {
                     configSwitch(c.id, 0.f, 1.f, 1.f, "Sync", {"Free", "Synced"});
                     break;
                 case WK_LATCH:
-                    if (c.id == ENGINE_A || c.id == ENGINE_B)
+                    if (c.id == REC_A || c.id == REC_B)
+                        configSwitch(c.id, 0.f, 1.f, 0.f, "Record",
+                                     {"Stopped", "Recording"});
+                    else if (c.id == ENGINE_A || c.id == ENGINE_B)
                         configSwitch(c.id, 0.f, 1.f, 0.f, "Engine", {"Synth", "Sampler"});
                     else if (c.id == GRITMODE_A || c.id == GRITMODE_B)
                         configSwitch(c.id, 0.f, 1.f, c.id == GRITMODE_A ? 1.f : 0.f,
@@ -334,6 +338,15 @@ struct Spotymod : Module {
             inst.sampler_speed_mode(p, smp[p].tapeIdx != 0);
             inst.sampler_reverse(p, smp[p].reverse);
             inst.sampler_feedback(p, smp[p].feedback);
+
+            // REC is a latch, so its value IS the desired state -- an edge
+            // trigger would miss a state restored from a saved patch. The
+            // engine's set_recording is idempotent, and sampler_record flips
+            // monitoring with it, so pushing every control tick is correct.
+            // On a synth part REC is inert: ENG is the only mode selector.
+            const bool wantRec = ppb(REC_A, p) && eng2 && !smp[p].testTone;
+            if (wantRec != inst.sampler_is_recording(p)) inst.sampler_record(p, wantRec);
+
             inst.set_grit_mode(p, ppb(GRITMODE_A, p) ? spky::GritMode::Reduce
                                                      : spky::GritMode::Drive);
             inst.set_step(p, ppb(STEP_A, p), (int)std::round(pp(STEPS_A, p)));
@@ -415,6 +428,21 @@ struct Spotymod : Module {
         }
         lights[GATE_A_L].setBrightness(gateFilt[0]);
         lights[GATE_B_L].setBrightness(gateFilt[1]);
+
+        // REC LED: pulsing while recording, steady at the fill level when the
+        // part holds content, dark when empty or on a synth part. One LED, the
+        // two things a player needs to know -- am I armed, and how full is it.
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            float b = 0.f;
+            if (inst.sampler_is_recording(p)) {
+                recPhase[p] += 2.f / args.sampleRate;      // 2 Hz pulse
+                if (recPhase[p] >= 1.f) recPhase[p] -= 1.f;
+                b = recPhase[p] < 0.5f ? 1.f : 0.25f;
+            } else if (!inst.sampler_empty(p)) {
+                b = 0.15f + 0.55f * inst.sampler_fill(p);
+            }
+            lights[p ? REC_B_L : REC_A_L].setBrightness(b);
+        }
     }
 
     void onReset() override { reinit(curSr > 0.f ? curSr : 48000.f); }
@@ -559,8 +587,13 @@ struct SpotymodWidget : ModuleWidget {
             addInput(createInputCentered<PJ301MPort>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
         for (const auto& c : kOutputCtls)
             addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
-        for (const auto& c : kLightCtls)  // warm signal hue for the gate glow
-            addChild(createLightCentered<MediumLight<YellowLight>>(mm2px(Vec(c.mm.x, c.mm.y)), module, c.id));
+        for (const auto& c : kLightCtls) {
+            Vec pos = mm2px(Vec(c.mm.x, c.mm.y));
+            if (c.id == REC_A_L || c.id == REC_B_L)   // record = red, the one
+                addChild(createLightCentered<SmallLight<RedLight>>(pos, module, c.id));
+            else                                       // gate glow = warm signal hue
+                addChild(createLightCentered<MediumLight<YellowLight>>(pos, module, c.id));
+        }
 
         // live LED rings, centred on each ring (same coords as the gate lights)
         for (int p = 0; p < 2; ++p) {
