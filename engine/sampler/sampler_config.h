@@ -17,9 +17,32 @@ constexpr float  kDefaultFeedback = 0.95f;   // knob position; -3 dB on the -60.
 constexpr int    kGrains        = 8;         // per part
 constexpr int    kCtrlInterval  = 96;        // must equal SynthEngine::kCtrlInterval
 
-// SIZE: exponential 20 ms .. 2 s, size_s = kSizeMinS * kSizeRange^n
+// SIZE: piecewise exponential, 1 ms .. 42 s.
+//
+// The middle segment [kSizeKneeLo, kSizeKneeHi] is the M5a curve unchanged,
+// kSizeMinS * kSizeRange^n -- every setting that has been listened to stays
+// at the knob position where it was. The two outer fifths steepen into new
+// territory. Continuous in value at both knees, deliberately not smooth in
+// slope; the kinks are audible as a change of pace, which is the point.
 constexpr float  kSizeMinS      = 0.02f;
 constexpr float  kSizeRange     = 100.f;
+constexpr float  kSizeKneeLo    = 0.2f;
+constexpr float  kSizeKneeHi    = 0.8f;
+constexpr float  kSizeFloorS    = 0.001f;   // 1 ms: a pitched buzz, not a texture
+// 42 s == the record buffer's capacity at 48 kHz, so at the top of travel a
+// grain reads the entire loop exactly once under a single window. Beyond
+// this the modulo fold in read_linear would only repeat material the same
+// grain already covered.
+constexpr float  kSizeCeilS     = 42.f;
+
+// Minimum samples between grain spawns, at any SIZE and any kOverlap.
+//
+// This is a CPU guard and it belongs on the interval, not on grain length:
+// _spawn_every = _grain_len / kOverlap, so a length floor stops bounding the
+// spawn rate the moment kOverlap rises. M5a floored length at 64 samples,
+// which with kOverlap = 16 would have permitted a spawn every 2 samples.
+// 8 samples caps the rate at 6 kHz per part. NOT ear-tunable.
+constexpr float  kSpawnMinSamples = 8.f;
 
 // Grain window: the ATK/DEC halves each span at most this fraction of the
 // grain, so a fully-open ATK and DEC still leave the window a real shape

@@ -123,35 +123,40 @@ TEST_CASE("sampler: nullptr memory is silent, not a crash") {
     CHECK(e.is_empty());
 }
 
-TEST_CASE("sampler: SIZE maps 20 ms .. 2 s exponentially") {
-    // Needs a full 2 s of content: at SIZE=1 the requested grain length is
-    // exactly 96000 samples (2 s), and grain length is deliberately clamped
-    // to the recorded content length (see "grain length is clamped to the
-    // content length", below). The default Rig only preloads 24000 samples
-    // (0.5 s), which would clamp the top of this curve and defeat the very
-    // property under test -- so this test alone needs the full kFrames of
-    // content to observe the unclamped exponential mapping.
+TEST_CASE("sampler: SIZE maps 1 ms .. 42 s piecewise-exponentially") {
+    // Task 3 opened both ends of the curve (was 20 ms .. 2 s) and removed
+    // the content-length clamp entirely (see "grain length may exceed the
+    // content length", below) -- so this test no longer needs a full 2 s of
+    // content to observe the top of the range; the Rig's content size is
+    // irrelevant to the requested length now.
     Rig g(kFrames);
     g.e.set_flow(true);
     g.feed(0.5f, 0.f, 0.f);
     g.render(200);
-    CHECK(g.e.grain_len_samples() == doctest::Approx(0.02f * 48000.f).epsilon(0.02));
+    CHECK(g.e.grain_len_samples() ==
+          doctest::Approx(sampler_cfg::kSizeFloorS * 48000.f).epsilon(0.02));
     g.feed(0.5f, 0.f, 1.f);
     g.render(200);
-    CHECK(g.e.grain_len_samples() == doctest::Approx(2.0f * 48000.f).epsilon(0.02));
+    CHECK(g.e.grain_len_samples() ==
+          doctest::Approx(sampler_cfg::kSizeCeilS * 48000.f).epsilon(0.02));
     g.feed(0.5f, 0.f, 0.5f);
     g.render(200);
     // 0.02 * 100^0.5 = 0.2 s -- the exponential midpoint, NOT the linear one
-    // (~1.01 s). This is the assertion that tells the two mappings apart.
+    // (~1.01 s). This is the assertion that tells the two mappings apart, and
+    // it is unmoved by Task 3: 0.5 sits inside the unchanged middle segment.
     CHECK(g.e.grain_len_samples() == doctest::Approx(0.2f * 48000.f).epsilon(0.05));
 }
 
-TEST_CASE("sampler: grain length is clamped to the content length") {
+TEST_CASE("sampler: grain length may exceed the content length") {
+    // Was "grain length is clamped to the content length" through M5a. Task
+    // 3 removes that clamp: read_linear folds modulo the recorded length, so
+    // an over-long grain is a loop under one window, not a defect to guard
+    // against.
     Rig g(4800);                           // only 100 ms of content
     g.e.set_flow(true);
-    g.feed(0.5f, 0.f, 1.f);                // ask for 2 s
+    g.feed(0.5f, 0.f, 1.f);                // ask for 42 s
     g.render(200);
-    CHECK(g.e.grain_len_samples() <= 4800);
+    CHECK(g.e.grain_len_samples() > 4800.f);
 }
 
 TEST_CASE("sampler: recording grows the content and the cloud plays while it does") {
@@ -299,9 +304,15 @@ TEST_CASE("sampler: loading new content restarts the cloud immediately") {
         v = (s * (1.f / 4294967296.f)) * 2.f - 1.f;
     }
     g.e.set_flow(true);
-    // Long grains: the spawn interval is ~24000 samples, so a countdown that
-    // survives the load would hold the cloud silent for half a second.
-    g.feed(0.5f, 0.f, 1.f);
+    // Long grains: at SIZE=0.8 (kneeHi -- still the unchanged M5a curve, so
+    // this test isn't about Task 3's new extremes) the spawn interval is a
+    // few thousand samples, so a countdown that survives the load would
+    // hold the cloud silent for a noticeable stretch. Was SIZE=1.0 before
+    // Task 3, when the top of the range was 2 s content-clamped down to
+    // this rig's content; now SIZE=1.0 reaches 42 s and the grain's own
+    // attack window (a fraction of grain length) would still be ramping in
+    // at the 200 ms mark below, so it can no longer stand in for "long".
+    g.feed(0.5f, 0.f, 0.8f);
     g.e.load_sample(n.data(), n.data(), n.size());
     g.render(48000);                       // let the cloud settle and the
                                            // counter land mid-interval
@@ -997,4 +1008,124 @@ TEST_CASE("sampler: MOTION at zero does not scatter position at all") {
         }
     }
     REQUIRE(seen >= 50);
+}
+
+// --- Task 3: SIZE opens at both ends; the CPU floor moves to the spawn interval ---
+
+TEST_CASE("sampler: SIZE is unchanged over the middle of its travel") {
+    // The "on top, not instead" contract. Anything in [0.2, 0.8] must give
+    // exactly the M5a value, so that everything already listened to stays
+    // where it was.
+    using namespace spky::sampler_cfg;
+    for (float n : {0.20f, 0.35f, 0.50f, 0.65f, 0.80f}) {
+        const float want = kSizeMinS * std::pow(kSizeRange, n);
+        CHECK(spky::test_size_seconds(n) == doctest::Approx(want).epsilon(1e-6));
+    }
+}
+
+TEST_CASE("sampler: SIZE reaches both new extremes") {
+    using namespace spky::sampler_cfg;
+    CHECK(spky::test_size_seconds(0.f) == doctest::Approx(kSizeFloorS).epsilon(1e-5));
+    CHECK(spky::test_size_seconds(1.f) == doctest::Approx(kSizeCeilS).epsilon(1e-5));
+}
+
+TEST_CASE("sampler: SIZE is continuous at both knees and monotonic throughout") {
+    using namespace spky::sampler_cfg;
+    // Continuity: a jump at a knee would be an audible click when SIZE is
+    // swept, which is the failure this piecewise curve most invites.
+    //
+    // Deviation from the brief's literal offset here: the brief's Step 2
+    // used a +-1e-4 offset, which this curve genuinely fails at kneeHi
+    // (measured: |above-below| = 0.001947, tolerance 1e-3*above = 0.000798)
+    // -- NOT because the curve is discontinuous (it is exactly continuous
+    // in value at both knees analytically: the top/bottom branches are
+    // defined to equal the middle branch's value at the knee itself), but
+    // because the curve is deliberately kinked in SLOPE there (per the
+    // sampler_config.h comment, "the kinks are audible ... which is the
+    // point"). At kneeHi the outer segment's slope is ~4.3x the middle
+    // segment's, so a symmetric +-1e-4 window straddling the knee picks up
+    // that slope jump, not a value jump, and the picked-up amount already
+    // exceeds a 1e-3 relative tolerance on its own. A 1e-5 offset shrinks
+    // that same slope-driven term by ~10x (verified numerically) while
+    // still failing loudly on an actual C0 discontinuity, which would be
+    // orders of magnitude larger (~kSizeMinS or more) and independent of
+    // the offset's size.
+    for (float knee : {kSizeKneeLo, kSizeKneeHi}) {
+        const float below = spky::test_size_seconds(knee - 1e-5f);
+        const float above = spky::test_size_seconds(knee + 1e-5f);
+        CHECK(std::fabs(above - below) < 1e-3f * above);
+    }
+    // Monotonic: a non-monotonic segment would make part of the knob travel
+    // backwards, which no amount of listening would forgive.
+    float prev = spky::test_size_seconds(0.f);
+    for (int i = 1; i <= 1000; ++i) {
+        const float cur = spky::test_size_seconds(static_cast<float>(i) / 1000.f);
+        CHECK(cur >= prev);
+        prev = cur;
+    }
+}
+
+TEST_CASE("sampler: a grain may be longer than the material it reads") {
+    // The content clamp is gone. read_linear folds, so an over-long grain is
+    // a loop with a window over it -- assert the LENGTH, not the sound,
+    // because the sound is exactly what the fold makes indistinguishable.
+    SamplerEngine eng;
+    std::vector<SampleBuffer::Frame> mem(48000 * 2);
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(0x99u);
+    eng.init(48000.f);
+
+    std::vector<float> l(24000), r(24000);   // half a second of content
+    for (size_t i = 0; i < 24000; ++i) {
+        l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    eng.load_sample(l.data(), r.data(), 24000);
+
+    // SOURCE=0.5, SIZE=1.0 (ask for the full 42 s), PITCH=0.5, MOTION=0
+    float targets[LANE_COUNT] = { 0.5f, 1.f, 0.5f, 0.f, 0.8f };
+    eng.set_targets(targets, 0.5f);
+    eng.set_flow(true);
+
+    int seen = 0;
+    for (int i = 0; i < 48000 && seen < 1; ++i) {
+        float l2 = 0.f, r2 = 0.f;
+        const unsigned before = eng.spawn_count();
+        eng.process(l2, r2);
+        if (eng.spawn_count() != before) ++seen;
+    }
+    REQUIRE(seen == 1);
+    // Under M5a this was clamped to 24000. Now it is the full 42 s.
+    CHECK(eng.last_spawn_len() > 24000);
+}
+
+TEST_CASE("sampler: the spawn interval never falls below its floor") {
+    // This is the CPU guard Task 3 relocates, and the one that Task 6's
+    // density work would otherwise reopen without anyone noticing. It is
+    // written against the OBSERVED spawn count rather than the internal
+    // interval, so it keeps its meaning whatever kOverlap becomes.
+    using namespace spky::sampler_cfg;
+    SamplerEngine eng;
+    std::vector<SampleBuffer::Frame> mem(48000);
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(0xABu);
+    eng.init(48000.f);
+
+    std::vector<float> l(48000), r(48000);
+    for (size_t i = 0; i < 48000; ++i) {
+        l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    eng.load_sample(l.data(), r.data(), 48000);
+
+    // SOURCE=0.5, SIZE=0 (shortest grains), PITCH=0.5, MOTION=0 (no timing jitter)
+    float targets[LANE_COUNT] = { 0.5f, 0.f, 0.5f, 0.f, 0.8f };
+    eng.set_targets(targets, 0.5f);
+    eng.set_flow(true);
+
+    const int kSamples = 48000;
+    for (int i = 0; i < kSamples; ++i) { float l2 = 0.f, r2 = 0.f; eng.process(l2, r2); }
+
+    const double max_spawns = kSamples / static_cast<double>(kSpawnMinSamples) + 1.0;
+    CHECK(eng.spawn_count() <= max_spawns);
 }

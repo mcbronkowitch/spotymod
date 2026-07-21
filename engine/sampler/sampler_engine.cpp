@@ -12,8 +12,20 @@ using namespace sampler_cfg;
 inline float ratio_for(float pitch_norm) {
     return std::pow(8.f, clampf(pitch_norm, 0.f, 1.f) - 0.5f);
 }
+// Control rate only -- called once per control tick from _update_control, so
+// the std::pow calls here are fine where they would not be in _spawn_one.
 inline float size_seconds(float n) {
-    return kSizeMinS * std::pow(kSizeRange, clampf(n, 0.f, 1.f));
+    n = clampf(n, 0.f, 1.f);
+    if (n < kSizeKneeLo) {
+        const float at_knee = kSizeMinS * std::pow(kSizeRange, kSizeKneeLo);
+        return kSizeFloorS * std::pow(at_knee / kSizeFloorS, n / kSizeKneeLo);
+    }
+    if (n > kSizeKneeHi) {
+        const float at_knee = kSizeMinS * std::pow(kSizeRange, kSizeKneeHi);
+        return at_knee * std::pow(kSizeCeilS / at_knee,
+                                  (n - kSizeKneeHi) / (1.f - kSizeKneeHi));
+    }
+    return kSizeMinS * std::pow(kSizeRange, n);   // the M5a curve, unchanged
 }
 inline float cutoff_hz(float n) {
     return kCutoffMinHz * std::pow(kCutoffMaxHz / kCutoffMinHz, clampf(n, 0.f, 1.f));
@@ -31,6 +43,7 @@ inline float detune_factor(float cents) {
 }  // namespace
 
 float test_detune_factor(float cents) { return detune_factor(cents); }
+float test_size_seconds(float n) { return size_seconds(n); }
 
 void SamplerEngine::init(float sample_rate) {
     _sr = sample_rate;
@@ -219,21 +232,21 @@ float SamplerEngine::_next_ratio() {
 }
 
 void SamplerEngine::_update_control() {
-    // --- SIZE: exponential 20 ms .. 2 s, clamped to what we actually have ---
+    // --- SIZE: piecewise exponential, 1 ms .. 42 s ---
+    // No clamp to content length. read_linear folds modulo the recorded
+    // length (sample_buffer.cpp:184-190), so a grain longer than its
+    // material is a loop with a window drawn over it -- a slow swell, which
+    // is the musical point of the top of the knob rather than a defect.
     float len = size_seconds(_targets[LANE_SIZE]) * _sr;
-    const float content = static_cast<float>(_buf.rec_size());
-    if (content > 1.f && len > content) len = content;
-    // Floored well above the degenerate case (first samples of a punch-in,
-    // or a <=4-frame file): a tiny _grain_len drives _spawn_every to its
-    // 1-sample floor, which would run _spawn_one -> _next_ratio -> the
-    // std::pow in ratio_for() every sample. Sub-64-sample grains are
-    // musically meaningless anyway, so keep spawn-time std::pow off the
-    // per-sample path by never asking for grains that short.
-    if (len < 64.f) len = 64.f;
+    if (len < 2.f) len = 2.f;             // Grain::spawn's own safety minimum
     _grain_len = len;
 
+    // The CPU floor lives HERE, on the interval, not on _grain_len. The cost
+    // this guards is per spawn, and kOverlap decouples the two: a length
+    // floor stops bounding the spawn rate as soon as kOverlap rises. See
+    // kSpawnMinSamples.
     _spawn_every = _grain_len / static_cast<float>(kOverlap);
-    if (_spawn_every < 1.f) _spawn_every = 1.f;
+    if (_spawn_every < kSpawnMinSamples) _spawn_every = kSpawnMinSamples;
 
     // A shrinking interval must not leave a stale long countdown pending:
     // sweeping SIZE down would otherwise gap the carpet for up to the old

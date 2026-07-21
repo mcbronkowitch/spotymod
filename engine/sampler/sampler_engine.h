@@ -15,6 +15,11 @@ namespace spky {
 // without exposing the whole translation unit.
 float test_detune_factor(float cents);
 
+// Test seam only: forwards to the anonymous-namespace SIZE mapping in
+// sampler_engine.cpp, so the curve can be checked point by point without
+// driving a whole engine.
+float test_size_seconds(float n);
+
 // The M5 texture deck: a granular cloud behind IPartEngine.
 //
 // Not a second melodic instrument -- the synth part makes the music, this
