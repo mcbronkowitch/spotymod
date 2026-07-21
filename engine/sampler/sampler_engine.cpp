@@ -7,10 +7,24 @@ namespace spky {
 namespace {
 using namespace sampler_cfg;
 
-// Pitch: the lane arrives already quantized from Part. The synth's mapping is
-// 110*8^p Hz, so p = 0.5 is unity here and the range is +-18 semitones.
+// Pitch: the lane arrives already quantized from Part. The middle half of
+// travel is the M5a mapping 8^(p-0.5) unchanged (+-9 semitones); both outer
+// quarters steepen to reach +-kPitchOctaves at the ends. Control rate only
+// -- _next_ratio reads the precomputed _chord_ratio cache, never this.
 inline float ratio_for(float pitch_norm) {
-    return std::pow(8.f, clampf(pitch_norm, 0.f, 1.f) - 0.5f);
+    const float p = clampf(pitch_norm, 0.f, 1.f);
+    if (p < kPitchKneeLo) {
+        const float at_knee = std::pow(8.f, kPitchKneeLo - 0.5f);
+        const float floor_r = std::pow(2.f, -kPitchOctaves);
+        return floor_r * std::pow(at_knee / floor_r, p / kPitchKneeLo);
+    }
+    if (p > kPitchKneeHi) {
+        const float at_knee = std::pow(8.f, kPitchKneeHi - 0.5f);
+        const float ceil_r  = std::pow(2.f, kPitchOctaves);
+        return at_knee * std::pow(ceil_r / at_knee,
+                                  (p - kPitchKneeHi) / (1.f - kPitchKneeHi));
+    }
+    return std::pow(8.f, p - 0.5f);   // the M5a curve, unchanged
 }
 // Control rate only -- called once per control tick from _update_control, so
 // the std::pow calls here are fine where they would not be in _spawn_one.
@@ -56,6 +70,7 @@ inline float spawn_interval(float grain_len, int overlap) {
 float test_detune_factor(float cents) { return detune_factor(cents); }
 float test_size_seconds(float n) { return size_seconds(n); }
 float test_spawn_interval(float grain_len, int overlap) { return spawn_interval(grain_len, overlap); }
+float test_ratio_for(float pitch_norm) { return ratio_for(pitch_norm); }
 
 void SamplerEngine::init(float sample_rate) {
     _sr = sample_rate;
@@ -424,7 +439,20 @@ void SamplerEngine::set_window_attack(float n) { _atk_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_window_decay(float n)  { _dec_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_filt(float n)          { _filt_amt = clampf(n, -1.f, 1.f); }
 void SamplerEngine::set_resonance(float n) {
-    _res_n = clampf(n, 0.f, 0.95f);
+    // Measured, not inherited: the M5a ceiling of 0.95 had no documented
+    // reason, and turned out not to be safe either. "sampler: resonance at
+    // maximum stays finite" (tests/test_sampler_engine.cpp) sweeps FILT
+    // across its whole range while resonating -- a self-oscillating SVF is
+    // likeliest to diverge while its cutoff is moving -- and asserts the
+    // output peak stays below 8. Every value from 0.95 up through 1.0 fails
+    // that test with a finite but runaway peak (0.95 -> 34.6, 0.99 -> 60.6,
+    // 1.0 -> 72.8; never NaN). Bisecting down: 0.73 still fails (peak 8.11,
+    // just over the line), 0.72 passes but only barely (peak 7.79, ~2.6%
+    // under the line) -- too close to a stability boundary, which is exactly
+    // the kind of place where a few ULPs of cross-build float rounding can
+    // flip the result, to build on. 0.7 passes with real margin (peak 7.22)
+    // and is where the clamp sits.
+    _res_n = clampf(n, 0.f, 0.7f);
     _svf_l.SetRes(_res_n);
     _svf_r.SetRes(_res_n);
 }

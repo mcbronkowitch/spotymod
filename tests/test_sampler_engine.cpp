@@ -1165,3 +1165,67 @@ TEST_CASE("sampler: the spawn interval never falls below its floor") {
     const double max_spawns = kSamples / static_cast<double>(kSpawnMinSamples) + 1.0;
     CHECK(eng.spawn_count() <= max_spawns);
 }
+
+// --- Task 5: pitch to +-4 octaves, resonance into self-oscillation --------
+
+TEST_CASE("sampler: pitch is unchanged over the middle half of its travel") {
+    using namespace spky::sampler_cfg;
+    for (float n : {0.25f, 0.375f, 0.5f, 0.625f, 0.75f}) {
+        const float want = std::pow(8.f, n - 0.5f);
+        CHECK(spky::test_ratio_for(n) == doctest::Approx(want).epsilon(1e-6));
+    }
+    CHECK(spky::test_ratio_for(0.5f) == doctest::Approx(1.f).epsilon(1e-6));
+}
+
+TEST_CASE("sampler: pitch reaches four octaves either way") {
+    using namespace spky::sampler_cfg;
+    const float top = std::pow(2.f, kPitchOctaves);
+    CHECK(spky::test_ratio_for(1.f) == doctest::Approx(top).epsilon(1e-5));
+    CHECK(spky::test_ratio_for(0.f) == doctest::Approx(1.f / top).epsilon(1e-5));
+}
+
+TEST_CASE("sampler: pitch is continuous at both knees and monotonic throughout") {
+    using namespace spky::sampler_cfg;
+    // Offset 1e-5, for the same reason Task 3's SIZE continuity test uses it:
+    // the slope kink at a knee is intended, so this comparison picks up
+    // (slope difference x offset) on top of any genuine discontinuity.
+    // Shrinking the offset shrinks the legitimate part and leaves a real
+    // value jump untouched. At 1e-4 the honest kink alone can exceed the
+    // tolerance and fail a correct curve.
+    for (float knee : {kPitchKneeLo, kPitchKneeHi}) {
+        const float below = spky::test_ratio_for(knee - 1e-5f);
+        const float above = spky::test_ratio_for(knee + 1e-5f);
+        CHECK(std::fabs(above - below) < 1e-3f * above);
+    }
+    float prev = spky::test_ratio_for(0.f);
+    for (int i = 1; i <= 1000; ++i) {
+        const float cur = spky::test_ratio_for(static_cast<float>(i) / 1000.f);
+        CHECK(cur >= prev);
+        prev = cur;
+    }
+}
+
+TEST_CASE("sampler: resonance at maximum stays finite") {
+    // The ceiling at 0.95 had no documented reason. This is the test that
+    // decides whether it needs one.
+    Rig g(48000, 0x5Eu);
+    g.e.set_resonance(1.f);
+    // SOURCE=0, SIZE=0.5, PITCH=0.5, MOTION=0, LEVEL=1 (Rig's feed defaults).
+    g.feed(0.5f);
+    g.e.set_flow(true);
+
+    float peak = 0.f;
+    // Sweep FILT across its whole range while resonating: a self-oscillating
+    // SVF is likeliest to diverge while its cutoff is moving, not while it
+    // sits still, so a fixed-cutoff test would miss the failure it is for.
+    for (int i = 0; i < 48000 * 10; ++i) {
+        g.e.set_filt(-1.f + 2.f * (static_cast<float>(i) / (48000.f * 10.f)));
+        float l = 0.f, r = 0.f;
+        g.e.process(l, r);
+        REQUIRE(std::isfinite(l));
+        REQUIRE(std::isfinite(r));
+        peak = std::fabs(l) > peak ? std::fabs(l) : peak;
+        peak = std::fabs(r) > peak ? std::fabs(r) : peak;
+    }
+    CHECK(peak < 8.f);
+}

@@ -48,6 +48,13 @@ constexpr float  kSizeFloorS    = 0.001f;   // 1 ms: a pitched buzz, not a textu
 // grain already covered.
 constexpr float  kSizeCeilS     = 42.f;
 
+// Pitch: piecewise, unity at 0.5. The middle half of travel [0.25, 0.75] is
+// the M5a mapping 8^(n-0.5) exactly -- +-9 semitones there, unchanged. Both
+// outer quarters steepen to reach +-kPitchOctaves at the ends.
+constexpr float  kPitchKneeLo  = 0.25f;
+constexpr float  kPitchKneeHi  = 0.75f;
+constexpr float  kPitchOctaves = 4.f;
+
 // Minimum samples between grain spawns, at any SIZE and any kOverlap.
 //
 // This is a CPU guard and it belongs on the interval, not on grain length:

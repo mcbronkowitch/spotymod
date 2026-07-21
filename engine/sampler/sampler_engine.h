@@ -25,6 +25,9 @@ float test_size_seconds(float n);
 // engage it (today's kOverlap = 4 does not) without driving a whole engine.
 float test_spawn_interval(float grain_len, int overlap);
 
+// Test seam only: forwards to the anonymous-namespace pitch mapping.
+float test_ratio_for(float pitch_norm);
+
 // The M5 texture deck: a granular cloud behind IPartEngine.
 //
 // Not a second melodic instrument -- the synth part makes the music, this
