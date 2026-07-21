@@ -1316,3 +1316,84 @@ TEST_CASE("sampler: density telemetry at worst case") {
     CHECK(peak <= kGrains);
     CHECK(drop_frac < 0.01);
 }
+
+// --- Final review, Critical: tape mode must not starve the grain pool -------
+
+TEST_CASE("sampler: tape mode at max SIZE and min pitch keeps the cloud spawning") {
+    // The bug this pins: in tape mode a grain lasts SIZE / ratio, and nothing
+    // bounded that product. At SIZE 1.0 (_grain_len = 42 s = 2,016,000
+    // samples) with PITCH at minimum (ratio 2^-4 = 0.0625) an unclamped grain
+    // runs 32,256,000 samples -- 11 minutes -- and the reachable minimum
+    // ratio is lower still (octave scatter x SUB x detune -> ~0.0154, giving
+    // ~45 minutes). _spawn_every is 2,016,000 / kOverlap = 252,000, so all
+    // kGrains slots fill after kGrains * _spawn_every = 4,032,000 samples
+    // (84 s) and EVERY spawn after that is dropped until the first grain
+    // finally retires. No knob recovers it: length is latched at spawn and
+    // only CHOKE / set_hold frees a slot early.
+    //
+    // The bound is `lenf <= _spawn_every * kGrains` -- a grain must not
+    // outlive the time it takes to fill every slot, because spawns past that
+    // point are dropped anyway. Self-adjusting to any kOverlap/kGrains.
+    //
+    // PITCH at minimum alone is enough to reach the failure and keeps the
+    // test deterministic: MOTION = 0 means no octave scatter and no timing
+    // jitter, SUB and DTUN are at their defaults (0).
+    using namespace spky::sampler_cfg;
+    const size_t kCap = static_cast<size_t>(kSizeCeilS * 48000.f);   // 2,016,000
+    std::vector<SampleBuffer::Frame> mem(kCap);
+    SamplerEngine eng;
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(0x7A9Eu);
+    eng.init(48000.f);
+
+    std::vector<float> l(kCap), r(kCap);
+    for (size_t i = 0; i < kCap; ++i) {
+        l[i] = std::sin(6.2831853f * 110.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    eng.load_sample(l.data(), r.data(), kCap);
+
+    eng.set_tape_mode(true);
+    // SOURCE=0, SIZE=1 (42 s), MOTION=0, LEVEL=1. The PITCH LANE does not
+    // reach the grain ratio -- Part composes pitch and hands it over through
+    // set_chord, which is what _next_ratio reads -- so minimum pitch is
+    // set_chord(0.f), i.e. ratio_for(0) = 2^-kPitchOctaves = 0.0625.
+    float targets[LANE_COUNT] = { 0.f, 1.f, 0.5f, 0.f, 1.f };
+    eng.set_targets(targets, 0.5f);
+    const float lowest[1] = { 0.f };
+    eng.set_chord(lowest, 1);
+    eng.set_flow(true);
+
+    // Run well past the point where kGrains slots would have filled:
+    // kGrains * _spawn_every = 4,032,000 samples. 6,000,000 is 125 s, half
+    // again as long, so a starved pool has had ~8 further spawn intervals in
+    // which to drop every one of them.
+    const int kSamples = 6000000;
+    int at_fill = 0;
+    for (int i = 0; i < kSamples; ++i) {
+        float a = 0.f, b = 0.f;
+        eng.process(a, b);
+        if (i == 4032000) at_fill = eng.spawn_count();
+    }
+
+    MESSAGE("tape max-SIZE min-pitch: spawned=" << eng.spawn_count()
+            << " dropped=" << eng.dropped_spawns()
+            << " at_fill=" << at_fill
+            << " last_len=" << eng.last_spawn_len());
+
+    // The cloud kept spawning past the point a starved pool would have
+    // frozen at exactly kGrains spawns. Unclamped, spawn_count() sticks at
+    // kGrains (16) forever and every later attempt is a drop.
+    CHECK(at_fill >= SamplerEngine::kGrains);
+    CHECK(eng.spawn_count() > at_fill);
+    CHECK(eng.spawn_count() >= 20);
+
+    // ...and it did so without dropping: the bound is exactly the pool's
+    // throughput, so at MOTION = 0 (no timing jitter) nothing contends. A
+    // couple of drops would be float-rounding at the boundary, not failure;
+    // an unclamped build drops many tens.
+    CHECK(eng.dropped_spawns() <= 2);
+
+    // The grain length is bounded by the pool-fill time, not by SIZE / ratio.
+    CHECK(eng.last_spawn_len() <= SamplerEngine::kGrains * 252000 + 1);
+}

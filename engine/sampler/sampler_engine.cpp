@@ -357,6 +357,43 @@ void SamplerEngine::_spawn_one() {
     // Digital: fixed output duration; the grain reads SIZE * ratio.
     float lenf = _tape ? _grain_len / (ratio > 0.001f ? ratio : 0.001f)
                        : _grain_len;
+
+    // Pool-throughput bound. A grain must not outlive the time it takes to
+    // fill every slot, because spawns past that point have nowhere to go.
+    //
+    // Without this, tape at the top of SIZE starves the cloud for the better
+    // part of an hour. _grain_len at SIZE 1.0 is 42 s (2,016,000 samples) and
+    // the composed minimum ratio is 2^-4 (pitch) x 0.5 (octave scatter) x 0.5
+    // (SUB) x 0.983 (detune) ~= 0.0154, so lenf reaches ~1.31e8 samples --
+    // 45.6 minutes. _spawn_every is 2,016,000 / 8 = 252,000, so all kGrains
+    // slots fill after 84 s and every spawn from then on is dropped, with no
+    // knob that recovers it: length is latched at spawn and only CHOKE /
+    // set_hold (_release_all) frees a slot early. Measured directly at PITCH
+    // minimum alone (ratio 0.0625, lenf 32,256,000): spawn_count froze at 16
+    // and 8 of 24 attempts were dropped over 125 s.
+    //
+    // The bound is self-adjusting to any kOverlap / kGrains and needs no new
+    // tuning constant. It is not free, though, and the comment should own
+    // that: in a SPARSE spawn pattern -- a short STEP burst, or FLOW switched
+    // off right after a spawn -- nothing was contending for the slot, so the
+    // grain it trims from 45 minutes to 84 s would genuinely have sounded for
+    // longer. Accepted deliberately: 84 s is already far past any musical
+    // grain, both figures read to the ear as "frozen", and the alternative
+    // that would preserve the sparse case (stealing the oldest grain when the
+    // pool is full instead of dropping) is a much wider behavioural change to
+    // the common dense path for a gain only audible at an extreme nobody can
+    // hear the difference within. See the final-fix report.
+    //
+    // Applied to BOTH modes rather than only the tape branch, because it is
+    // provably a no-op in digital and that is cheaper than a branch: there
+    // lenf == _grain_len, and _spawn_every == max(_grain_len / kOverlap,
+    // kSpawnMinSamples) >= _grain_len / kOverlap, so len_ceil >= _grain_len *
+    // kGrains / kOverlap == 2 * _grain_len while kGrains == 2 * kOverlap.
+    // Writing it unconditionally also keeps the invariant true if a future
+    // pair ever sets kGrains <= kOverlap.
+    const float len_ceil = _spawn_every * static_cast<float>(kGrains);
+    if (lenf > len_ceil) lenf = len_ceil;
+
     if (lenf < 2.f) lenf = 2.f;
     const int len = static_cast<int>(lenf);
 
