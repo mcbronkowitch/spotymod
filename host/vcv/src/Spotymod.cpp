@@ -1,6 +1,7 @@
 #include <cmath>
 #include <algorithm>
 #include <atomic>
+#include <vector>
 #include "plugin.hpp"
 #include "generated_panel.hpp"   // enums + control table (generated from res/gen_panel.py)
 
@@ -9,6 +10,7 @@
 #include "instrument.h"
 #include "fx/flux.h"
 #include "mod/divisions.h"
+#include "sampler_ui.hpp"
 
 using namespace spkyvcv;
 
@@ -82,6 +84,14 @@ struct Spotymod : Module {
     float echo[spky::PART_COUNT][2][spky::Flux::kMaxSamples];
     spky::AmbientReverb reverb;
 
+    // The texture deck's record buffers. Unlike the echo/reverb memory above
+    // these are NOT held by value: 42 s of stereo at 48 kHz is ~16 MB per
+    // part. The engine's "no heap" contract binds engine/, not the host --
+    // hosts allocate (desktop: std::vector, M6 firmware: SDRAM).
+    static constexpr double kSamplerBufferSeconds = 42.0;
+    std::vector<spky::SampleBuffer::Frame> samplerMem[spky::PART_COUNT];
+    spkyvcv::SamplerPartState smp[spky::PART_COUNT];
+
     float curSr = 0.f;
     dsp::ClockDivider ctrlDiv;              // throttle param push to control rate
     dsp::SchmittTrigger clockTrig, resetTrig;
@@ -147,7 +157,7 @@ struct Spotymod : Module {
                     break;
                 case WK_LATCH:
                     if (c.id == ENGINE_A || c.id == ENGINE_B)
-                        configSwitch(c.id, 0.f, 1.f, 0.f, "Engine", {"Synth", "Test tone"});
+                        configSwitch(c.id, 0.f, 1.f, 0.f, "Engine", {"Synth", "Sampler"});
                     else if (c.id == GRITMODE_A || c.id == GRITMODE_B)
                         configSwitch(c.id, 0.f, 1.f, c.id == GRITMODE_A ? 1.f : 0.f,
                                      "Grit mode", {"Drive", "Reduce"});   // init: A=Reduce
@@ -225,9 +235,48 @@ struct Spotymod : Module {
         return 0.5f;
     }
 
+    // Re-init the engine for a new sample rate. Without the snapshot below,
+    // every rate change silently discarded a loaded or recorded sample (an
+    // M5a finding). Two things destroy it: the buffers are sized in FRAMES so
+    // a rate change resizes them, and inst.init() ends in SampleBuffer::clear()
+    // which memsets the whole buffer. So the content must be copied OUT into
+    // separate storage first and pushed back afterwards -- reading it out of
+    // the buffer after init() would read zeroes.
+    //
+    // Up to 16 MB per part, twice, but only when the user changes their audio
+    // device, and onSampleRateChange runs on the main thread with the engine
+    // paused. The snapshot is NOT resampled -- it plays transposed at the new
+    // rate. That is varispeed, and it is the instrument's idiom. (File LOADS
+    // do resample, see sampler_ui.hpp: importing at the wrong pitch is a bug,
+    // re-rating material already in the buffer is tape.)
     void reinit(float sr) {
+        std::vector<float> snapL[spky::PART_COUNT], snapR[spky::PART_COUNT];
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            const size_t n = inst.sampler_rec_size(p);
+            const spky::SampleBuffer::Frame* f = inst.sampler_data(p);
+            if (!n || !f) continue;
+            snapL[p].resize(n);
+            snapR[p].resize(n);
+            for (size_t i = 0; i < n; ++i) { snapL[p][i] = f[i].l; snapR[p][i] = f[i].r; }
+        }
+
         curSr = sr;
+        const size_t frames = (size_t)(kSamplerBufferSeconds * (double)sr);
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            if (samplerMem[p].size() != frames) samplerMem[p].resize(frames);
+            fxmem.sampler_buf[p] = samplerMem[p].data();
+        }
+        fxmem.sampler_frames = frames;
+
         inst.init(sr, fxmem);
+
+        for (int p = 0; p < spky::PART_COUNT; ++p)
+            if (!snapL[p].empty())
+                inst.load_sample(p, snapL[p].data(), snapR[p].data(), snapL[p].size());
+    }
+
+    void onSampleRateChange(const SampleRateChangeEvent& e) override {
+        reinit(e.sampleRate);
     }
 
     // Read a per-part param: baseId is the PART A enum, part in {0,1}.
@@ -273,8 +322,18 @@ struct Spotymod : Module {
             inst.set_fx_on(p, spky::FxBlock::Grit, pp(GRIT_A, p) > 1e-4f);
             inst.set_comp(p, pp(COMP_A, p));
 
-            inst.set_engine(p, ppb(ENGINE_A, p) ? spky::ENGINE_TEST_TONE
-                                                : spky::ENGINE_SYNTH);
+            // ENG picks Synth or Sampler. The test tone survives as a dev tool
+            // in the context menu: with testTone set, ENG's second position
+            // plays it instead of the sampler. A patch saved before M5b that
+            // had "test tone" selected therefore opens as sampler -- accepted
+            // (spec 2026-07-18 "VCV layer"), no real patch uses it.
+            const bool eng2 = ppb(ENGINE_A, p);
+            inst.set_engine(p, !eng2 ? spky::ENGINE_SYNTH
+                                     : (smp[p].testTone ? spky::ENGINE_TEST_TONE
+                                                        : spky::ENGINE_SAMPLER));
+            inst.sampler_speed_mode(p, smp[p].tapeIdx != 0);
+            inst.sampler_reverse(p, smp[p].reverse);
+            inst.sampler_feedback(p, smp[p].feedback);
             inst.set_grit_mode(p, ppb(GRITMODE_A, p) ? spky::GritMode::Reduce
                                                      : spky::GritMode::Drive);
             inst.set_step(p, ppb(STEP_A, p), (int)std::round(pp(STEPS_A, p)));
