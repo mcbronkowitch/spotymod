@@ -27,7 +27,7 @@ constexpr float  kFbKnee   = 0.9f;
 constexpr float  kFbMaxDb  = 2.5f;
 
 // --- the cloud ---
-constexpr int    kGrains        = 8;         // per part
+constexpr int    kGrains        = 16;        // per part
 constexpr int    kCtrlInterval  = 96;        // must equal SynthEngine::kCtrlInterval
 
 // SIZE: piecewise exponential, 1 ms .. 42 s.

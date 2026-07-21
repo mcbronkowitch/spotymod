@@ -1249,3 +1249,51 @@ TEST_CASE("sampler: resonance ceiling is duration-stable, not just finite") {
     const float long_peak  = sweep_peak(res, 100.0);
     CHECK(std::fabs(long_peak - short_peak) < 0.10f * short_peak);
 }
+
+// --- Task 6: density, measured rather than guessed -------------------------
+
+TEST_CASE("sampler: density telemetry at worst case") {
+    // Not a pass/fail threshold -- a measurement. Worst case means every
+    // slot contended: maximum MOTION (timing jitter bunches spawns), short
+    // SIZE (frequent spawns), FLOW running continuously. Mirrors the setup
+    // in "the spawn interval never falls below its floor" above, but with
+    // MOTION=1 instead of 0 and full run length, so this is deliberately the
+    // busiest the engine can be asked to get.
+    using namespace spky::sampler_cfg;
+    SamplerEngine eng;
+    std::vector<SampleBuffer::Frame> mem(48000);
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(0xD1u);
+    eng.init(48000.f);
+
+    std::vector<float> l(48000), r(48000);
+    for (size_t i = 0; i < 48000; ++i) {
+        l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    eng.load_sample(l.data(), r.data(), 48000);
+
+    // SOURCE=0.5 (default), SIZE=0.1 (short, frequent spawns), PITCH=0.5
+    // (default), MOTION=1 (max timing jitter), LEVEL=1.
+    float targets[LANE_COUNT] = { 0.5f, 0.1f, 0.5f, 1.f, 1.f };
+    eng.set_targets(targets, 0.5f);
+    eng.set_flow(true);
+
+    long long total = 0;
+    int peak = 0;
+    const int kSamples = 48000 * 10;
+    for (int i = 0; i < kSamples; ++i) {
+        float l2 = 0.f, r2 = 0.f;
+        eng.process(l2, r2);
+        const int a = eng.active_grains();
+        total += a;
+        peak = a > peak ? a : peak;
+    }
+    const double mean = static_cast<double>(total) / kSamples;
+    MESSAGE("kOverlap=" << SamplerEngine::kOverlap << " kGrains=" << kGrains
+            << " mean=" << mean << " peak=" << peak);
+
+    // The one real assertion: if the mean is at the slot ceiling, spawns are
+    // being dropped and kGrains is the binding constraint, not kOverlap.
+    CHECK(peak <= kGrains);
+}

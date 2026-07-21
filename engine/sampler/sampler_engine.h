@@ -46,8 +46,36 @@ public:
     static constexpr int kCtrlInterval = sampler_cfg::kCtrlInterval;
     static constexpr int kMaxChord     = 4;
     // Target overlap in FLOW: the spawn interval is one grain length divided
-    // by this, so ~4 grains sound at once and 8 slots leave scatter headroom.
-    static constexpr int kOverlap      = 4;
+    // by this. This is the density control, NOT kGrains -- kGrains only
+    // supplies slots, and a spawn that finds none free is silently dropped
+    // (see SamplerEngine::_spawn_one) -- so the two must move together or
+    // raising one alone does nothing audible.
+    //
+    // Chosen from measurement: the worst-case telemetry case ("sampler:
+    // density telemetry at worst case" -- MOTION=1, SIZE=0.1, FLOW, 10 s)
+    // paired with the 40 s sampler_storm.json render (desktop wall-clock, a
+    // PROXY for Daisy cost, not the cost itself -- see below):
+    //   (4, 8):   mean 4.21 active, peak 8/8    (pinned at kGrains -- already
+    //             dropping spawns under worst case, at today's baseline)
+    //             render 2.52 s / 40 s audio = 0.063 s per audio-s
+    //   (8, 16):  mean 8.13 active, peak 13/16
+    //             render 2.63 s / 40 s audio = 0.066 s per audio-s (+4%)
+    //   (16, 32): mean 16.09 active, peak 24/32
+    //             render 2.92 s / 40 s audio = 0.073 s per audio-s (+16%)
+    // The kSpawnMinSamples floor ("the spawn interval never falls below its
+    // floor") passes at every pair -- dormant at (4, 8), and exactly at its
+    // bound (6001 <= 6001) from (8, 16) upward, confirming it is now the
+    // thing actually capping the spawn rate.
+    //
+    // Chosen: (8, 16). The desktop proxy shows only a mild compute cost even
+    // at (16, 32), but it is blindest exactly there: the Daisy's real limit
+    // at that density is SDRAM traffic from interpolated reads scattered
+    // across a ~32 MB record buffer, defeating the cache in a way a desktop
+    // CPU with megabytes of cache does not feel at all. (8, 16) roughly
+    // doubles the cloud over today's baseline -- which was itself already
+    // silently dropping spawns under worst-case MOTION -- while staying
+    // clear of the density this measurement cannot actually vouch for.
+    static constexpr int kOverlap      = 8;
 
     // Both must be called BEFORE init(), matching SynthEngine::set_seed.
     void set_seed(uint32_t s) { _seed = s; }
