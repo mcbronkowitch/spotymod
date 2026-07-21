@@ -10,3 +10,11 @@
 /mods.csv
 /renders/
 .superpowers/
+
+# Sampler source material for the render-host scenarios. Two kinds live here,
+# neither belongs in the repo: the user's own sample library (large, and not
+# ours to redistribute), and material bounced from Spotykach itself by
+# scenarios like assets_percussive_source.json, which is regenerable. A
+# scenario referencing a missing input fails loudly, which is the right
+# behaviour -- it is not silently rendered as silence.
+/host/render/scenarios/assets/
