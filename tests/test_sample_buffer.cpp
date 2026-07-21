@@ -245,3 +245,114 @@ TEST_CASE("sample_buffer: a far out-of-range read folds correctly and cheaply") 
     f.buf.read_linear(-999999.5f, l, r);
     CHECK(l == doctest::Approx(0.5f));
 }
+
+TEST_CASE("sample buffer: feedback below the knee is the M5a mapping exactly") {
+    // "On top, not instead". Every knob position that has been listened to
+    // must give the same coefficient it always did.
+    using namespace spky::sampler_cfg;
+    SampleBuffer buf;
+    std::vector<SampleBuffer::Frame> mem(1024);
+    buf.init(mem.data(), mem.size(), 48000.f);
+    for (float k : {0.f, 0.25f, 0.5f, 0.75f, 0.9f}) {
+        buf.set_feedback(k);
+        const float want = std::pow(10.f, (60.f * (k - 1.f)) * 0.05f);
+        CHECK(buf.feedback() == doctest::Approx(want).epsilon(1e-6));
+    }
+}
+
+TEST_CASE("sample buffer: feedback passes unity above the knee") {
+    using namespace spky::sampler_cfg;
+    SampleBuffer buf;
+    std::vector<SampleBuffer::Frame> mem(1024);
+    buf.init(mem.data(), mem.size(), 48000.f);
+
+    buf.set_feedback(kFbKnee);
+    CHECK(buf.feedback() < 1.f);              // -6 dB
+    buf.set_feedback(1.f);
+    CHECK(buf.feedback() > 1.f);              // the bloom
+    CHECK(buf.feedback() == doctest::Approx(std::pow(10.f, kFbMaxDb * 0.05f)).epsilon(1e-5));
+
+    // Monotonic across the knee -- a fold-back here would make the top of
+    // the knob quieter than its middle.
+    float prev = 0.f;
+    for (int i = 0; i <= 200; ++i) {
+        buf.set_feedback(static_cast<float>(i) / 200.f);
+        CHECK(buf.feedback() >= prev);
+        prev = buf.feedback();
+    }
+}
+
+TEST_CASE("sample buffer: the bloom stays bounded and finite") {
+    // The whole reason feedback above unity is allowed at all. Fill the loop
+    // with hot material, then overdub silence for a long time and watch it
+    // converge instead of diverge.
+    SampleBuffer buf;
+    std::vector<SampleBuffer::Frame> mem(4800);
+    buf.init(mem.data(), mem.size(), 48000.f);
+    buf.set_feedback(1.f);                     // maximum bloom
+
+    buf.set_recording(true);
+    for (size_t i = 0; i < mem.size(); ++i) buf.write(0.9f, -0.9f);
+    buf.set_recording(false);
+    for (int i = 0; i < 512; ++i) buf.write(0.f, 0.f);   // let the fade finish
+
+    // 60 s of audio at 48 kHz, overdubbing silence into a blooming loop.
+    buf.set_recording(true);
+    for (int i = 0; i < 48000 * 60; ++i) buf.write(0.f, 0.f);
+    buf.set_recording(false);
+
+    for (size_t i = 0; i < mem.size(); ++i) {
+        CHECK(std::isfinite(mem[i].l));
+        CHECK(std::isfinite(mem[i].r));
+        // fast_tanh clamps to +-1 and the coefficient tops out near 1.33, so
+        // the loop's fixed point sits around 1.17. 2.0 is a generous ceiling
+        // that still fails loudly on genuine runaway.
+        CHECK(std::fabs(mem[i].l) <= 2.f);
+        CHECK(std::fabs(mem[i].r) <= 2.f);
+    }
+}
+
+TEST_CASE("sample buffer: below unity the write path is untouched by the saturator") {
+    // The companion property to the bloom test. fast_tanh compresses audibly
+    // from about half scale up, so if it ran unconditionally every overdub
+    // would gain a tape character it does not have today. Overdub hot
+    // material well below the knee and check the decay is exactly linear in
+    // the coefficient, which a saturator in this path would visibly bend.
+    //
+    // BUG FOUND IN THE BRIEF: the brief's own draft of this test used a
+    // 64-frame buffer with a probe at index 32, but kRecordFade is 192 --
+    // that probe never reaches the sustain fade level (fade == 1) in either
+    // pass, so the true per-sample multiplier is a partial fb_fade blend,
+    // not fb itself, and the test failed even on unmodified below-the-knee
+    // code (verified: it already failed before sample_buffer.cpp was
+    // touched). Fixed by mirroring "overdub attenuates the old content by
+    // the feedback" above: a buffer many multiples of kRecordFade, an
+    // explicit cut() to lock the loop, and a probe at the midpoint, which is
+    // deep in the sustain region for both the original recording and the
+    // overdub.
+    SampleBuffer buf;
+    std::vector<SampleBuffer::Frame> mem(2400);
+    buf.init(mem.data(), mem.size(), 48000.f);
+    buf.set_feedback(0.9f);                    // -6 dB, well below the knee
+
+    buf.set_recording(true);
+    for (size_t i = 0; i < mem.size(); ++i) buf.write(0.8f, 0.8f);
+    buf.set_recording(false);
+    for (int i = 0; i < sampler_cfg::kRecordFade + 2; ++i) buf.write(0.8f, 0.8f);
+    buf.cut();
+    const size_t len = buf.rec_size();
+    const size_t probe = len / 2;
+    REQUIRE(probe > sampler_cfg::kRecordFade);
+
+    const float before = mem[probe].l;
+    buf.set_recording(true);
+    for (size_t i = 0; i < len; ++i) buf.write(0.f, 0.f);
+    buf.set_recording(false);
+
+    // One overdub pass of silence scales the stored value by the coefficient
+    // and nothing else. tanh(0.8) is about 0.664, so a saturator in this
+    // path would show up as roughly a 17% shortfall -- far outside this
+    // tolerance.
+    const float fb = buf.feedback();
+    CHECK(mem[probe].l == doctest::Approx(before * fb).epsilon(0.02));
+}

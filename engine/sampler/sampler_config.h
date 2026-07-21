@@ -11,7 +11,20 @@ namespace sampler_cfg {
 // 192 samples == 4 ms @ 48 kHz, and == the hann table size in fx_util.h, so
 // the fade counter indexes the curve 1:1. Both facts are load-bearing.
 constexpr size_t kRecordFade      = 192;
-constexpr float  kDefaultFeedback = 0.95f;   // knob position; -3 dB on the -60..0 dB curve
+// Knob position. NOTE: this sits ABOVE kFbKnee, so it means something
+// slightly different than it did in M5a -- about -1.8 dB rather than -3 dB.
+// The boot state gets marginally hotter and still stops short of unity.
+constexpr float  kDefaultFeedback = 0.95f;
+
+// Record-feedback knee. Below this the mapping is the M5a one exactly:
+// knob n gives -60 + 60*n dB, so 0.9 is -6 dB. Above it, travel runs from
+// -6 dB on to kFbMaxDb, and the buffer saturates into itself.
+//
+// Unity is consequently NOT at the top of travel but at knob ~0.971 -- a
+// narrow but findable spot where the loop sustains forever. Ear-tunable:
+// lowering kFbMaxDb widens that spot, raising it narrows it.
+constexpr float  kFbKnee   = 0.9f;
+constexpr float  kFbMaxDb  = 2.5f;
 
 // --- the cloud ---
 constexpr int    kGrains        = 8;         // per part

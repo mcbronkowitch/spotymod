@@ -1,6 +1,7 @@
 #include "sampler/sample_buffer.h"
 #include "sampler/sampler_config.h"
 #include "util/math.h"
+#include "util/fast_tanh.h"
 #include <cmath>
 #include <cstring>
 
@@ -33,9 +34,18 @@ void SampleBuffer::init(Frame* buf, size_t length, float sample_rate) {
 }
 
 void SampleBuffer::set_feedback(float knob) {
-    // 0..1 knob mapped onto -60..0 dB, then to a linear factor. Control rate
-    // only -- std::pow must never reach the per-sample path.
-    const float dbfs = 60.f * (clampf(knob, 0.f, 1.f) - 1.f);
+    // Control rate only -- std::pow must never reach the per-sample path.
+    knob = clampf(knob, 0.f, 1.f);
+    float dbfs;
+    if (knob <= sampler_cfg::kFbKnee) {
+        // Unchanged from M5a: -60..-6 dB over the first 90% of travel, so
+        // every setting already listened to stays where it was.
+        dbfs = 60.f * (knob - 1.f);
+    } else {
+        // Above the knee: -6 dB on to kFbMaxDb, crossing unity around 0.971.
+        const float t = (knob - sampler_cfg::kFbKnee) / (1.f - sampler_cfg::kFbKnee);
+        dbfs = lerpf(60.f * (sampler_cfg::kFbKnee - 1.f), sampler_cfg::kFbMaxDb, t);
+    }
     _feedback = std::pow(10.f, dbfs * 0.05f);
 }
 
@@ -109,10 +119,26 @@ void SampleBuffer::write(float in0, float in1) {
 
     // Feedback only bites where the fade is open, so a fading edge never
     // scrubs content it is not yet writing to. (Original: buffer.cpp:142-143.)
-    const float fb      = lerpf(1.f, _feedback, _cut.process());
-    const float fb_fade = clampf(1.f - fade * (1.f - fb), 0.f, 1.f);
+    const float fb = lerpf(1.f, _feedback, _cut.process());
+    // The ceiling follows the commanded coefficient rather than sitting at
+    // 1: above unity this term interpolates from 1 (fade shut) to _feedback
+    // (fade open), and a hard [0,1] clamp here would silently cancel the
+    // bloom while looking like a safety guard. The floor of 0 is the real
+    // guard and stays.
+    const float fb_ceil = _feedback > 1.f ? _feedback : 1.f;
+    const float fb_fade = clampf(1.f - fade * (1.f - fb), 0.f, fb_ceil);
 
     Frame f = _buffer[_write_head];
+    // Saturate what was read back BEFORE the feedback multiply -- the order
+    // that keeps EchoDelay::Process stable at its 1.2 coefficient
+    // (engine/fx/flux.h:129-141). Saturating after the multiply would not
+    // bound the write. Only above unity: fast_tanh compresses audibly from
+    // about half scale up, so running it unconditionally would give every
+    // overdub a tape character it does not have today.
+    if (_feedback > 1.f) {
+        f.l = fast_tanh(f.l);
+        f.r = fast_tanh(f.r);
+    }
     f.l = in0 * fade + f.l * fb_fade;
     f.r = in1 * fade + f.r * fb_fade;
     _buffer[_write_head] = f;

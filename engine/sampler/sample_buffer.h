@@ -45,6 +45,9 @@ public:
     void set_rec_size(size_t frames); // load path + tests: declare content
 
     // --- queries ---
+    // The linear feedback coefficient. Exposed for tests: above unity it is
+    // the thing the bloom's boundedness is asserted against.
+    float  feedback() const { return _feedback; }
     float  fill() const { return _buffer_size ? float(_size) / float(_buffer_size) : 0.f; }
     size_t rec_size() const { return _size; }
     bool   is_empty() const { return _size == 0; }
