@@ -234,18 +234,30 @@ void SamplerEngine::_release_all() {
 // grain lands on the root and the single-note world is untouched -- the
 // chord layer's bit-identity promise, carried into the cloud.
 //
-// MOTION adds a mild octave scatter on top: at full scatter, kScatterOctProb
-// of grains jump an octave up or down. The roll draw (next_unipolar() below)
-// happens for every spawn regardless of MOTION, so THAT draw does not change
-// the Rng stream's shape with the knob. The octave-DIRECTION draw right
-// after it does not share that property: it only runs when the roll
-// succeeds, so how far into the stream the following draws (timing, sub,
-// detune) land shifts with MOTION and with luck on the roll. This is known
-// and accepted -- it is not the same "every spawn draws the same shape"
-// guarantee the roll itself has.
+// MOTION used to add an octave scatter here: a per-grain roll against
+// kScatterOctProb that multiplied the ratio by 0.5 or 2. It is gone, and
+// deliberately so.
+//
+// The morphagene-controls work (spec 2026-07-21) stopped the PITCH lane from
+// modulating the sampler, because the instrument's author needs a sampler deck
+// to hold still against a synth deck playing in the same key. That closed the
+// melody door but not this one: the octave roll rides LANE_MOTION, which the
+// VCV host never writes for a sampler part, so it sat on Part's default base
+// of 0.5 (part.h:238) even with MOD at zero -- kScatterOctProb * 0.5 == 12.5%
+// of every grain jumping a full octave. Measured on the author's own panel
+// setting: 311 spawns, ratios {1.0, 2.0, 0.5}. The stated requirement was not
+// met, and no amount of knob-setting could meet it.
+//
+// MOTION keeps its other three scatters (position, spawn timing, pan) --
+// none of them touch pitch, and they carry the character on their own.
+// This is sampler-only code; SynthEngine has its own path and is untouched.
+//
+// Both Rng draws went with it, not just the multiply. Keeping a dead draw to
+// preserve the stream position would only freeze an arbitrary alignment of the
+// following draws (timing, sub, detune) -- the sampler has no bit-identity
+// promise to keep here, and its listening scenarios pin no hashes.
 float SamplerEngine::_next_ratio() {
-    const bool  latched = (!_flow && _burst_latched);
-    const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
+    const bool latched = (!_flow && _burst_latched);
 
     float ratio;
     if (latched && _chord_n <= 1) {
@@ -271,10 +283,6 @@ float SamplerEngine::_next_ratio() {
         _rr = (_rr + 1) % _chord_n;
         ratio = _chord_ratio[idx];
     }
-
-    const float roll = _rng.next_unipolar();
-    if (motion * kScatterOctProb > roll)
-        ratio *= _rng.next_unipolar() < 0.5f ? 0.5f : 2.f;
 
     return ratio;
 }
@@ -416,7 +424,9 @@ void SamplerEngine::_spawn_one() {
     // recording, and behaves normally a hair below it. Found in Task 3.
     const float span = content > 1.f ? content - 1.f : 0.f;
 
-    // --- Rng draw order is contract: position, pan, octave, timing. ---
+    // --- Rng draw order is contract: position, pan, timing, sub, detune. ---
+    // (The octave roll and its direction draw used to sit between pan and
+    // timing, inside _next_ratio; both were removed with the scatter itself.)
     const float jitter = _rng.next_bipolar() * motion * kScatterPosFrac * content;
     float centre = clampf(_targets[LANE_SOURCE], 0.f, 1.f) * span + _scan_pos + jitter;
     while (centre >= content) centre -= content;
@@ -424,16 +434,16 @@ void SamplerEngine::_spawn_one() {
 
     const float pan = _rng.next_bipolar() * motion;
 
-    const float ratio_base = _next_ratio();     // draws the octave roll
+    const float ratio_base = _next_ratio();     // draws nothing from the Rng
 
-    // Spawn-timing jitter, applied to the NEXT interval. Drawn 4th.
+    // Spawn-timing jitter, applied to the NEXT interval. Drawn 3rd.
     _spawn_jitter = _rng.next_bipolar() * motion * kScatterTimeFrac;
 
-    // SUB: a share of grains an octave down. Drawn 5th.
+    // SUB: a share of grains an octave down. Drawn 4th.
     float ratio = ratio_base;
     if (_rng.next_unipolar() < _sub_n * kSubMaxShare) ratio *= 0.5f;
 
-    // DTUN: per-grain detune spread, +-kDetuneCeilCt at full. Drawn 6th.
+    // DTUN: per-grain detune spread, +-kDetuneCeilCt at full. Drawn 5th.
     const float cents = _rng.next_bipolar() * _detune_n * kDetuneCeilCt;
     if (cents != 0.f) ratio *= detune_factor(cents);
 
@@ -448,9 +458,12 @@ void SamplerEngine::_spawn_one() {
     //
     // Without this, tape at the top of SIZE starves the cloud for the better
     // part of an hour. _grain_len at SIZE 1.0 is 42 s (2,016,000 samples) and
-    // the composed minimum ratio is 2^-4 (pitch) x 0.5 (octave scatter) x 0.5
-    // (SUB) x 0.983 (detune) ~= 0.0154, so lenf reaches ~1.31e8 samples --
-    // 45.6 minutes. _spawn_every is 2,016,000 / 8 = 252,000, so all kGrains
+    // the composed minimum ratio is 2^-4 (pitch) x 0.5 (SUB) x 0.983 (detune)
+    // ~= 0.0307, so lenf reaches ~6.6e7 samples -- 22.8 minutes. (Before the
+    // MOTION octave scatter was removed there was another x 0.5 in that
+    // product: minimum ratio 0.0154, lenf ~1.31e8, 45.6 minutes. The bound
+    // below does not depend on either figure -- removing a term only made the
+    // worst case milder.) _spawn_every is 2,016,000 / 8 = 252,000, so all kGrains
     // slots fill after 84 s and every spawn from then on is dropped, with no
     // knob that recovers it: length is latched at spawn and only CHOKE /
     // set_hold (_release_all) frees a slot early. Measured directly at PITCH

@@ -132,7 +132,10 @@ constexpr float  kBurstReleaseS = 0.06f;
 // 2026-07-18-sampler-texture-deck-design.md). Ear-tunable.
 constexpr float  kScatterPosFrac  = 1.0f;
 constexpr float  kScatterTimeFrac = 0.75f;   // spawn-interval jitter, fraction of interval
-constexpr float  kScatterOctProb  = 0.25f;   // chance a chord note jumps an octave
+// kScatterOctProb (0.25) lived here: the chance a grain jumped an octave.
+// Removed 2026-07-21 with the scatter itself -- it was the one MOTION scatter
+// that moved PITCH, which the sampler must hold still so a sampler deck and a
+// synth deck can play in the same key. See SamplerEngine::_next_ratio.
 
 // --- voice row, remapped ---
 constexpr float  kCutoffMinHz   = 60.f;      // same rails as the synth FILTER

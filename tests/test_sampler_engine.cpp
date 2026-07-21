@@ -426,17 +426,24 @@ TEST_CASE("sampler: MOTION 0 is tight and centred; MOTION 1 spreads") {
     CHECK(panmax > 0.7f);
 }
 
-TEST_CASE("sampler: MOTION 1 scatters some chord notes an octave away") {
+TEST_CASE("sampler: MOTION never moves a grain off its chord note") {
+    // This test used to assert the OPPOSITE -- that MOTION scattered roughly
+    // kScatterOctProb of grains an octave away. That scatter was removed
+    // (sampler_engine.cpp, _next_ratio): it defeated the morphagene-controls
+    // requirement that a sampler deck hold its pitch against a synth deck in
+    // the same key, and it did so through LANE_MOTION, which survives the
+    // PITCH lane being switched off. MOTION's other scatters stay; this pins
+    // that pitch is not among them.
     Rig g;
     g.e.set_flow(true);
-    g.feed(0.5f, 0.5f, 0.2f, 1.f);         // MOTION 1
+    g.feed(0.5f, 0.5f, 0.2f, 1.f);         // MOTION 1 -- the worst case
     const float chord[3] = { 0.45f, 0.55f, 0.65f };
     g.e.set_chord(chord, 3);
 
     auto s = collect(g, 600);
     REQUIRE(s.ratio.size() == 600);
 
-    int octaves = 0, plain = 0;
+    int plain = 0, octaves = 0;
     for (float rr : s.ratio) {
         for (int i = 0; i < 3; ++i) {
             const float base = std::pow(8.f, chord[i] - 0.5f);
@@ -445,11 +452,27 @@ TEST_CASE("sampler: MOTION 1 scatters some chord notes an octave away") {
                      std::fabs(rr - base * 0.5f) < 0.002f) ++octaves;
         }
     }
-    CHECK(plain + octaves == 600);          // nothing lands off the chord
-    // The probability is kScatterOctProb; with 600 draws the binomial band is
-    // tight enough to assert both that it happens and that it stays a spice.
-    CHECK(octaves > 600 * sampler_cfg::kScatterOctProb * 0.5f);
-    CHECK(octaves < 600 * sampler_cfg::kScatterOctProb * 1.6f);
+    CHECK(plain == 600);        // every grain on a chord note, at full MOTION
+    CHECK(octaves == 0);        // and not one octave away
+}
+
+TEST_CASE("sampler: a single note holds one exact ratio at every MOTION") {
+    // The single-note case is the one the author actually plays (COLOR 0), and
+    // the one the octave scatter broke on his panel: LANE_MOTION sits on
+    // Part's default base of 0.5 even with MOD at zero, so 12.5% of grains
+    // jumped. Sweeping MOTION across its range must not produce a second
+    // ratio.
+    for (float motion : {0.f, 0.25f, 0.5f, 0.75f, 1.f}) {
+        Rig g;
+        g.e.set_flow(true);
+        g.feed(0.5f, 0.5f, 0.2f, motion);
+        auto s = collect(g, 400);
+        REQUIRE(s.ratio.size() == 400);
+        const float first = s.ratio.front();
+        bool all_same = true;
+        for (float rr : s.ratio) if (rr != first) all_same = false;
+        CHECK(all_same);
+    }
 }
 
 TEST_CASE("sampler: MOTION 1 jitters the spawn timing, MOTION 0 does not") {
@@ -858,29 +881,45 @@ TEST_CASE("sampler: golden vector -- Rng draw order and SOURCE mapping are locke
     // last_spawn_ratio, last_spawn_len) for the first 20 spawns under FLOW.
     // Captured once from a known-good build -- see the file-level comment
     // above this test before changing any of these numbers.
+    //
+    // RECAPTURED 2026-07-21, and the file-level comment's "STOP, ask why"
+    // applies -- so here is why. _next_ratio() lost BOTH of its Rng draws when
+    // MOTION's octave scatter was removed (the roll, and the up/down direction
+    // draw). That is one of the causes that comment enumerates, and every
+    // following draw in _spawn_one shifts two positions up the stream, so all
+    // 20 tuples move. The numbers were not adjusted until the test passed;
+    // they were re-captured wholesale and then checked against what the change
+    // predicts:
+    //
+    //   The chord's three ratios are 8^(p-0.5) = 0.794, 1.109, 1.516. Every
+    //   ratio below is one of those three, at most halved once by SUB and
+    //   detuned by a few cents -- there is no factor of 2 anywhere. The old
+    //   vector spanned 0.020..2.214 (0.794 halved by both the octave roll and
+    //   SUB, up to 1.107 doubled); this one spans 0.406..1.529, narrowed by
+    //   exactly one octave at each end. pos, pan and len are unchanged in
+    //   character, only re-drawn.
     static const Spawn golden[20] = {
         // pos,            pan,          ratio,        len
-        // Updated for kScatterPosFrac 0.25 -> 1.0
-        { 12803.53027344f, -0.69252360f, 0.20196824f, 3821 },
-        {  2237.63378906f,  0.98490131f, 0.55502838f, 3821 },
-        { 13720.91796875f, -0.30681819f, 1.53079367f, 3821 },
-        {  1708.38085938f, -0.88041586f, 0.40453154f, 3821 },
-        { 19170.82031250f, -0.11837190f, 0.55053788f, 3821 },
-        { 14489.21093750f,  0.86559057f, 0.75218982f, 3821 },
-        { 15170.44531250f,  0.43894804f, 0.40997744f, 3821 },
-        {  4912.32128906f,  0.79144990f, 0.55878091f, 3821 },
-        {   870.30957031f,  0.07455552f, 1.52497661f, 3821 },
-        {  2560.60449219f,  0.83863580f, 0.40733621f, 3821 },
-        {  7252.95117188f, -0.27693748f, 0.55035543f, 3821 },
-        { 17490.03710938f, -0.75745511f, 1.52152061f, 3821 },
-        {  2490.95703125f,  0.96780789f, 0.40774995f, 3821 },
-        {  2534.66406250f,  0.42561364f, 0.55428278f, 3821 },
-        { 12696.35742188f, -0.26600885f, 1.51086748f, 3821 },
-        { 14777.22656250f, -0.27030134f, 0.81130999f, 3821 },
-        { 17399.78125000f, -0.78998744f, 1.10466695f, 3821 },
-        { 14736.56640625f, -0.03883266f, 0.76514953f, 3821 },
-        { 17097.07421875f, -0.89893818f, 0.81913930f, 3821 },
-        { 22963.72070312f, -0.89280307f, 2.21407151f, 3821 },
+        { 12803.53027344f, -0.69252360f, 0.40792397f, 3821 },
+        { 12347.84765625f, -0.53483331f, 1.11854935f, 3821 },
+        { 14493.06835938f, -0.98459131f, 1.51102293f, 3821 },
+        { 21022.68359375f,  0.71411252f, 0.80873936f, 3821 },
+        { 14869.51953125f, -0.82430881f, 1.11897147f, 3821 },
+        {  2658.53613281f,  0.29880500f, 1.51594043f, 3821 },
+        { 17732.84179688f, -0.76020461f, 0.81971961f, 3821 },
+        {   366.85937500f, -0.92472601f, 0.55725181f, 3821 },
+        { 17776.35937500f,  0.88420212f, 1.51119888f, 3821 },
+        {  6994.29687500f, -0.24982208f, 0.40905151f, 3821 },
+        {   870.30957031f,  0.07455552f, 0.55567920f, 3821 },
+        {  2460.46289062f, -0.39328730f, 0.75581837f, 3821 },
+        { 15710.42968750f,  0.25942016f, 0.80998176f, 3821 },
+        { 19427.55859375f, -0.08393264f, 1.10071087f, 3821 },
+        { 17490.03710938f, -0.75745511f, 1.52877951f, 3821 },
+        { 21073.81835938f,  0.60381067f, 0.40589118f, 3821 },
+        {  4529.81250000f, -0.02573544f, 1.11435354f, 3821 },
+        { 20963.06445312f, -0.77458274f, 1.51434517f, 3821 },
+        { 12696.35742188f, -0.26600885f, 0.81264138f, 3821 },
+        { 15659.34960938f, -0.31699651f, 0.55088216f, 3821 },
     };
 
     // Absolute, not relative, tolerance: the regression this test exists to
