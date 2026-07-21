@@ -227,6 +227,13 @@ private:
     // all five targets boot active, with staggered depths — FILTER 0.55 (the
     // exponential cutoff dominates; the big sweep belongs to FILT), MOTION
     // 0.7 (width moves without pumping). Ear-tunable. M6 pads toggle _active.
+    // Until then there is only one writer: watch for this the day M6 lands,
+    // because host/vcv/src/Spotymod.cpp already calls
+    // set_target_active(p, LANE_PITCH, ...) unconditionally every block (the
+    // sampler pitch-hold gate, spec 2026-07-21 morphagene-controls) -- once a
+    // pad can also toggle LANE_PITCH's _active, that per-block push will
+    // silently overwrite whatever the pad just set. Harmless today only
+    // because the pad doesn't exist yet.
     std::array<bool,  LANE_COUNT> _active { { true, true, true, true, true } };
     std::array<float, LANE_COUNT> _base   { { 0.5f, 0.5f, 0.5f, 0.5f, 0.8f } };
     std::array<float, LANE_COUNT> _tdepth { { 1.f, 0.55f, 1.f, 0.7f, 1.f } };
