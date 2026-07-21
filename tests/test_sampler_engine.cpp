@@ -1576,14 +1576,34 @@ TEST_CASE("sampler: DENS sets the grain overlap, and the spawn interval follows"
     g.render(200);
     CHECK(g.e.overlap() == doctest::Approx(1.f));
     CHECK(g.e.spawn_interval_samples() == doctest::Approx(len).epsilon(0.01));
+
+    // Knob 0.5 -> overlap 4.5: pin the midpoint too. The two extremes above
+    // are consistent with either a linear or a symmetric-curve mapping; only
+    // a value strictly between them can catch a mis-mapped (e.g.
+    // exponential) curve, and getting this shape right is exactly the open
+    // question flagged for the listening pass (final-fixes report, Befund F).
+    g.e.set_overlap(0.5f);
+    g.render(200);
+    CHECK(g.e.overlap() == doctest::Approx(4.5f));
 }
 
 TEST_CASE("sampler: the CPU floor on the spawn interval survives at every overlap") {
     // kSpawnMinSamples caps the spawn RATE, so it must bind hardest at the
     // shortest grain and the highest overlap. 1 ms at 48 kHz is 48 samples;
     // 48 / 8 = 6, which is below the floor of 8.
-    CHECK(test_spawn_interval(48.f, 8) == doctest::Approx(sampler_cfg::kSpawnMinSamples));
-    CHECK(test_spawn_interval(48.f, 1) == doctest::Approx(48.f));
+    //
+    // Swept over every integer overlap 1..8 (final-fixes report, Befund F) --
+    // the previous version of this test pinned only the two edges (1 and 8)
+    // despite its name; a floor regression that only misfired at, say,
+    // overlap 5 would have passed silently.
+    for (int overlap = 1; overlap <= 8; ++overlap) {
+        const float raw = 48.f / static_cast<float>(overlap);
+        const float expect = raw < sampler_cfg::kSpawnMinSamples
+                                  ? sampler_cfg::kSpawnMinSamples : raw;
+        CHECK(test_spawn_interval(48.f, overlap) == doctest::Approx(expect));
+    }
+    // A grain long enough that the floor never binds within the overlap
+    // range at all (9600 / 8 = 1200, far above the floor of 8).
     CHECK(test_spawn_interval(9600.f, 8) == doctest::Approx(1200.f));
     CHECK(test_spawn_interval(9600.f, 1) == doctest::Approx(9600.f));
 }
