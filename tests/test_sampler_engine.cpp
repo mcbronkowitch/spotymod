@@ -1459,3 +1459,65 @@ TEST_CASE("sampler: maximum record bloom into maximum resonance stays bounded") 
     // 0.90 to 1.0 takes out_peak to 33.7 and fails this outright.
     CHECK(peak < 8.f);
 }
+
+TEST_CASE("sample_data exposes the loaded content at rec_size length") {
+    std::vector<SampleBuffer::Frame> mem(4096);
+    SamplerEngine eng;
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(1);
+    eng.init(48000.f);
+    CHECK(eng.sample_data() == mem.data());   // the host's own pointer back
+    CHECK(eng.rec_size() == 0);
+
+    std::vector<float> l(1000), r(1000);
+    for (size_t i = 0; i < 1000; ++i) {       // a ramp, so an offset shows up
+        l[i] = (float)i / 1000.f;
+        r[i] = -(float)i / 1000.f;
+    }
+    eng.load_sample(l.data(), r.data(), 1000);
+    CHECK(eng.rec_size() == 1000);
+    CHECK(eng.sample_data()[0].l   == doctest::Approx(0.f));
+    CHECK(eng.sample_data()[500].l == doctest::Approx(0.5f));
+    CHECK(eng.sample_data()[500].r == doctest::Approx(-0.5f));
+    CHECK(eng.sample_data()[999].l == doctest::Approx(0.999f));
+}
+
+TEST_CASE("a host can carry content across a re-init by copying it out") {
+    // This is exactly what the VCV host does on a sample-rate change, and the
+    // reason sample_data() exists. init() memsets the injected buffer
+    // (SampleBuffer::clear), so the snapshot MUST be taken into separate
+    // storage first -- copying out of the buffer after init() would read
+    // zeroes, and that mistake is what this case is here to catch.
+    std::vector<SampleBuffer::Frame> mem(4096);
+    SamplerEngine eng;
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(1);
+    eng.init(48000.f);
+
+    std::vector<float> l(800, 0.25f), r(800, -0.75f);
+    eng.load_sample(l.data(), r.data(), 800);
+
+    const size_t n = eng.rec_size();
+    std::vector<float> sl(n), sr(n);
+    for (size_t i = 0; i < n; ++i) { sl[i] = eng.sample_data()[i].l;
+                                     sr[i] = eng.sample_data()[i].r; }
+
+    eng.init(44100.f);
+    CHECK(eng.rec_size() == 0);
+    CHECK(eng.sample_data()[10].l == doctest::Approx(0.f));  // init DID wipe it
+
+    eng.load_sample(sl.data(), sr.data(), n);
+    CHECK(eng.rec_size() == 800);
+    CHECK(!eng.is_empty());
+    CHECK(eng.sample_data()[10].l  == doctest::Approx(0.25f));
+    CHECK(eng.sample_data()[799].r == doctest::Approx(-0.75f));
+}
+
+TEST_CASE("sample_data is null without injected memory") {
+    SamplerEngine bare;
+    bare.set_seed(1);
+    bare.init(48000.f);
+    CHECK(bare.sample_data() == nullptr);
+    CHECK(bare.rec_size() == 0);
+    CHECK(bare.is_empty());
+}

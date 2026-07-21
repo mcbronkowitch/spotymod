@@ -110,6 +110,10 @@ public:
     void  load_sample(int p, const float* l, const float* r, size_t frames) {
         _parts[p].sampler().load_sample(l, r, frames);
     }
+    const SampleBuffer::Frame* sampler_data(int p) const {
+        return _parts[p].sampler().sample_data();
+    }
+    size_t sampler_rec_size(int p) const { return _parts[p].sampler().rec_size(); }
 
     float lane_output(int p, int s)  const { return _parts[p].lane_output(s); }
     float target_value(int p, int s) const { return _parts[p].target_value(s); }

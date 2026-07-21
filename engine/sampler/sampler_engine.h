@@ -118,6 +118,16 @@ public:
     void   set_monitor(bool on) { _monitor = on; }
     void   load_sample(const float* l, const float* r, size_t frames);
 
+    // Read the recorded content back out: Save sample..., the patch-storage
+    // autosave, and the host's sample-rate snapshot all need it. This hands
+    // back the very pointer the host injected, so the caller must respect
+    // rec_size() as the valid length -- past it lie stale frames. nullptr
+    // when no memory was injected.
+    //
+    // Note for callers carrying content across an init(): copy OUT first.
+    // init() ends in clear(), which memsets this whole buffer.
+    const SampleBuffer::Frame* sample_data() const { return _buf.raw(); }
+
     // --- edit layer ---
     void set_tape_mode(bool tape) { _tape = tape; }
     void set_reverse(bool on)     { _reverse = on; }
