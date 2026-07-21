@@ -115,6 +115,15 @@ public:
     void  sampler_scan(int p, float bipolar) { _parts[p].sampler().set_scan(bipolar); }
     void  sampler_punch(int p)             { _parts[p].sampler().punch(); }
     float sampler_scan_pos(int p) const    { return _parts[p].sampler().scan_pos(); }
+    // last_spawn_pos(): the actual centre a grain last read from, i.e. SOURCE
+    // (clamped) * span + scan_pos + jitter, folded (SamplerEngine::_spawn_one).
+    // scan_pos() alone is only the tape-head OFFSET, not the read position --
+    // it sits at 0 whenever ORGANIZE parks the head mid-buffer. The VCV ring's
+    // read-position dot wants the read position (spec 2026-07-21
+    // morphagene-controls, "Der Kopf wird sichtbar"), so it must use this, not
+    // sampler_scan_pos(). sampler_scan_pos() itself stays -- tests/
+    // test_scenario.cpp pins it directly.
+    float sampler_last_spawn_pos(int p) const { return _parts[p].sampler().last_spawn_pos(); }
     // Observer for tests/scenarios: the knob plus MOTION's swing, as last
     // pushed to the engine on the most recent control tick (Part::overlap_eff).
     float sampler_overlap_eff(int p) const { return _parts[p].overlap_eff(); }

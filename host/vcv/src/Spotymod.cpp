@@ -901,11 +901,20 @@ struct SpkyRing : Widget {
         // at full brightness reads as "this one is different" without a
         // second palette. On a synth part, or with nothing recorded, nothing
         // is drawn -- an idle ring stays dark, as it does today.
+        //
+        // sampler_last_spawn_pos(), NOT sampler_scan_pos(): scan_pos() is only
+        // the tape-head OFFSET accumulated by SCAN, not where grains actually
+        // read from -- that is clamp(SOURCE)*span + scan_pos + jitter, folded
+        // (SamplerEngine::_spawn_one). With ORGANIZE parked mid-buffer,
+        // scan_pos() sits at 0 while the cloud reads from the middle, which
+        // would show the dot in the wrong place. last_spawn_pos() is the
+        // actual centre of the most recently spawned grain, which is what
+        // the spec's "Der Kopf wird sichtbar" asks for.
         if (module && module->inst.engine_id(part) == spky::ENGINE_SAMPLER) {
             const size_t content = module->inst.sampler_rec_size(part);
             if (content > 0) {
                 const float frac =
-                    module->inst.sampler_scan_pos(part) / float(content);
+                    module->inst.sampler_last_spawn_pos(part) / float(content);
                 const float a = TWO_PI * frac;
                 Vec hp = c.plus(Vec(std::sin(a), -std::cos(a)).mult(R));
                 nvgBeginPath(args.vg);
