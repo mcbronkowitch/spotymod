@@ -1784,3 +1784,103 @@ TEST_CASE("sampler: punch() rewinds the playhead without killing what is soundin
     // and silence the deck. punch() is a musical gesture on a running cloud.
     CHECK(g.e.active_grains() == sounding);
 }
+
+TEST_CASE("sampler: SCAN keeps a constant lag behind the write head while recording") {
+    // The bug this guards: record and playback heads are supposed to be
+    // independent (spec 2026-07-21 morphagene-controls), but both _scan_pos
+    // and rec_size() start at zero and, at SCAN realtime forward, grow by the
+    // identical amount every control tick. Folding _scan_pos modulo rec_size()
+    // -- the ordinary (non-recording) behaviour -- then resets it to 0 on
+    // every single tick, so the head is effectively nailed at the start the
+    // whole time a recording runs. A test that only asserted "scan_pos() > 0"
+    // would not tell that broken state apart from a real running head, since
+    // both can show a small positive number at any single instant. What
+    // actually distinguishes them is measuring the GAP between the two heads
+    // (rec_size() - scan_pos()) at several points in time and requiring it to
+    // settle on a constant: under the fold it is pinned near 0 forever; under
+    // the fix it climbs to kScanRecordLagS worth of frames and then stops
+    // moving, because ceiling = content - lag grows by exactly the amount
+    // _scan_pos does each tick once both are advancing at realtime.
+    Rig g(0);
+    REQUIRE(g.e.is_empty());
+    g.e.set_flow(true);
+    g.e.set_scan(sampler_cfg::kScanKnee);   // realtime forward, exactly 1.0x
+    g.e.set_recording(true);
+
+    const float lag_frames = sampler_cfg::kScanRecordLagS * 48000.f;   // 12000
+    std::vector<float> gaps;
+    for (int i = 0; i < 48000; ++i) {       // 1 s: well past the lag, short of
+        g.e.process_in(0.f, 0.f);           // the Rig's 2 s capacity
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        if (i % 2400 == 2399) gaps.push_back(float(g.e.rec_size()) - g.e.scan_pos());
+    }
+    g.e.set_recording(false);
+
+    REQUIRE(gaps.size() >= 10);
+    // Settled at the lag, not just "some positive gap" -- the number that
+    // tells this apart from a coincidental fold remainder.
+    for (size_t i = gaps.size() - 5; i < gaps.size(); ++i)
+        CHECK(gaps[i] == doctest::Approx(lag_frames).epsilon(0.02));
+    // ...and CONSTANT across those later points, not merely close to the
+    // target independently at each one -- the property a still-drifting
+    // value could not have.
+    const float last = gaps.back();
+    for (size_t i = gaps.size() - 5; i < gaps.size(); ++i)
+        CHECK(gaps[i] == doctest::Approx(last).epsilon(0.002));
+}
+
+TEST_CASE("sampler: SCAN slower than realtime falls behind on its own during recording") {
+    // The clamp must not turn into a second fold: when the head is naturally
+    // slower than the write head, it should fall further back with time
+    // (reading progressively older material), not get held at a fixed
+    // distance. The lag ceiling only matters when SCAN would otherwise catch
+    // up to (or reach) the write head; below realtime it never gets that
+    // close, so the clamp stays slack throughout.
+    Rig g(0);
+    g.e.set_flow(true);
+    // Comfortably inside the sub-knee exponential segment, so scan_rate() is
+    // small and positive -- confirmed indirectly by the test itself finding a
+    // growing gap; test_scan_rate() pins the curve shape separately.
+    g.e.set_scan(sampler_cfg::kScanDead + 0.05f);
+    g.e.set_recording(true);
+
+    auto gap_after = [&](int frames) {
+        for (int i = 0; i < frames; ++i) {
+            g.e.process_in(0.f, 0.f);
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+        }
+        return float(g.e.rec_size()) - g.e.scan_pos();
+    };
+
+    const float gap_early = gap_after(24000);   // 0.5 s
+    const float gap_late  = gap_after(24000);    // another 0.5 s, cumulative 1 s
+
+    // Growing without bound is exactly what distinguishes "falling behind" (no
+    // clamp engaged) from "held at the lag" (Test above) -- both give a
+    // positive gap, but only one keeps climbing.
+    CHECK(gap_late > gap_early + 1000.f);
+    g.e.set_recording(false);
+}
+
+TEST_CASE("sampler: the lag clamp never sends the playhead negative early in a recording") {
+    // content - lag is negative for the first kScanRecordLagS seconds of any
+    // recording into empty material (content grows from 0, lag is fixed at
+    // 12000 frames @ 48 kHz) -- the exact case the spec calls out as needing
+    // its own floor at 0, separate from the ceiling clamp.
+    Rig g(0);
+    g.e.set_flow(true);
+    g.e.set_scan(sampler_cfg::kScanKnee);   // realtime forward
+    g.e.set_recording(true);
+
+    const float lag_frames = sampler_cfg::kScanRecordLagS * 48000.f;
+    for (int i = 0; i < 4800; ++i) {         // 0.1 s: content stays far below lag
+        g.e.process_in(0.f, 0.f);
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        REQUIRE(float(g.e.rec_size()) < lag_frames);   // the condition under test
+        CHECK(g.e.scan_pos() == 0.f);                  // clamped to the floor, not negative
+    }
+    g.e.set_recording(false);
+}

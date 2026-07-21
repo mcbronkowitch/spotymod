@@ -324,22 +324,54 @@ void SamplerEngine::_update_control() {
     const float scan_content = static_cast<float>(_buf.rec_size());
     if (scan_content > 0.f) {
         _scan_pos += _scan_rate * static_cast<float>(kCtrlInterval);
-        _scan_pos -= scan_content * std::floor(_scan_pos / scan_content);
-        // Both ends, and the upper one is the one that actually fires: in
-        // float32 a _scan_pos just below zero folds to EXACTLY scan_content,
-        // not to something just under it. That is the value _spawn_one's own
-        // `span = content - 1.f` comment calls out as dangerous, and it would
-        // break the [0, rec_size) contract that scan_pos() promises to its
-        // callers (sampler_scan_pos(), read directly by tests/
-        // test_scenario.cpp). The lower branch
-        // is not provably unreachable in exact arithmetic -- it stays only as
-        // a cheap belt against float rounding in the subtract-fold above --
-        // but it is unreachable in practice: _scan_rate (set_scan) is either
-        // exactly 0.f (the SCAN dead zone) or at least kScanMinRate in
-        // magnitude, never an arbitrarily small nonzero value, so _scan_pos
-        // always steps by a non-negligible amount and the fold has no
-        // denormal-sized gap to land short of zero in.
-        if (_scan_pos >= scan_content || _scan_pos < 0.f) _scan_pos = 0.f;
+        if (_buf.is_recording()) {
+            // Author's fixed-lag decision (spec 2026-07-21 morphagene-
+            // controls), NOT the ordinary fold below. Content grows by one
+            // frame per sample while recording; SCAN at realtime forward
+            // grows _scan_pos by that same amount from the same zero start,
+            // so _scan_pos == content on every control tick and the fold
+            // resets to 0 every time -- the head is pinned still, not
+            // running independently, which contradicts the spec's promise
+            // that record and playback heads are separate. Clamping instead
+            // of folding holds the read position a fixed kScanRecordLagS
+            // behind the write head: at realtime forward the clamp engages
+            // every tick and the head rides the lag; slower than realtime it
+            // falls further behind on its own and the clamp goes slack;
+            // faster, it cannot overtake the write head and sticks at the
+            // lag. Also the fix for the near-silence _spawn_one's own
+            // `span = content - 1.f` comment documents: reading exactly on
+            // the write head is what that comment warns against, and
+            // realtime-forward SCAN during a recording is exactly that case
+            // under the fold.
+            //
+            // is_recording() is a State enum compare (sample_buffer.h) --
+            // free at control rate.
+            const float lag = kScanRecordLagS * _sr;
+            const float ceiling = scan_content - lag;   // negative early on
+            if (_scan_pos > ceiling) _scan_pos = ceiling;
+            // Floor at 0 separately from the ceiling clamp above: early in a
+            // recording (content < lag) ceiling itself is negative, so
+            // clamping to it alone would drive _scan_pos negative instead of
+            // parking it at the start of the little content that exists.
+            if (_scan_pos < 0.f) _scan_pos = 0.f;
+        } else {
+            _scan_pos -= scan_content * std::floor(_scan_pos / scan_content);
+            // Both ends, and the upper one is the one that actually fires: in
+            // float32 a _scan_pos just below zero folds to EXACTLY scan_content,
+            // not to something just under it. That is the value _spawn_one's own
+            // `span = content - 1.f` comment calls out as dangerous, and it would
+            // break the [0, rec_size) contract that scan_pos() promises to its
+            // callers (sampler_scan_pos(), read directly by tests/
+            // test_scenario.cpp). The lower branch
+            // is not provably unreachable in exact arithmetic -- it stays only as
+            // a cheap belt against float rounding in the subtract-fold above --
+            // but it is unreachable in practice: _scan_rate (set_scan) is either
+            // exactly 0.f (the SCAN dead zone) or at least kScanMinRate in
+            // magnitude, never an arbitrarily small nonzero value, so _scan_pos
+            // always steps by a non-negligible amount and the fold has no
+            // denormal-sized gap to land short of zero in.
+            if (_scan_pos >= scan_content || _scan_pos < 0.f) _scan_pos = 0.f;
+        }
     } else {
         _scan_pos = 0.f;
     }

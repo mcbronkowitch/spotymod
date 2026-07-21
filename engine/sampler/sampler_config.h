@@ -98,6 +98,22 @@ constexpr float  kScanKnee    = 0.75f;
 constexpr float  kScanMinRate = 0.001f;
 constexpr float  kScanMaxRate = 8.f;
 
+// SCAN's fixed lag behind the write head while a recording is running
+// (spec 2026-07-21 morphagene-controls). Folding the playhead modulo content
+// length -- the ordinary SCAN behaviour above -- assumes content is fixed;
+// while recording, content grows by one frame per sample, and SCAN at
+// realtime forward grows _scan_pos by the identical amount from the same
+// zero start, so _scan_pos == content every control tick and the fold resets
+// to 0 every time: the head is pinned, not running. The fix is to clamp
+// instead of fold while recording (_update_control), holding the read
+// position a fixed distance behind the write head rather than exactly on it
+// -- exactly on it is the case sampler_engine.cpp's `span = content - 1.f`
+// comment (_spawn_one) already documents as making the cloud go near-silent.
+// Comfortably above kRecordFade's 4 ms record blend so the lag is never
+// swallowed by it; short enough that overdubbing still feels like
+// listening just behind the write head, not stale. Ear-tunable.
+constexpr float  kScanRecordLagS = 0.25f;
+
 // Grain window: the ATK/DEC halves each span at most this fraction of the
 // grain, so a fully-open ATK and DEC still leave the window a real shape
 // rather than two ramps meeting at a point.
