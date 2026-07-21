@@ -1,0 +1,48 @@
+{
+  "_comment": "LISTENING RENDER for the opened ranges (spec 2026-07-21). Records 8 s of the storm, then visits each newly reachable extreme in turn with everything else parked, so each one can be judged on its own rather than as a blend. Synth silenced throughout.",
+  "sample_rate": 48000,
+  "bpm": 96,
+  "duration_s": 78.0,
+  "input_wav": "host/render/scenarios/assets/96_Stormy_Noise_Loop_01.wav",
+  "init": [
+    { "action": "set_engine", "part": 1, "value": "sampler" },
+    { "action": "set_target_base", "part": 0, "slot": 4, "value": 0.0 },
+    { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
+    { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
+    { "action": "set_target_base", "part": 1, "slot": 1, "value": 0.5 },
+    { "action": "set_target_active", "part": 1, "slot": 1, "flag": false },
+    { "action": "set_target_base", "part": 1, "slot": 3, "value": 0.0 },
+    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
+    { "action": "sampler_feedback", "part": 1, "value": 0.95 }
+  ],
+  "events": [
+    { "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },
+    { "t": 9.0,  "action": "sampler_record", "part": 1, "flag": false },
+
+    { "_comment": "10-25s: MOTION opens to full. THE FOG QUESTION -- scatter now spans the whole buffer instead of a quarter.",
+      "t": 10.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.0 },
+    { "t": 15.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.5 },
+    { "t": 20.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 1.0 },
+
+    { "_comment": "25-40s: SIZE to the new top. One grain covers the whole loop under one window.",
+      "t": 25.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.3 },
+    { "t": 25.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.9 },
+    { "t": 33.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 1.0 },
+
+    { "_comment": "40-52s: SIZE to the new bottom. Should stop being a texture and become a pitched buzz.",
+      "t": 40.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.1 },
+    { "t": 46.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.0 },
+
+    { "_comment": "52-66s: pitch (lane 2, LANE_PITCH) to both new extremes, SIZE back to the familiar middle.",
+      "t": 52.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.5 },
+    { "t": 52.0, "action": "set_target_base", "part": 1, "slot": 2, "value": 1.0 },
+    { "t": 52.0, "action": "set_target_active", "part": 1, "slot": 2, "flag": false },
+    { "t": 59.0, "action": "set_target_base", "part": 1, "slot": 2, "value": 0.0 },
+
+    { "_comment": "66-78s: resonance at maximum, cutoff swept. set_resonance/set_filt do not exist as scenario actions -- the reader (host/render/scenario.cpp) only has set_voice_resonance/set_voice_filt, which Part forwards to BOTH engines (Part::set_voice_resonance/set_voice_filt call _synth AND _sampler); with the synth silenced above, only the sampler's SVF is heard. set_voice_resonance clamps internally to SamplerEngine's 0.9 ceiling (sampler_engine.cpp:465), so the requested 1.0 lands at the real maximum.",
+      "t": 66.0, "action": "set_target_base", "part": 1, "slot": 2, "value": 0.5 },
+    { "t": 66.0, "action": "set_voice_resonance", "part": 1, "value": 1.0 },
+    { "t": 66.0, "action": "set_voice_filt", "part": 1, "value": -0.8 },
+    { "t": 72.0, "action": "set_voice_filt", "part": 1, "value": 0.8 }
+  ]
+}

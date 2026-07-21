@@ -38,6 +38,7 @@ is actually built today, and what is still design-only.
 | **+ COLOR-MOTION** | MOTION becomes COLOR's third destination — bipolar additive with a zero-gate, density varies per note | ✅ **done** (engine only; no new surface) |
 | **Bench** | Bench firmware — DWT cycle measurement of the engine, nine DaisySP candidates and SRAM-vs-SDRAM buffer access on real hardware | ✅ **done** (`bench/`, results in `docs/bench/`) |
 | **M5a** | Sampler — the texture deck: engine + render host (granular cloud, live resampling) | ✅ **done** (engine + desktop host; VCV wiring is M5b) |
+| **M5a — generous ranges** | SIZE, PITCH, resonance, MOTION scatter and record-feedback ranges opened from M5a's conservative first pass, each ceiling chosen from measurement rather than habit; listening renders produced for the ranges to be judged by ear | ✅ **done** (engine + render host; spec `docs/superpowers/specs/2026-07-21-sampler-generous-ranges-design.md`; branch `sampler-deck`, **not merged** — Bastian decides after listening) |
 | **M5b** | Sampler on the panel — ENG remap, REC pad, WAV load/save, patch persistence, factory sample | ⬜ planned |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
