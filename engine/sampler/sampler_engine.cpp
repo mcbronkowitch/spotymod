@@ -315,7 +315,7 @@ void SamplerEngine::_spawn_one() {
     int slot = -1;
     for (int i = 0; i < kGrains; ++i)
         if (!_grains[i].active()) { slot = i; break; }
-    if (slot < 0) return;                       // all busy: skip this spawn
+    if (slot < 0) { ++_dropped_spawns; return; } // all busy: skip this spawn
 
     const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
     // Fill-follows: SOURCE maps into the CURRENT content length, so while a

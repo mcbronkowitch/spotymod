@@ -55,8 +55,14 @@ public:
     // density telemetry at worst case" -- MOTION=1, SIZE=0.1, FLOW, 10 s)
     // paired with the 40 s sampler_storm.json render (desktop wall-clock, a
     // PROXY for Daisy cost, not the cost itself -- see below):
-    //   (4, 8):   mean 4.21 active, peak 8/8    (pinned at kGrains -- already
-    //             dropping spawns under worst case, at today's baseline)
+    //   (4, 8):   mean 4.21 active, peak 8/8    (pinned at kGrains -- but a
+    //             pinned peak only means the pool was momentarily full, not
+    //             that a spawn was lost; counting actual drops directly
+    //             (SamplerEngine::dropped_spawns(), added after this pair
+    //             was retired) puts this same worst case at 1 dropped of
+    //             5962 attempted spawns, 0.017% -- negligible, not the
+    //             "already dropping spawns" reading the pinned peak alone
+    //             suggested)
     //             render 2.52 s / 40 s audio = 0.063 s per audio-s
     //   (8, 16):  mean 8.13 active, peak 13/16
     //             render 2.63 s / 40 s audio = 0.066 s per audio-s (+4%)
@@ -72,9 +78,12 @@ public:
     // at that density is SDRAM traffic from interpolated reads scattered
     // across a ~32 MB record buffer, defeating the cache in a way a desktop
     // CPU with megabytes of cache does not feel at all. (8, 16) roughly
-    // doubles the cloud over today's baseline -- which was itself already
-    // silently dropping spawns under worst-case MOTION -- while staying
-    // clear of the density this measurement cannot actually vouch for.
+    // doubles the cloud over the old (4, 8) baseline -- which, measured
+    // directly, was NOT silently dropping spawns under worst-case MOTION in
+    // any meaningful sense (0.017% of attempts, see above) -- while staying
+    // clear of the density this measurement cannot actually vouch for. The
+    // move to (8, 16) stands on the desktop/SDRAM cost argument above, not
+    // on the old pair having been a problem.
     static constexpr int kOverlap      = 8;
 
     // Both must be called BEFORE init(), matching SynthEngine::set_seed.
@@ -122,6 +131,10 @@ public:
     int   active_grains() const;
     float grain_len_samples() const { return _grain_len; }
     int   spawn_count() const       { return _spawn_count; }
+    // Incremented in _spawn_one when every slot is busy and the spawn is
+    // skipped -- the exact moment a spawn is lost. Never reset except by
+    // construction (matches _spawn_count, which has no reset path either).
+    int   dropped_spawns() const    { return _dropped_spawns; }
     float last_spawn_ratio() const  { return _last_ratio; }
     float last_spawn_pan() const    { return _last_pan; }
     float last_spawn_pos() const    { return _last_pos; }
@@ -185,6 +198,7 @@ private:
     bool  _burst_latched = false;
     float _last_pos = 0.f;
     int   _spawn_count = 0;
+    int   _dropped_spawns = 0;
     float _last_ratio  = 1.f;
     float _last_pan    = 0.f;
     int   _last_len    = 0;

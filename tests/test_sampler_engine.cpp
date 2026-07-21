@@ -1290,10 +1290,29 @@ TEST_CASE("sampler: density telemetry at worst case") {
         peak = a > peak ? a : peak;
     }
     const double mean = static_cast<double>(total) / kSamples;
+    const int attempts = eng.spawn_count() + eng.dropped_spawns();
+    const double drop_frac =
+        attempts > 0 ? static_cast<double>(eng.dropped_spawns()) / attempts : 0.0;
     MESSAGE("kOverlap=" << SamplerEngine::kOverlap << " kGrains=" << kGrains
-            << " mean=" << mean << " peak=" << peak);
+            << " mean=" << mean << " peak=" << peak
+            << " spawned=" << eng.spawn_count()
+            << " dropped=" << eng.dropped_spawns()
+            << " drop_frac=" << drop_frac);
 
-    // The one real assertion: if the mean is at the slot ceiling, spawns are
-    // being dropped and kGrains is the binding constraint, not kOverlap.
+    // peak <= kGrains is structural (active_grains() counts a fixed-size
+    // array), not evidence either way -- see dropped_spawns() for the real
+    // check. At (kOverlap=8, kGrains=16) the pool is sized to keep up with
+    // worst-case MOTION/SIZE, so the honest claim is that drops stay a
+    // negligible fraction of attempts, not that there are none: this same
+    // worst case measured 0 dropped of 11514 attempted spawns at (8, 16).
+    // For scale, the old (4, 8) pair -- which this worst case pinned at
+    // peak == kGrains, i.e. structurally indistinguishable from "dropping
+    // spawns" by the peak check alone -- actually dropped only 1 of 5962
+    // attempts (0.017%) once counted directly (see
+    // .superpowers/sdd/task-6-report.md, "Drop counter" section). 1% leaves
+    // headroom above both measurements against seed/measurement noise while
+    // still catching a real regression (e.g. kGrains shrinking back toward
+    // kOverlap's old ratio).
     CHECK(peak <= kGrains);
+    CHECK(drop_frac < 0.01);
 }
