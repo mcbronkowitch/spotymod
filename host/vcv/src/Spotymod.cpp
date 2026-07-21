@@ -394,7 +394,17 @@ struct Spotymod : Module {
             // monitoring with it, so pushing every control tick is correct.
             // On a synth part REC is inert: ENG is the only mode selector.
             const bool wantRec = ppb(REC_A, p) && eng2 && !smp[p].testTone;
-            if (wantRec != inst.sampler_is_recording(p)) inst.sampler_record(p, wantRec);
+            if (wantRec != inst.sampler_is_recording(p)) {
+                inst.sampler_record(p, wantRec);
+                // path/factoryLoaded mean "the buffer still holds exactly
+                // what that source provided" -- once recording starts, the
+                // buffer no longer matches either source, so the part must
+                // stop claiming one.
+                if (wantRec) {
+                    smp[p].path.clear();
+                    smp[p].factoryLoaded = false;
+                }
+            }
 
             inst.set_grit_mode(p, ppb(GRITMODE_A, p) ? spky::GritMode::Reduce
                                                      : spky::GritMode::Drive);
@@ -554,10 +564,23 @@ struct Spotymod : Module {
             if (json_t* v = json_object_get(o, "testTone")) smp[p].testTone = json_boolean_value(v);
             if (json_t* v = json_object_get(o, "factory"))  smp[p].factoryLoaded = json_boolean_value(v);
         }
-        // Content is restored in onAdd(): dataFromJson runs before the module
-        // is in the engine, and the patch-storage directory is only meaningful
-        // once it is.
-        pendingRestore = true;
+        // On a whole-patch open, dataFromJson runs before the module is in
+        // the engine (curSr == 0.f, reinit() hasn't sized the sampler
+        // buffers), so content restore is deferred to onAdd(). But Rack also
+        // calls dataFromJson on an already-live module -- right-click preset
+        // load and module paste go through ModuleWidget::loadAction/
+        // pasteJsonAction, not Engine::addModule_NoLock, so onAdd() never
+        // fires again for those. curSr > 0.f (Task 7) is the "already
+        // initialised" test: restore immediately in that case instead of
+        // leaving the buffer stale forever. pendingRestore stays reserved
+        // for the fresh-add path -- exactly one of the two restores the
+        // content for a given JSON load, never both.
+        if (curSr > 0.f) {
+            pendingRestore = false;
+            restoreSamplerContent();
+        } else {
+            pendingRestore = true;
+        }
     }
 
     std::string storedWavPath(int p) {
@@ -579,10 +602,10 @@ struct Spotymod : Module {
         }
     }
 
-    void onAdd(const AddEvent& e) override {
-        Module::onAdd(e);
-        if (!pendingRestore) return;
-        pendingRestore = false;
+    // Shared by onAdd() (fresh patch-open add) and dataFromJson() (preset
+    // load / paste on an already-live module) -- exactly one of those two
+    // call sites invokes this per JSON load, see the comments at each.
+    void restoreSamplerContent() {
         // Engine::addModule_NoLock dispatches AddEvent *before*
         // SampleRateChangeEvent, so for a freshly-added instance curSr is
         // still its construction-time 0 and inst/samplerMem have never been
@@ -590,7 +613,9 @@ struct Spotymod : Module {
         // an uninitialised engine. reinit() is safe to call twice in a row
         // (it snapshots any already-loaded content out and back in around
         // the resize/init), so forcing it now does not race the
-        // SampleRateChangeEvent that follows this call.
+        // SampleRateChangeEvent that follows this call. On the already-live
+        // path (called from dataFromJson) curSr is already > 0.f, so this
+        // is a no-op there.
         if (curSr <= 0.f) reinit(APP->engine->getSampleRate());
         for (int p = 0; p < spky::PART_COUNT; ++p) {
             std::string err;
@@ -605,6 +630,13 @@ struct Spotymod : Module {
             if (system::isFile(stored))
                 spkyvcv::load_wav_into(inst, p, stored, curSr, err);
         }
+    }
+
+    void onAdd(const AddEvent& e) override {
+        Module::onAdd(e);
+        if (!pendingRestore) return;
+        pendingRestore = false;
+        restoreSamplerContent();
     }
 };
 
