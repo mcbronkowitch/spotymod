@@ -329,9 +329,16 @@ void SamplerEngine::_update_control() {
         // float32 a _scan_pos just below zero folds to EXACTLY scan_content,
         // not to something just under it. That is the value _spawn_one's own
         // `span = content - 1.f` comment calls out as dangerous, and it would
-        // break the [0, rec_size) contract that scan_pos() promises to the
-        // VCV ring's read-position dot. The lower test is unreachable after a
-        // correct floor and stays only as a cheap belt on rounding.
+        // break the [0, rec_size) contract that scan_pos() promises to its
+        // callers (sampler_scan_pos(), read directly by tests/
+        // test_scenario.cpp). The lower branch
+        // is not provably unreachable in exact arithmetic -- it stays only as
+        // a cheap belt against float rounding in the subtract-fold above --
+        // but it is unreachable in practice: _scan_rate (set_scan) is either
+        // exactly 0.f (the SCAN dead zone) or at least kScanMinRate in
+        // magnitude, never an arbitrarily small nonzero value, so _scan_pos
+        // always steps by a non-negligible amount and the fold has no
+        // denormal-sized gap to land short of zero in.
         if (_scan_pos >= scan_content || _scan_pos < 0.f) _scan_pos = 0.f;
     } else {
         _scan_pos = 0.f;
