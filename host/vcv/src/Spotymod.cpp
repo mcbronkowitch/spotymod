@@ -893,6 +893,31 @@ struct SpkyRing : Widget {
             nvgFillColor(args.vg, nvgRGBAf(cr, cg, cb, b));
             nvgFill(args.vg);
         }
+
+        // --- sampler read position (spec 2026-07-21 morphagene-controls) ---
+        // Drawn separately rather than through bright[]: that array carries
+        // brightness only, and every dot in it is kColGlow[part], so a head
+        // folded into it would be indistinguishable from a lane. Warm white
+        // at full brightness reads as "this one is different" without a
+        // second palette. On a synth part, or with nothing recorded, nothing
+        // is drawn -- an idle ring stays dark, as it does today.
+        if (module && module->inst.engine_id(part) == spky::ENGINE_SAMPLER) {
+            const size_t content = module->inst.sampler_rec_size(part);
+            if (content > 0) {
+                const float frac =
+                    module->inst.sampler_scan_pos(part) / float(content);
+                const float a = TWO_PI * frac;
+                Vec hp = c.plus(Vec(std::sin(a), -std::cos(a)).mult(R));
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, hp.x, hp.y, dr * 3.0f);
+                nvgFillColor(args.vg, nvgRGBAf(1.f, 0.95f, 0.85f, 0.20f));
+                nvgFill(args.vg);
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, hp.x, hp.y, dr * 1.15f);
+                nvgFillColor(args.vg, nvgRGBAf(1.f, 0.95f, 0.85f, 0.95f));
+                nvgFill(args.vg);
+            }
+        }
     }
 };
 
