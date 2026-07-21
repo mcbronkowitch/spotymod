@@ -206,6 +206,32 @@ S&H on LEVEL at low SMOOTH clicks by construction on sustained tones). New
 demo `entropy_duet.json`. Dev-diary entry published with 4 embedded
 renders.
 
+## M6 firmware shell — spec done (2026-07-12)
+
+Spec `docs/superpowers/specs/2026-07-12-spotykach-firmware-shell-design.md`
+(commit `48ded8b`): portable `shell/` UI core (`PanelIn`→`Instrument`+
+`LedFrame`, no libDaisy/heap) + a thin `app_mod.cpp` Daisy adapter.
+Resolves the accumulated pad-overbooking problem with a targets-first
+rule: the plain layer of the 5 per-side pads (PLAY/REV/GRIT/FLUX/SEQ =
+target slots 1–5, GRIT=PITCH, SEQ=LEVEL/no-LED) stays the master-spec
+targets, and ALL other functions move behind ALT matching the printed
+labels — superseding M2's plain PLAY-tap trigger (now ALT+PLAY) and
+M1.6's plain FLUX/GRIT gestures (now ALT+FLUX/GRIT); the reverb layer
+folds into the FLUX edit layer; Drive↔Reduce becomes a two-zone knob. FX
+edit layers stay sticky while ALT is held; scale select is the SHAPE knob,
+8 zones inside the PITCH-pad edit layer; MIDI is minimal (clock in + note
+ch1/2→A/B); persistence is one versioned QSPI block named `"mod"` (all
+hand-set values; COUPLE/DRIFT/MORPH/capture stay volatile); the scenario
+host gains panel events + `params.csv`/`leds.csv`. Verified against a
+product photo of the real hardware: one big knob per side (TUNE, with a
+ring around it), RATE/DEPTH are small blob knobs, input trimmers are
+analog-only, and the faceplate already prints "record"/"+alt" hints
+confirming the ALT scheme independently. (This spec predates the later
+scale-re-home and edit-layer-latch amendments below, and the pad/gesture
+scheme was revisited repeatedly through 2026-07-16/17 as CHOKE, FILT, MOD/
+TIDE and the step-clock landed — see those sections for what actually
+shipped; M6 implementation itself has not started as of M5a.)
+
 ## Cross-spec review + amendments (2026-07-12, commit e638cab, residency repo)
 
 Three parallel reviewer agents (UX / embedded / promise-accounting) audited
