@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <atomic>
 #include <vector>
+#include <cstdlib>
+#include <osdialog.h>
 #include "plugin.hpp"
 #include "generated_panel.hpp"   // enums + control table (generated from res/gen_panel.py)
 
@@ -556,6 +558,34 @@ struct PanelText : Widget {
     }
 };
 
+// --- sampler edit-layer menu ---------------------------------------------------
+// Overdub feedback is a continuous value with no panel home -- the menu
+// slider is its only surface. 0.95 (~-3 dB) is the engine default. The knob
+// is normalised 0..1; the engine maps it to -60..0 dB internally
+// (SampleBuffer::set_feedback), so the display is a percentage of the knob,
+// not a dB figure.
+struct FeedbackQuantity : Quantity {
+    float* v;
+    explicit FeedbackQuantity(float* p) : v(p) {}
+    void  setValue(float x) override { *v = clamp(x, 0.f, 1.f); }
+    float getValue() override        { return *v; }
+    float getMinValue() override     { return 0.f; }
+    float getMaxValue() override     { return 1.f; }
+    float getDefaultValue() override { return 0.95f; }
+    std::string getLabel() override  { return "Overdub feedback"; }
+    std::string getDisplayValueString() override {
+        return string::f("%.0f%%", getValue() * 100.f);
+    }
+};
+
+struct FeedbackSlider : ui::Slider {
+    explicit FeedbackSlider(float* v) {
+        box.size.x = 180.f;
+        quantity = new FeedbackQuantity(v);
+    }
+    ~FeedbackSlider() override { delete quantity; }
+};
+
 // --- widget -------------------------------------------------------------------
 struct SpotymodWidget : ModuleWidget {
     SpotymodWidget(Spotymod* module) {
@@ -616,6 +646,48 @@ struct SpotymodWidget : ModuleWidget {
         // loops at the bar start (a live STEPS turn leaves them free-running).
         menu->addChild(createMenuItem("Resync loops to bar", "",
                                       [m]() { m->resyncReq = true; }));
+
+        menu->addChild(new MenuSeparator);
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            const std::string name = p ? "Sampler B" : "Sampler A";
+            menu->addChild(createSubmenuItem(name, "", [m, p](Menu* sub) {
+                sub->addChild(createMenuItem("Load sample...", "", [m, p]() {
+                    char* path = osdialog_file(OSDIALOG_OPEN, nullptr, nullptr, nullptr);
+                    if (!path) return;
+                    std::string err;
+                    if (spkyvcv::load_wav_into(m->inst, p, path, m->curSr, err)) {
+                        m->smp[p].path = path;
+                        m->smp[p].factoryLoaded = false;
+                    } else {
+                        osdialog_message(OSDIALOG_ERROR, OSDIALOG_OK, err.c_str());
+                    }
+                    std::free(path);
+                }));
+                sub->addChild(createMenuItem("Save sample...", "", [m, p]() {
+                    char* path = osdialog_file(OSDIALOG_SAVE, nullptr, "sample.wav", nullptr);
+                    if (!path) return;
+                    std::string err;
+                    if (!spkyvcv::save_wav_from(m->inst, p, path, m->curSr, err))
+                        osdialog_message(OSDIALOG_ERROR, OSDIALOG_OK, err.c_str());
+                    std::free(path);
+                }));
+                sub->addChild(createMenuItem("Clear sample", "", [m, p]() {
+                    m->inst.sampler_clear(p);
+                    m->smp[p].path.clear();
+                    m->smp[p].factoryLoaded = false;
+                }));
+                sub->addChild(new MenuSeparator);
+                sub->addChild(createIndexPtrSubmenuItem(
+                    "Speed mode", {"Digital", "Tape"}, &m->smp[p].tapeIdx));
+                sub->addChild(createBoolPtrMenuItem("Reverse", "", &m->smp[p].reverse));
+                sub->addChild(createSubmenuItem("Overdub feedback", "", [m, p](Menu* fb) {
+                    fb->addChild(new FeedbackSlider(&m->smp[p].feedback));
+                }));
+                sub->addChild(new MenuSeparator);
+                sub->addChild(createBoolPtrMenuItem("Engine: test tone (dev)", "",
+                                                    &m->smp[p].testTone));
+            }));
+        }
     }
 };
 
