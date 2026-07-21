@@ -71,16 +71,34 @@ Both are decided here; the implementer follows the plan, not the spec text.
    headers to `host/shared/` so both hosts can include them without one host
    depending on the other.
 
-2. **Sample-rate change: restore the content length, do not copy the audio.**
+2. **Sample-rate change: the host snapshots the audio and pushes it back.**
    The spec does not address it; the M5a findings flag it as a real defect
    (`reinit()` runs on every sample-rate change and would discard a loaded
-   sample). The host owns the frame memory, and `init()` only resets the
-   buffer's indices — the audio itself is untouched. So the fix is to
-   remember `rec_size()` before `reinit()` and re-declare it after, with no
-   copy and no aliasing. Consequence, accepted and documented: the content
-   is **not resampled**, so a buffer recorded at 44.1 kHz plays back
-   transposed at 48 kHz. That is tape behaviour and matches the
-   instrument's idiom.
+   sample).
+
+   **Corrected 2026-07-21, after the first Task 1 attempt failed its own
+   test.** This plan originally claimed `init()` only resets the buffer's
+   indices, so remembering `rec_size()` and re-declaring it afterwards would
+   be enough — no copy, no allocation. **That premise is false.**
+   `SampleBuffer::init()` ends in `clear()` (`sample_buffer.cpp:33`), and
+   `clear()` `memset`s the whole injected buffer (`sample_buffer.cpp:179-180`).
+   There is no audio left to re-declare. The implementer hit this as a
+   failing assertion and stopped rather than patch `clear()`'s semantics —
+   which would have been an audio-path change to make a plan's wrong
+   assumption true.
+
+   So the host copies: read the content out through `sample_data()` before
+   `reinit()`, then push it back with the existing `load_sample()`. That
+   costs one temporary allocation and two copies of up to 16 MB per part, on
+   the main thread, on an event that happens when a user changes their
+   audio device. `restore()` is therefore **not** part of this plan.
+
+   Consequence, accepted and documented: the snapshot is **not resampled**,
+   so a texture recorded at 44.1 kHz plays back transposed after a switch to
+   48 kHz. That is tape behaviour and matches the instrument's idiom. Note
+   this is the opposite of what happens on *file load*, where Task 6 does
+   resample — importing a file at the wrong pitch is an import bug, while
+   re-rating material already in the buffer is varispeed.
 
 ## File Structure
 
@@ -92,14 +110,15 @@ Both are decided here; the implementer follows the plan, not the spec text.
 | `host/shared/wav_writer.h` | moved from `host/render/` — RIFF writer, both hosts |
 | `host/vcv/src/sampler_ui.hpp` | VCV-side sampler glue: per-part host state struct, WAV load/save helpers, context-menu builder. Keeps `Spotymod.cpp` from growing past ~700 lines. |
 | `host/vcv/res/factory.wav` | factory sample (bounced spotymod drone), ~6 s stereo |
-| `host/render/scenarios/factory_drone.json` | the scenario that renders it (reproducible) |
+(`host/vcv/res/factory.wav` is a copy of a file Bastian supplied, not a
+generated asset — see Task 8.)
 
 **Modified:**
 
 | File | Change |
 |------|--------|
-| `engine/sampler/sampler_engine.h` | `+ sample_data()`, `+ restore(size_t)` |
-| `engine/instrument.h` | `+ sampler_data()`, `+ sampler_rec_size()`, `+ sampler_restore()` |
+| `engine/sampler/sampler_engine.h` | `+ sample_data()` |
+| `engine/instrument.h` | `+ sampler_data()`, `+ sampler_rec_size()`, `+ sampler_is_recording()` |
 | `host/render/main.cpp`, `host/render/scenario.cpp`, `tests/test_wav.cpp` | include path `render/wav_*.h` → `shared/wav_*.h` |
 | `host/vcv/res/gen_panel.py` | REC pad pair appended to `PARAMS`; REC light pair appended to `LIGHTS`; PLAY-row x-coordinates re-spaced |
 | `host/vcv/res/test_panel.py` | `PARAM_ORDER` + `LIGHT_ORDER` extended; new `test_rec_params` |
@@ -111,75 +130,101 @@ Both are decided here; the implementer follows the plan, not the spec text.
 
 ---
 
-## Task 1: Engine readback and restore
+## Task 1: Engine readback
 
-The two engine-side hooks the host needs: read the recorded content back out
-(for *Save sample…* and patch-storage autosave) and re-declare a content
-length after `init()` (for surviving a sample-rate change). Both are thin —
-`SampleBuffer` already has `raw()`, `rec_size()` and `set_rec_size()`
-(`engine/sampler/sample_buffer.h:44,52,56`).
+One engine-side hook: read the recorded content back out, for *Save sample…*,
+for the patch-storage autosave, and for the sample-rate snapshot. Thin —
+`SampleBuffer` already has `raw()` and `rec_size()` public
+(`engine/sampler/sample_buffer.h:44,52`).
+
+**This task was attempted once and correctly refused.** The original version
+also added a `restore(size_t)` that re-declared the content length after
+`init()`, on the premise that `init()` leaves the audio in place. It does
+not: `SampleBuffer::init()` ends in `clear()` (`sample_buffer.cpp:33`) and
+`clear()` `memset`s the whole buffer (`sample_buffer.cpp:179-180`). The
+implementer hit that as a failing assertion and stopped instead of loosening
+`clear()`'s semantics to make the plan true. `restore()` is gone; Task 4
+copies instead. **Do not reintroduce it, and do not modify `clear()` or
+`init()`.**
 
 **Files:**
 - Modify: `engine/sampler/sampler_engine.h` (public section, after `load_sample`)
 - Modify: `engine/instrument.h` (after `load_sample`, line 110-112)
+- Modify: `engine/parts/part.h` (a const `sampler()` overload, if absent)
 - Test: `tests/test_sampler_engine.cpp`
 
 **Interfaces:**
-- Consumes: `SampleBuffer::raw()`, `rec_size()`, `set_rec_size()`, `capacity()`
+- Consumes: `SampleBuffer::raw()`, `rec_size()`
 - Produces:
   - `const SampleBuffer::Frame* SamplerEngine::sample_data() const`
-  - `void SamplerEngine::restore(size_t frames)`
   - `const SampleBuffer::Frame* Instrument::sampler_data(int p) const`
   - `size_t Instrument::sampler_rec_size(int p) const`
-  - `void Instrument::sampler_restore(int p, size_t frames)`
 
 - [ ] **Step 1: Write the failing tests**
 
 Append to `tests/test_sampler_engine.cpp`:
 
 ```cpp
-TEST_CASE("restore re-declares content length after init, without copying") {
-    // The host owns the frames; init() resets the buffer's indices but never
-    // touches the audio. A sample-rate change in a host therefore only needs
-    // the length back -- this is the whole mechanism behind that.
+TEST_CASE("sample_data exposes the loaded content at rec_size length") {
+    std::vector<SampleBuffer::Frame> mem(4096);
+    SamplerEngine eng;
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(1);
+    eng.init(48000.f);
+    CHECK(eng.sample_data() == mem.data());   // the host's own pointer back
+    CHECK(eng.rec_size() == 0);
+
+    std::vector<float> l(1000), r(1000);
+    for (size_t i = 0; i < 1000; ++i) {       // a ramp, so an offset shows up
+        l[i] = (float)i / 1000.f;
+        r[i] = -(float)i / 1000.f;
+    }
+    eng.load_sample(l.data(), r.data(), 1000);
+    CHECK(eng.rec_size() == 1000);
+    CHECK(eng.sample_data()[0].l   == doctest::Approx(0.f));
+    CHECK(eng.sample_data()[500].l == doctest::Approx(0.5f));
+    CHECK(eng.sample_data()[500].r == doctest::Approx(-0.5f));
+    CHECK(eng.sample_data()[999].l == doctest::Approx(0.999f));
+}
+
+TEST_CASE("a host can carry content across a re-init by copying it out") {
+    // This is exactly what the VCV host does on a sample-rate change, and the
+    // reason sample_data() exists. init() memsets the injected buffer
+    // (SampleBuffer::clear), so the snapshot MUST be taken into separate
+    // storage first -- copying out of the buffer after init() would read
+    // zeroes, and that mistake is what this case is here to catch.
     std::vector<SampleBuffer::Frame> mem(4096);
     SamplerEngine eng;
     eng.set_memory(mem.data(), mem.size());
     eng.set_seed(1);
     eng.init(48000.f);
 
-    std::vector<float> l(1000, 0.5f), r(1000, -0.25f);
-    eng.load_sample(l.data(), r.data(), 1000);
-    CHECK(eng.rec_size() == 1000);
-    CHECK(eng.sample_data() != nullptr);
-    CHECK(eng.sample_data()[10].l == doctest::Approx(0.5f));
+    std::vector<float> l(800, 0.25f), r(800, -0.75f);
+    eng.load_sample(l.data(), r.data(), 800);
 
-    // Re-init, as a host does on a sample-rate change.
+    const size_t n = eng.rec_size();
+    std::vector<float> sl(n), sr(n);
+    for (size_t i = 0; i < n; ++i) { sl[i] = eng.sample_data()[i].l;
+                                     sr[i] = eng.sample_data()[i].r; }
+
     eng.init(44100.f);
-    CHECK(eng.rec_size() == 0);              // length gone
-    CHECK(eng.sample_data()[10].l == doctest::Approx(0.5f));  // audio still there
+    CHECK(eng.rec_size() == 0);
+    CHECK(eng.sample_data()[10].l == doctest::Approx(0.f));  // init DID wipe it
 
-    eng.restore(1000);
-    CHECK(eng.rec_size() == 1000);
+    eng.load_sample(sl.data(), sr.data(), n);
+    CHECK(eng.rec_size() == 800);
     CHECK(!eng.is_empty());
-    CHECK(eng.sample_data()[10].l == doctest::Approx(0.5f));
+    CHECK(eng.sample_data()[10].l  == doctest::Approx(0.25f));
+    CHECK(eng.sample_data()[799].r == doctest::Approx(-0.75f));
 }
 
-TEST_CASE("restore clamps to capacity and tolerates an unmemoried engine") {
-    std::vector<SampleBuffer::Frame> mem(256);
-    SamplerEngine eng;
-    eng.set_memory(mem.data(), mem.size());
-    eng.set_seed(1);
-    eng.init(48000.f);
-    eng.restore(100000);                     // a host that lowered the rate
-    CHECK(eng.rec_size() == 256);            // clamped, not out of range
-
-    SamplerEngine bare;                      // no set_memory: nullptr path
+TEST_CASE("sample_data is null without injected memory") {
+    SamplerEngine bare;
     bare.set_seed(1);
     bare.init(48000.f);
-    bare.restore(1000);
-    CHECK(bare.rec_size() == 0);
     CHECK(bare.sample_data() == nullptr);
+    CHECK(bare.rec_size() == 0);
+    CHECK(bare.is_empty());
 }
 ```
 
@@ -188,31 +233,27 @@ TEST_CASE("restore clamps to capacity and tolerates an unmemoried engine") {
 Run (from the repo root, desktop build configured as in the build notes):
 
 ```bash
-cmake --build build --target spky_tests && ./build/spky_tests -ts="*"
+cmake --build build --target spky_tests && ./build/spky_tests
 ```
 
 Expected: FAIL — `'class spky::SamplerEngine' has no member named 'sample_data'`.
 
-- [ ] **Step 3: Add the engine accessors**
+- [ ] **Step 3: Add the engine accessor**
 
 In `engine/sampler/sampler_engine.h`, directly after
 `void load_sample(const float* l, const float* r, size_t frames);`:
 
 ```cpp
-    // Read the recorded content back out. The host owns these frames; this
-    // hands back the pointer it injected, so the caller must respect
-    // rec_size() as the valid length. nullptr when no memory was injected.
+    // Read the recorded content back out: Save sample..., the patch-storage
+    // autosave, and the host's sample-rate snapshot all need it. This hands
+    // back the very pointer the host injected, so the caller must respect
+    // rec_size() as the valid length -- past it lie stale frames. nullptr
+    // when no memory was injected.
+    //
+    // Note for callers carrying content across an init(): copy OUT first.
+    // init() ends in clear(), which memsets this whole buffer.
     const SampleBuffer::Frame* sample_data() const { return _buf.raw(); }
-    // Re-declare a content length without copying anything. init() resets the
-    // buffer's indices but leaves the host's frames untouched, so a host that
-    // must re-init (VCV: a sample-rate change) restores the length instead of
-    // discarding the sample. Clamped to capacity; a no-op without memory.
-    void restore(size_t frames) { _kill_all(); _buf.set_rec_size(frames); }
 ```
-
-`set_rec_size` already clamps to `_buffer_size` and is inert when
-`_buffer == nullptr` — verify that while implementing; if it does not clamp,
-clamp here instead and say so in the report.
 
 - [ ] **Step 4: Add the Instrument facade**
 
@@ -224,9 +265,6 @@ In `engine/instrument.h`, after the closing brace of `load_sample`
         return _parts[p].sampler().sample_data();
     }
     size_t sampler_rec_size(int p) const { return _parts[p].sampler().rec_size(); }
-    void   sampler_restore(int p, size_t frames) {
-        _parts[p].sampler().restore(frames);
-    }
 ```
 
 `Part::sampler()` must have a const overload for `sampler_data`/`sampler_rec_size`
@@ -246,12 +284,16 @@ Expected: PASS, and the whole suite still green (481 tests before this task).
 
 ```bash
 git add engine/sampler/sampler_engine.h engine/instrument.h engine/parts/part.h tests/test_sampler_engine.cpp
-git commit -m "feat(sampler): expose buffer readback and length restore
+git commit -m "feat(sampler): expose the record buffer for readback
 
-The two hooks the VCV host needs: sample_data() for Save sample.../patch
-autosave, restore() so a sample-rate change re-declares the content length
-instead of discarding the sample. No copy, no allocation -- the host already
-owns the frames and init() never touches them.
+The hook the VCV host needs for Save sample..., the patch-storage autosave,
+and carrying content across a sample-rate change.
+
+An earlier draft of this also added a restore() that re-declared the content
+length after init(), on the assumption that init() leaves the audio in place.
+It does not -- init() ends in clear(), which memsets the whole injected
+buffer. Hosts must copy the content out before re-initialising; the test case
+pins exactly that, including the wipe itself.
 
 Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>"
 ```
@@ -497,7 +539,7 @@ heap `std::vector` members.
   Tasks 6-8 fill in the rest)
 
 **Interfaces:**
-- Consumes: `Instrument::sampler_rec_size(p)`, `sampler_restore(p, n)`
+- Consumes: `Instrument::sampler_rec_size(p)`, `sampler_data(p)`, `load_sample(...)`
   (Task 1); `FxMem::sampler_buf[]`, `FxMem::sampler_frames`.
 - Produces: `struct SamplerPartState` in `sampler_ui.hpp`, one per part,
   holding everything the module must persist and the menu must edit:
@@ -567,17 +609,30 @@ Replace the FX-memory member block (after line 83) by adding:
 Replace `reinit` (lines 228-231) with:
 
 ```cpp
-    // Re-init the engine for a new sample rate. The record buffers are sized
-    // in FRAMES, so a rate change resizes them -- and init() resets the
-    // buffer's indices. The audio itself lives in memory this host owns and
-    // is never touched, so remembering the content length across the re-init
-    // is enough to keep a loaded or recorded sample alive (M5a finding:
-    // without this, every rate change silently discarded the sample).
-    // The content is NOT resampled -- it plays transposed at the new rate.
-    // That is tape behaviour, and it is the instrument's idiom.
+    // Re-init the engine for a new sample rate. Without the snapshot below,
+    // every rate change silently discarded a loaded or recorded sample (an
+    // M5a finding). Two things destroy it: the buffers are sized in FRAMES so
+    // a rate change resizes them, and inst.init() ends in SampleBuffer::clear()
+    // which memsets the whole buffer. So the content must be copied OUT into
+    // separate storage first and pushed back afterwards -- reading it out of
+    // the buffer after init() would read zeroes.
+    //
+    // Up to 16 MB per part, twice, but only when the user changes their audio
+    // device, and onSampleRateChange runs on the main thread with the engine
+    // paused. The snapshot is NOT resampled -- it plays transposed at the new
+    // rate. That is varispeed, and it is the instrument's idiom. (File LOADS
+    // do resample, see sampler_ui.hpp: importing at the wrong pitch is a bug,
+    // re-rating material already in the buffer is tape.)
     void reinit(float sr) {
-        size_t keep[spky::PART_COUNT] = {0, 0};
-        for (int p = 0; p < spky::PART_COUNT; ++p) keep[p] = inst.sampler_rec_size(p);
+        std::vector<float> snapL[spky::PART_COUNT], snapR[spky::PART_COUNT];
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            const size_t n = inst.sampler_rec_size(p);
+            const spky::SampleBuffer::Frame* f = inst.sampler_data(p);
+            if (!n || !f) continue;
+            snapL[p].resize(n);
+            snapR[p].resize(n);
+            for (size_t i = 0; i < n; ++i) { snapL[p][i] = f[i].l; snapR[p][i] = f[i].r; }
+        }
 
         curSr = sr;
         const size_t frames = (size_t)(kSamplerBufferSeconds * (double)sr);
@@ -590,7 +645,8 @@ Replace `reinit` (lines 228-231) with:
         inst.init(sr, fxmem);
 
         for (int p = 0; p < spky::PART_COUNT; ++p)
-            if (keep[p]) inst.sampler_restore(p, keep[p]);
+            if (!snapL[p].empty())
+                inst.load_sample(p, snapL[p].data(), snapR[p].data(), snapL[p].size());
     }
 ```
 
@@ -829,8 +885,9 @@ keeps playing the old content until `load_sample` returns.
 - Consumes: `spky::read_wav` / the writer (Task 2),
   `Instrument::load_sample`, `sampler_clear`, `sampler_data`,
   `sampler_rec_size` (Task 1), `SamplerPartState` (Task 4).
-- Produces: `bool spkyvcv::load_wav_into(spky::Instrument&, int part, const std::string& path, std::string& err)`
-  and `bool spkyvcv::save_wav_from(const spky::Instrument&, int part, const std::string& path, float sr, std::string& err)`.
+- Produces: `bool spkyvcv::load_wav_into(spky::Instrument&, int part, const std::string& path, float engine_sr, std::string& err)`,
+  `bool spkyvcv::save_wav_from(const spky::Instrument&, int part, const std::string& path, float sr, std::string& err)`,
+  and `void spkyvcv::resample_linear(std::vector<float>&, double ratio)`.
 
 - [ ] **Step 1: Add the include path**
 
@@ -852,38 +909,70 @@ Append to `host/vcv/src/sampler_ui.hpp`:
 
 namespace spkyvcv {
 
+// Linear resample to the engine's rate. A file recorded at 44.1 kHz would
+// otherwise play ~9% sharp in a 48 kHz Rack -- that is an import bug, not the
+// instrument's tape idiom (the tape idiom is what the PITCH knob and Tape
+// mode do, deliberately, to material that is already in the buffer).
+// Linear is enough: this runs once per load, off the audio thread, and the
+// grain engine's own read is linear-interpolated too.
+inline void resample_linear(std::vector<float>& v, double ratio) {
+    if (v.empty()) return;
+    const size_t n = (size_t)((double)v.size() * ratio);
+    if (n < 2) return;
+    std::vector<float> out(n);
+    for (size_t i = 0; i < n; ++i) {
+        const double src = (double)i / ratio;
+        const size_t i0 = (size_t)src;
+        const size_t i1 = i0 + 1 < v.size() ? i0 + 1 : i0;
+        const float  f  = (float)(src - (double)i0);
+        out[i] = v[i0] + (v[i1] - v[i0]) * f;
+    }
+    v.swap(out);
+}
+
 // Read a WAV off disk into a part's record buffer. The reader hands back
 // deinterleaved channels, which is exactly what load_sample takes. A mono
 // file arrives with l == r from the reader, so nothing special is needed.
+// engine_sr is the rate the Instrument is currently running at.
 inline bool load_wav_into(spky::Instrument& inst, int part,
-                          const std::string& path, std::string& err) {
+                          const std::string& path, float engine_sr,
+                          std::string& err) {
     spky::WavData d;
     if (!spky::read_wav(path, d, err)) return false;
     if (d.l.empty()) { err = "file contains no samples"; return false; }
+    if (d.sample_rate > 0 && engine_sr > 0.f
+        && (float)d.sample_rate != engine_sr) {
+        const double ratio = (double)engine_sr / (double)d.sample_rate;
+        resample_linear(d.l, ratio);
+        resample_linear(d.r, ratio);
+    }
     inst.load_sample(part, d.l.data(), d.r.data(), d.l.size());
     return true;
 }
 
 // Write a part's recorded content out. The frames belong to the host, and
 // rec_size() is the valid length -- reading past it would emit whatever the
-// buffer held before.
+// buffer held before. WavWriter is a 16-bit PCM stereo writer that takes
+// interleaved pushes, so there is no float vector to build.
 inline bool save_wav_from(const spky::Instrument& inst, int part,
                           const std::string& path, float sr, std::string& err) {
     const size_t n = inst.sampler_rec_size(part);
     const spky::SampleBuffer::Frame* f = inst.sampler_data(part);
     if (!n || !f) { err = "nothing recorded"; return false; }
-    std::vector<float> l(n), r(n);
-    for (size_t i = 0; i < n; ++i) { l[i] = f[i].l; r[i] = f[i].r; }
-    return spky::write_wav(path, l, r, (int)sr, err);
+    spky::WavWriter w((int)sr);
+    for (size_t i = 0; i < n; ++i) w.push(f[i].l, f[i].r);
+    if (!w.write(path)) { err = "could not write " + path; return false; }
+    return true;
 }
 
 }  // namespace spkyvcv
 ```
 
-The writer's exact signature must be read out of `host/shared/wav_writer.h`
-and matched — the call above is written against
-`write_wav(path, l, r, sample_rate, err)`. If it differs, adapt the call, not
-the writer.
+`WavWriter`'s exact API is in `host/shared/wav_writer.h`: constructor takes
+the sample rate, `push(float l, float r)` per frame, `bool write(const std::string&)`.
+Read it before writing and match it; adapt the call, never the writer.
+`resample_linear` is host-side, off the audio thread — the `engine/` no-heap
+rule does not apply to it.
 
 - [ ] **Step 3: Build the menu**
 
@@ -906,7 +995,7 @@ Replace `appendContextMenu` (lines 520-527):
                     char* path = osdialog_file(OSDIALOG_OPEN, nullptr, nullptr, nullptr);
                     if (!path) return;
                     std::string err;
-                    if (spkyvcv::load_wav_into(m->inst, p, path, err)) {
+                    if (spkyvcv::load_wav_into(m->inst, p, path, m->curSr, err)) {
                         m->smp[p].path = path;
                         m->smp[p].factoryLoaded = false;
                     } else {
@@ -1140,7 +1229,7 @@ with `bool pendingRestore = false;` added beside the other members.
         for (int p = 0; p < spky::PART_COUNT; ++p) {
             std::string err;
             if (!smp[p].path.empty()) {
-                if (!spkyvcv::load_wav_into(inst, p, smp[p].path, err))
+                if (!spkyvcv::load_wav_into(inst, p, smp[p].path, curSr, err))
                     WARN("Spotymod: sampler %d could not reload %s: %s",
                          p, smp[p].path.c_str(), err.c_str());
                 continue;
@@ -1148,7 +1237,7 @@ with `bool pendingRestore = false;` added beside the other members.
             const std::string stored = system::join(getPatchStorageDirectory(),
                                                     p ? "sample_b.wav" : "sample_a.wav");
             if (system::isFile(stored))
-                spkyvcv::load_wav_into(inst, p, stored, err);
+                spkyvcv::load_wav_into(inst, p, stored, curSr, err);
         }
     }
 ```
@@ -1195,35 +1284,37 @@ It must never overwrite recorded, loaded or patch-persisted content
 other content).
 
 **Files:**
-- Create: `host/render/scenarios/factory_drone.json` (reproducible source)
-- Create: `host/vcv/res/factory.wav`
+- Copy: `host/render/scenarios/assets/Multi_Bulti_FX_Seq_110_01.wav`
+  → `host/vcv/res/factory.wav`
 - Modify: `host/vcv/src/Spotymod.cpp` (`pushParams`)
 
 **Interfaces:**
 - Consumes: `asset::plugin(pluginInstance, "res/factory.wav")`,
   `spkyvcv::load_wav_into` (Task 6), `SamplerPartState::factoryLoaded` (Task 4).
 
-- [ ] **Step 1: Write the render scenario**
+- [ ] **Step 1: Copy in the factory sample**
 
-`host/render/scenarios/factory_drone.json` — a ~6 s sustained pad on part A,
-synth engine, COLOR up so the chord layer sounds, no FX. Model it on an
-existing scenario in that directory (read one first and match its schema
-exactly); set `"seconds": 6.0` and `"sample_rate": 48000`. The scenario is
-committed so the asset is reproducible, not a mystery binary.
-
-- [ ] **Step 2: Render it**
+Bastian supplied the file (2026-07-21). No rendering step — use it as it is:
 
 ```bash
-./build/spky_render host/render/scenarios/factory_drone.json /tmp/factory_out
-cp /tmp/factory_out.wav host/vcv/res/factory.wav
+cp host/render/scenarios/assets/Multi_Bulti_FX_Seq_110_01.wav host/vcv/res/factory.wav
 ```
 
-Adapt to the render host's actual CLI (`./build/spky_render --help` or read
-`host/render/main.cpp`). Check the result: 48 kHz stereo, ~6 s, and it must
-not clip. Listen to it if possible — this is the first sound a new user hears.
+Verified properties: RIFF/WAVE, IEEE float32, **stereo, 44100 Hz**, 3 080 820
+bytes, ~8.7 s. Note `host/render/scenarios/assets/` is git-ignored, but
+`host/vcv/res/` is not — the copy must be committed, and it is ~3 MB of
+binary that will live in the repo permanently.
 
-Note that `.gitignore` excludes `/host/render/scenarios/assets/`; the factory
-WAV lives in `host/vcv/res/`, which is NOT ignored, and must be committed.
+It is 44.1 kHz while Rack commonly runs at 48 kHz. That is handled: Task 6's
+`load_wav_into` resamples to the engine rate on load, so this file arrives at
+the right pitch whatever Rack is running at. Do not pre-convert it.
+
+- [ ] **Step 2: Check it before shipping it**
+
+Listen to it, or at minimum confirm it decodes and does not clip
+(`./build/spky_render` is not involved here; a quick read through
+`spky::read_wav` in a scratch program, or any audio player, is enough).
+This is the first sound a new user hears.
 
 - [ ] **Step 3: Autoload on the engine flip**
 
@@ -1280,14 +1371,15 @@ factory sample → it reloads from `res/factory.wav`, and no
 - [ ] **Step 5: Commit**
 
 ```bash
-git add host/render/scenarios/factory_drone.json host/vcv/res/factory.wav host/vcv/src/Spotymod.cpp
+git add host/vcv/res/factory.wav host/vcv/src/Spotymod.cpp
 git commit -m "feat(vcv): factory sample autoloads on the first ENG flip
 
-Flipping a part to Sampler with an empty buffer loads a bounced spotymod
-drone, so the deck sounds within one gesture instead of demanding a recording
-first. It never overwrites content, and once loaded it behaves like any other
-sample. The scenario that renders it is committed alongside, so the asset is
-reproducible rather than an opaque binary.
+Flipping a part to Sampler with an empty buffer loads a factory WAV, so the
+deck sounds within one gesture instead of demanding a recording first. It
+never overwrites content, and once loaded it behaves like any other sample.
+
+The file is 44.1 kHz; load_wav_into resamples it to whatever rate Rack is
+running at, so it arrives in tune either way.
 
 Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>"
 ```
