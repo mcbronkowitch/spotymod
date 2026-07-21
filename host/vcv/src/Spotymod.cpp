@@ -104,6 +104,7 @@ struct Spotymod : Module {
     float gateFilt[2] = {0.f, 0.f};
     float recPhase[2] = {0.f, 0.f};        // REC LED pulse while recording
     std::atomic<bool> resyncReq { false };  // menu "Resync to bar" -> audio thread
+    bool pendingRestore = false;    // dataFromJson ran before onAdd; content reload deferred
 
     Spotymod() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -450,6 +451,110 @@ struct Spotymod : Module {
     }
 
     void onReset() override { reinit(curSr > 0.f ? curSr : 48000.f); }
+
+    // --- persistence -----------------------------------------------------
+    // The module had no dataToJson at all: everything below is non-param
+    // state (Tasks 4-6's edit layer, the sample path, and principleIdx,
+    // which the PRIN button cycles and no param ever recorded) that would
+    // otherwise die with the session.
+    json_t* dataToJson() override {
+        json_t* root = json_object();
+        json_t* pr = json_array();
+        for (int p = 0; p < spky::PART_COUNT; ++p)
+            json_array_append_new(pr, json_integer(principleIdx[p]));
+        json_object_set_new(root, "principle", pr);
+
+        json_t* parts = json_array();
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            json_t* o = json_object();
+            json_object_set_new(o, "path", json_string(smp[p].path.c_str()));
+            json_object_set_new(o, "tape", json_integer(smp[p].tapeIdx));
+            json_object_set_new(o, "reverse", json_boolean(smp[p].reverse));
+            json_object_set_new(o, "feedback", json_real(smp[p].feedback));
+            json_object_set_new(o, "testTone", json_boolean(smp[p].testTone));
+            json_object_set_new(o, "factory", json_boolean(smp[p].factoryLoaded));
+            json_array_append_new(parts, o);
+        }
+        json_object_set_new(root, "sampler", parts);
+        return root;
+    }
+
+    void dataFromJson(json_t* root) override {
+        if (!root) return;
+        if (json_t* pr = json_object_get(root, "principle")) {
+            for (int p = 0; p < spky::PART_COUNT; ++p) {
+                json_t* v = json_array_get(pr, p);
+                if (v) {
+                    principleIdx[p] = (int)json_integer_value(v);
+                    inst.set_principle(p, principleIdx[p]);
+                }
+            }
+        }
+        json_t* parts = json_object_get(root, "sampler");
+        if (!parts) return;
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            json_t* o = json_array_get(parts, p);
+            if (!o) continue;
+            if (json_t* v = json_object_get(o, "path"))
+                smp[p].path = json_string_value(v) ? json_string_value(v) : "";
+            if (json_t* v = json_object_get(o, "tape"))     smp[p].tapeIdx = (int)json_integer_value(v);
+            if (json_t* v = json_object_get(o, "reverse"))  smp[p].reverse = json_boolean_value(v);
+            if (json_t* v = json_object_get(o, "feedback")) smp[p].feedback = (float)json_real_value(v);
+            if (json_t* v = json_object_get(o, "testTone")) smp[p].testTone = json_boolean_value(v);
+            if (json_t* v = json_object_get(o, "factory"))  smp[p].factoryLoaded = json_boolean_value(v);
+        }
+        // Content is restored in onAdd(): dataFromJson runs before the module
+        // is in the engine, and the patch-storage directory is only meaningful
+        // once it is.
+        pendingRestore = true;
+    }
+
+    std::string storedWavPath(int p) {
+        return system::join(createPatchStorageDirectory(),
+                            p ? "sample_b.wav" : "sample_a.wav");
+    }
+
+    void onSave(const SaveEvent& e) override {
+        Module::onSave(e);
+        // The recorded texture has no file of its own -- without this it dies
+        // with the session. Only content that did not come from a file or the
+        // factory WAV needs writing: those two reload from their source.
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            if (!smp[p].path.empty() || smp[p].factoryLoaded) continue;
+            if (!inst.sampler_rec_size(p)) continue;
+            std::string err;
+            if (!spkyvcv::save_wav_from(inst, p, storedWavPath(p), curSr, err))
+                WARN("Spotymod: could not store sampler %d: %s", p, err.c_str());
+        }
+    }
+
+    void onAdd(const AddEvent& e) override {
+        Module::onAdd(e);
+        if (!pendingRestore) return;
+        pendingRestore = false;
+        // Engine::addModule_NoLock dispatches AddEvent *before*
+        // SampleRateChangeEvent, so for a freshly-added instance curSr is
+        // still its construction-time 0 and inst/samplerMem have never been
+        // sized (reinit() has not run yet) -- loading here would write into
+        // an uninitialised engine. reinit() is safe to call twice in a row
+        // (it snapshots any already-loaded content out and back in around
+        // the resize/init), so forcing it now does not race the
+        // SampleRateChangeEvent that follows this call.
+        if (curSr <= 0.f) reinit(APP->engine->getSampleRate());
+        for (int p = 0; p < spky::PART_COUNT; ++p) {
+            std::string err;
+            if (!smp[p].path.empty()) {
+                if (!spkyvcv::load_wav_into(inst, p, smp[p].path, curSr, err))
+                    WARN("Spotymod: sampler %d could not reload %s: %s",
+                         p, smp[p].path.c_str(), err.c_str());
+                continue;
+            }
+            const std::string stored = system::join(getPatchStorageDirectory(),
+                                                    p ? "sample_b.wav" : "sample_a.wav");
+            if (system::isFile(stored))
+                spkyvcv::load_wav_into(inst, p, stored, curSr, err);
+        }
+    }
 };
 
 // --- live LED ring ------------------------------------------------------------
