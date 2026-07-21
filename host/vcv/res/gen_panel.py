@@ -381,7 +381,7 @@ LIGHTS = [
 # on the plate. DENS is deliberately absent: the word already fits both engines
 # (groove density / grain density), and MORPH is taken by the global A/B knob --
 # two things called MORPH on one plate would be a built-in operating error.
-SAMPLER_LBL = [("MELODY", "SCAN"), ("SUB", "SIZE"), ("DETUNE", "ORG")]
+SAMPLER_LBL = [("MELODY", "SCAN"), ("SUB", "LEN"), ("DETUNE", "ORG")]
 SAMPLER_SIZE = 1.5     # mm; the main captions are 1.9
 SAMPLER_DY   = 3.0     # mm below the main caption's baseline -- see sampler_texts()
 
@@ -402,7 +402,7 @@ def sampler_texts():
     radial up until the vertical separation reads pushes SCAN out to x ~= 4 mm,
     hard against the plate edge, visually orphaned from the knob it belongs to.
     3.0 mm of straight baseline separation also clears the VOICE box's bottom
-    hairline at y 96.9 -- at 2.2 mm the SIZE / ORG letters sit at 96.1..97.2 and
+    hairline at y 96.9 -- at 2.2 mm the LEN / ORG letters sit at 96.1..97.2 and
     the border strikes through them; at 3.0 mm they land at 96.95..98.0, inside
     the 1.7 mm gap between the VOICE and PLAY boxes with room on both sides.
     """

@@ -457,11 +457,11 @@ def test_config_wires_tip_not_label():
 # does not -- DENS reads correctly in both engines (groove density / grain
 # density), and the obvious alternative "MRPH" is already the global A/B knob's
 # name, so putting it on a part knob would be an operating error by design.
-SAMPLER_CAPTIONS = [("MELODY", "SCAN"), ("SUB", "SIZE"), ("DETUNE", "ORG")]
+SAMPLER_CAPTIONS = [("MELODY", "SCAN"), ("SUB", "LEN"), ("DETUNE", "ORG")]
 
 
 def sampler_text(word, near):
-    """The SCAN/SIZE/ORG entry nearest to a given control glyph. Picking by
+    """The SCAN/LEN/ORG entry nearest to a given control glyph. Picking by
     distance rather than by exact coordinate keeps this test independent of
     how the generator derives the position -- it can only pass if the caption
     really landed next to its knob."""
@@ -516,12 +516,12 @@ def test_sampler_captions_sit_outside_their_labels():
 
 
 def test_sampler_captions_clear_the_voice_box():
-    """SIZE/ORG hang below the VOICE box. They must clear its bottom hairline
+    """LEN/ORG hang below the VOICE box. They must clear its bottom hairline
     instead of being struck through by it, and stay off the PLAY box above."""
     voice = next(gr for gr in g.GROUPS if gr[4] == 'VOICE')
     play = next(gr for gr in g.GROUPS if gr[4] == 'PLAY')
     bottom, top = voice[1] + voice[3], play[1]
-    for word in ('SIZE', 'ORG'):
+    for word in ('LEN', 'ORG'):
         for t in (x for x in g.TEXTS if x[-1] == word):
             cap_top = t[1] - 0.7 * t[2]     # monospace cap height ~0.7 em
             check(cap_top >= bottom,

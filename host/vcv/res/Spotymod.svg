@@ -409,9 +409,9 @@
 <text x="145.860" y="113.350" fill="#656056" text-anchor="middle" font-family="monospace" font-size="1.8" letter-spacing="0.35" font-weight="bold">OUT</text>
 <text x="188.160" y="113.350" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.8" letter-spacing="0.35" font-weight="bold">CV B</text>
 <text x="12.728" y="59.100" fill="#1d6f5f" text-anchor="end" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">SCAN</text>
-<text x="22.500" y="98.000" fill="#1d6f5f" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">SIZE</text>
+<text x="22.500" y="98.000" fill="#1d6f5f" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">LEN</text>
 <text x="35.500" y="98.000" fill="#1d6f5f" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">ORG</text>
 <text x="200.632" y="59.100" fill="#b96532" text-anchor="start" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">SCAN</text>
-<text x="190.860" y="98.000" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">SIZE</text>
+<text x="190.860" y="98.000" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">LEN</text>
 <text x="177.860" y="98.000" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">ORG</text>
 </svg>
