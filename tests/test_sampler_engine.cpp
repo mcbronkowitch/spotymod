@@ -735,44 +735,19 @@ TEST_CASE("sampler: detune_factor matches std::pow over the full DTUN range") {
     CHECK(spky::test_detune_factor(0.f) == 1.f);
 }
 
-TEST_CASE("sampler: hoisting the chord ratios leaves spawned ratios unchanged") {
-    // The property: precomputing ratio_for(_chord[i]) once per control tick
-    // must not change any spawned grain's ratio in the round-robin (COLOR >
-    // 0) branch -- this refactor is behaviour-preserving, which is the only
-    // reason it is allowed to touch a path the Rng draws on.
-    //
-    // (The latched single-note branch reads a separate cache, _burst_ratio,
-    // set at trigger time rather than _chord_ratio[0] -- see the next test
-    // for why, and _burst_ratio's declaration in sampler_engine.h.)
-    Rig g(24000, 0x1234u);
-    g.feed(/*pitch*/0.5f, /*source*/0.5f, /*size*/0.5f, /*motion*/0.f);
-    const float chord[3] = { 0.40f, 0.55f, 0.70f };
-    g.e.set_chord(chord, 3);
-    g.e.set_flow(true);
-
-    std::vector<float> ratios;
-    int last = g.e.spawn_count();
-    int guard = 0;
-    while (int(ratios.size()) < 16 && guard++ < 4000000) {
-        float a = 0.f, b = 0.f;
-        g.e.process(a, b);
-        if (g.e.spawn_count() != last) {
-            last = g.e.spawn_count();
-            ratios.push_back(g.e.last_spawn_ratio());
-        }
-    }
-    REQUIRE(ratios.size() == 16);
-
-    // Every ratio must be finite and positive -- what the hoist preserves.
-    // Checking the exact sequence would also catch a draw-order change, so
-    // do that separately: the golden-vector test below already owns draw
-    // order, and duplicating it here would give two tests one reason to
-    // fail.
-    for (float r : ratios) {
-        CHECK(std::isfinite(r));
-        CHECK(r > 0.f);
-    }
-}
+// REMOVED: "sampler: hoisting the chord ratios leaves spawned ratios
+// unchanged". It collected 16 ratios and asserted only isfinite(r) and
+// r > 0.f, which a build that read the wrong cache entry, always used
+// _chord_ratio[0], or returned a constant 1.0 would pass identically -- at
+// exactly the site where the plan's original instruction was wrong. A test
+// that cannot fail reads as coverage without being any.
+//
+// The property is genuinely owned elsewhere: "sampler: golden vector -- Rng
+// draw order and SOURCE mapping are locked" pins the exact ratio of each of
+// the first 20 spawns over a 3-note chord (0.20 / 0.55 / 1.53 ... -- visibly
+// per-note, so a constant or a wrong cache entry fails it), and "a latched
+// single-note STEP burst holds its ratio while PITCH drifts underneath it"
+// covers the separate _burst_ratio cache.
 
 TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH drifts underneath it") {
     // Property under test: _next_ratio's latched branch (latched &&
