@@ -48,7 +48,8 @@ public:
         }
         _atk     = atk;
         _dec     = dec;
-        _pos     = start;
+        _start   = start;
+        _off     = 0.f;
         _ratio   = ratio;
         _reverse = reverse;
         _i       = 0;
@@ -66,6 +67,9 @@ public:
     bool active() const { return _active; }
     void kill() { _active = false; }
 
+    // Observation seam: the absolute frame index this grain will read next.
+    float read_pos() const { return _start + _off; }
+
     // Begin a click-free fade from wherever the window currently is. Used by
     // CHOKE and by the STEP gate falling. Leaving FLOW deliberately does NOT
     // call this -- running grains simply finish their own window.
@@ -80,7 +84,7 @@ public:
         if (!_active) { outL = 0.f; outR = 0.f; return; }
 
         float l = 0.f, r = 0.f;
-        buf.read_linear(_pos, l, r);
+        buf.read_linear(_start + _off, l, r);
 
         float w;
         if (_rel_len > 0) {
@@ -104,7 +108,7 @@ public:
         outL = l * w * _gl;
         outR = r * w * _gr;
 
-        _pos += _reverse ? -_ratio : _ratio;
+        _off += _reverse ? -_ratio : _ratio;
         if (_rel_len == 0 && ++_i >= _len) _active = false;
     }
 
@@ -118,7 +122,39 @@ private:
         return 1.f;
     }
 
-    float _pos      = 0.f;
+    // The read position is kept as a start frame plus a RELATIVE offset, and
+    // the absolute index is formed only at the read_linear call. An absolute
+    // accumulator (`_pos += _ratio`) silently stalls: float spacing at frame
+    // 524,288 is 0.0625 and at 1,048,576 it is 0.125, so any ratio at or
+    // below the local ulp fails to move it at all and the grain emits DC for
+    // its entire window. Both the reachable minimum ratio (~0.0154) and a
+    // plain 2^-kPitchOctaves (0.0625) sit at or under that boundary, and
+    // MOTION now scatters spawns across the whole buffer, so on a full 42 s
+    // recording most spawns land in the coarse region.
+    //
+    // _off stays small and therefore finely spaced. Its magnitude never
+    // exceeds _len * _ratio, so the stall condition _ratio <= ulp(_off) --
+    // i.e. _ratio <= _len * _ratio * 2^-23 -- reduces to _len >= 2^23
+    // (8,388,608 samples), which SamplerEngine::_spawn_one's pool-throughput
+    // ceiling (kGrains * _spawn_every = 4,032,000 at the top of SIZE) keeps
+    // out of reach. The two fixes are load-bearing together: without that
+    // ceiling, tape mode could ask for a 1.31e8-sample grain and stall this
+    // accumulator too.
+    //
+    // What this does NOT fix, stated plainly: `_start + _off` is still a
+    // float, so the value handed to read_linear is still rounded to the
+    // representable grid at that frame -- 0.125 at 1.5 M frames. A very low
+    // ratio therefore advances the absolute index in 1/8-frame steps every
+    // ~8 output samples rather than smoothly. That is a property of using a
+    // float frame index into a multi-megaframe buffer at all: it applies at
+    // EVERY ratio (a unity-ratio grain reading frame 1.5 M has always landed
+    // on the same 1/8-frame grid), it predates this branch, and it is
+    // quantization, not a stall -- the grain traverses its material at the
+    // correct average rate. Removing it entirely would mean read_linear
+    // taking an integer frame and a fraction separately, a wider change to
+    // SampleBuffer's carefully-reasoned fold than this fix warrants.
+    float _start    = 0.f;
+    float _off      = 0.f;
     float _ratio    = 1.f;
     float _gl       = 0.7071f;
     float _gr       = 0.7071f;

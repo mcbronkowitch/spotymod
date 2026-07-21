@@ -230,3 +230,103 @@ TEST_CASE("grain: release fades out from the current level, click-free") {
     CHECK(tail.back() < 0.02f);
     CHECK_FALSE(g.active());
 }
+
+// --- Final review, Important: no DC stall at low ratio on a long buffer -----
+
+TEST_CASE("grain: a low ratio still advances near the end of a long buffer") {
+    // The bug this pins: _pos was an ABSOLUTE float frame index, advanced by
+    // `_pos += _ratio`. Float spacing at frame 524,288 is 0.0625 and at
+    // 1,048,576 it is 0.125, so a ratio at or below the local ulp does not
+    // move _pos at all -- the grain freezes on one sample and emits DC for
+    // its whole window.
+    //
+    // Two changes on this branch made that reachable in ordinary use rather
+    // than cornered: pitch now reaches +-4 octaves (a plain 2^-4 = 0.0625
+    // sits exactly at the boundary at frame 524,288, and the composed
+    // minimum with octave scatter, SUB and detune is ~0.0154), and MOTION now
+    // scatters position across the WHOLE buffer, so on a full 42 s recording
+    // roughly three quarters of spawns land above frame 524,288.
+    //
+    // The fix keeps the offset from the grain's start in its own float, which
+    // stays small and therefore finely spaced, and forms the absolute read
+    // position only at the read_linear call.
+    const size_t kLong = 2016000;              // 42 s at 48 kHz, the capacity
+    std::vector<SampleBuffer::Frame> mem(kLong);
+    SampleBuffer buf;
+    buf.init(mem.data(), kLong, 48000.f);
+    for (size_t i = 0; i < kLong; ++i) {
+        const float s = std::sin(6.2831853f * 2000.f * float(i) / 48000.f);
+        mem[i].l = s;
+        mem[i].r = s;
+    }
+    buf.set_rec_size(kLong);
+
+    // The composed minimum reachable ratio: 2^-4 (pitch) x 0.5 (octave
+    // scatter) x 0.5 (SUB) x 0.983 (detune at -35 cents).
+    const float kMinRatio = 0.0625f * 0.5f * 0.5f * 0.983f;   // ~0.01536
+    // A start well past 2^20, where the absolute float spacing (0.125) is
+    // eight times the ratio -- the frozen case, not a marginal one.
+    const float kStart = 1500000.f;
+
+    Grain g;
+    // Long grain, short window halves, so the probe below sits deep in the
+    // unity region of the window and the output IS the signal.
+    g.spawn(kStart, kMinRatio, 0.f, 20000, 100, 100, false);
+
+    float l = 0.f, r = 0.f;
+    for (int i = 0; i < 5000; ++i) g.process(buf, l, r);      // into the flat top
+
+    // NOTE on what is asserted, and what cannot be: the position is checked
+    // over a WINDOW of samples, not sample by sample. `_start + _off` is
+    // still a float, and at frame 1.5e6 the representable grid is 0.125, so
+    // no accumulator design can make a 0.0154 ratio move the ABSOLUTE index
+    // on every single sample -- it advances in 0.125 steps roughly every 8
+    // samples. That residual quantization is inherent to a float frame index
+    // into a 2 M-frame buffer, applies at every ratio (a unity-ratio grain at
+    // this frame already reads on the same 1/8-frame grid, and has since M5),
+    // and is not what this test is about. The defect being pinned is the
+    // grain never advancing AT ALL -- a permanent freeze, DC for the whole
+    // window -- which is what the absolute accumulator did and what the
+    // average-rate check below catches.
+    const float pos_before = g.read_pos();
+    float prev_pos = pos_before;
+    float lo = l, hi = l;
+    for (int i = 0; i < 400; ++i) {
+        g.process(buf, l, r);
+        CHECK(g.read_pos() >= prev_pos);       // never goes backwards
+        prev_pos = g.read_pos();
+        lo = l < lo ? l : lo;
+        hi = l > hi ? l : hi;
+    }
+    // The average rate is right: 400 samples at ratio 0.01536 must walk
+    // ~6.1 frames. Under the old absolute accumulator this advance was
+    // exactly 0.0 -- the assertion that dies without the fix.
+    const float advance = g.read_pos() - pos_before;
+    CHECK(advance > 5.f);
+    CHECK(advance < 7.5f);
+
+    // ...and the output is not DC. Those ~6 frames are a quarter cycle of a
+    // 2 kHz sine (24-frame period), so the level must visibly move.
+    CHECK(hi - lo > 0.1f);
+
+    // Reverse uses the same accumulator and must stay symmetric.
+    Grain rg;
+    rg.spawn(kStart, kMinRatio, 0.f, 20000, 100, 100, true);
+    for (int i = 0; i < 5000; ++i) rg.process(buf, l, r);
+    const float rpos_before = rg.read_pos();
+    float rprev = rpos_before;
+    for (int i = 0; i < 400; ++i) {
+        rg.process(buf, l, r);
+        CHECK(rg.read_pos() <= rprev);
+        rprev = rg.read_pos();
+    }
+    const float radvance = rpos_before - rg.read_pos();
+    CHECK(radvance > 5.f);
+    CHECK(radvance < 7.5f);
+
+    // The start is honoured exactly: the offset is relative, the reported
+    // position is absolute, and the two must not have drifted apart.
+    Grain fresh;
+    fresh.spawn(kStart, kMinRatio, 0.f, 20000, 100, 100, false);
+    CHECK(fresh.read_pos() == kStart);
+}
