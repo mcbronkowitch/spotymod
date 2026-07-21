@@ -1294,7 +1294,11 @@ other content).
 
 - [ ] **Step 1: Copy in the factory sample**
 
-Bastian supplied the file (2026-07-21). No rendering step — use it as it is:
+Bastian supplied the file (2026-07-21). No rendering step — use it as it is.
+
+**Licensing: settled.** The name looks like a commercial sample-pack file;
+it is not. Bastian made it himself, so it ships with the plugin under the
+project's own licence. Do not re-open this.
 
 ```bash
 cp host/render/scenarios/assets/Multi_Bulti_FX_Seq_110_01.wav host/vcv/res/factory.wav
