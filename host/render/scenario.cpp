@@ -156,6 +156,9 @@ void spky::apply_event(Instrument& inst, const Event& e) {
     else if (a == "sampler_speed_mode") inst.sampler_speed_mode(e.part, e.svalue == "tape");
     else if (a == "sampler_reverse")    inst.sampler_reverse(e.part, e.flag);
     else if (a == "sampler_feedback")   inst.sampler_feedback(e.part, e.value);
+    else if (a == "sampler_overlap")    inst.sampler_overlap(e.part, e.value);
+    else if (a == "sampler_scan")       inst.sampler_scan(e.part, e.value);
+    else if (a == "sampler_punch")      inst.sampler_punch(e.part);
     else if (a == "load_wav") {
         WavData d;
         std::string err;

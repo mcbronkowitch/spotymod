@@ -115,6 +115,9 @@ public:
     void  sampler_scan(int p, float bipolar) { _parts[p].sampler().set_scan(bipolar); }
     void  sampler_punch(int p)             { _parts[p].sampler().punch(); }
     float sampler_scan_pos(int p) const    { return _parts[p].sampler().scan_pos(); }
+    // Observer for tests/scenarios: the knob plus MOTION's swing, as last
+    // pushed to the engine on the most recent control tick (Part::overlap_eff).
+    float sampler_overlap_eff(int p) const { return _parts[p].overlap_eff(); }
     void  load_sample(int p, const float* l, const float* r, size_t frames) {
         _parts[p].sampler().load_sample(l, r, frames);
     }

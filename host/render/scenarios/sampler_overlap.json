@@ -1,0 +1,30 @@
+{
+  "_comment": "Listening aid for DENS (grain overlap) and punch(). Sweeps overlap 8 -> 1 at a mid grain length, then parks at overlap 1 with a long grain and punches four times -- the case where nothing else in the instrument responds. Also the scenario for the suspected 'pumping' zone at low overlap and 100-500 ms grains (spec, listening notes).",
+  "sample_rate": 48000,
+  "bpm": 96,
+  "duration_s": 44.0,
+  "input_wav": "host/render/scenarios/assets/in_drone.wav",
+  "init": [
+    { "action": "set_engine", "part": 1, "value": "sampler" },
+    { "action": "set_target_base", "part": 0, "slot": 4, "value": 0.0 },
+    { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
+    { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
+    { "action": "set_target_active", "part": 1, "slot": 2, "flag": false },
+    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
+    { "action": "set_target_base", "part": 1, "slot": 0, "value": 0.2 },
+    { "action": "set_target_base", "part": 1, "slot": 1, "value": 0.5 }
+  ],
+  "events": [
+    { "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },
+    { "t": 9.0,  "action": "sampler_record", "part": 1, "flag": false },
+    { "t": 10.0, "action": "sampler_overlap", "part": 1, "value": 1.0 },
+    { "t": 14.0, "action": "sampler_overlap", "part": 1, "value": 0.66 },
+    { "t": 18.0, "action": "sampler_overlap", "part": 1, "value": 0.33 },
+    { "t": 22.0, "action": "sampler_overlap", "part": 1, "value": 0.0 },
+    { "t": 26.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.85 },
+    { "t": 30.0, "action": "sampler_punch", "part": 1 },
+    { "t": 34.0, "action": "sampler_punch", "part": 1 },
+    { "t": 38.0, "action": "sampler_punch", "part": 1 },
+    { "t": 41.0, "action": "sampler_punch", "part": 1 }
+  ]
+}

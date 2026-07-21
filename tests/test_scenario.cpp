@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <cstdio>
 #include <fstream>
+#include <vector>
 #include "render/scenario.h"
 using namespace spky;
 
@@ -206,4 +207,75 @@ TEST_CASE("scenario: set_color dispatches to the chord layer") {
     float outL[64], outR[64];
     for (int i = 0; i < 3000; ++i) inst.process(nullptr, nullptr, outL, outR, 64);
     CHECK(inst.active_voices(0) >= 3);
+}
+
+TEST_CASE("scenario: the sampler control actions reach the engine") {
+    // Setup: the task-5 brief sketches an `Instrument::Config` rig that does
+    // not exist in this repo. Follow the InstRig pattern already proven in
+    // tests/test_sampler_part.cpp instead -- FxMem with injected per-part
+    // sampler memory, then Instrument::init(sample_rate, mem).
+    std::vector<float> echo[PART_COUNT][2];
+    std::vector<SampleBuffer::Frame> sbuf[PART_COUNT];
+    AmbientReverb reverb;
+    FxMem mem;
+    for (int p = 0; p < PART_COUNT; ++p) {
+        for (int c = 0; c < 2; ++c) {
+            echo[p][c].assign(Flux::kMaxSamples, 0.f);
+            mem.echo[p][c] = echo[p][c].data();
+        }
+        sbuf[p].assign(48000, SampleBuffer::Frame{ 0.f, 0.f });
+        mem.sampler_buf[p] = sbuf[p].data();
+    }
+    mem.sampler_frames = 48000;
+    mem.reverb = &reverb;
+
+    Instrument inst;
+    inst.init(48000.f, mem);
+    inst.set_engine(0, ENGINE_SAMPLER);
+    // MOTION boots active (Part::_active) and adds its own swing on top of
+    // the overlap knob (Part::_control_tick's omod, +/-kOverlapMod = 0.2).
+    // Switch it off so the knob-only value is what lands on overlap_eff --
+    // otherwise even a knob of exactly 0.0 rests wherever MOTION's LFO
+    // happens to be, which is not what this test is checking.
+    inst.set_target_active(0, LANE_MOTION, false);
+    float in = 0.f, l = 0.f, r = 0.f;
+    for (int i = 0; i < 960; ++i) inst.process(&in, &in, &l, &r, 1);   // click-free swap settle
+
+    Event e;
+    e.part = 0;
+
+    e.action = "sampler_overlap"; e.value = 0.f;
+    apply_event(inst, e);
+    // Part stores the knob; the effective value reaches the engine on the
+    // next control tick (Part::_control_tick, 96-sample raster), so drive
+    // samples past that before reading it back. Default overlap_eff is 1.0
+    // (Part::_overlap_eff init), so landing on 0.0 proves the action arrived.
+    for (int i = 0; i < 200; ++i) inst.process(&in, &in, &l, &r, 1);
+    CHECK(inst.sampler_overlap_eff(0) == doctest::Approx(0.f));
+
+    // sampler_scan needs recorded content: SamplerEngine::_update_control
+    // forces scan_pos() to 0 whenever rec_size() == 0, so proving the
+    // playhead actually moves requires audio in the buffer first.
+    in = 0.5f;
+    inst.sampler_record(0, true);
+    for (int i = 0; i < 24000; ++i) inst.process(&in, &in, &l, &r, 1);
+    inst.sampler_record(0, false);
+    in = 0.f;
+    for (int i = 0; i < 960; ++i) inst.process(&in, &in, &l, &r, 1);
+    REQUIRE(inst.sampler_fill(0) > 0.4f);
+
+    e.action = "sampler_scan"; e.value = -1.f;
+    apply_event(inst, e);
+    for (int i = 0; i < 4800; ++i) inst.process(&in, &in, &l, &r, 1);
+    // Reverse from a home position folds upward, so any motion at all
+    // proves the action landed.
+    const float pos_before_punch = inst.sampler_scan_pos(0);
+    CHECK(pos_before_punch != 0.f);
+
+    e.action = "sampler_punch";
+    apply_event(inst, e);
+    // punch() writes _scan_pos = 0.f immediately (not on the next control
+    // tick), so the value it left behind was demonstrably non-zero above --
+    // this isn't just reading a head that was already parked at home.
+    CHECK(inst.sampler_scan_pos(0) == 0.f);
 }
