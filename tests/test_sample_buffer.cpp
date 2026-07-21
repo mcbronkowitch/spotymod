@@ -309,6 +309,31 @@ TEST_CASE("sample buffer: the bloom stays bounded and finite") {
         // that still fails loudly on genuine runaway.
         CHECK(std::fabs(mem[i].l) <= 2.f);
         CHECK(std::fabs(mem[i].r) <= 2.f);
+
+        // Frame 0 is excluded below: a fresh recording always punches in at
+        // frame 0 (write()'s idle->fadein branch resets _write_head there),
+        // and the fade-in's first sample is hann_value_at(0) == 0 exactly.
+        // Frame 0 therefore starts every recording pass -- including this
+        // one's own overdub -- from silence, and x=0 is a genuine fixed
+        // point of x -> tanh(x)*fb for any fb: tanh(0)*fb == 0 always. It
+        // stays at exactly 0.0 for the full 60 s regardless of whether the
+        // bloom works, so it is excluded rather than asserted on; every
+        // other frame in the loop is well clear of the fade's zero-crossing
+        // and settles above unity like the rest of the loop.
+        if (i == 0) continue;
+
+        // The property that actually distinguishes a working bloom from a
+        // silently cancelled one: growth PAST the 0.9 that was recorded.
+        // If fb_ceil in write() is reverted to a hard 1.f, "1 - fade*(1 -
+        // fb)" evaluates to _feedback (~1.333) and gets clamped straight
+        // back down to 1.0, so every pass multiplies by exactly 1.0 and the
+        // stored value sits at 0.9 forever -- finite and within +-2.0, so
+        // the two CHECKs above stay green even though the bloom never
+        // happened. This is the CHECK that dies in that case: it demands
+        // strictly more than the 0.9 a cancelled bloom is pinned to, well
+        // short of the 2.0 ceiling above.
+        CHECK(std::fabs(mem[i].l) > 1.f);
+        CHECK(std::fabs(mem[i].r) > 1.f);
     }
 }
 
