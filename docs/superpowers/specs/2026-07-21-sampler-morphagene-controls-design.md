@@ -46,8 +46,10 @@ bleiben unverändert — für die Hardware ist das eine Zusammenlegung, kein Zuw
 
 Unverändert in beiden Modi: `RATE`, `SHAPE`, `SMOOTH`, `RANGE`, `MOD`, `TUNE`, `ATTACK`,
 `DECAY`, `RES`, `FILT`, `FLUX`, `GRIT`, `COMP`, `STEPS`, `COLOR`, `REC` sowie die
-FLUX-Anhänge. `PRINCIPLE` und `NEWPHRASE` bleiben im Sampler ohne Funktion — es sind Taster,
-für die vier Regleraufgaben taugen sie nicht, und für sie besteht kein Bedarf.
+FLUX-Anhänge.
+
+`NEWPHRASE` und `TRIGGER` bekommen im Sampler dieselbe neue Bedeutung — **„neues Gen jetzt"**,
+siehe Engine-Änderung 4. `PRINCIPLE` bleibt im Sampler ohne Funktion.
 
 `STEP` bleibt der Schalter zwischen stehender Wolke (FLOW) und groove-getriggerten Bursts;
 er ruft bereits `set_flow(!on)` auf (`part.cpp:85-89`). Es wird kein neues Bedienelement
@@ -61,6 +63,9 @@ Kontextmenü.
 `gen_panel.py` bekommt für die vier umgedeuteten Regler eine zweite Beschriftungszeile mit
 der Sampler-Bedeutung (`SUB` / `SIZE`, `DTUN` / `ORG`, `DENS` / `MRPH`, `MELO` / `SCAN`).
 Beide Bedeutungen stehen gleichrangig auf der Platte, weil beide gleichrangig gelten.
+
+`NEW` und `TRIG` behalten ihre Beschriftung unverändert — „neu" und „auslösen" treffen die
+Sampler-Bedeutung genauso wie die Synth-Bedeutung, eine zweite Zeile wäre nur Lärm.
 
 ### Verhalten beim Engine-Wechsel
 
@@ -86,6 +91,15 @@ bräuchte 0.5, das ist DETUNE auf ±17.5 ct. `init.vcvm` wird deshalb **nicht** 
 Der Sampler startet folglich nicht in dem Zustand, der in M5b abgehört wurde, sondern dort,
 wo die vier Regler gerade stehen. Das ist die direkte und beabsichtigte Folge dieser
 Entscheidung, keine Nachlässigkeit.
+
+**Der eigentliche Preis ist nicht der erste Klang, sondern die fehlende Vorbereitung.** Der
+hässliche Moment direkt nach dem Kippen ist formbar — man kann das Deck vorher über LEVEL
+oder CHOKE wegziehen. Was nicht geht: den Wechsel vorbereiten. Die vier Regler sind bis zur
+letzten Sekunde die Synth-Regler, und SUB schon einmal auf 0.5 vorzulegen verstimmt hörbar
+den laufenden Synth. Jeder ENG-Wechsel erzwingt deshalb die Reihenfolge „erst falsch, dann
+hindrehen". Für ein Set mit inszenierten Übergängen ist das tragbar; für nahtlose Wechsel
+ist es das nicht. Diese Einschränkung wird bewusst in Kauf genommen und steht hier, damit sie
+niemanden auf der Bühne überrascht.
 
 ## Tonhöhe
 
@@ -164,6 +178,13 @@ Lautstärkeänderung, die aus einer veränderten Überlappung folgt.
 `spawn_interval` bekommt eine `float`-Überladung; die bestehende `int`-Signatur des
 Test-Seams bleibt erhalten, damit vorhandene Tests unverändert gelten.
 
+**MORPH bekommt eine Bewegungsquelle.** GENE SIZE und ORGANIZE leben, weil die SIZE- und
+SOURCE-Lanes um ihre Grundwerte modulieren; MORPH hinge sonst an keiner Lane und an keinem
+Eingang — reiner Handregler, und das als einziges Dichtemittel des Decks. Die MOTION-Lane
+wird deshalb zusätzlich auf MORPH gelegt, nach demselben Muster, mit dem sie heute schon
+COLOR mitbewegt (`part.cpp:129-134`). Der Reglerwert bleibt der Grundwert, die Lane moduliert
+darum herum: die Wolke atmet in der Dichte, statt starr zu stehen.
+
 ### 3. Lane-Grundwerte erreichen den VCV-Host
 
 `host/vcv/src/Spotymod.cpp` ruft `Instrument::set_target_base(part, slot, value)` für
@@ -173,6 +194,41 @@ die übrigen Parameter. Zusätzlich wird `_active[LANE_PITCH]` beim Umschalten a
 
 Diese Aufrufe geschehen nur im Sampler-Modus. Im Synth-Modus bleibt jeder Pfad exakt so, wie
 er ist.
+
+### 4. „Neues Gen jetzt" — die Rückkehr-Geste
+
+`SamplerEngine` bekommt `punch()`: Scan-Akkumulator auf null (der Kopf springt zurück auf
+ORGANIZE) und `_spawn_ctr = 0.f` (sofortiger Spawn). Im Sampler-Modus lösen `NEWPHRASE` und
+`TRIGGER` diese Geste aus.
+
+Ohne sie hat der Entwurf ein Loch an genau dem Pol, für den er gebaut wird. Position, Ratio
+und Länge werden beim Spawn gelatcht (`sampler_engine.cpp:409`), die nächste Gelegenheit
+kommt erst nach `_spawn_every`. Bei MORPH 1.0 und GENE SIZE 10 s antworten ORGANIZE, TUNE und
+SCAN also bis zu zehn Sekunden lang gar nicht; am oberen Anschlag ist das Deck minutenlang
+taub. Das lange, ruhig laufende Korn wäre ohne Rückkehr-Geste kein spielbarer Zustand,
+sondern ein Instrument, das nicht antwortet.
+
+`punch()` löst zugleich zwei bestehende Probleme mit:
+
+- **Der Tonkopf lässt sich wiederfinden.** Nach längerem SCAN-Lauf ist die Leseposition
+  ORGANIZE plus akkumulierte Phase — der Regler zeigt dann nicht mehr, wo gelesen wird.
+  `punch()` stellt den bekannten Zusammenhang wieder her.
+- **`TRIGGER` wird im FLOW-Sampler überhaupt erst wirksam.** Heute latcht `trigger_manual`
+  (`part.cpp:91-97`) nur `_burst_ratio`, und `_next_ratio` liest den Latch ausschließlich mit
+  `!_flow` (`sampler_engine.cpp:226`) — in der stehenden Wolke greift der Taster ins Leere.
+  Das ist ein Bestandsfehler aus M5b, den dieser Entwurf mit erledigt.
+
+Die Geste ist als Taster rhythmisch spielbar und braucht keine Splice-Verwaltung.
+
+### 5. Der Kopf wird sichtbar
+
+Der LED-Ring (`SpkyRing` in `host/vcv/src/Spotymod.cpp`) zeichnet heute je einen bewegten
+Punkt pro Modulations-Lane. Im Sampler-Modus kommt ein Punkt für die Leseposition dazu,
+gespeist aus `last_spawn_pos()` (`sampler_engine.h:161`, existiert bereits).
+
+Ohne Anzeige ist ein driftender Tonkopf blind zu spielen: man weiß nicht, wo im Band man
+liest, und findet keine Stelle gezielt wieder. Der Ring ist vorhanden, der Abgriff ist
+vorhanden, und auf der Hardware ist dieselbe Anzeige mit demselben Ring machbar.
 
 ## Persistenz
 
@@ -202,10 +258,16 @@ und `set_scan` existieren nur auf `SamplerEngine`; die Lane-Abschaltung und die
   kurzem Korn und hoher Überlappung.
 - Der Pool-Deckel `len_ceil` wird bei sinkender Überlappung lockerer, nie enger.
 - Der Scan-Akkumulator: Richtung, Faltung an der Materialgrenze, Stillstand im Totbereich,
-  Stillstand bei `_size == 0`, Rücksetzung durch `clear()` und `load_sample()`.
+  Stillstand bei `_size == 0`, Rücksetzung durch `clear()`, `load_sample()` und `punch()`.
 - Die Scan-Kurve trifft bei `|n| = 0.75` exakt 1.0× und ist an beiden Knicken stetig.
 - `_active[LANE_PITCH] = false` lässt `target_raw(LANE_PITCH)` konstant, während
   `lane_fired(LANE_PITCH)` weiter feuert.
+- `punch()` erzwingt einen Spawn innerhalb weniger Samples, auch bei MORPH 1.0 und langem
+  GENE SIZE, wo das nächste Korn sonst zehn Sekunden entfernt wäre. Das ist der Test, der
+  den Nutzen der Geste festhält.
+- `TRIGGER` erzeugt im FLOW-Modus einen Spawn. Dieser Test schlägt vor der Änderung fehl —
+  er pinnt den Bestandsfehler aus M5b.
+- Die MOTION-Lane bewegt die effektive Überlappung um den MORPH-Grundwert.
 
 **Render-Szenarien.** Ein Szenario je neuem Regler unter `host/render/scenarios/`, das seinen
 Bereich durchfährt. Diese dienen als Plausibilitätsprüfung und zum Abhören, nicht als
@@ -222,10 +284,24 @@ nicht gemessen. Insbesondere: ob der Totbereich um SCANs Mitte breit genug ist, 
 Realzeit-Rastpunkt bei 0.75 sitzt, wo die Hand ihn sucht, und ob MORPH über seinen Bereich
 gleichmäßig verläuft oder sich am unteren Ende drängt.
 
+Gezielt abzuhören ist außerdem eine Vermutung aus dem Live-Review: bei MORPH nahe 1.0 und
+mittlerem GENE SIZE (100–500 ms) könnte die Fenstersumme im Korntakt pumpen — unsynchron zum
+Groove, also weder Wolke noch Band. Falls dieses Loch existiert, ist es genau die Zone
+zwischen den beiden gewollten Polen und muss vor dem Merge benannt werden.
+
 ## Nicht in diesem Entwurf
 
 - Kein Regler für Slide (MOTION-Lane). Bleibt bei seinem Grundwert und im Kontextmenü.
 - Keine Regler für `LANE_LEVEL` und `LANE_MOTION`.
+- **Kein Varispeed durch die Null** — Morphagenes Signaturgeste, die glatte, unquantisierte
+  Fahrt durch Stillstand hindurch ins Rückwärtige mitsamt Tonhöhe. SCAN fährt die Position
+  durch null, aber die Tonhöhe bleibt stehen; TUNE ist auf das Tonleiterraster quantisiert.
+  Das ist die direkte Folge der Entscheidung, die Tonhöhe stabil zu halten, damit Sampler und
+  Synth in derselben Tonart zusammenklingen. Bewusster Verzicht, kein Versehen.
+- **Keine Parameter-CV-Eingänge.** Das Panel hat nur IN L/R, CLOCK und RESET
+  (`gen_panel.py:269`); PIT und GAT sind Ausgänge. Externe Modulation der neuen Regler ist in
+  VCV nur über Fremdmodule (etwa stoermelder µMap) möglich. Auf der Hardware übernimmt das
+  die Gestensteuerung aus M6. Bewusste Lücke.
 - Keine Änderung an ATK/DEC selbst. Sie werden durch MORPH hörbar, nicht durch eigene Arbeit.
 - Kein Panel-Parameter für Reverse, Tape/Digital oder Feedback. Kontextmenü bleibt.
 - Keine Änderung an der Hardware-Gestensteuerung (M6).
