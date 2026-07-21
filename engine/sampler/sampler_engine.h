@@ -32,6 +32,11 @@ float test_spawn_interval(float grain_len, int overlap);
 // Test seam only: forwards to the anonymous-namespace pitch mapping.
 float test_ratio_for(float pitch_norm);
 
+// Test seam only: forwards to the anonymous-namespace SCAN curve helper in
+// sampler_engine.cpp, so the dead zone, both knees and the endpoints can be
+// pinned without driving a whole engine.
+float test_scan_rate(float n);
+
 // The M5 texture deck: a granular cloud behind IPartEngine.
 //
 // Not a second melodic instrument -- the synth part makes the music, this
@@ -147,6 +152,12 @@ public:
     // become audible.
     void set_overlap(float n);
 
+    // SCAN: the running playhead (spec 2026-07-21 morphagene-controls).
+    // bipolar is -1..+1; the sign is the direction, the centre is a real dead
+    // zone. The accumulated position is ADDED to the SOURCE target in
+    // _spawn_one, so ORGANIZE sets where the head starts and SCAN moves it.
+    void set_scan(float bipolar);
+
     // --- voice row, remapped ---
     void set_window_attack(float n);
     void set_window_decay(float n);
@@ -160,6 +171,9 @@ public:
     float grain_len_samples() const { return _grain_len; }
     float overlap() const               { return _overlap; }
     float spawn_interval_samples() const { return _spawn_every; }
+    // Accumulated playhead offset in frames, folded into [0, rec_size).
+    // Drives the VCV ring's read-position dot as well as the tests.
+    float scan_pos() const { return _scan_pos; }
     int   spawn_count() const       { return _spawn_count; }
     // Incremented in _spawn_one when every slot is busy and the spawn is
     // skipped -- the exact moment a spawn is lost. Never reset except by
@@ -196,6 +210,8 @@ private:
     float _grain_len   = 960.f;   // output samples
     float _spawn_every = 240.f;   // samples between spawns
     float _overlap     = static_cast<float>(kOverlap);   // 1..8, DENS
+    float _scan_rate   = 0.f;     // frames per sample, signed
+    float _scan_pos    = 0.f;     // accumulated offset in frames, folded
     float _filt_gain   = 1.f;
     float _norm_target = 1.f;     // 1/sqrt(active), fed through _norm per sample
 

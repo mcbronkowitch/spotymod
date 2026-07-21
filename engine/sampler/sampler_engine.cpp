@@ -41,6 +41,21 @@ inline float size_seconds(float n) {
     }
     return kSizeMinS * std::pow(kSizeRange, n);   // the M5a curve, unchanged
 }
+// SCAN: knob position -> playhead rate in frames per sample (i.e. multiples
+// of realtime). Control rate only -- std::pow must never reach the per-sample
+// path. See the curve comment in sampler_config.h.
+inline float scan_rate(float n) {
+    n = clampf(n, -1.f, 1.f);
+    const float a = n < 0.f ? -n : n;
+    if (a < kScanDead) return 0.f;
+    const float sign = n < 0.f ? -1.f : 1.f;
+    if (a <= kScanKnee) {
+        const float t = (a - kScanDead) / (kScanKnee - kScanDead);
+        return sign * kScanMinRate * std::pow(1.f / kScanMinRate, t);
+    }
+    const float t = (a - kScanKnee) / (1.f - kScanKnee);
+    return sign * lerpf(1.f, kScanMaxRate, t);
+}
 inline float cutoff_hz(float n) {
     return kCutoffMinHz * std::pow(kCutoffMaxHz / kCutoffMinHz, clampf(n, 0.f, 1.f));
 }
@@ -71,6 +86,7 @@ float test_detune_factor(float cents) { return detune_factor(cents); }
 float test_size_seconds(float n) { return size_seconds(n); }
 float test_spawn_interval(float grain_len, int overlap) { return spawn_interval(grain_len, overlap); }
 float test_ratio_for(float pitch_norm) { return ratio_for(pitch_norm); }
+float test_scan_rate(float n) { return scan_rate(n); }
 
 void SamplerEngine::init(float sample_rate) {
     _sr = sample_rate;
@@ -201,6 +217,11 @@ void SamplerEngine::_kill_all() {
     // for up to one spawn interval -- half a second at long SIZE, on the
     // ordinary load path. Unlike the SIZE-drop case, nothing masks this.
     _spawn_ctr = 0.f;
+    // The playhead goes home with the grains. This covers init(), clear() and
+    // load_sample() in one place -- they are _kill_all's only three callers --
+    // so no reset path can be forgotten. punch() deliberately does NOT come
+    // through here: it rewinds the head without killing what is sounding.
+    _scan_pos = 0.f;
 }
 
 void SamplerEngine::_release_all() {
@@ -291,6 +312,24 @@ void SamplerEngine::_update_control() {
     const int n = active_grains();
     _norm_target = n > 0 ? 1.f / std::sqrt(static_cast<float>(n)) : 1.f;
 
+    // --- SCAN: advance the playhead one control tick's worth ---
+    // Control rate, not per sample: kCtrlInterval is 96 samples (~2 ms), far
+    // finer than any audible playhead motion, and it keeps std::floor off the
+    // per-sample path. The fold is the same O(1) form read_linear uses
+    // (sample_buffer.cpp) -- deliberately NOT a subtract loop, which would
+    // spin once per content length after a long freeze at a high rate.
+    // An empty buffer parks the head: there is nothing to read, and a
+    // position accumulated against no content would be meaningless the moment
+    // a recording started.
+    const float scan_content = static_cast<float>(_buf.rec_size());
+    if (scan_content > 0.f) {
+        _scan_pos += _scan_rate * static_cast<float>(kCtrlInterval);
+        _scan_pos -= scan_content * std::floor(_scan_pos / scan_content);
+        if (_scan_pos < 0.f) _scan_pos = 0.f;      // -0.0 and rounding at the seam
+    } else {
+        _scan_pos = 0.f;
+    }
+
     // --- FILT: same bipolar rails as the synth; set_filt() is the knob ---
     const float off   = _filt_amt < 0.f ? kFiltLeftScale * _filt_amt : _filt_amt;
     const float n_raw = kFiltNeutral + off;
@@ -333,7 +372,7 @@ void SamplerEngine::_spawn_one() {
 
     // --- Rng draw order is contract: position, pan, octave, timing. ---
     const float jitter = _rng.next_bipolar() * motion * kScatterPosFrac * content;
-    float centre = clampf(_targets[LANE_SOURCE], 0.f, 1.f) * span + jitter;
+    float centre = clampf(_targets[LANE_SOURCE], 0.f, 1.f) * span + _scan_pos + jitter;
     while (centre >= content) centre -= content;
     while (centre < 0.f)      centre += content;
 
@@ -531,5 +570,7 @@ void SamplerEngine::set_detune(float n) { _detune_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_overlap(float n) {
     _overlap = lerpf(kOverlapMin, kOverlapMax, clampf(n, 0.f, 1.f));
 }
+
+void SamplerEngine::set_scan(float bipolar) { _scan_rate = scan_rate(bipolar); }
 
 }  // namespace spky

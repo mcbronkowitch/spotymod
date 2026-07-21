@@ -81,6 +81,23 @@ constexpr float  kSpawnMinSamples = 8.f;
 constexpr float  kOverlapMin = 1.f;
 constexpr float  kOverlapMax = 8.f;
 
+// SCAN: the running playhead (spec 2026-07-21 morphagene-controls). The knob
+// is bipolar; the sign is the direction. The curve is piecewise, mirroring
+// the SIZE curve's shape:
+//   |n| < kScanDead          -> exactly 0. A real dead zone, so a frozen head
+//                               stays frozen under knob noise.
+//   kScanDead .. kScanKnee   -> exponential, kScanMinRate .. 1.0x realtime.
+//   above kScanKnee          -> linear, 1.0x .. kScanMaxRate.
+// Realtime (1.0x) therefore lands on a fixed, findable knob position instead
+// of somewhere in the sweep. The top quarter carries the factor 8 and is the
+// steepest stretch of the curve -- if it plays too nervously, the fix is an
+// exponential top segment, not a smaller range (spec "Nicht in diesem
+// Entwurf" / listening notes).
+constexpr float  kScanDead    = 0.02f;
+constexpr float  kScanKnee    = 0.75f;
+constexpr float  kScanMinRate = 0.001f;
+constexpr float  kScanMaxRate = 8.f;
+
 // Grain window: the ATK/DEC halves each span at most this fraction of the
 // grain, so a fully-open ATK and DEC still leave the window a real shape
 // rather than two ramps meeting at a point.

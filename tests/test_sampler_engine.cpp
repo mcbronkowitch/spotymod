@@ -1601,3 +1601,107 @@ TEST_CASE("sampler: lowering overlap only loosens the pool ceiling, never tighte
         prev = ceil_v;
     }
 }
+
+
+TEST_CASE("sampler: the SCAN curve has a dead centre, hits 1.0x at the knee, tops at 8x") {
+    using namespace sampler_cfg;
+    // Dead zone: not "small", exactly zero. A creeping playhead at knob
+    // centre would make the frozen state unreachable.
+    CHECK(test_scan_rate(0.f)      == 0.f);
+    CHECK(test_scan_rate(0.019f)   == 0.f);
+    CHECK(test_scan_rate(-0.019f)  == 0.f);
+
+    // Knee: realtime, on both sides, exactly.
+    CHECK(test_scan_rate(kScanKnee)  == doctest::Approx(1.f).epsilon(0.001));
+    CHECK(test_scan_rate(-kScanKnee) == doctest::Approx(-1.f).epsilon(0.001));
+
+    // Ends.
+    CHECK(test_scan_rate(1.f)  == doctest::Approx(kScanMaxRate).epsilon(0.001));
+    CHECK(test_scan_rate(-1.f) == doctest::Approx(-kScanMaxRate).epsilon(0.001));
+    CHECK(test_scan_rate(kScanDead) == doctest::Approx(kScanMinRate).epsilon(0.01));
+
+    // Monotone over the whole travel -- the property that makes the knob
+    // playable. Checked with a step fine enough to catch a kink at either knee.
+    float prev = -1e9f;
+    for (int i = 0; i <= 400; ++i) {
+        const float n = -1.f + 2.f * float(i) / 400.f;
+        const float v = test_scan_rate(n);
+        CHECK(v >= prev - 1e-6f);
+        prev = v;
+    }
+}
+
+TEST_CASE("sampler: SCAN advances the playhead, folds at the content edge, and reverses") {
+    Rig g(24000);                     // 0.5 s of content
+    g.e.set_flow(true);
+    CHECK(g.e.scan_pos() == 0.f);
+
+    // Realtime forward: after 24000 samples the head has travelled one full
+    // content length and folded back to ~0.
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(12000);
+    const float half = g.e.scan_pos();
+    CHECK(half == doctest::Approx(12000.f).epsilon(0.02));
+    g.render(12000);
+    CHECK(g.e.scan_pos() < 600.f);    // folded, not run past the end
+
+    // Reverse walks it back down.
+    g.e.set_scan(-sampler_cfg::kScanKnee);
+    g.render(6000);
+    const float back = g.e.scan_pos();
+    CHECK(back > 12000.f);            // folded downward through zero
+}
+
+TEST_CASE("sampler: a frozen SCAN leaves the playhead exactly where it was") {
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(4800);
+    const float parked = g.e.scan_pos();
+    REQUIRE(parked > 0.f);
+
+    g.e.set_scan(0.f);
+    g.render(48000);                  // a full second of nothing happening
+    CHECK(g.e.scan_pos() == parked);  // exactly, not approximately
+}
+
+TEST_CASE("sampler: an empty buffer parks the playhead instead of drifting") {
+    Rig g(0);
+    REQUIRE(g.e.is_empty());
+    g.e.set_flow(true);
+    g.e.set_scan(1.f);
+    g.render(48000);
+    CHECK(g.e.scan_pos() == 0.f);
+}
+
+TEST_CASE("sampler: clear() and load_sample() send the playhead home") {
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(4800);
+    REQUIRE(g.e.scan_pos() > 0.f);
+
+    g.e.clear();
+    CHECK(g.e.scan_pos() == 0.f);
+
+    g.e.load_sample(g.l.data(), g.r.data(), 24000);
+    g.render(4800);
+    REQUIRE(g.e.scan_pos() > 0.f);
+    g.e.load_sample(g.l.data(), g.r.data(), 24000);
+    CHECK(g.e.scan_pos() == 0.f);
+}
+
+TEST_CASE("sampler: SCAN moves what the grains actually read") {
+    // The point of the whole feature: not that a counter advances, but that
+    // the spawn position follows it. ORGANIZE stays put; only SCAN moves.
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.5f);          // SOURCE 0 -- the head sits at the start
+    g.e.set_scan(0.f);
+    g.render(4800);
+    const float parked = g.e.last_spawn_pos();
+
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(9600);
+    CHECK(g.e.last_spawn_pos() > parked + 1000.f);
+}
