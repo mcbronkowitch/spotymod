@@ -1205,21 +1205,22 @@ TEST_CASE("sampler: pitch is continuous at both knees and monotonic throughout")
     }
 }
 
-TEST_CASE("sampler: resonance at maximum stays finite") {
-    // The ceiling at 0.95 had no documented reason. This is the test that
-    // decides whether it needs one.
+// Sweeps FILT across its whole range while resonating at `res`, over
+// `seconds` of real time, and returns the peak sample magnitude reached.
+// A self-oscillating SVF is likeliest to diverge while its cutoff is
+// moving, not while it sits still, so a fixed-cutoff sweep would miss the
+// failure this is for.
+static float sweep_peak(float res, double seconds) {
     Rig g(48000, 0x5Eu);
-    g.e.set_resonance(1.f);
+    g.e.set_resonance(res);
     // SOURCE=0, SIZE=0.5, PITCH=0.5, MOTION=0, LEVEL=1 (Rig's feed defaults).
     g.feed(0.5f);
     g.e.set_flow(true);
 
+    const long n = static_cast<long>(48000.0 * seconds);
     float peak = 0.f;
-    // Sweep FILT across its whole range while resonating: a self-oscillating
-    // SVF is likeliest to diverge while its cutoff is moving, not while it
-    // sits still, so a fixed-cutoff test would miss the failure it is for.
-    for (int i = 0; i < 48000 * 10; ++i) {
-        g.e.set_filt(-1.f + 2.f * (static_cast<float>(i) / (48000.f * 10.f)));
+    for (long i = 0; i < n; ++i) {
+        g.e.set_filt(-1.f + 2.f * (static_cast<float>(i) / static_cast<float>(n)));
         float l = 0.f, r = 0.f;
         g.e.process(l, r);
         REQUIRE(std::isfinite(l));
@@ -1227,5 +1228,24 @@ TEST_CASE("sampler: resonance at maximum stays finite") {
         peak = std::fabs(l) > peak ? std::fabs(l) : peak;
         peak = std::fabs(r) > peak ? std::fabs(r) : peak;
     }
-    CHECK(peak < 8.f);
+    return peak;
+}
+
+TEST_CASE("sampler: resonance ceiling is duration-stable, not just finite") {
+    // Peak-vs-resonance turned out to be a smooth accelerating curve with no
+    // knee (fixed 10 s sweep: 0.7 -> 7.22, 0.8 -> 11.11, 0.9 -> 21.20,
+    // 0.95 -> 34.59, 1.0 -> 72.77) -- no peak threshold marks a regime
+    // change on that curve, so one was never testing a real property.
+    //
+    // The real property is duration-dependence. Below the clamp, the peak
+    // barely moves as the same sweep runs 10x longer -- measured growth from
+    // a 10 s sweep to a 100 s one: 0.85 -> 2.3%, 0.90 -> 7.0%, 0.92 -> 11.4%,
+    // 0.95 -> 26.6%, 1.0 -> 210%. That is the actual stability boundary, and
+    // it sits between 0.90 and 0.95, not at 0.7. The clamp is set to 0.90:
+    // comfortably inside the stable side against this test's 10% tolerance,
+    // with real distance to 0.95, which fails it outright.
+    const float res = 1.f;  // set_resonance clamps this to the real ceiling
+    const float short_peak = sweep_peak(res, 10.0);
+    const float long_peak  = sweep_peak(res, 100.0);
+    CHECK(std::fabs(long_peak - short_peak) < 0.10f * short_peak);
 }

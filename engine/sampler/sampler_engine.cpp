@@ -439,20 +439,30 @@ void SamplerEngine::set_window_attack(float n) { _atk_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_window_decay(float n)  { _dec_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_filt(float n)          { _filt_amt = clampf(n, -1.f, 1.f); }
 void SamplerEngine::set_resonance(float n) {
-    // Measured, not inherited: the M5a ceiling of 0.95 had no documented
-    // reason, and turned out not to be safe either. "sampler: resonance at
-    // maximum stays finite" (tests/test_sampler_engine.cpp) sweeps FILT
-    // across its whole range while resonating -- a self-oscillating SVF is
-    // likeliest to diverge while its cutoff is moving -- and asserts the
-    // output peak stays below 8. Every value from 0.95 up through 1.0 fails
-    // that test with a finite but runaway peak (0.95 -> 34.6, 0.99 -> 60.6,
-    // 1.0 -> 72.8; never NaN). Bisecting down: 0.73 still fails (peak 8.11,
-    // just over the line), 0.72 passes but only barely (peak 7.79, ~2.6%
-    // under the line) -- too close to a stability boundary, which is exactly
-    // the kind of place where a few ULPs of cross-build float rounding can
-    // flip the result, to build on. 0.7 passes with real margin (peak 7.22)
-    // and is where the clamp sits.
-    _res_n = clampf(n, 0.f, 0.7f);
+    // Measured, not guessed: an earlier version of this clamp (0.7) was
+    // bisected against a peak threshold -- sweep FILT across its whole range
+    // while resonating and require the output peak stay under some cap. That
+    // was the wrong test. Peak-vs-resonance at a fixed sweep duration is a
+    // smooth accelerating curve with no knee (10 s sweep: 0.7 -> 7.22,
+    // 0.8 -> 11.11, 0.9 -> 21.20, 0.95 -> 34.59, 1.0 -> 72.77), so any peak
+    // number you pick is arbitrary -- there is no threshold on that curve
+    // that marks a regime change, and 0.70/0.72/0.75 (under 15% apart in
+    // peak) are not distinguishable regimes.
+    //
+    // The real boundary is duration-dependence, which the FILT sweep is well
+    // placed to expose since a self-oscillating SVF is likeliest to diverge
+    // while its cutoff is moving. Below the boundary, the peak from a given
+    // resonance barely moves as the same sweep runs 10x longer: 10 s -> 100 s
+    // growth measures 0.85 -> 2.3%, 0.90 -> 7.0%, 0.92 -> 11.4%. Above it,
+    // growth accelerates sharply: 0.95 -> 26.6%, 1.0 -> 210% (72.8 at 10 s to
+    // 225.3 at 100 s, still climbing at 3000 s). That puts the boundary
+    // between 0.90 and 0.95. "sampler: resonance ceiling is duration-stable,
+    // not just finite" (tests/test_sampler_engine.cpp) asserts a 10 s and a
+    // 100 s sweep agree within 10% at whatever resonance this clamps to; it
+    // passes here with real margin (7.0% against the 10% tolerance) and
+    // fails outright at 0.95. The clamp sits at 0.90 -- well above the old
+    // 0.7, which was never testing the property that actually bounds this.
+    _res_n = clampf(n, 0.f, 0.9f);
     _svf_l.SetRes(_res_n);
     _svf_r.SetRes(_res_n);
 }
