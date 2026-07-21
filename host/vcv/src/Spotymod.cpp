@@ -458,7 +458,7 @@ struct Spotymod : Module {
             }
 
             // Stable pitch in the sampler: the lane still FIRES (that is what
-            // keeps STEP triggering alive, part.cpp:183), it just stops
+            // keeps STEP triggering alive, part.cpp:194), it just stops
             // moving the pitch. Sample material and a synth deck can then sit
             // in the same key.
             inst.set_target_active(p, spky::LANE_PITCH, !samplerPart);
@@ -481,7 +481,7 @@ struct Spotymod : Module {
             }
             // TRIG punches AND triggers. trigger_manual alone is inert in the
             // sampler's FLOW cloud -- _next_ratio reads the burst latch only
-            // when !_flow (sampler_engine.cpp:226) -- so the pad has been
+            // when !_flow (sampler_engine.cpp:247) -- so the pad has been
             // dead there since M5b. The punch fixes FLOW; the trigger keeps
             // STEP behaving as it does today.
             if (triggerTrig[p].process(ppb(TRIGGER_A, p))) {
