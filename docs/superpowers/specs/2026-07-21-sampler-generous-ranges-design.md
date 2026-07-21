@@ -106,7 +106,12 @@ Today MOTION at maximum scatters the read position over only a quarter of the
 recorded material. The M5 spec records fog as unreached and records that an
 attempt to reach it by stretching grain length was tried and reverted on 2026-07-20
 because it read as tremolo, not fog. Widening the scatter is the lever that was
-never tried; it is the cheapest of the three options that spec left open.
+never tried — and it is **not** one of the three options that spec left open.
+Those three are: raising `kOverlap` so density rises with grain length, a
+gentler stretch, or rewording the identity section. The scatter ceiling is a
+fourth, genuinely new lever, and a better story for it: the earlier work went
+looking for fog in grain *length* and never questioned that MOTION's own
+position range had been capped at a quarter of the buffer the whole time.
 
 ## 3 — SIZE, both ends
 

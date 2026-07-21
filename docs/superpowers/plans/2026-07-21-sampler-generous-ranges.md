@@ -34,7 +34,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Baseline before this plan starts: **459 tests, all passing.** Every task must leave the suite green.
+Baseline before this plan starts: **458 tests, all passing** (measured at the start of Task 1; earlier notes saying 459 were stale). Every task must leave the suite green.
+
+Expected running totals: Task 1 → 461, Task 2 → 463, Task 3 → 468, Task 4 → 472, Task 5 → 476, Task 6 → 477. Treat these as a check on whether you added the tests the task asked for, not as a target to hit — if your count differs, say which case you added or did not add and why.
 
 Run a single test file's cases with doctest's filter:
 
@@ -68,7 +70,8 @@ Opening SIZE downward (Task 3) makes spawns far more frequent. `_spawn_one` curr
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `SamplerEngine::_chord_ratio[]`, a per-control-tick cache of `ratio_for(_chord[i])`. Later tasks do not touch it. Also `spky::detune_factor(float cents)` as a file-local helper in `sampler_engine.cpp`'s anonymous namespace — Task 3 does not use it, but do not remove it.
+- Produces: `SamplerEngine::_chord_ratio[kMaxChord]`, a per-control-tick cache of `ratio_for(_chord[i])`, and `SamplerEngine::_burst_ratio`, latched at the sequencer fire. Later tasks do not touch either. Also `spky::detune_factor(float cents)` as a file-local helper in `sampler_engine.cpp`'s anonymous namespace — Task 3 does not use it, but do not remove it.
+- Task 5 changes `ratio_for` itself. Both caches feed from it, so no call site moves there.
 
 **Why the base ratio cannot simply be hoisted to one value:** `_next_ratio` reads `_chord[_rr % _chord_n]`, so the pitch differs per grain across a chord. The fix is to precompute one ratio *per chord note* at control rate, not one ratio overall. `Part::_control_tick` refreshes `_chord[]` every 96 samples, which is exactly the tick `_update_control` runs on.
 
@@ -188,6 +191,8 @@ TEST_CASE("sampler: hoisting the chord ratios leaves spawned ratios unchanged") 
 
 **Note to the implementer:** the helper names above (`fill_buffer_with_tone`, `set_memory`, `set_seed`, `set_target_base`, `set_flow`, `spawn_count`, `last_ratio`) are the ones this test file already uses for the M5a tests. Open the file and use whatever it actually calls them — do not add new helpers if equivalents exist.
 
+**A third case is required, for the latch.** The test above drives FLOW, which goes through the chord branch and never touches `_burst_ratio`. Add a case that fires a STEP burst with a single note (COLOR at 0), modulates PITCH *while the burst is held*, and asserts every grain in that burst spawns at the same ratio. That is precisely the property `_burst_ratio` exists to preserve, and no test in the file covers it today — every existing test drives PITCH through fixed values, which is why the plan's first draft could get this wrong without anything going red.
+
 - [ ] **Step 6: Run it and confirm it passes against the current build**
 
 ```bash
@@ -217,13 +222,38 @@ In `engine/sampler/sampler_engine.cpp`, at the **end** of `_update_control` (aft
     for (int i = 0; i < n_notes; ++i) _chord_ratio[i] = ratio_for(_chord[i]);
 ```
 
-In `_next_ratio`, replace line 195:
+**`_next_ratio` has two branches and they need two different caches.** This was
+wrong in the plan's first draft and was caught during implementation; the
+correction is load-bearing.
+
+The round-robin chord branch reads `_chord[_rr % _chord_n]`, which
+`Part::_control_tick` refreshes every 96 samples. That branch is *deliberately*
+not latched — the comment at `sampler_engine.cpp:191-202` records this as a known
+deviation from the M5 spec, left standing because whether a burst should freeze
+its whole chord set is the instrument author's call. So it reads the live
+`_chord_ratio[]` cache, and capturing the index before `_rr` advances is what
+keeps note selection identical.
+
+The single-note branch reads `_burst_pitch`, which is frozen at the sequencer
+fire and **is** latched. Pointing it at `_chord_ratio[0]` would swap a frozen
+pitch for one drifting under any PITCH modulation — a silent behaviour change in
+a task that exists to preserve behaviour. It gets its own cache:
 
 ```cpp
-    float ratio = ratio_for(p);
+    // Separate from _chord_ratio[] on purpose: the two branches of
+    // _next_ratio differ in whether they latch. _burst_pitch is frozen at
+    // the fire, _chord[] is refreshed every control tick. Collapsing these
+    // two caches into one would lose the latch.
+    float _burst_ratio = 1.f;   // unity, matching _burst_pitch's own default
 ```
 
-with an index into the cache. **`_next_ratio` must select the same note it does today** — read the branch above line 195 and cache the index it computes rather than re-deriving it. For the round-robin branch that means capturing `_rr % _chord_n` before `_rr` advances; for the single-note branch it is index 0.
+Set it wherever `trigger()` and `trigger_chord()` assign `_burst_pitch`:
+
+```cpp
+    _burst_ratio = ratio_for(_burst_pitch);
+```
+
+Both are sequencer fires, so control rate, so `std::pow` is permitted there.
 
 - [ ] **Step 8: Run the whole suite**
 
@@ -472,9 +502,16 @@ TEST_CASE("sampler: SIZE is continuous at both knees and monotonic throughout") 
     using namespace spky::sampler_cfg;
     // Continuity: a jump at a knee would be an audible click when SIZE is
     // swept, which is the failure this piecewise curve most invites.
+    //
+    // The offset is 1e-5, not 1e-4. The slope kink at a knee is INTENDED, so
+    // this comparison unavoidably picks up (slope difference x offset) on top
+    // of any genuine discontinuity. Shrinking the offset shrinks the
+    // legitimate part while leaving a real value jump untouched, which makes
+    // the test sharper, not laxer. At 1e-4 the honest kink alone exceeds the
+    // tolerance and the test fails against a correct curve.
     for (float knee : {kSizeKneeLo, kSizeKneeHi}) {
-        const float below = spky::test_size_seconds(knee - 1e-4f);
-        const float above = spky::test_size_seconds(knee + 1e-4f);
+        const float below = spky::test_size_seconds(knee - 1e-5f);
+        const float above = spky::test_size_seconds(knee + 1e-5f);
         CHECK(std::fabs(above - below) < 1e-3f * above);
     }
     // Monotonic: a non-monotonic segment would make part of the knob travel
@@ -515,10 +552,18 @@ TEST_CASE("sampler: a grain may be longer than the material it reads") {
 }
 
 TEST_CASE("sampler: the spawn interval never falls below its floor") {
-    // This is the CPU guard Task 3 relocates, and the one that Task 6's
-    // density work would otherwise reopen without anyone noticing. It is
-    // written against the OBSERVED spawn count rather than the internal
-    // interval, so it keeps its meaning whatever kOverlap becomes.
+    // WARNING, found in review and corrected after this plan was written:
+    // as an engine-level test this case is DORMANT at today's kOverlap = 4.
+    // The shortest grain the SIZE curve can ask for is 1 ms = 48 samples,
+    // and 48 / 4 = 12, already above the floor of 8 -- so deleting the floor
+    // would not change this test's outcome. It becomes meaningful only once
+    // Task 6 raises kOverlap.
+    //
+    // The real test of the floor is a unit test on an extracted helper,
+    // `spawn_interval(grain_len, overlap)`, exercised at overlap 16 where
+    // the floor genuinely engages. Write that one too; this engine-level
+    // case stays as an integration net, with its dormancy stated in its own
+    // comment rather than implied to prove more than it does.
     using namespace spky::sampler_cfg;
     SamplerEngine eng;
     std::vector<SampleBuffer::Frame> mem(48000);
@@ -1069,9 +1114,15 @@ TEST_CASE("sampler: pitch reaches four octaves either way") {
 
 TEST_CASE("sampler: pitch is continuous at both knees and monotonic throughout") {
     using namespace spky::sampler_cfg;
+    // Offset 1e-5, for the same reason Task 3's SIZE continuity test uses it:
+    // the slope kink at a knee is intended, so this comparison picks up
+    // (slope difference x offset) on top of any genuine discontinuity.
+    // Shrinking the offset shrinks the legitimate part and leaves a real
+    // value jump untouched. At 1e-4 the honest kink alone can exceed the
+    // tolerance and fail a correct curve.
     for (float knee : {kPitchKneeLo, kPitchKneeHi}) {
-        const float below = spky::test_ratio_for(knee - 1e-4f);
-        const float above = spky::test_ratio_for(knee + 1e-4f);
+        const float below = spky::test_ratio_for(knee - 1e-5f);
+        const float above = spky::test_ratio_for(knee + 1e-5f);
         CHECK(std::fabs(above - below) < 1e-3f * above);
     }
     float prev = spky::test_ratio_for(0.f);
@@ -1444,15 +1495,24 @@ cmp /tmp/det_a.wav /tmp/det_b.wav && echo DETERMINISTIC
 
 - [ ] **Step 4: Update the M5 spec's open question**
 
-In `docs/superpowers/specs/2026-07-18-sampler-texture-deck-design.md`, the Open section dated 2026-07-20 records that MOTION does not reach fog and lists three untried options. `kScatterPosFrac` was the first of them. Append — do **not** delete the existing text, it records a real lesson:
+In `docs/superpowers/specs/2026-07-18-sampler-texture-deck-design.md`, the Open section dated 2026-07-20 records that MOTION does not reach fog and lists three untried options — raising `kOverlap` so density rises with grain length, a gentler stretch, or rewording the identity section. `kScatterPosFrac` is **not** among them; it is a fourth, genuinely new lever, and the appended text must say so rather than implying it was on the list. Append — do **not** delete the existing text, it records a real lesson:
 
 ```markdown
-**Update, 2026-07-21 — the scatter ceiling was the untried lever.**
+**Update, 2026-07-21 — a fourth lever, not on the list above.**
 `kScatterPosFrac` was 0.25 through M5a, confining MOTION's read position to
 a quarter of the buffer no matter how far the knob went. It is now 1.0
-(spec 2026-07-21, section 2). Whether that closes the fog gap is a listening
-question and the answer belongs here once it is known — do not record a
-verdict from a metric.
+(spec 2026-07-21, section 2).
+
+To be precise about where this came from: it is none of the three options
+this section leaves open. Those are raising `kOverlap`, a gentler stretch,
+and rewording the identity section. The scatter ceiling is a fourth lever
+that nobody had listed — the 2026-07-20 work went hunting for fog in grain
+*length* and never questioned that MOTION's own position range had been
+capped at a quarter of the buffer all along. That is the more interesting
+lesson than "we tried the cheap one first".
+
+Whether it closes the fog gap is a listening question and the answer belongs
+here once it is known — do not record a verdict from a metric.
 ```
 
 - [ ] **Step 5: Update the roadmap**

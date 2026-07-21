@@ -38,12 +38,23 @@ and the VCV plugin existed; its slice-player trigger model no longer matches
 the instrument. Its proven pieces (Buffer record core, memory injection,
 42 s sizing, WAV plumbing) carry over; everything else is re-decided here.
 
-**Update, 2026-07-21 — the scatter ceiling was the untried lever.**
+**Update, 2026-07-21 — a fourth lever, not on the list above.**
 `kScatterPosFrac` was 0.25 through M5a, confining MOTION's read position to
 a quarter of the buffer no matter how far the knob went. It is now 1.0
-(spec 2026-07-21, section 2). Whether that closes the fog gap is a listening
-question and the answer belongs here once it is known — do not record a
-verdict from a metric.
+(spec 2026-07-21, section 2).
+
+To be precise about where this came from, because a later spec and plan both
+got it wrong and called it "the first"/"the cheapest" of the three options
+this section leaves open: it is **none of them**. The three undecided options
+above are raising `kOverlap`, a gentler stretch, and rewording the identity
+section. The scatter ceiling is a fourth lever that nobody had listed — the
+2026-07-20 work went hunting for fog in grain *length* and never questioned
+that MOTION's own position range had been capped at a quarter of the buffer
+all along. That is the more interesting lesson than "we tried the cheap one
+first": the option that was missing from the list was the one worth trying.
+
+Whether it closes the fog gap is a listening question and the answer belongs
+here once it is known — do not record a verdict from a metric.
 
 ## Identity
 
