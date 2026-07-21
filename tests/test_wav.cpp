@@ -2,8 +2,8 @@
 #include <cstdio>
 #include <cstdint>
 #include <cmath>
-#include "render/wav_writer.h"
-#include "render/wav_reader.h"
+#include "shared/wav_writer.h"
+#include "shared/wav_reader.h"
 using namespace spky;
 
 TEST_CASE("wav: writes a valid RIFF/WAVE header + PCM data") {
