@@ -387,8 +387,15 @@ struct Spotymod : Module {
             // storage).
             // factoryL/factoryR are prepared off the audio thread (onAdd()
             // reads+decodes, reinit() resamples -- see the members' comment
-            // above); this is just a guard check plus a memcpy into the
-            // engine's pre-allocated sampler buffer.
+            // above). load_sample() itself still begins with SampleBuffer::
+            // clear(), which used to memset the WHOLE 42 s allocation (16.1
+            // MB) unconditionally -- 1.5-3 ms inside one process() call
+            // against a 5.3 ms budget at a 256-sample block, worse at 128/64
+            // (I-3). This branch only ever fires when sampler_empty(p) is
+            // true, i.e. the buffer's _size is already 0, so with
+            // SampleBuffer::clear()'s _size==0 fast path (sample_buffer.cpp)
+            // that memset is skipped here: what actually runs is the guard
+            // check above plus a ~3.4 MB memcpy of the factory sample.
             if (eng2 && !smp[p].testTone && inst.sampler_empty(p)
                      && !factoryTried[p]) {
                 factoryTried[p] = true;
@@ -549,6 +556,12 @@ struct Spotymod : Module {
             json_object_set_new(o, "feedback", json_real(smp[p].feedback));
             json_object_set_new(o, "testTone", json_boolean(smp[p].testTone));
             json_object_set_new(o, "factory", json_boolean(smp[p].factoryLoaded));
+            // "autoload already consumed / user cleared this" -- without
+            // persisting it, Clear -> Save -> reopen resets factoryTried to
+            // its construction-time false, and the factory drone refills the
+            // deliberately-cleared part on the first control tick after
+            // patch open with no user gesture at all (I-1b).
+            json_object_set_new(o, "factoryTried", json_boolean(factoryTried[p]));
             json_array_append_new(parts, o);
         }
         json_object_set_new(root, "sampler", parts);
@@ -578,6 +591,7 @@ struct Spotymod : Module {
             if (json_t* v = json_object_get(o, "feedback")) smp[p].feedback = (float)json_real_value(v);
             if (json_t* v = json_object_get(o, "testTone")) smp[p].testTone = json_boolean_value(v);
             if (json_t* v = json_object_get(o, "factory"))  smp[p].factoryLoaded = json_boolean_value(v);
+            if (json_t* v = json_object_get(o, "factoryTried")) factoryTried[p] = json_boolean_value(v);
         }
         // On a whole-patch open, dataFromJson runs before the module is in
         // the engine (curSr == 0.f, reinit() hasn't sized the sampler
@@ -610,7 +624,18 @@ struct Spotymod : Module {
         // factory WAV needs writing: those two reload from their source.
         for (int p = 0; p < spky::PART_COUNT; ++p) {
             if (!smp[p].path.empty() || smp[p].factoryLoaded) continue;
-            if (!inst.sampler_rec_size(p)) continue;
+            if (!inst.sampler_rec_size(p)) {
+                // Nothing to write for this part -- e.g. it was recorded into,
+                // saved once (writing a stored WAV), then Cleared. Rack
+                // garbage-collects patch storage per MODULE, not per file, so
+                // that earlier WAV would otherwise sit on disk forever and
+                // restoreSamplerContent() would load the deleted recording
+                // right back on reopen (I-1a). Remove it so an empty part
+                // really does come back empty.
+                const std::string stored = storedWavPath(p);
+                if (system::isFile(stored)) system::remove(stored);
+                continue;
+            }
             std::string err;
             if (!spkyvcv::save_wav_from(inst, p, storedWavPath(p), curSr, err))
                 WARN("Spotymod: could not store sampler %d: %s", p, err.c_str());
@@ -631,7 +656,11 @@ struct Spotymod : Module {
         // SampleRateChangeEvent that follows this call. On the already-live
         // path (called from dataFromJson) curSr is already > 0.f, so this
         // is a no-op there.
-        if (curSr <= 0.f) reinit(APP->engine->getSampleRate());
+        // Captured BEFORE the reinit() above can change curSr: it is the
+        // "this is the fresh-add path" test, not merely "was curSr 0 a
+        // moment ago" -- see the stored-WAV comment below.
+        const bool freshAdd = (curSr <= 0.f);
+        if (freshAdd) reinit(APP->engine->getSampleRate());
         for (int p = 0; p < spky::PART_COUNT; ++p) {
             std::string err;
             if (!smp[p].path.empty()) {
@@ -640,10 +669,37 @@ struct Spotymod : Module {
                          p, smp[p].path.c_str(), err.c_str());
                 continue;
             }
-            const std::string stored = system::join(getPatchStorageDirectory(),
-                                                    p ? "sample_b.wav" : "sample_a.wav");
-            if (system::isFile(stored))
-                spkyvcv::load_wav_into(inst, p, stored, curSr, err);
+            // getPatchStorageDirectory() is scoped to the CURRENT patch and
+            // module id, not to the preset being loaded. On a live preset
+            // load or module paste (freshAdd == false) it points at THIS
+            // patch's own autosave directory, so reading a stored WAV there
+            // would pull content that belongs to neither the preset nor the
+            // user's intent into a part the preset describes as empty.
+            // Restrict the stored-WAV branch to the fresh-add path, where
+            // the directory really is the patch being opened (I-2 note).
+            if (freshAdd) {
+                const std::string stored = system::join(getPatchStorageDirectory(),
+                                                        p ? "sample_b.wav" : "sample_a.wav");
+                if (system::isFile(stored)) {
+                    if (spkyvcv::load_wav_into(inst, p, stored, curSr, err))
+                        continue;
+                    WARN("Spotymod: sampler %d could not reload stored %s: %s",
+                         p, stored.c_str(), err.c_str());
+                }
+            }
+            // Neither a file path nor (fresh-add only) a stored WAV exists
+            // for this part. This function must be total: on the live path
+            // (preset load / paste) the buffer may already hold whatever the
+            // module was playing before, and nothing else will clear it --
+            // the menu, the JSON and the REC LED would all describe the new
+            // preset while the old audio kept playing (I-2). Safe on the
+            // fresh-add path too: the buffer there is already zeroed by the
+            // reinit() above. Also un-consumes the factory-autoload guard,
+            // so ENG->Sampler on this now-empty part can offer the factory
+            // drone again instead of staying silent forever (the deferred
+            // finding from Task 7's re-review).
+            inst.sampler_clear(p);
+            factoryTried[p] = false;
         }
     }
 
