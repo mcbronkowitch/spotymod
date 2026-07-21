@@ -1202,6 +1202,23 @@ with `bool pendingRestore = false;` added beside the other members.
 
 - [ ] **Step 3: Write the audio to patch storage on save**
 
+**Superseded by `466c601`, and further by `6137017`.** The snippet below is
+kept for history, not as current code. As written it loses an overdub made
+over a loaded file: `onSave` skips any part with a non-empty `path` on the
+theory it can reload from that file, but nothing clears `path` when REC then
+writes over it, so a save/reopen silently discards the live overdub and
+restores the original file instead. `466c601` fixed that by clearing
+`path`/`factoryLoaded` the moment a recording actually starts (in
+`pushParams`, not shown here). `6137017` (the M5b whole-branch review's
+blocker fixes) went further still: `onSave` now deletes any WAV a part had
+stored on an *earlier* save when it has nothing to write this time (Rack
+garbage-collects patch storage per module, not per file, so a Cleared part's
+old recording would otherwise reload on reopen); `onAdd`'s inline restore
+loop below was pulled out into `restoreSamplerContent()` (see Task 9's diff)
+and made total, so a live preset load with no path and no stored file
+clears the part instead of leaving stale audio playing. Current code:
+`Spotymod.cpp`'s `onSave()` and `restoreSamplerContent()`.
+
 ```cpp
     std::string storedWavPath(int p) {
         return system::join(createPatchStorageDirectory(),
@@ -1321,6 +1338,23 @@ Listen to it, or at minimum confirm it decodes and does not clip
 This is the first sound a new user hears.
 
 - [ ] **Step 3: Autoload on the engine flip**
+
+**Superseded by `ee232f8`, and further by `6137017`.** The snippet below is
+kept for history, not as current code. As written it reads and decodes
+`res/factory.wav` from disk inside `pushParams`, i.e. on the audio thread —
+the "**Note this runs on the audio thread**" callout further down no longer
+describes current behaviour. `ee232f8` moved the disk read + decode to
+`onAdd()` (main thread, before `process()` ever runs for the instance;
+`loadFactoryNative()` / `factoryNative` in `Spotymod.cpp`), leaving only a
+resample-to-current-rate step (`reinit()`, disk-free) reachable from the
+reactive audio-thread path. `6137017` (the M5b whole-branch review's
+blocker fixes) closed the remaining audio-thread cost in that path:
+`SampleBuffer::clear()`, called by `load_sample()` at the top of this
+autoload, used to unconditionally `memset` the whole 42 s buffer regardless
+of whether it already held anything; it now skips the `memset` when the
+buffer is already empty, which is exactly this autoload's own guard
+condition (`inst.sampler_empty(p)`). Current code: `Spotymod.cpp`'s
+`pushParams()` factory-autoload block, `loadFactoryNative()`, `reinit()`.
 
 In `pushParams`, in the per-part loop, right after the engine selection from
 Task 4:

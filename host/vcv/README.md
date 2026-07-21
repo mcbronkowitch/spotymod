@@ -70,10 +70,18 @@ part:
   ENG's second position plays a test tone instead of the sampler. Not meant
   for normal patches.
 
-A recorded or loaded texture **survives patch save/reopen**: `dataToJson`/
-`dataFromJson` snapshot the buffer content (not just the parameters) into the
-`.vcv` file alongside the sample path, speed mode, reverse and feedback
-settings.
+A recorded or loaded texture **survives patch save/reopen**, but not through
+`dataToJson`/`dataFromJson` — those only carry the sample path, speed mode,
+reverse, feedback and a couple of internal flags (`factory`, `factoryTried`).
+The audio itself goes through Rack's **patch storage** instead: `onSave`
+writes any part that didn't come from a file or the factory WAV out as a WAV
+into the patch's own storage directory, and `dataFromJson`/`onAdd` reload it
+from there on reopen (a part whose content DID come from a file or the
+factory sample reloads from that source instead, so nothing is written for
+it). A part that ends up with nothing to write also has any leftover stored
+WAV from an earlier save deleted, so a deliberate *Clear sample* stays
+cleared through save/reopen rather than reloading whatever was last written
+to disk.
 
 ### Known limitations
 
@@ -92,9 +100,18 @@ settings.
   imported file is always in tune. The asymmetry is intentional: importing a
   file at the wrong pitch would be a bug, but re-rating material that's
   already sitting in the buffer is varispeed, not a bug.
-- **Memory:** each `Spotymod` instance allocates its two 42 s stereo record
-  buffers up front — roughly 32 MB total per instance — whether or not the
-  sampler is ever used on either part.
+- **Memory:** each `Spotymod` instance allocates well over its two 42 s
+  stereo record buffers up front, whether or not the sampler is ever used on
+  either part — closer to **42 MB total**, not the 32 MB the record buffers
+  alone account for:
+  - ~32 MB — the two 42 s stereo sampler record buffers (`samplerMem`).
+  - ~3.8 MB — the per-part stereo echo buffers the FX chain requires
+    (`echo[]`), unrelated to the sampler.
+  - ~130 KB — the shared reverb (`AmbientReverb`).
+  - ~6.4 MB — the factory sample cache (`factoryNative`, decoded once in
+    `onAdd()`, plus the rate-converted `factoryL`/`factoryR`, rebuilt in
+    `reinit()`), held for the module's lifetime regardless of whether ENG
+    is ever flipped to Sampler on either part.
 
 ## Build
 

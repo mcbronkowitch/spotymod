@@ -882,8 +882,10 @@ Synth↔Sampler, REC pad + LED via `gen_panel.py`, `dr_wav` vendored,
 
 Plan `docs/superpowers/plans/2026-07-21-sampler-vcv-binding.md` (9 tasks,
 subagent-driven, one implementer + one independent reviewer per task,
-stop-on-failure). Commit range `35e7b2a`..`ee232f8` (14 commits) on top of
-the M5a merge; `plugin.json` stays `2.7.0`, not tagged, not pushed, per the
+stop-on-failure). Commit range `35e7b2a`..`ee232f8` (15 commits, not the 14
+an earlier draft of this entry claimed — recounted with `git rev-list
+--count`) on top of the M5a merge; `plugin.json` stays `2.7.0`, not tagged,
+not pushed, per the
 plan's global constraints. Makes the M5a texture deck reachable and playable
 from the plugin: ENG (per part, latched) now selects Synth ↔ Sampler; REC
 (per part, latched) records from IN L/R into that part's buffer with an LED
@@ -990,3 +992,50 @@ host/vcv/dist`, WinLibs MinGW-w64 g++ via an MSYS2 `make`, Rack SDK 2.6.6)
 succeeded for both the default and `dist` targets; the produced
 `Spotymod-2.7.0-win-x64.vcvplugin` contains `res/factory.wav`, and
 `plugin.json` still reads `2.7.0` and is untouched in the working tree.
+
+**Final whole-branch review — three blockers fixed on top of `62d9fd0`:**
+1. **I-1, Clear sample didn't survive save/reopen (two causes).** `onSave`
+   skipped writing a part with nothing to record, but left any WAV that an
+   *earlier* save had written for that part sitting in patch storage — Rack
+   garbage-collects patch storage per module, not per file, so a Clear ->
+   Save -> reopen reloaded the deleted recording right back.
+   Separately, `factoryTried[p]` was never persisted, so the same sequence
+   reset it to its construction-time `false` and let the factory drone
+   autoload into the freshly-cleared part on the first control tick after
+   patch open, with no user gesture at all.
+2. **I-2, a live preset load or module paste left stale audio playing.**
+   `restoreSamplerContent()` was written for the fresh-add path, where
+   `reinit()` has already zeroed the buffer, and had no branch for "neither
+   a file path nor a stored WAV exists" — on the already-live path (preset
+   load, Ctrl+V) the buffer kept whatever it held before, while the menu,
+   the JSON and the REC LED all described the new (empty) preset.
+3. **I-3, the factory autoload could stall the audio thread.** `load_sample`
+   begins with `SampleBuffer::clear()`, which unconditionally `memset`s the
+   whole 42 s allocation (16.1 MB) — roughly 1.5-3 ms inside one `process()`
+   call against Rack's 5.3 ms budget at a 256-sample block, worse at 128/64,
+   and reachable from the audio thread by the factory-drone autoload path
+   (including, per I-1's second cause, at patch open with no user gesture).
+
+Fixed together in `6137017`: `onSave` now deletes an orphaned stored WAV
+when a part has nothing to write; `factoryTried` is persisted alongside
+`factory` in `dataToJson`/`dataFromJson`; `restoreSamplerContent()` is now
+total (`inst.sampler_clear(p)` + `factoryTried[p] = false` when neither
+source exists, with the stored-WAV branch restricted to the fresh-add path
+— `getPatchStorageDirectory()` is scoped to the *current patch*, not the
+preset, so reading it on a live preset load would pull that patch's own
+autosave into a preset that never asked for it); and `SampleBuffer::clear()`
+skips its memset when the buffer is already empty (`_size == 0` going in),
+which is provably safe (`init()` always ends in `clear()` before content can
+exist, and `_size == 0` already means `read_linear()` returns silence
+regardless of memory contents) and pinned by a new doctest in
+`tests/test_sampler_engine.cpp` that inspects the raw buffer, not just
+`rec_size()`, after clearing a buffer that had content. Verification re-run
+in full because I-3 touches `engine/`: 485/485 doctest cases green (484 +
+the new test), the same 8 pinned non-sampler scenarios still byte-identical
+between `HEAD` and the `35e7b2a` worktree, `sampler_texture_deck`/
+`sampler_extremes` still double-render byte-identical, and a cold plugin
+build still links. Documentation fixes (this correction, the README's
+persistence and memory-footprint claims) followed in a second commit.
+Whole-branch commit range as of the fix commit: `35e7b2a`..`6137017`, 17
+commits — recount before citing this number in a future session, since the
+docs commit that lands after it adds one more.
