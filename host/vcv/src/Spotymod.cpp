@@ -428,6 +428,41 @@ struct Spotymod : Module {
                 }
             }
 
+            // --- sampler control surface (spec 2026-07-21 morphagene-controls) ---
+            // Four knobs that do nothing in the sampler's FLOW cloud get a
+            // job of their own. The param ids do not change, so no saved
+            // patch moves; only what the knob means when ENG says Sampler.
+            //
+            // set_variation and set_density above keep firing unconditionally
+            // -- the "push to both, let the inactive side ignore it" pattern
+            // the voice row already uses. DENS is the one knob that genuinely
+            // does two things in sampler STEP mode: it still thins the groove
+            // gate AND now sets grain overlap. Both point the same direction
+            // (sparser), so this is left as-is and flagged for the listening
+            // pass rather than special-cased.
+            const bool samplerPart = eng2 && !smp[p].testTone;
+            inst.sampler_overlap(p, pp(DENSITY_A, p));
+            inst.sampler_scan(p, pp(MELODY_A, p));
+
+            // GENE SIZE and ORGANIZE ride the lane BASES, so they must be
+            // gated: in the synth these two slots drive the filter and the
+            // timbre position, and writing SUB/DTUN into them there would be
+            // wrong. The else branch is load-bearing -- a base left behind on
+            // an engine flip would silently stick.
+            if (samplerPart) {
+                inst.set_target_base(p, spky::LANE_SIZE,   pp(SUB_A, p));
+                inst.set_target_base(p, spky::LANE_SOURCE, pp(DETUNE_A, p));
+            } else {
+                inst.set_target_base(p, spky::LANE_SIZE,   0.5f);
+                inst.set_target_base(p, spky::LANE_SOURCE, 0.5f);
+            }
+
+            // Stable pitch in the sampler: the lane still FIRES (that is what
+            // keeps STEP triggering alive, part.cpp:183), it just stops
+            // moving the pitch. Sample material and a synth deck can then sit
+            // in the same key.
+            inst.set_target_active(p, spky::LANE_PITCH, !samplerPart);
+
             inst.set_grit_mode(p, ppb(GRITMODE_A, p) ? spky::GritMode::Reduce
                                                      : spky::GritMode::Drive);
             inst.set_step(p, ppb(STEP_A, p), (int)std::round(pp(STEPS_A, p)));
@@ -436,8 +471,23 @@ struct Spotymod : Module {
                 principleIdx[p] = (principleIdx[p] + 1) % 5;   // cycle the 5 principles
                 inst.set_principle(p, principleIdx[p]);
             }
-            if (newPhraseTrig[p].process(ppb(NEWPHRASE_A, p))) inst.new_phrase(p);
-            if (triggerTrig[p].process(ppb(TRIGGER_A, p))) inst.trigger_manual(p);
+            // NEW is "new gene now" in the sampler: the playhead returns to
+            // ORGANIZE and a grain spawns immediately. Without it the long
+            // end of GENE SIZE is unplayable -- every knob stays dead until
+            // the next scheduled spawn, tens of seconds away at overlap 1.
+            if (newPhraseTrig[p].process(ppb(NEWPHRASE_A, p))) {
+                if (samplerPart) inst.sampler_punch(p);
+                else             inst.new_phrase(p);
+            }
+            // TRIG punches AND triggers. trigger_manual alone is inert in the
+            // sampler's FLOW cloud -- _next_ratio reads the burst latch only
+            // when !_flow (sampler_engine.cpp:226) -- so the pad has been
+            // dead there since M5b. The punch fixes FLOW; the trigger keeps
+            // STEP behaving as it does today.
+            if (triggerTrig[p].process(ppb(TRIGGER_A, p))) {
+                if (samplerPart) inst.sampler_punch(p);
+                inst.trigger_manual(p);
+            }
         }
 
         inst.set_morph(params[MORPH].getValue());
