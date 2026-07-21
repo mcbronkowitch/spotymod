@@ -77,6 +77,18 @@ static_assert(RATE_B == RATE_A + PART_STRIDE, "part-block stride drifted from ge
 static_assert(TUNE_B == TUNE_A + PART_STRIDE, "part-block stride drifted from generator");
 static_assert(TRIGGER_B == TRIGGER_A + PART_STRIDE, "part-block stride drifted from generator");
 
+// REC is the exception and must never be read with pp()/ppb(). M5b appended it
+// LAST (gen_panel.py:359) so that adding it would not grow PART_STRIDE and
+// shift every already-saved patch's part-B ids -- so REC_A/REC_B are adjacent
+// trailing ids, not a strided pair. ppb(REC_A, 1) therefore indexed
+// REC_A + 23 == 99 into a 78-element params vector: out of bounds, and part B
+// could never record. Read them as `p ? REC_B : REC_A`, the way the REC lights
+// already do.
+static_assert(REC_B == REC_A + 1,
+              "REC ids are trailing, not part-strided -- read them explicitly, never via pp()");
+static_assert(REC_A + PART_STRIDE >= NUM_PARAMS,
+              "if REC ever moves into the part blocks, revisit the explicit REC reads");
+
 struct Spotymod : Module {
     spky::Instrument inst;
     spky::FxMem fxmem;
@@ -415,7 +427,10 @@ struct Spotymod : Module {
             // engine's set_recording is idempotent, and sampler_record flips
             // monitoring with it, so pushing every control tick is correct.
             // On a synth part REC is inert: ENG is the only mode selector.
-            const bool wantRec = ppb(REC_A, p) && eng2 && !smp[p].testTone;
+            // NOT ppb(REC_A, p): REC is not part-strided (see the static_assert
+            // block near the top of this file).
+            const bool wantRec = params[p ? REC_B : REC_A].getValue() > 0.5f
+                                 && eng2 && !smp[p].testTone;
             if (wantRec != inst.sampler_is_recording(p)) {
                 inst.sampler_record(p, wantRec);
                 // path/factoryLoaded mean "the buffer still holds exactly
