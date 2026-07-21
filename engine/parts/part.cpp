@@ -132,6 +132,17 @@ void Part::_control_tick() {
         : 0.f;
     _color_eff = clampf(_color + cmod, 0.f, 1.f);
     _chord.set_color(_color_eff);
+
+    // DENS -> grain overlap, with MOTION's swing on top (spec 2026-07-21
+    // morphagene-controls). Pushed straight at _sampler rather than through
+    // _engine: it is a sampler-only parameter, and _sampler is a concrete
+    // member here just as it is for the voice row (part.h). On a synth part
+    // this is one float store into an engine nobody is listening to.
+    const float omod = _active[LANE_MOTION]
+        ? _mod.lane_output(LANE_MOTION) * _depth * kOverlapMod
+        : 0.f;
+    _overlap_eff = clampf(_overlap + omod, 0.f, 1.f);
+    _sampler.set_overlap(_overlap_eff);
     float chord[ChordBuilder::kMaxNotes];
     const int nch = _chord.apply(_tg[LANE_PITCH], _chord_mask(),
                                  _quant.root_semis(), chord);

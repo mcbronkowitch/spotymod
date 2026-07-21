@@ -108,6 +108,13 @@ public:
     void  sampler_speed_mode(int p, bool tape) { _parts[p].sampler().set_tape_mode(tape); }
     void  sampler_reverse(int p, bool on)   { _parts[p].sampler().set_reverse(on); }
     void  sampler_feedback(int p, float n)  { _parts[p].sampler().set_feedback(n); }
+    // --- M5c sampler controls (spec 2026-07-21 morphagene-controls) ---
+    // NOTE: not "morph" -- set_morph is already taken by the global A/B
+    // control (see set_morph above). This is the grain overlap.
+    void  sampler_overlap(int p, float n)  { _parts[p].set_sampler_overlap(n); }
+    void  sampler_scan(int p, float bipolar) { _parts[p].sampler().set_scan(bipolar); }
+    void  sampler_punch(int p)             { _parts[p].sampler().punch(); }
+    float sampler_scan_pos(int p) const    { return _parts[p].sampler().scan_pos(); }
     void  load_sample(int p, const float* l, const float* r, size_t frames) {
         _parts[p].sampler().load_sample(l, r, frames);
     }

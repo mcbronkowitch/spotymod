@@ -41,6 +41,11 @@ public:
     // swing (spec 2026-07-18 color-motion-target). Equals the knob when
     // MOD = 0 or the MOTION target is inactive.
     float color_eff() const { return _color_eff; }
+    // DENS in the sampler: the grain-overlap knob. Stored, not pushed --
+    // _control_tick combines it with the MOTION lane and hands the sampler
+    // the effective value, exactly as COLOR does.
+    void set_sampler_overlap(float n) { _overlap = clampf(n, 0.f, 1.f); }
+    float overlap_eff() const { return _overlap_eff; }
     void set_detune_cents(float c) { _detune_cents = c; }   // DRIFT tune tap; engine pitch only
     void set_target_active(int slot, bool on) { _active[slot] = on; }
     void set_target_base(int slot, float b)   { _base[slot] = clampf(b, 0.f, 1.f); }
@@ -81,8 +86,13 @@ public:
     void set_voice_attack(float n)    { _synth.set_attack(n);    _sampler.set_window_attack(n); }
     void set_voice_decay(float n)     { _synth.set_decay(n);     _sampler.set_window_decay(n); }
     void set_voice_resonance(float n) { _synth.set_resonance(n); _sampler.set_resonance(n); }
-    void set_voice_sub(float n)       { _synth.set_sub(n);       _sampler.set_sub(n); }
-    void set_voice_detune(float n)    { _synth.set_detune(n);    _sampler.set_detune(n); }
+    // SUB and DETUNE are synth-only from the morphagene-controls spec on
+    // (2026-07-21): on the panel these two knobs are GENE SIZE and ORGANIZE
+    // in the sampler, so forwarding them here as well would give one knob two
+    // simultaneous jobs in the same engine. SamplerEngine::_sub_n and
+    // _detune_n default to 0 and now stay there.
+    void set_voice_sub(float n)       { _synth.set_sub(n); }
+    void set_voice_detune(float n)    { _synth.set_detune(n); }
     void set_voice_filt(float t)      { _synth.set_filt(t);      _sampler.set_filt(t); }
 
     SamplerEngine& sampler() { return _sampler; }
@@ -240,11 +250,21 @@ private:
     static constexpr float kColorMod  = 0.2f;
     static constexpr float kColorGate = 0.01f;
 
+    // DENS is a fourth destination of the MOTION lane (spec 2026-07-21
+    // morphagene-controls), so the cloud breathes in density instead of
+    // standing still. Bipolar and additive, same shape as kColorMod. No gate
+    // twin to kColorGate: the sampler has no bit-identity guarantee to
+    // protect at knob 0, and overlap 1 is a musical value, not an off state.
+    // Ear-tunable.
+    static constexpr float kOverlapMod = 0.2f;
+
     float _depth = 1.f;
     float _tune = 0.5f;
     float _detune_cents = 0.f;   // DRIFT detune, applied post-quantizer to the engine only
     float _color = 0.f;          // COLOR knob; effective color is computed in process()
     float _color_eff = 0.f;      // knob + MOTION swing, as last pushed to _chord
+    float _overlap = 1.f;        // DENS knob; effective value computed in _control_tick
+    float _overlap_eff = 1.f;    // knob + MOTION swing, as last pushed to _sampler
     int   _gate_ctr = 0;
     int   _gate_len = 240;   // ~5 ms @ 48k, recomputed in init()
     float _sr = 48000.f;

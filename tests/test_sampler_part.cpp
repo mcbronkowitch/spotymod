@@ -307,3 +307,112 @@ TEST_CASE("part: CHOKE holds a sampler drone like a synth drone") {
     g.render(48000);
     CHECK(g.inst.sampler_grains(PART_B) > 0);   // the cloud re-arms and comes back
 }
+
+// The four cases below use a bare Part rather than InstRig: Part::init takes
+// its own sampler_mem/sampler_frames pair directly (part.h), so a real
+// vector-backed buffer plugs straight in without going through Instrument.
+// That matters here because the brief's original draft called
+// `Part p; p.init(48000.f, 0);` with no memory at all -- SamplerEngine::
+// set_memory(nullptr, 0) leaves _buf empty, so SampleBuffer::is_empty() is
+// true forever and SamplerEngine::_spawn_one() returns before spawning
+// anything (sampler_engine.cpp). Every test that counts grains would measure
+// nothing. Giving each Part its own kSFrames-sized backing vector (the same
+// pattern InstRig uses for its per-part sbuf[]) fixes that without needing
+// the full Instrument.
+
+TEST_CASE("sampler part: the MOTION lane breathes the grain overlap") {
+    // DENS would otherwise be the deck's only completely static control --
+    // it hangs off no lane and no jack. This mirrors how MOTION already
+    // reaches COLOR (part.cpp:129-134).
+    std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+    p.set_engine(ENGINE_SAMPLER);
+    p.set_sampler_overlap(0.5f);
+    p.set_depth(1.f);
+    p.set_target_active(LANE_MOTION, true);
+
+    float lo = 2.f, hi = -2.f;
+    for (int i = 0; i < 48000; ++i) {
+        float a = 0.f, b = 0.f;
+        p.process(a, b);
+        const float e = p.overlap_eff();
+        if (e < lo) lo = e;
+        if (e > hi) hi = e;
+    }
+    CHECK(hi > lo + 0.02f);           // it actually moves
+    CHECK(lo >= 0.f);
+    CHECK(hi <= 1.f);
+}
+
+TEST_CASE("sampler part: an inactive MOTION target leaves the overlap on the knob") {
+    std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+    p.set_engine(ENGINE_SAMPLER);
+    p.set_sampler_overlap(0.4f);
+    p.set_target_active(LANE_MOTION, false);
+    for (int i = 0; i < 4800; ++i) { float a = 0.f, b = 0.f; p.process(a, b); }
+    CHECK(p.overlap_eff() == doctest::Approx(0.4f));
+}
+
+TEST_CASE("sampler part: a deactivated PITCH lane holds pitch but keeps firing") {
+    // The whole point of the pitch decision: material and a synth deck stay
+    // in one key, WITHOUT losing rhythmic triggering. _active gates the
+    // VALUE (part.cpp:44-57); lane_fired is independent of it (part.cpp:183),
+    // which is why STEP still triggers.
+    std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+    p.set_engine(ENGINE_SAMPLER);
+    p.set_step(true, 8);
+    p.set_depth(1.f);
+    p.set_target_active(LANE_PITCH, false);
+
+    const float pitch0 = p.target_raw(LANE_PITCH);
+    bool fired_at_least_once = false;
+    for (int i = 0; i < 48000 * 4; ++i) {
+        float a = 0.f, b = 0.f;
+        p.process(a, b);
+        if (p.mod().lane_fired(LANE_PITCH)) fired_at_least_once = true;
+        CHECK(p.target_raw(LANE_PITCH) == pitch0);   // exactly, never drifting
+    }
+    CHECK(fired_at_least_once);
+}
+
+TEST_CASE("sampler part: punch() produces a grain in the FLOW cloud") {
+    // Regression pin for an M5b defect this plan fixes as a side effect:
+    // trigger_manual only latches _burst_ratio, and _next_ratio reads that
+    // latch solely when !_flow (sampler_engine.cpp:226) -- so the pad has
+    // been inert in the standing cloud. Renamed from the brief's "TRIG
+    // produces a grain in the FLOW cloud": this calls punch() directly, not
+    // through the Task 6 host/panel wiring (TRIG isn't connected to it yet),
+    // so a reader later must not mistake this for proof the panel path works.
+    std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+    p.set_engine(ENGINE_SAMPLER);
+    std::vector<float> tone(24000);
+    for (size_t i = 0; i < tone.size(); ++i)
+        tone[i] = std::sin(6.2831853f * 300.f * float(i) / 48000.f);
+    p.sampler().load_sample(tone.data(), tone.data(), tone.size());
+    p.set_step(false, 8);                   // FLOW
+    for (int i = 0; i < 4800; ++i) { float a = 0.f, b = 0.f; p.process(a, b); }
+
+    const int before = p.sampler().spawn_count();
+    p.sampler().punch();                    // what NEW/TRIG will call
+    for (int i = 0; i < 400; ++i) { float a = 0.f, b = 0.f; p.process(a, b); }
+    CHECK(p.sampler().spawn_count() > before);
+}
+
+TEST_CASE("sampler part: SUB and DTUN no longer reach the sampler") {
+    // They are GENE SIZE and ORGANIZE on the panel now (spec 2026-07-21
+    // morphagene-controls). The sampler's own sub/detune stay at their
+    // silent defaults, and the synth keeps both.
+    Part p;
+    p.init(48000.f, 0);
+    p.set_voice_sub(1.f);
+    p.set_voice_detune(1.f);
+    CHECK(p.sampler().sub() == doctest::Approx(0.f));
+    CHECK(p.sampler().detune() == doctest::Approx(0.f));
+}

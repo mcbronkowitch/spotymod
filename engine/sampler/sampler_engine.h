@@ -192,6 +192,11 @@ public:
     int   dropped_spawns() const    { return _dropped_spawns; }
     float last_spawn_ratio() const  { return _last_ratio; }
     float last_spawn_pan() const    { return _last_pan; }
+    // SUB and DTUN no longer reach the sampler (spec 2026-07-21
+    // morphagene-controls); these stay at their silent 0.f defaults. Exposed
+    // so tests can pin the disconnection down.
+    float sub() const    { return _sub_n; }
+    float detune() const { return _detune_n; }
     float last_spawn_pos() const    { return _last_pos; }
     int   last_spawn_len() const    { return _last_len; }
 
