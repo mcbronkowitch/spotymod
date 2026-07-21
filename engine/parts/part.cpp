@@ -56,9 +56,10 @@ float Part::target_raw(int slot) const {
     return v;
 }
 
-// PITCH target + TUNE offset, summed BEFORE quantization so the final audible
-// pitch always lands on the scale grid (tune is a bipolar +/-18-semi transpose,
-// 0.5 = neutral). Quantizing the sum keeps both parts on one shared grid.
+// PITCH target + TUNE offset (a bipolar +/-18-semi transpose, 0.5 = neutral).
+// On a SYNTH part the sum is quantized afterwards, so the final audible pitch
+// lands on the scale grid and both parts share one grid. On a SAMPLER part it
+// is used as-is -- see the quantizer comment in _control_tick.
 float Part::pitch_pre_quant() const {
     return clampf(target_raw(LANE_PITCH) + (_tune - 0.5f), 0.f, 1.f);
 }
@@ -116,8 +117,32 @@ float Part::max_voice_env() const {
 // the same sample double-steps the glide.
 void Part::_control_tick() {
     for (int i = 0; i < LANE_COUNT; ++i) _tg[i] = target_raw(i);
-    _tg[LANE_PITCH] = _quant.process(pitch_pre_quant());
-    _pitch_q = _tg[LANE_PITCH];                              // clean, drives pitch_cv()
+
+    const float pitch_raw = pitch_pre_quant();
+    // Called unconditionally, even when the sampler discards the result: the
+    // quantizer carries a slew counter and a hysteresis note across calls, and
+    // skipping it while a part is on the sampler would leave that state frozen
+    // and make the first synth tick after an engine switch depend on how long
+    // the part spent as a sampler. Cheap, and it keeps the synth's behaviour
+    // exactly what it was.
+    const float pitch_quantized = _quant.process(pitch_raw);
+
+    // The SAMPLER does not quantize. The quantizer is a melody device: it snaps
+    // a lane's pitch onto the scale so composed notes land in key. The sampler
+    // has no melody -- the morphagene-controls work switched its PITCH lane off
+    // -- and TUNE there means one thing only: transpose this recording as a
+    // whole, to match material that may be tonal, atonal, or plainly out of
+    // tune. Snapping that to the instrument's scale is meaningless, and at the
+    // knob's centre it was actively wrong: 0.5 of a 36-semitone span is exactly
+    // 18 semitones, a tritone above the root, which most scales do not contain.
+    // Measured at TUNE 0.5 with the PITCH lane off: three of the eight scales
+    // snapped the "neutral" detent a semitone flat, one a semitone sharp, and
+    // only four left it at unity -- so recorded material played back off-pitch
+    // against its own source, and which way depended on the SCALE knob.
+    // Unquantized, the centre is exactly 1.0 for every scale and root, and the
+    // knob transposes continuously (the author's call: out-of-tune material has
+    // to be tunable to the key, which a semitone grid cannot do).
+    _pitch_q = _engine_id == ENGINE_SAMPLER ? pitch_raw : pitch_quantized;
     _tg[LANE_PITCH] = clampf(_pitch_q + _detune_cents * (1.f / 3600.f), 0.f, 1.f);
 
     // chord layer: refresh the surface every tick (cheap interval apply);

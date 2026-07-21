@@ -446,3 +446,50 @@ TEST_CASE("sampler part: SUB and DTUN no longer reach the sampler") {
     CHECK(p.synth().sub_level() == doctest::Approx(1.f));
     CHECK(p.synth().detune_max_ct() == doctest::Approx(SynthEngine::kDetuneCeilCt));
 }
+
+TEST_CASE("part: the sampler does not quantize its pitch, the synth still does") {
+    // The centre detent of TUNE must play a recording back at exactly its
+    // original pitch. It did not: 0.5 of the 36-semitone pitch span is exactly
+    // 18 semitones -- a tritone above the root -- which most scales do not
+    // contain, so Quantizer::process snapped it to a neighbouring degree.
+    // Three of the eight scales pulled the detent a semitone flat, one pushed
+    // it a semitone sharp, and only four left it alone. Recorded material
+    // played back out of tune against its own source, and the direction
+    // depended on where SCALE happened to sit.
+    //
+    // The sampler's TUNE is a whole-recording transposition, not a melody, so
+    // it is not quantized at all. The synth's must still be.
+    for (int scale = 0; scale < 8; ++scale) {
+        InstRig g;
+        g.inst.set_scale(scale);
+        g.inst.set_tune(PART_A, 0.5f);
+        g.inst.set_tune(PART_B, 0.5f);
+        g.inst.set_target_active(PART_A, LANE_PITCH, false);
+        g.inst.set_depth(PART_A, 0.f);
+        g.inst.set_target_active(PART_B, LANE_PITCH, false);
+        g.inst.set_depth(PART_B, 0.f);
+
+        g.inst.set_engine(PART_A, ENGINE_SAMPLER);   // A: sampler
+        g.inst.set_engine(PART_B, ENGINE_SYNTH);     // B: synth, the control
+        g.render(2000);                              // past the click-free swap
+
+        // Unity: pitch 0.5 maps to ratio 8^(0.5-0.5) == 1.0 exactly. Compared
+        // exactly, not with Approx -- "close to unity" is what the quantizer
+        // already delivered on four of the eight scales, and the whole point
+        // is that the detent is unity on ALL of them.
+        CHECK(g.inst.pitch_cv(PART_A) == 0.5f);
+    }
+
+    // The synth leg, on a scale that provably moves the detent (scale 0 pulled
+    // it to 17/36 in the measurement above). Without this, deleting the
+    // quantizer call outright would still pass everything above.
+    InstRig g;
+    g.inst.set_scale(0);
+    g.inst.set_tune(PART_B, 0.5f);
+    g.inst.set_target_active(PART_B, LANE_PITCH, false);
+    g.inst.set_depth(PART_B, 0.f);
+    g.inst.set_engine(PART_B, ENGINE_SYNTH);
+    g.render(2000);
+    CHECK(g.inst.pitch_cv(PART_B) != doctest::Approx(0.5f));
+    CHECK(g.inst.pitch_cv(PART_B) == doctest::Approx(17.f / 36.f));
+}
