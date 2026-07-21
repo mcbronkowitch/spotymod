@@ -432,15 +432,17 @@ struct Spotymod : Module {
         lights[GATE_B_L].setBrightness(gateFilt[1]);
 
         // REC LED: pulsing while recording, steady at the fill level when the
-        // part holds content, dark when empty or on a synth part. One LED, the
-        // two things a player needs to know -- am I armed, and how full is it.
+        // part holds content, dark when empty or when ENG is on Synth. Content
+        // left over from a part that was switched away from Sampler must not
+        // relight the LED -- ENG, not buffer state, decides what's shown.
         for (int p = 0; p < spky::PART_COUNT; ++p) {
             float b = 0.f;
+            const bool samplerPart = ppb(ENGINE_A, p) && !smp[p].testTone;
             if (inst.sampler_is_recording(p)) {
                 recPhase[p] += 2.f / args.sampleRate;      // 2 Hz pulse
                 if (recPhase[p] >= 1.f) recPhase[p] -= 1.f;
                 b = recPhase[p] < 0.5f ? 1.f : 0.25f;
-            } else if (!inst.sampler_empty(p)) {
+            } else if (samplerPart && !inst.sampler_empty(p)) {
                 b = 0.15f + 0.55f * inst.sampler_fill(p);
             }
             lights[p ? REC_B_L : REC_A_L].setBrightness(b);
