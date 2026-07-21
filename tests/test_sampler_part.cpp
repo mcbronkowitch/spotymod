@@ -399,9 +399,23 @@ TEST_CASE("sampler part: punch() produces a grain in the FLOW cloud") {
     p.set_step(false, 8);                   // FLOW
     for (int i = 0; i < 4800; ++i) { float a = 0.f, b = 0.f; p.process(a, b); }
 
+    // Task 4 review, Befund 1: at this grain length/overlap the natural
+    // spawn_every lands around 2,300 samples -- an 400-sample observation
+    // window (the original count here) is well inside that, so
+    // spawn_count() > before would trip on the very same schedule with or
+    // without punch(), and the test would prove nothing about punch()
+    // specifically. punch() zeroes _spawn_ctr (sampler_engine.cpp), which
+    // the scheduler decrements and checks against <= 0.f, so a forced spawn
+    // always lands on the very next process() call. Shrinking the window to
+    // 8 samples means only a punch()-forced spawn can fit; the REQUIRE below
+    // pins the margin so a future change to grain length/overlap that shrinks
+    // spawn_every can't silently let the natural schedule creep back inside
+    // an 8-sample window without this test noticing.
+    REQUIRE(p.sampler().spawn_interval_samples() > 100.f);
+
     const int before = p.sampler().spawn_count();
     p.sampler().punch();                    // what NEW/TRIG will call
-    for (int i = 0; i < 400; ++i) { float a = 0.f, b = 0.f; p.process(a, b); }
+    for (int i = 0; i < 8; ++i) { float a = 0.f, b = 0.f; p.process(a, b); }
     CHECK(p.sampler().spawn_count() > before);
 }
 
@@ -409,6 +423,17 @@ TEST_CASE("sampler part: SUB and DTUN no longer reach the sampler") {
     // They are GENE SIZE and ORGANIZE on the panel now (spec 2026-07-21
     // morphagene-controls). The sampler's own sub/detune stay at their
     // silent defaults, and the synth keeps both.
+    //
+    // Task 4 review, Befund 2: set_voice_sub/set_voice_detune (part.h) now
+    // forward ONLY to _synth.set_sub()/_synth.set_detune() -- the sampler
+    // leg below is the half this case pins. Deleting BOTH forwarding calls
+    // (not just the sampler one) would still pass every CHECK here, because
+    // nothing below observes the synth leg. It should be pinned too, but
+    // SynthEngine/Voice expose no public getter for _sub_level or
+    // _detune_ct (engine/synth/synth_engine.h, engine/synth/voice.h) --
+    // there is no observer to assert against without adding one, and adding
+    // a getter is production-code surface this task's brief puts off limits.
+    // Left open rather than faked; see the Task 4 report.
     Part p;
     p.init(48000.f, 0);
     p.set_voice_sub(1.f);
