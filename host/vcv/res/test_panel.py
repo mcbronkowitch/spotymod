@@ -219,7 +219,7 @@ def test_sector_captions():
             (11.00, 8.20, 'PITCH'),
             (g.W - 74.00, 8.20, 'MOTION'), (g.W - 74.00, 67.60, 'TIMBRE'),
             (g.W - 11.00, 8.20, 'PITCH')]
-    got = [(x, y, t) for (x, y, sz, sp, col, t) in g.TEXTS
+    got = [(x, y, t) for (x, y, sz, sp, col, an, t) in g.TEXTS
            if t in ('MOTION', 'TIMBRE', 'PITCH')]
     check(len(got) == 6, f"{len(got)} sector captions, want 6")
     for wx, wy, wt in want:
@@ -288,7 +288,7 @@ def test_group_legend_geometry():
                 f'width="{g.mm(cw)}" height="2.6" fill="{g.PAPER}"/>')
         check(chip in s, f"legend chip for {name} missing/misplaced")
         check(any(approx(tx, x + 5.0) and approx(ty, y + 0.75) and t == name
-                  for (tx, ty, sz, sp, col, t) in g.TEXTS),
+                  for (tx, ty, sz, sp, col, an, t) in g.TEXTS),
               f"legend text for {name} missing at ({x + 5.0:.2f}, {y + 0.75:.2f})")
 
 
@@ -333,7 +333,7 @@ def test_center_card_is_gone():
 
 def test_old_eyebrow_texts_are_gone():
     """TIME/ROOM are group legends now, not free-floating eyebrows."""
-    for (x, y, sz, sp, col, t) in g.TEXTS:
+    for (x, y, sz, sp, col, an, t) in g.TEXTS:
         if t in ('TIME', 'ROOM'):
             check(approx(sz, 1.8) and approx(x, g.CX - 20.5 + 5.0),
                   f"{t} is still the old eyebrow (size {sz} at x {x:.2f})")
@@ -450,6 +450,103 @@ def test_config_wires_tip_not_label():
           "configInput is not wired to c.tip -- jack tooltips will show panel labels")
     check("configOutput(c.id, c.tip)" in cpp,
           "configOutput is not wired to c.tip -- jack tooltips will show panel labels")
+
+
+# --- 2026-07-21 morphagene-controls: the sampler meanings on the plate --------
+# ENG remaps four knobs. Three get a second caption line; DENSITY deliberately
+# does not -- DENS reads correctly in both engines (groove density / grain
+# density), and the obvious alternative "MRPH" is already the global A/B knob's
+# name, so putting it on a part knob would be an operating error by design.
+SAMPLER_CAPTIONS = [("MELODY", "SCAN"), ("SUB", "SIZE"), ("DETUNE", "ORG")]
+
+
+def sampler_text(word, near):
+    """The SCAN/SIZE/ORG entry nearest to a given control glyph. Picking by
+    distance rather than by exact coordinate keeps this test independent of
+    how the generator derives the position -- it can only pass if the caption
+    really landed next to its knob."""
+    hits = [t for t in g.TEXTS if t[-1] == word]
+    if not hits:
+        return None
+    return min(hits, key=lambda t: math.hypot(t[0] - near.x, t[1] - near.y))
+
+
+def test_sampler_captions_exist():
+    """Every remapped knob carries its sampler meaning on the plate."""
+    txt = [t[-1] for t in g.TEXTS]
+    for _base, word in SAMPLER_CAPTIONS:
+        check(txt.count(word) == 2,
+              f"sampler caption {word!r} appears {txt.count(word)}x, want 2 (A and B)")
+    check("MRPH" not in txt,
+          "DENS must keep its label -- MORPH is the global A/B control")
+    check(ctl('DENSITY_A').label == 'DENS' and ctl('DENSITY_B').label == 'DENS',
+          "DENSITY lost its DENS label")
+
+
+def test_sampler_captions_sit_outside_their_labels():
+    """The sampler line goes further out than the main caption -- never between
+    the knob and the LED ring, and never on top of the caption it belongs to."""
+    for suffix, cx, colour in (('_A', g.RING_CX_A, g.GREEN),
+                               ('_B', g.W - g.RING_CX_A, g.COPPER)):
+        for base, word in SAMPLER_CAPTIONS:
+            c = ctl(base + suffix)
+            lx, ly, anchor, _s, _col = g.label_of(c)
+            t = sampler_text(word, c)
+            check(t is not None, f"{c.enum}: no {word} caption at all")
+            if t is None:
+                continue
+            main_d = math.hypot(lx - cx, ly - g.RING_CY)
+            d = math.hypot(t[0] - cx, t[1] - g.RING_CY)
+            check(d > main_d,
+                  f"{c.enum}: {word} sits inside {c.label} (d={d:.2f} <= {main_d:.2f})")
+            check(math.hypot(t[0] - c.x, t[1] - c.y) > g.GLYPH_R[c.kind],
+                  f"{c.enum}: {word} sits on the knob glyph")
+            # A left/right-aligned parent needs a left/right-aligned second
+            # line, or the two captions stagger. This is why PanelTxt grew an
+            # anchor column.
+            check(t[5] == anchor,
+                  f"{c.enum}: {word} anchored {t[5]!r}, parent is {anchor!r}")
+            check(approx(t[2], 1.5), f"{c.enum}: {word} size {t[2]}, want 1.5")
+            check(t[4] == colour,
+                  f"{c.enum}: {word} colour {t[4]}, want {colour}")
+            # Enough baseline separation that the glyph boxes cannot touch:
+            # the parent caption is 1.9 mm tall.
+            check(t[1] - ly >= 2.4,
+                  f"{c.enum}: {word} only {t[1] - ly:.2f} mm below {c.label}")
+
+
+def test_sampler_captions_clear_the_voice_box():
+    """SIZE/ORG hang below the VOICE box. They must clear its bottom hairline
+    instead of being struck through by it, and stay off the PLAY box above."""
+    voice = next(gr for gr in g.GROUPS if gr[4] == 'VOICE')
+    play = next(gr for gr in g.GROUPS if gr[4] == 'PLAY')
+    bottom, top = voice[1] + voice[3], play[1]
+    for word in ('SIZE', 'ORG'):
+        for t in (x for x in g.TEXTS if x[-1] == word):
+            cap_top = t[1] - 0.7 * t[2]     # monospace cap height ~0.7 em
+            check(cap_top >= bottom,
+                  f"{word} at y {t[1]:.2f} is struck by the VOICE border ({bottom})")
+            check(t[1] <= top - 0.3,
+                  f"{word} at y {t[1]:.2f} runs into the PLAY box ({top})")
+
+
+def test_panel_texts_stay_on_the_plate():
+    for t in g.TEXTS:
+        check(1.0 <= t[0] <= g.W - 1.0 and 1.0 <= t[1] <= g.Hh - 1.0,
+              f"panel text {t[-1]!r} off plate at ({t[0]:.2f}, {t[1]:.2f})")
+
+
+def test_header_carries_text_anchor():
+    """The SVG preview and Rack must align these the same way; the C++ can only
+    do that if the generated table ships the anchor."""
+    h = g.header()
+    check("unsigned char anchor; const char* str;" in h,
+          "PanelTxt has no anchor column")
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "..", "src", "Spotymod.cpp")) as f:
+        cpp = f.read()
+    check("alignOf(t.anchor)" in cpp,
+          "the kPanelTexts draw loop ignores the anchor column")
 
 
 def main():

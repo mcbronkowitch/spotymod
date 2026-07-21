@@ -5,7 +5,7 @@ struct XY { float x, y; };
 enum WidgetKind { WK_BIGKNOB, WK_KNOBC, WK_SMKNOB, WK_KNOBI, WK_SW2, WK_LATCH, WK_SMBTN, WK_IN, WK_OUT, WK_LIGHT };
 struct PanelCtl { int id; WidgetKind kind; XY mm; const char* label; XY lbl; unsigned char anchor; float lblSize; unsigned lblRgb; const char* tip; };
 // anchor: 0 = middle, 1 = start (left-aligned), 2 = end (right-aligned)
-struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; const char* str; };
+struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; unsigned char anchor; const char* str; };
 static constexpr int PART_STRIDE = 23;
 static constexpr float kRingR = 16.000f;      // mm, LED-dot orbit
 static constexpr float kRingDotR = 0.95f;   // mm, lit-dot radius
@@ -217,29 +217,35 @@ static const PanelCtl kLightCtls[] = {
     {REC_B_L, WK_LIGHT, {183.360f, 103.600f}, "", {183.360f, 103.600f}, 0, 1.90f, 0x171713, ""},
 };
 static const PanelTxt kPanelTexts[] = {
-    {{42.000f, 38.600f}, 5.00f, 0.00f, 0x2E6355, "A"},
-    {{171.360f, 38.600f}, 5.00f, 0.00f, 0x8A5230, "B"},
-    {{106.680f, 7.000f}, 3.60f, 0.90f, 0x171713, "SPOTYMOD"},
-    {{74.000f, 8.200f}, 1.70f, 0.30f, 0x1D6F5F, "MOTION"},
-    {{74.000f, 67.600f}, 1.70f, 0.30f, 0x1D6F5F, "TIMBRE"},
-    {{11.000f, 8.200f}, 1.70f, 0.30f, 0x1D6F5F, "PITCH"},
-    {{139.360f, 8.200f}, 1.70f, 0.30f, 0xB96532, "MOTION"},
-    {{139.360f, 67.600f}, 1.70f, 0.30f, 0xB96532, "TIMBRE"},
-    {{202.360f, 8.200f}, 1.70f, 0.30f, 0xB96532, "PITCH"},
-    {{9.000f, 73.150f}, 1.80f, 0.35f, 0x656056, "VOICE"},
-    {{48.500f, 73.150f}, 1.80f, 0.35f, 0x656056, "FX"},
-    {{9.000f, 99.350f}, 1.80f, 0.35f, 0x656056, "PLAY"},
-    {{177.360f, 73.150f}, 1.80f, 0.35f, 0x656056, "VOICE"},
-    {{136.360f, 73.150f}, 1.80f, 0.35f, 0x656056, "FX"},
-    {{136.360f, 99.350f}, 1.80f, 0.35f, 0x656056, "PLAY"},
-    {{91.180f, 13.750f}, 1.80f, 0.35f, 0x656056, "BLEND"},
-    {{91.180f, 35.750f}, 1.80f, 0.35f, 0x656056, "TIME"},
-    {{91.180f, 51.750f}, 1.80f, 0.35f, 0x656056, "DUO"},
-    {{91.180f, 77.250f}, 1.80f, 0.35f, 0x656056, "ROOM"},
-    {{12.200f, 113.350f}, 1.80f, 0.35f, 0x1D6F5F, "CV A"},
-    {{54.500f, 113.350f}, 1.80f, 0.35f, 0x656056, "IN"},
-    {{100.180f, 113.350f}, 1.80f, 0.35f, 0x656056, "CLOCK"},
-    {{145.860f, 113.350f}, 1.80f, 0.35f, 0x656056, "OUT"},
-    {{188.160f, 113.350f}, 1.80f, 0.35f, 0xB96532, "CV B"},
+    {{42.000f, 38.600f}, 5.00f, 0.00f, 0x2E6355, 0, "A"},
+    {{171.360f, 38.600f}, 5.00f, 0.00f, 0x8A5230, 0, "B"},
+    {{106.680f, 7.000f}, 3.60f, 0.90f, 0x171713, 0, "SPOTYMOD"},
+    {{74.000f, 8.200f}, 1.70f, 0.30f, 0x1D6F5F, 0, "MOTION"},
+    {{74.000f, 67.600f}, 1.70f, 0.30f, 0x1D6F5F, 0, "TIMBRE"},
+    {{11.000f, 8.200f}, 1.70f, 0.30f, 0x1D6F5F, 0, "PITCH"},
+    {{139.360f, 8.200f}, 1.70f, 0.30f, 0xB96532, 0, "MOTION"},
+    {{139.360f, 67.600f}, 1.70f, 0.30f, 0xB96532, 0, "TIMBRE"},
+    {{202.360f, 8.200f}, 1.70f, 0.30f, 0xB96532, 0, "PITCH"},
+    {{9.000f, 73.150f}, 1.80f, 0.35f, 0x656056, 0, "VOICE"},
+    {{48.500f, 73.150f}, 1.80f, 0.35f, 0x656056, 0, "FX"},
+    {{9.000f, 99.350f}, 1.80f, 0.35f, 0x656056, 0, "PLAY"},
+    {{177.360f, 73.150f}, 1.80f, 0.35f, 0x656056, 0, "VOICE"},
+    {{136.360f, 73.150f}, 1.80f, 0.35f, 0x656056, 0, "FX"},
+    {{136.360f, 99.350f}, 1.80f, 0.35f, 0x656056, 0, "PLAY"},
+    {{91.180f, 13.750f}, 1.80f, 0.35f, 0x656056, 0, "BLEND"},
+    {{91.180f, 35.750f}, 1.80f, 0.35f, 0x656056, 0, "TIME"},
+    {{91.180f, 51.750f}, 1.80f, 0.35f, 0x656056, 0, "DUO"},
+    {{91.180f, 77.250f}, 1.80f, 0.35f, 0x656056, 0, "ROOM"},
+    {{12.200f, 113.350f}, 1.80f, 0.35f, 0x1D6F5F, 0, "CV A"},
+    {{54.500f, 113.350f}, 1.80f, 0.35f, 0x656056, 0, "IN"},
+    {{100.180f, 113.350f}, 1.80f, 0.35f, 0x656056, 0, "CLOCK"},
+    {{145.860f, 113.350f}, 1.80f, 0.35f, 0x656056, 0, "OUT"},
+    {{188.160f, 113.350f}, 1.80f, 0.35f, 0xB96532, 0, "CV B"},
+    {{12.728f, 59.100f}, 1.50f, 0.00f, 0x1D6F5F, 2, "SCAN"},
+    {{22.500f, 98.000f}, 1.50f, 0.00f, 0x1D6F5F, 0, "SIZE"},
+    {{35.500f, 98.000f}, 1.50f, 0.00f, 0x1D6F5F, 0, "ORG"},
+    {{200.632f, 59.100f}, 1.50f, 0.00f, 0xB96532, 1, "SCAN"},
+    {{190.860f, 98.000f}, 1.50f, 0.00f, 0xB96532, 0, "SIZE"},
+    {{177.860f, 98.000f}, 1.50f, 0.00f, 0xB96532, 0, "ORG"},
 };
 } // namespace spkyvcv

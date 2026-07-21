@@ -965,10 +965,15 @@ struct PanelText : Widget {
 
         // section titles + brand -- the shared TEXTS table from the generator,
         // so runtime lettering matches the SVG preview one-to-one
+        // ... plus the sampler captions, which inherit the anchor of the
+        // caption they sit under -- MELO/SCAN is right-aligned on part A and
+        // left-aligned on B, so this table carries an anchor like PanelCtl.
         for (const auto& t : kPanelTexts) {
             nvgTextLetterSpacing(args.vg, mm2px(t.spacing));
+            nvgTextAlign(args.vg, alignOf(t.anchor) | NVG_ALIGN_BASELINE);
             text(t.mm.x, t.mm.y, t.size, col(t.rgb), t.str);
         }
+        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
         nvgTextLetterSpacing(args.vg, 0.f);
     }
 };

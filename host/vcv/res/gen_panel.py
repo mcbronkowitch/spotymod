@@ -128,7 +128,7 @@ def group_box(x, y, w, h, legend):
         f'height="2.6" fill="{PAPER}"/>'])
 
 def legend_texts():
-    return [(x + 5.0, y + 0.75, 1.8, 0.35, colour, name)
+    return [(x + 5.0, y + 0.75, 1.8, 0.35, colour, "middle", name)
             for (x, y, w, h, name, colour) in GROUPS]
 
 def orbit(cx, cy, r, ang_deg, mir=False):
@@ -376,18 +376,61 @@ LIGHTS = [
     Ctl("REC_B_L", LIGHT, W - REC_LED_X, PLAY_Y, ""),
 ]
 
+# --- sampler meanings of the remapped knobs (spec 2026-07-21) -----------------
+# ENG turns four knobs into the sampler's own controls, so both meanings belong
+# on the plate. DENS is deliberately absent: the word already fits both engines
+# (groove density / grain density), and MORPH is taken by the global A/B knob --
+# two things called MORPH on one plate would be a built-in operating error.
+SAMPLER_LBL = [("MELODY", "SCAN"), ("SUB", "SIZE"), ("DETUNE", "ORG")]
+SAMPLER_SIZE = 1.5     # mm; the main captions are 1.9
+SAMPLER_DY   = 3.0     # mm below the main caption's baseline -- see sampler_texts()
+
+def sampler_texts():
+    """The second caption line, derived from the main one -- never typed out.
+
+    label_of() already resolves both placement rules in play here: the radial
+    orbit_label() for MELODY and the centred default for the VOICE-row SUB /
+    DETUNE. Reading it back means the sampler line follows whatever the layout
+    does next, which is the whole reason this block computes instead of listing
+    coordinates.
+
+    The line is stacked straight below its parent (same x, same anchor) rather
+    than pushed 2.2 mm further along the outward radial as first sketched. Two
+    measurements killed the radial variant: at MELODY's 240 deg only cos(240)
+    of the offset is vertical, so 2.2 mm radial buys 1.1 mm of baseline
+    separation and the glyph boxes of MELO and SCAN touch; and scaling the
+    radial up until the vertical separation reads pushes SCAN out to x ~= 4 mm,
+    hard against the plate edge, visually orphaned from the knob it belongs to.
+    3.0 mm of straight baseline separation also clears the VOICE box's bottom
+    hairline at y 96.9 -- at 2.2 mm the SIZE / ORG letters sit at 96.1..97.2 and
+    the border strikes through them; at 3.0 mm they land at 96.95..98.0, inside
+    the 1.7 mm gap between the VOICE and PLAY boxes with room on both sides.
+    """
+    out = []
+    for suffix, colour in (("_A", GREEN), ("_B", COPPER)):
+        for base, word in SAMPLER_LBL:
+            c = next(c for c in PARAMS if c.enum == base + suffix)
+            lx, ly, anchor, _size, _col = label_of(c)
+            out.append((lx, ly + SAMPLER_DY, SAMPLER_SIZE, 0.0, colour,
+                        anchor, word))
+    return out
+
 # --- shared panel lettering (drawn by SVG for preview, by C++ at runtime) -----
-# (x, y baseline, size mm, letter-spacing mm, hex colour, text)
+# (x, y baseline, size mm, letter-spacing mm, hex colour, anchor, text)
+# The anchor column arrived with the sampler captions: they inherit the anchor
+# of the caption they sit under, and the radial orbit captions are start/end
+# aligned, so a middle-only text table would set them beside their parent.
 TEXTS = [
-    (RING_CX_A,     RING_CY + 1.6, 5.0, 0.0, GREEN_DIM,  "A"),
-    (W - RING_CX_A, RING_CY + 1.6, 5.0, 0.0, COPPER_DIM, "B"),
-    (CX,            7.0,           3.6, 0.9, INK,        "SPOTYMOD"),  # top brand
+    (RING_CX_A,     RING_CY + 1.6, 5.0, 0.0, GREEN_DIM,  "middle", "A"),
+    (W - RING_CX_A, RING_CY + 1.6, 5.0, 0.0, COPPER_DIM, "middle", "B"),
+    (CX,            7.0,           3.6, 0.9, INK,        "middle", "SPOTYMOD"),
 ] + [
     # sector captions, tucked into the free panel corners (spec §1)
-    (W - cx if mir else cx, cy, 1.7, 0.3, COPPER if mir else GREEN, name)
+    (W - cx if mir else cx, cy, 1.7, 0.3, COPPER if mir else GREEN,
+     "middle", name)
     for mir in (False, True)
     for (name, _a0, _a1, (cx, cy)) in SECTORS
-] + legend_texts()
+] + legend_texts() + sampler_texts()
 
 # =============================================================================
 #  SVG
@@ -527,8 +570,8 @@ def svg():
                      f'text-anchor="{anchor}" font-family="monospace" '
                      f'font-size="{size}">{c.label}</text>')
     # shared lettering (preview only -- Rack draws these via PanelText)
-    for (x, y, size, spacing, col, txt) in TEXTS:
-        P.append(f'<text x="{mm(x)}" y="{mm(y)}" fill="{col}" text-anchor="middle" '
+    for (x, y, size, spacing, col, anchor, txt) in TEXTS:
+        P.append(f'<text x="{mm(x)}" y="{mm(y)}" fill="{col}" text-anchor="{anchor}" '
                  f'font-family="monospace" font-size="{size}" '
                  f'letter-spacing="{spacing}" font-weight="bold">{txt}</text>')
     P.append('</svg>')
@@ -551,7 +594,8 @@ def header():
               "XY lbl; unsigned char anchor; float lblSize; unsigned lblRgb; "
               "const char* tip; };")
     L2.append("// anchor: 0 = middle, 1 = start (left-aligned), 2 = end (right-aligned)")
-    L2.append("struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; const char* str; };")
+    L2.append("struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; "
+              "unsigned char anchor; const char* str; };")
     L2.append(f"static constexpr int PART_STRIDE = {PART_STRIDE};")
     L2.append(f"static constexpr float kRingR = {RING_R:.3f}f;      // mm, LED-dot orbit")
     L2.append(f"static constexpr float kRingDotR = 0.95f;   // mm, lit-dot radius")
@@ -589,8 +633,9 @@ def header():
     emit_table("kLightCtls",  LIGHTS)
 
     L2.append("static const PanelTxt kPanelTexts[] = {")
-    for (x, y, size, spacing, col, txt) in TEXTS:
-        L2.append(f'    {{{{{x:.3f}f, {y:.3f}f}}, {size:.2f}f, {spacing:.2f}f, {rgb(col)}, "{txt}"}},')
+    for (x, y, size, spacing, col, anchor, txt) in TEXTS:
+        L2.append(f'    {{{{{x:.3f}f, {y:.3f}f}}, {size:.2f}f, {spacing:.2f}f, '
+                  f'{rgb(col)}, {ANCHOR_ID[anchor]}, "{txt}"}},')
     L2.append("};")
     L2.append("} // namespace spkyvcv")
     return "\n".join(L2) + "\n"
