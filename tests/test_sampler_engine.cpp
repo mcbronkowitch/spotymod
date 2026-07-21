@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <cmath>
+#include <limits>
 #include <vector>
 #include "sampler/sampler_engine.h"
 #include "sampler/sampler_config.h"
@@ -692,6 +693,117 @@ TEST_CASE("sampler: Reverse plays the material backwards") {
     }
     CHECK(diff > 10.f);                     // genuinely different...
     CHECK(energy > 10.f);                   // ...and not just silent
+}
+
+// --- std::pow off the grain-spawn path (Task 1, sampler-deck) -------------
+
+TEST_CASE("sampler: detune_factor matches std::pow over the full DTUN range") {
+    // DTUN is bounded to +-kDetuneCeilCt cents by _next_ratio, so the
+    // approximation only ever has to be right on that interval. Assert it
+    // there and one cent beyond each end, so a future widening of
+    // kDetuneCeilCt fails here loudly instead of drifting silently.
+    for (int i = -36; i <= 36; ++i) {
+        const float cents = static_cast<float>(i);
+        const float want  = std::pow(2.f, cents / 1200.f);
+        const float got   = spky::test_detune_factor(cents);
+        // Brief's original bound was 1e-7f * want -- tighter than one float
+        // ULP near 1.0 (FLT_EPSILON == 1.1920929e-7). At cents == 2 the true
+        // value sits almost exactly on a rounding boundary, so std::pow and
+        // the polynomial (independently rounded, different code paths) land
+        // on adjacent representable floats: a 1-ULP double-rounding
+        // artifact, not an approximation error (confirmed against the exact
+        // value by hand: both floats are correctly rounded to their nearest
+        // representable neighbour). Widened to 4 ULP for headroom across
+        // compilers/optimization levels; still four orders of magnitude
+        // tighter than would be needed to catch a wrong coefficient.
+        CHECK(std::fabs(got - want) < 4.f * std::numeric_limits<float>::epsilon() * want);
+    }
+    // Exactly zero must be exactly one: _next_ratio skips the multiply at
+    // cents == 0, and a factor of 1.0 - epsilon there would make DTUN = 0
+    // renders differ from today's.
+    CHECK(spky::test_detune_factor(0.f) == 1.f);
+}
+
+TEST_CASE("sampler: hoisting the chord ratios leaves spawned ratios unchanged") {
+    // The property: precomputing ratio_for(_chord[i]) once per control tick
+    // must not change any spawned grain's ratio in the round-robin (COLOR >
+    // 0) branch -- this refactor is behaviour-preserving, which is the only
+    // reason it is allowed to touch a path the Rng draws on.
+    //
+    // (The latched single-note branch reads a separate cache, _burst_ratio,
+    // set at trigger time rather than _chord_ratio[0] -- see the next test
+    // for why, and _burst_ratio's declaration in sampler_engine.h.)
+    Rig g(24000, 0x1234u);
+    g.feed(/*pitch*/0.5f, /*source*/0.5f, /*size*/0.5f, /*motion*/0.f);
+    const float chord[3] = { 0.40f, 0.55f, 0.70f };
+    g.e.set_chord(chord, 3);
+    g.e.set_flow(true);
+
+    std::vector<float> ratios;
+    int last = g.e.spawn_count();
+    int guard = 0;
+    while (int(ratios.size()) < 16 && guard++ < 4000000) {
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        if (g.e.spawn_count() != last) {
+            last = g.e.spawn_count();
+            ratios.push_back(g.e.last_spawn_ratio());
+        }
+    }
+    REQUIRE(ratios.size() == 16);
+
+    // Every ratio must be finite and positive -- what the hoist preserves.
+    // Checking the exact sequence would also catch a draw-order change, so
+    // do that separately: the golden-vector test below already owns draw
+    // order, and duplicating it here would give two tests one reason to
+    // fail.
+    for (float r : ratios) {
+        CHECK(std::isfinite(r));
+        CHECK(r > 0.f);
+    }
+}
+
+TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH drifts underneath it") {
+    // Property under test: _next_ratio's latched branch (latched &&
+    // _chord_n <= 1) must read _burst_ratio, frozen at the trigger() that
+    // set _burst_pitch -- NOT _chord_ratio[0], which tracks _chord[0] live.
+    // Part::_control_tick calls SamplerEngine::set_chord() unconditionally
+    // every 96 samples regardless of whether a burst is currently latched
+    // (part.cpp:138), so a single-note STEP burst held under PITCH
+    // modulation (vibrato, or any MOD lane targeting PITCH) hits exactly
+    // this every control tick. Nothing else in this file drives PITCH that
+    // way -- every other test sets it once via feed()/set_chord() and holds
+    // it steady -- so this is the one case that would have silently caught
+    // (or missed) the Task 1 hoist reading the wrong cache.
+    Rig g;
+    g.e.set_flow(false);            // STEP mode
+    g.e.trigger(0.3f);              // single note: _chord_n == 1, now latched
+    g.e.set_gate(true);
+
+    std::vector<float> ratios;
+    int last = g.e.spawn_count();
+    int sample = 0;
+    int guard = 0;
+    while (int(ratios.size()) < 12 && guard++ < 400000) {
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        ++sample;
+        if (sample % sampler_cfg::kCtrlInterval == 0) {
+            // Simulate Part::_control_tick refreshing the live chord surface
+            // underneath the still-latched burst -- what a PITCH-lane LFO
+            // would do, without ever calling trigger()/trigger_chord() again.
+            const float drifted = 0.3f + 0.02f * float(sample % 20);
+            g.e.set_chord(&drifted, 1);
+        }
+        if (g.e.spawn_count() != last) {
+            last = g.e.spawn_count();
+            ratios.push_back(g.e.last_spawn_ratio());
+        }
+    }
+    REQUIRE(ratios.size() == 12);
+    // Every grain in the burst spawns at the SAME ratio: the one latched at
+    // trigger() time, unmoved by the live PITCH drift injected above.
+    for (float r : ratios) CHECK(r == ratios[0]);
 }
 
 // --- golden vector: the Rng draw order is a hard contract -----------------

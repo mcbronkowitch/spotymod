@@ -18,7 +18,19 @@ inline float size_seconds(float n) {
 inline float cutoff_hz(float n) {
     return kCutoffMinHz * std::pow(kCutoffMaxHz / kCutoffMinHz, clampf(n, 0.f, 1.f));
 }
+
+// 2^(cents/1200) without std::pow, for the grain-spawn path. DTUN is bounded
+// to +-kDetuneCeilCt cents, so the argument x = cents/1200 never leaves
+// [-0.03, 0.03] and a cubic Taylor expansion of 2^x about 0 is exact to
+// about 7e-9 relative -- far below a float's precision, let alone hearing.
+// Coefficients are ln2, ln2^2/2, ln2^3/6.
+inline float detune_factor(float cents) {
+    const float x = cents * (1.f / 1200.f);
+    return 1.f + x * (0.6931472f + x * (0.2402265f + x * 0.0555041f));
+}
 }  // namespace
+
+float test_detune_factor(float cents) { return detune_factor(cents); }
 
 void SamplerEngine::init(float sample_rate) {
     _sr = sample_rate;
@@ -110,6 +122,7 @@ void SamplerEngine::load_sample(const float* l, const float* r, size_t frames) {
 
 void SamplerEngine::trigger(float pitch_norm) {
     _burst_pitch   = pitch_norm;
+    _burst_ratio   = ratio_for(_burst_pitch);   // control-rate: std::pow is fine here
     _burst_latched = true;
     _chord[0] = pitch_norm;
     _chord_n  = 1;
@@ -122,6 +135,7 @@ void SamplerEngine::trigger_chord(const float* p, int n) {
     for (int i = 0; i < n; ++i) _chord[i] = p[i];
     _chord_n       = n;
     _burst_pitch   = p[0];
+    _burst_ratio   = ratio_for(_burst_pitch);   // control-rate: std::pow is fine here
     _burst_latched = true;
     _rr = 0;
 }
@@ -172,13 +186,17 @@ float SamplerEngine::_next_ratio() {
     const bool  latched = (!_flow && _burst_latched);
     const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
 
-    float p;
+    float ratio;
     if (latched && _chord_n <= 1) {
-        p = _burst_pitch;
+        // Frozen at the trigger that set it, not _chord_ratio[0] -- see the
+        // comment at _burst_ratio's declaration for why these are two caches
+        // and not one.
+        ratio = _burst_ratio;
     } else {
         // COLOR > 0 (_chord_n > 1) takes this branch even during a latched
-        // STEP burst, and reads _chord[] live rather than a value frozen at
-        // trigger time. Part::_control_tick refreshes _chord[] every 96
+        // STEP burst, and reads _chord_ratio[] live rather than a value
+        // frozen at trigger time. Part::_control_tick refreshes _chord[]
+        // (and _update_control refreshes _chord_ratio[] from it) every 96
         // samples, so the note set a round-robin burst is drawing from can
         // change mid-burst if the composed chord changes underneath it. The
         // spec (sampler-texture-deck-design.md) says trigger "latches the
@@ -188,11 +206,10 @@ float SamplerEngine::_next_ratio() {
         // not a bug to silently fix: whether a burst should freeze its whole
         // chord set at the gate edge is a musical call for the instrument's
         // author, not an engine-layer decision.
-        p = _chord[_rr % _chord_n];
+        const int idx = _rr % _chord_n;   // capture before _rr advances
         _rr = (_rr + 1) % _chord_n;
+        ratio = _chord_ratio[idx];
     }
-
-    float ratio = ratio_for(p);
 
     const float roll = _rng.next_unipolar();
     if (motion * kScatterOctProb > roll)
@@ -242,6 +259,15 @@ void SamplerEngine::_update_control() {
     const float hz = cutoff_hz(n_raw);
     _svf_l.SetFreq(clampf(hz, 20.f, 0.3f * _sr));
     _svf_r.SetFreq(clampf(hz, 20.f, 0.3f * _sr));
+
+    // Chord ratios, precomputed at control rate. _chord[] is refreshed by
+    // Part::_control_tick on this same 96-sample tick, so this cache is
+    // never stale by more than one tick -- the same freshness the chord
+    // itself has. Feeds only _next_ratio's round-robin (COLOR > 0) branch;
+    // the latched single-note branch has its own cache, _burst_ratio, set at
+    // trigger time -- see the comment at _burst_ratio's declaration.
+    const int n_notes = _chord_n > 0 ? _chord_n : 1;
+    for (int i = 0; i < n_notes; ++i) _chord_ratio[i] = ratio_for(_chord[i]);
 }
 
 void SamplerEngine::_spawn_one() {
@@ -285,7 +311,7 @@ void SamplerEngine::_spawn_one() {
 
     // DTUN: per-grain detune spread, +-kDetuneCeilCt at full. Drawn 6th.
     const float cents = _rng.next_bipolar() * _detune_n * kDetuneCeilCt;
-    if (cents != 0.f) ratio *= std::pow(2.f, cents / 1200.f);
+    if (cents != 0.f) ratio *= detune_factor(cents);
 
     // Tape: the grain covers a fixed SIZE OF MATERIAL and so lasts
     // SIZE / ratio -- low notes smear long, high notes are fleeting.
