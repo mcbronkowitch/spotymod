@@ -56,11 +56,11 @@ inline float detune_factor(float cents) {
 }
 
 // The spawn interval, with its CPU floor. Extracted so the floor can be
-// tested at overlaps that actually engage it: at kOverlap = 4 the shortest
-// grain the SIZE curve can ask for (1 ms, 48 samples at 48 kHz) already
-// yields 12 samples, so nothing here fires until a later task raises the
-// overlap. A test pinned to today's kOverlap would assert a floor that
-// never runs.
+// tested at chosen overlaps. That mattered at kOverlap = 4, where the
+// shortest grain the SIZE curve can ask for (1 ms, 48 samples at 48 kHz)
+// already yielded 12 samples and nothing here ever fired. At today's
+// kOverlap = 8 it does fire on that same grain -- 48 / 8 = 6, lifted to
+// kSpawnMinSamples -- so this floor is now live on the ordinary path.
 inline float spawn_interval(float grain_len, int overlap) {
     const float raw = grain_len / static_cast<float>(overlap);
     return raw < kSpawnMinSamples ? kSpawnMinSamples : raw;
@@ -499,6 +499,28 @@ void SamplerEngine::set_resonance(float n) {
     // passes here with real margin (7.0% against the 10% tolerance) and
     // fails outright at 0.95. The clamp sits at 0.90 -- well above the old
     // 0.7, which was never testing the property that actually bounds this.
+    //
+    // Two honest qualifications, because the paragraph above overclaims by
+    // omission if they are left out:
+    //
+    // 1. "The actual stability boundary" is too strong. Run the horizon out
+    //    to 300-3000 s and 0.95 and 0.98 also plateau -- they settle at a
+    //    higher level, they do not diverge. Only 1.0 is genuinely unbounded
+    //    (still climbing at 3000 s). So 0.90 is a HEADROOM limit, chosen for
+    //    how much level the SVF hands downstream and how fast it gets there,
+    //    not a divergence limit. The thing that actually diverges is one
+    //    value away, at the very top.
+    //
+    // 2. The rejection of peak thresholds as "an arbitrary line through a
+    //    continuum" applies to the 10% growth tolerance too, and it would be
+    //    dishonest to pretend otherwise. Growth-vs-resonance (2.3 / 7.0 /
+    //    11.4 / 26.6%) is the same kind of smooth curve as peak-vs-resonance
+    //    was; 0.92 fails only because the tolerance is written 10 rather than
+    //    12. The genuine improvement over the peak test is not that the line
+    //    stopped being arbitrary -- it is that the QUANTITY is the right one:
+    //    duration-dependence is what distinguishes a filter that rings from
+    //    one that runs away, where a peak at a fixed sweep length does not
+    //    distinguish them at all. The line's exact position remains taste.
     _res_n = clampf(n, 0.f, 0.9f);
     _svf_l.SetRes(_res_n);
     _svf_r.SetRes(_res_n);

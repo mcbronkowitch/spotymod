@@ -320,6 +320,12 @@ TEST_CASE("sample buffer: the bloom stays bounded and finite") {
         // bloom works, so it is excluded rather than asserted on; every
         // other frame in the loop is well clear of the fade's zero-crossing
         // and settles above unity like the rest of the loop.
+        //
+        // NB: that is a property of overdubbing SILENCE into this particular
+        // test, not a seam defect. With non-silent input frame 0 is written
+        // normally on every path a recording can take -- see "frame 0
+        // survives every way a recording can end" below, which exists
+        // because this exclusion was twice misread as a one-sample dropout.
         if (i == 0) continue;
 
         // The property that actually distinguishes a working bloom from a

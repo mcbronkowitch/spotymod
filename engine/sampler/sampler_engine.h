@@ -21,8 +21,12 @@ float test_detune_factor(float cents);
 float test_size_seconds(float n);
 
 // Test seam only: forwards to the anonymous-namespace spawn-interval helper
-// in sampler_engine.cpp, so the CPU floor can be checked at overlaps that
-// engage it (today's kOverlap = 4 does not) without driving a whole engine.
+// in sampler_engine.cpp, so the CPU floor can be checked at chosen overlaps
+// without driving a whole engine. It was extracted when kOverlap was 4 and
+// the floor never fired along any reachable path; at today's kOverlap = 8
+// the floor DOES fire (SIZE 0 gives a 48-sample grain, 48 / 8 = 6, lifted
+// to kSpawnMinSamples = 8), so this seam now pins a live guard as well as
+// covering overlaps the engine does not currently use.
 float test_spawn_interval(float grain_len, int overlap);
 
 // Test seam only: forwards to the anonymous-namespace pitch mapping.

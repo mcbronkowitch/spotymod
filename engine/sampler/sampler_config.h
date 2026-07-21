@@ -46,6 +46,14 @@ constexpr float  kSizeFloorS    = 0.001f;   // 1 ms: a pitched buzz, not a textu
 // grain reads the entire loop exactly once under a single window. Beyond
 // this the modulo fold in read_linear would only repeat material the same
 // grain already covered.
+//
+// That justification is RATE-SPECIFIC, and the constant is a duration, not a
+// frame count. At 96 kHz this asks for twice the capacity the buffer has, so
+// the top of SIZE spans two loops rather than one and the "exactly once
+// under a single window" argument no longer holds -- the fold simply repeats
+// the first pass. Not a crash and not a range to narrow: read_linear folds
+// safely and the result is a slower swell over repeated material, which is
+// still musical. Recorded so nobody re-derives the 42 as rate-independent.
 constexpr float  kSizeCeilS     = 42.f;
 
 // Pitch: piecewise, unity at 0.5. The middle half of travel [0.25, 0.75] is

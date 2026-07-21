@@ -1077,12 +1077,13 @@ TEST_CASE("sampler: a grain may be longer than the material it reads") {
 TEST_CASE("sampler: spawn_interval clamps to its floor only when it must") {
     // test_spawn_interval is the extracted helper _update_control calls to
     // derive _spawn_every. Unlike the old version of this test, this one
-    // pins overlaps that actually engage the floor -- at today's kOverlap=4
-    // the shortest grain the SIZE curve can produce (48 samples at 48 kHz)
-    // already gives 12, above the floor, so a test confined to kOverlap=4
-    // could never see the clamp fire. These cases pick overlaps by hand
-    // instead, so the floor is exercised regardless of what kOverlap is
-    // today.
+    // pins overlaps that actually engage the floor. That was written when
+    // kOverlap was 4, where the shortest grain the SIZE curve can produce
+    // (48 samples at 48 kHz) gives 12, above the floor, so a test confined
+    // to the engine's own overlap could never see the clamp fire. At today's
+    // kOverlap = 8 it would (48 / 8 = 6), but these cases still pick
+    // overlaps by hand so the floor stays exercised regardless of what
+    // kOverlap becomes next.
     using namespace spky::sampler_cfg;
 
     // Engages: 48 / 16 = 3, below kSpawnMinSamples (8) -- must clamp to
@@ -1103,18 +1104,21 @@ TEST_CASE("sampler: spawn_interval clamps to its floor only when it must") {
 }
 
 TEST_CASE("sampler: the spawn interval never falls below its floor") {
-    // This is the CPU guard Task 3 relocates. At today's kOverlap (4), the
-    // shortest grain the SIZE curve can produce (SIZE=0 -> kSizeFloorS ->
-    // 48 samples at 48 kHz) already yields a 12-sample interval, above
-    // kSpawnMinSamples (8) -- so this test is DORMANT: the bound below holds
-    // no matter what spawn_interval's floor does, because the floor never
-    // fires along this path. It becomes a real check of the observed spawn
-    // rate once a later task raises kOverlap to 8 or 16, at which point the
-    // same SIZE=0 grain drives the interval under the floor and this test
-    // starts actually constraining behaviour. Kept (rather than deleted) so
-    // it is already in place and already correct when that happens. The
-    // helper-level test above, not this one, is what proves the floor works
-    // today.
+    // This is the CPU guard Task 3 relocates, checked end to end on the
+    // observed spawn rate rather than on the helper.
+    //
+    // DO NOT DELETE THIS AS DORMANT -- it no longer is, and an older version
+    // of this comment said it was. That was true at kOverlap = 4: the
+    // shortest grain the SIZE curve can produce (SIZE=0 -> kSizeFloorS -> 48
+    // samples at 48 kHz) gave 48 / 4 = 12, already above kSpawnMinSamples
+    // (8), so the floor never fired along this path and the bound below held
+    // regardless of what spawn_interval did. Raising density to kOverlap = 8
+    // changed that: 48 / 8 = 6 is BELOW the floor, so the floor is now the
+    // thing setting the spawn rate here, and the assertion sits exactly on
+    // its bound -- 48000 / 8 + 1 = 6001 permitted against 6001 observed, with
+    // no slack at all. Delete or weaken the floor and this fails on the next
+    // spawn. It is the live, razor-thin end-to-end check; the helper-level
+    // test above covers the arithmetic in isolation.
     using namespace spky::sampler_cfg;
     SamplerEngine eng;
     std::vector<SampleBuffer::Frame> mem(48000);
@@ -1215,10 +1219,19 @@ TEST_CASE("sampler: resonance ceiling is duration-stable, not just finite") {
     // The real property is duration-dependence. Below the clamp, the peak
     // barely moves as the same sweep runs 10x longer -- measured growth from
     // a 10 s sweep to a 100 s one: 0.85 -> 2.3%, 0.90 -> 7.0%, 0.92 -> 11.4%,
-    // 0.95 -> 26.6%, 1.0 -> 210%. That is the actual stability boundary, and
-    // it sits between 0.90 and 0.95, not at 0.7. The clamp is set to 0.90:
-    // comfortably inside the stable side against this test's 10% tolerance,
-    // with real distance to 0.95, which fails it outright.
+    // 0.95 -> 26.6%, 1.0 -> 210%. The clamp is set to 0.90: comfortably
+    // inside the stable side against this test's 10% tolerance, with real
+    // distance to 0.95, which fails it outright.
+    //
+    // What this is NOT (see set_resonance's comment for the long form): it is
+    // not a divergence boundary. At 300-3000 s horizons 0.95 and 0.98 also
+    // plateau, just higher; only 1.0 is genuinely unbounded. 0.90 is a
+    // headroom choice. And the 10% tolerance is as much a line through a
+    // continuum as the peak threshold this replaced -- 0.92's 11.4% fails
+    // only because the number is written 10 and not 12. The improvement is
+    // in the QUANTITY measured, not in the line having stopped being taste:
+    // duration-dependence separates ringing from running away, and a peak at
+    // one fixed sweep length does not.
     const float res = 1.f;  // set_resonance clamps this to the real ceiling
     const float short_peak = sweep_peak(res, 10.0);
     const float long_peak  = sweep_peak(res, 100.0);
