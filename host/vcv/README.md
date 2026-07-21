@@ -35,6 +35,67 @@ draws in the light layer and lights a moving dot per modulation lane from
 `Instrument::lane_output()` / `lane_fired()`, so the rings animate with the
 engine (mirroring `src/ui/led.ring.h`). The SVG only provides the dim housing.
 
+## Sampler
+
+**ENG** (per part, latched) selects the part's engine: **Synth** or **Sampler**
+— a granular texture deck over the shared record buffer. Flipping ENG to
+Sampler on an empty part autoloads a factory sample (Bastian's own recording,
+`res/factory.wav`) so the deck makes sound on the very first gesture; it never
+overwrites content already in the buffer, and a deliberate *Clear sample*
+stays cleared even if you flip ENG back and forth. On a Synth part, ENG is the
+only mode control — REC is inert there.
+
+**REC** (per part, latched) records from **IN L/R** into that part's buffer
+while the sampler is free to keep playing what it already has (fill-follows:
+the granular cloud reads whatever's been written so far, so the deck never
+goes silent while filling). Starting a recording clears any remembered
+sample path/factory flag — once REC has touched the buffer, its content no
+longer matches a file on disk or the factory sample, so *Save sample…* is
+the only way to keep it. The REC LED has three states: **pulsing** (2 Hz)
+while recording, a **steady brightness proportional to fill level** once the
+part holds content and isn't recording, and **dark** when the part is empty
+or on Synth — the light tracks ENG, not leftover buffer state, so switching
+a part away from Sampler doesn't relight it.
+
+The right-click context menu carries a **Sampler A / Sampler B** submenu per
+part:
+- **Load sample…** / **Save sample…** — WAV import/export via a file dialog.
+- **Clear sample** — empties the buffer and forgets any remembered
+  path/factory flag.
+- **Speed mode** — Digital (default) or Tape.
+- **Reverse** — plays the buffer backwards.
+- **Overdub feedback** — how much of the existing buffer content survives
+  under a new recording (a slider, not a toggle).
+- **Engine: test tone (dev)** — a leftover development aid; with it set,
+  ENG's second position plays a test tone instead of the sampler. Not meant
+  for normal patches.
+
+A recorded or loaded texture **survives patch save/reopen**: `dataToJson`/
+`dataFromJson` snapshot the buffer content (not just the parameters) into the
+`.vcv` file alongside the sample path, speed mode, reverse and feedback
+settings.
+
+### Known limitations
+
+- **A sample-rate DROP silently truncates the recording's tail.** The record
+  buffer is sized in frames (42 s × the engine's sample rate), so switching
+  your audio device from 48 kHz down to 44.1 kHz shrinks that allocation and
+  loses roughly the last 1.2 s of a full 42 s buffer. This is safe — the
+  engine clamps every read to the smaller capacity — but nothing in the UI
+  warns you it happened.
+- **A sample-rate CHANGE does not resample buffer content, but a file LOAD
+  does.** If you already have material recorded or loaded into a part and
+  then change your audio device's rate, that buffer plays back transposed at
+  the new rate — this is deliberate tape behaviour, the same as changing tape
+  speed. A fresh *Load sample…*, by contrast, always resamples the WAV to
+  the engine's current rate before writing it into the buffer, so an
+  imported file is always in tune. The asymmetry is intentional: importing a
+  file at the wrong pitch would be a bug, but re-rating material that's
+  already sitting in the buffer is varispeed, not a bug.
+- **Memory:** each `Spotymod` instance allocates its two 42 s stereo record
+  buffers up front — roughly 32 MB total per instance — whether or not the
+  sampler is ever used on either part.
+
 ## Build
 
 Requires the [VCV Rack SDK](https://vcvrack.com/manual/Building#Setting-up-the-Rack-SDK)
@@ -113,7 +174,7 @@ Edit the control table in `res/gen_panel.py`, re-run, rebuild.
 
 | Port | Meaning |
 |------|---------|
-| IN L/R | audio in (feeds the per-part FX chain; optional) |
+| IN L/R | audio in (feeds the per-part FX chain and, while REC is latched on a Sampler part, that part's record buffer; optional) |
 | CLOCK | one pulse per beat → sets tempo (overrides the TEMPO knob) and phase-aligns the transport on each pulse |
 | RESET | resets the transport downbeat (bar/beat phase) |
 | OUT L/R | main mix |
