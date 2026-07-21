@@ -72,9 +72,12 @@ knob by `1/0.9` (`reverb.cpp:53`), which moves every setting; that would violate
 sits at the top of travel but at roughly 0.926 — a narrow but findable spot where
 the loop sustains forever, with the last sliver of travel blooming past it.
 
-Note for the record: `kDefaultFeedback = 0.95f` (`sampler_config.h:14`) is above
-the knee and so changes meaning — from −3 dB to about −1.8 dB. It stays where it
-is; the boot state gets marginally hotter, still short of unity.
+Not just a note for the record: `kDefaultFeedback = 0.95f` (`sampler_config.h:14`)
+is above the knee and so changes meaning — from −3 dB to about −1.8 dB. It stays
+where it is; the boot state gets marginally hotter, still short of unity. But this
+is the resting state of **every** overdub, not an opened extreme, so the listening
+pass must include a plain boot-state overdub render heard against today's — it is
+listed in the acceptance for that reason.
 
 The overdub write gains `fast_tanh`, in the same order of operations that keeps
 `EchoDelay::Process` stable (`engine/fx/flux.h:129-141`): **saturate the value
@@ -110,7 +113,10 @@ so a grain longer than its material is simply a loop with a window drawn over it
 a slow swell, which is musical. Delete the clamp.
 
 **The curve.** The middle 60 % of travel stays bit-identical; both outer fifths
-steepen. Range becomes **1 ms … 30 s** (from 20 ms … 2 s).
+steepen. Range becomes **1 ms … 42 s** (from 20 ms … 2 s). The top matches the
+record buffer's capacity (42 s @ 48 kHz, `instrument.h:22-26`): at maximum a
+grain reads the entire loop exactly once under a single window. Beyond that the
+number would only add modulo-fold repeats of material already covered.
 
 | knob | today | new |
 |---|---|---|
@@ -119,8 +125,8 @@ steepen. Range becomes **1 ms … 30 s** (from 20 ms … 2 s).
 | 0.20 | 50 ms | 50 ms |
 | 0.50 | 200 ms | 200 ms |
 | 0.80 | 796 ms | 796 ms |
-| 0.90 | 1.4 s | 5.4 s |
-| 1.00 | 2.0 s | 30 s |
+| 0.90 | 1.4 s | 5.8 s |
+| 1.00 | 2.0 s | 42 s |
 
 Piecewise exponential, continuous in value at both joints, deliberately not
 smooth in slope. The kinks are at 0.2 and 0.8.
@@ -143,10 +149,27 @@ therefore requires removing the reason for the floor, not moving it:
 - The octave scatter (`:197-199`) and SUB (`:283-284`) are exact ×0.5 / ×2
   multiplies and need nothing.
 
-With `std::pow` gone from the spawn path, the floor drops to **32 samples**
-(≈ 0.67 ms at 48 kHz). At the new bottom of the curve the deck spawns a grain
-roughly every 12 µs and becomes a pitched buzz rather than a texture. That is
-also intent.
+**The floor moves to the right quantity.** Today's floor sits on grain *length*,
+but the cost it guards against is per *spawn*, and `kOverlap` decouples the two:
+`_spawn_every = _grain_len / kOverlap`, floored at 1 sample
+(`sampler_engine.cpp:218-219`). A length floor therefore does not bound the spawn
+rate at all once §6 raises `kOverlap` — at length 32 and `kOverlap = 16` the deck
+would spawn every 2 samples, 24 kHz, each spawn scanning up to 32 slots.
+
+So: **delete the grain-length CPU floor entirely** and floor `_spawn_every` at
+**8 samples** instead. Grain length then keeps only its safety minimum (`_len < 2`
+in `Grain::spawn`, `grain.h:38`), and the two concerns stop being tangled:
+
+- The spawn rate is bounded at 6 kHz per part regardless of `kOverlap`, so §6 can
+  raise density without silently reopening this cost.
+- SIZE's bottom stays honest. At the new minimum (1 ms ≈ 48 samples) with
+  `kOverlap = 4`, the interval is 12 samples — above the floor, so 1 ms is fully
+  reached. At a higher `kOverlap` the *density* saturates while the grain length
+  still follows the knob, which is the graceful degradation and the right one:
+  the ear notices a missing grain far less than a wrong length.
+
+At the bottom of the curve the deck becomes a pitched buzz rather than a texture.
+That is intent.
 
 ## 4 — Pitch
 
@@ -203,7 +226,14 @@ So this is the one item that gets a measurement instead of a number:
 **The measurement is a proxy and must be reported as one.** It is desktop render
 time, not Daisy cycles. It reliably shows whether a setting costs 4× as much; it
 does not show whether it fits on the board. That question belongs to the Rack
-play-test and ultimately to hardware.
+play-test and ultimately to hardware. And the proxy is at its blindest exactly at
+the top pair: on the Daisy the likely limit for (16, 32) — 64 concurrent grains
+across both parts — is not compute but **SDRAM traffic**, interpolated reads
+scattered across ~32 MB of record buffer defeating the cache (`taps.cpp:201`
+already halves SDRAM traffic for precisely this reason, on a far smaller buffer).
+A desktop CPU with megabytes of cache does not feel this cost at all. So even a
+clean desktop number for (16, 32) is provisional; (8, 16) is the largest pair the
+proxy can meaningfully vouch for.
 
 ---
 
@@ -235,9 +265,15 @@ relevant:
 5. SIZE over 0.2…0.8 of travel is unchanged from today, sample for sample.
 6. Resonance at the new maximum stays finite.
 7. No `std::pow` remains on the grain-spawn path.
+7b. The spawn interval never falls below 8 samples, at any `kOverlap` and any
+   SIZE. This is the CPU guard §3 relocates; a test must pin it, because the
+   density work in §6 is exactly what would otherwise reopen it unnoticed.
 8. The density measurement is reported with its three numbers and its proxy
    caveat stated.
-9. A listening render exists for each opened extreme.
+9. A listening render exists for each opened extreme, **plus** a boot-state
+   overdub render (untouched knobs, `kDefaultFeedback`) paired against the same
+   render from today's build — the default got hotter and must be judged, not
+   assumed.
 
 The final judgement is by ear, and it is Bastian's. The M5 spec records why:
 on the reverted MOTION stretch, the RMS continuity metric cleared a change that
