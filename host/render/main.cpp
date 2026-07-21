@@ -4,8 +4,8 @@
 #include <vector>
 #include "instrument.h"
 #include "render/scenario.h"
-#include "render/wav_reader.h"
-#include "render/wav_writer.h"
+#include "shared/wav_reader.h"
+#include "shared/wav_writer.h"
 
 using namespace spky;
 

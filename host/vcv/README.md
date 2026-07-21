@@ -35,6 +35,92 @@ draws in the light layer and lights a moving dot per modulation lane from
 `Instrument::lane_output()` / `lane_fired()`, so the rings animate with the
 engine (mirroring `src/ui/led.ring.h`). The SVG only provides the dim housing.
 
+## Sampler
+
+**ENG** (per part, latched) selects the part's engine: **Synth** or **Sampler**
+— a granular texture deck over the shared record buffer. Flipping ENG to
+Sampler on an empty part autoloads a factory sample (Bastian's own recording,
+`res/factory.wav`) so the deck makes sound on the very first gesture; it never
+overwrites content already in the buffer, and a deliberate *Clear sample*
+stays cleared even if you flip ENG back and forth. On a Synth part, ENG is the
+only mode control — REC is inert there.
+
+**REC** (per part, latched) records from **IN L/R** into that part's buffer
+while the sampler is free to keep playing what it already has (fill-follows:
+the granular cloud reads whatever's been written so far, so the deck never
+goes silent while filling). Starting a recording clears any remembered
+sample path/factory flag — once REC has touched the buffer, its content no
+longer matches a file on disk or the factory sample, so *Save sample…* is
+the only way to keep it. The REC LED has three states: **pulsing** (2 Hz)
+while recording, a **steady brightness proportional to fill level** once the
+part holds content and isn't recording, and **dark** when the part is empty
+or on Synth — the light tracks ENG, not leftover buffer state, so switching
+a part away from Sampler doesn't relight it.
+
+The right-click context menu carries a **Sampler A / Sampler B** submenu per
+part:
+- **Load sample…** / **Save sample…** — WAV import/export via a file dialog.
+- **Clear sample** — empties the buffer and forgets any remembered
+  path/factory flag.
+- **Speed mode** — Tape (default) or Digital. Tape couples speed and pitch
+  like varispeed; Digital repitches grains at unchanged grain duration.
+- **Reverse** — plays the buffer backwards.
+- **Overdub feedback** — how much of the existing buffer content survives
+  under a new recording (a slider, not a toggle).
+- **Engine: test tone (dev)** — a leftover development aid; with it set,
+  ENG's second position plays a test tone instead of the sampler. Not meant
+  for normal patches.
+
+A recorded or loaded texture **survives patch save/reopen**, but not through
+`dataToJson`/`dataFromJson` — those only carry the sample path, speed mode,
+reverse, feedback and a couple of internal flags (`factory`, `factoryTried`).
+`factoryTried` in particular is what makes a deliberate *Clear sample* stay
+cleared through save/reopen: it is persisted intent, restored verbatim from
+JSON, and nothing after that point overwrites it back to false — only Rack
+*Initialize* (`onReset`) resets it, letting the factory sample autoload
+again.
+The audio itself goes through Rack's **patch storage** instead: `onSave`
+writes any part that didn't come from a file or the factory WAV out as a WAV
+into the patch's own storage directory, and `dataFromJson`/`onAdd` reload it
+from there on reopen (a part whose content DID come from a file or the
+factory sample reloads from that source instead, so nothing is written for
+it). Every part that this save does *not* write its own stored WAV for —
+because it now has a file path, is factory-loaded, or has nothing recorded —
+also has any leftover stored WAV from an earlier save deleted, so neither a
+deliberate *Clear sample* nor loading a file over an old recording leaves a
+stale WAV sitting in patch storage.
+
+### Known limitations
+
+- **A sample-rate DROP silently truncates the recording's tail.** The record
+  buffer is sized in frames (42 s × the engine's sample rate), so switching
+  your audio device from 48 kHz down to 44.1 kHz shrinks that allocation and
+  loses roughly the last 1.2 s of a full 42 s buffer. This is safe — the
+  engine clamps every read to the smaller capacity — but nothing in the UI
+  warns you it happened.
+- **A sample-rate CHANGE does not resample buffer content, but a file LOAD
+  does.** If you already have material recorded or loaded into a part and
+  then change your audio device's rate, that buffer plays back transposed at
+  the new rate — this is deliberate tape behaviour, the same as changing tape
+  speed. A fresh *Load sample…*, by contrast, always resamples the WAV to
+  the engine's current rate before writing it into the buffer, so an
+  imported file is always in tune. The asymmetry is intentional: importing a
+  file at the wrong pitch would be a bug, but re-rating material that's
+  already sitting in the buffer is varispeed, not a bug.
+- **Memory:** each `Spotymod` instance allocates well over its two 42 s
+  stereo record buffers up front, whether or not the sampler is ever used on
+  either part — closer to **42 MB total**, not the 32 MB the record buffers
+  alone account for:
+  - ~32 MB — the two 42 s stereo sampler record buffers (`samplerMem`).
+  - ~4.19 MB — the per-part stereo echo buffers the FX chain requires
+    (`echo[]`: `2 × 2 × 262144` floats = 4,194,304 B), unrelated to the
+    sampler.
+  - ~130 KB — the shared reverb (`AmbientReverb`).
+  - ~6.4 MB — the factory sample cache (`factoryNative`, decoded once in
+    `onAdd()`, plus the rate-converted `factoryL`/`factoryR`, rebuilt in
+    `reinit()`), held for the module's lifetime regardless of whether ENG
+    is ever flipped to Sampler on either part.
+
 ## Build
 
 Requires the [VCV Rack SDK](https://vcvrack.com/manual/Building#Setting-up-the-Rack-SDK)
@@ -113,7 +199,7 @@ Edit the control table in `res/gen_panel.py`, re-run, rebuild.
 
 | Port | Meaning |
 |------|---------|
-| IN L/R | audio in (feeds the per-part FX chain; optional) |
+| IN L/R | audio in (feeds the per-part FX chain and, while REC is latched on a Sampler part, that part's record buffer; optional) |
 | CLOCK | one pulse per beat → sets tempo (overrides the TEMPO knob) and phase-aligns the transport on each pulse |
 | RESET | resets the transport downbeat (bar/beat phase) |
 | OUT L/R | main mix |

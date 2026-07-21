@@ -4,7 +4,7 @@
 #include <fstream>
 #include <exception>
 #include "nlohmann/json.hpp"
-#include "render/wav_reader.h"
+#include "shared/wav_reader.h"
 
 using namespace spky;
 using json = nlohmann::json;

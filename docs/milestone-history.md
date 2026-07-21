@@ -877,3 +877,165 @@ runs on every sample-rate change and would discard a loaded sample; and
 diffed line-for-line against CMake. Also needs: ENG remap to
 Synth↔Sampler, REC pad + LED via `gen_panel.py`, `dr_wav` vendored,
 `dataToJson`/`dataFromJson` from scratch, factory sample + autoload.
+
+## M5b — Sampler on the VCV panel (2026-07-21, branch `sampler-vcv`, not merged)
+
+Plan `docs/superpowers/plans/2026-07-21-sampler-vcv-binding.md` (9 tasks,
+subagent-driven, one implementer + one independent reviewer per task,
+stop-on-failure). Commit range `35e7b2a`..`ee232f8` (15 commits, not the 14
+an earlier draft of this entry claimed — recounted with `git rev-list
+--count`) on top of the M5a merge; `plugin.json` stays `2.7.0`, not tagged,
+not pushed, per the
+plan's global constraints. Makes the M5a texture deck reachable and playable
+from the plugin: ENG (per part, latched) now selects Synth ↔ Sampler; REC
+(per part, latched) records from IN L/R into that part's buffer with an LED
+that pulses while recording and shows fill level otherwise; a right-click
+**Sampler A/B** submenu carries Load/Save/Clear, Speed mode (Digital/Tape),
+Reverse, Overdub feedback, and the dev-only test-tone escape hatch; a factory
+sample (Bastian's own recording, `res/factory.wav`) autoloads on the first
+ENG flip into an empty part; and a recorded or loaded texture now survives
+patch save/reopen via new `dataToJson`/`dataFromJson`. `host/render/`'s
+`wav_reader.h`/`wav_writer.h` moved to `host/shared/` so both hosts share one
+WAV implementation.
+
+**Two deliberate deviations from the 2026-07-18 spec, decided in the plan:**
+1. **Reuse the repo's own WAV reader/writer instead of vendoring `dr_wav`.**
+   The spec (written before M5a) called for a vendored `dr_wav`; M5a had since
+   shipped a hand-rolled, hardened `wav_reader.h`/`wav_writer.h` (every
+   declared chunk size validated against remaining file bytes, covered by
+   `tests/test_wav.cpp`, handling 16/24/32-bit PCM, float and
+   `WAVE_FORMAT_EXTENSIBLE`) — vendoring a second implementation would add a
+   dependency and a second code path for no gain.
+2. **Sample-rate change: snapshot and restore, not `restore()`.** The plan
+   originally assumed (per the spec's silence on the question) that a
+   `SampleBuffer::restore()` could cheaply re-declare a buffer's frame count
+   after a rate-driven re-init. **That premise is false and was caught by the
+   implementer's own Task 1 test failing**, not by review: `init()` ends in
+   `clear()` (`sample_buffer.cpp:33` → `179-180`), which `memset`s the whole
+   injected buffer — there is nothing left to re-declare. `restore()` was
+   dropped from the plan entirely; the host instead reads content out through
+   the new `sample_data()`/`sampler_rec_size()` accessors before `reinit()`
+   and pushes it back afterwards with the existing `load_sample()`. Accepted
+   consequence: the snapshot itself is **not resampled** (tape behaviour,
+   matches the instrument's idiom), which is the deliberate opposite of what
+   a fresh file *load* does (always resamples — an import at the wrong pitch
+   would be a bug).
+
+**Findings a later session would not re-derive from the code:**
+- `onAdd` fires **before** `onSampleRateChange` in Rack v2.6.6. Not provable
+  from the SDK, which ships headers only — Task 7's reviewer confirmed it by
+  reading Rack's actual `Engine.cpp` on GitHub. This is why `onAdd` must force
+  its own `reinit()` rather than assume the sample-rate callback will run
+  first: the brief's literal code would otherwise have written into null
+  sampler buffers.
+- `dataFromJson` is called on an **already-added** module for preset load
+  (`ModuleWidget::loadAction`/`loadDialog`) and clipboard paste
+  (`pasteJsonAction`) — neither goes through `Engine::addModule_NoLock`, so
+  `onAdd` never fires again for those paths. The restore flag has to be
+  consumed defensively; leaving it unconsumed on that path is a real
+  (UX-only) quirk, not data loss, still open at the end of Task 9
+  (`factoryTried` isn't reset on a live-module preset load, so an
+  already-autoloaded part can stay silent on reload until `onReset`).
+- `Slider::quantity` is annotated `/** Not owned. */` in the Rack SDK
+  (`include/ui/Slider.hpp:12-14`) — a widget (`FeedbackSlider`) owning and
+  destroying its own `Quantity` is therefore correct, not a double free; a
+  reviewer's initial suspicion to the contrary was wrong and worth recording
+  so it isn't relitigated.
+- Persistence originally lost a recording made **over** a loaded file:
+  `onSave` skipped any part with a non-empty `path` (on the theory it can
+  reload from that file), but nothing cleared `path` when the user then
+  REC'd over it — reopening silently discarded the live overdub and restored
+  the original file instead. Overdub is a feature (default feedback 0.95),
+  so this was a likely workflow, not an edge case. Fixed in `466c601` by
+  clearing `path`/`factoryLoaded` the moment a recording actually starts
+  (already documented in `Spotymod.cpp`'s REC-push comment).
+- Task 3's brief predicted panel param ids 78/79 and `NUM_PARAMS` 82 for
+  REC_A/REC_B; the real generator output was 76/77 and `NUM_PARAMS` 78 — an
+  explorer's earlier wrong "80 params" count had been propagated without
+  recounting. The implementer reported the mismatch instead of bending
+  `gen_panel.py` to match a wrong prediction; `res/test_panel.py`'s
+  `test_lower_half_positions` fixture needed updating for the same reason
+  (the REC pad's insertion re-spaced ENGINE_A/GRITMODE_A/STEPS_A on the PLAY
+  row).
+- The REC LED's fill-level branch originally didn't check the part's engine
+  at all: record on a Sampler part, flip ENG to Synth, and the LED stayed lit
+  at the fill level on what the user now reads as a plain synth voice —
+  contradicting the plan's own prose ("REC on a synth part is inert with a
+  dark LED"). The record *button* was correctly gated; only the *light*
+  wasn't. Fixed in `4948ec0` by gating the fill branch on the same `eng2 &&
+  !testTone` condition `pushParams` already uses.
+- The factory-sample first-use path originally read and decoded
+  `res/factory.wav` from disk on the audio thread, on the first ENG flip —
+  accepted as "low tens of ms, once" in the plan, then reviewed as a real
+  ship risk (a cold-file or AV-scanner read is not bounded, and a click on
+  the very first "it just works" gesture is the worst place to spend one).
+  Fixed in `ee232f8`: disk read + decode moved to `onAdd()` (main thread,
+  before `process()` ever runs for the instance), leaving only the
+  already-decoded buffer's resample-to-current-rate in the reactive path.
+
+**Task 9 close-out (this entry):** 484/484 doctest cases green (481 M5a
+baseline + Task 1's 3 new accessor-coverage cases). Synth-neutrality gate:
+the 8 pinned non-sampler scenarios (`ambient_wash`, `assets_percussive_source`,
+`chord_bloom`, `ctrl_identity`, `demo_density_sweep`, `demo_step_melody`,
+`reverb_delay`, `reverb_wash`) rendered byte-identical between `HEAD`
+(`ee232f8`) and a `git worktree` pinned at the pre-M5b commit `35e7b2a`, both
+configured `CMAKE_BUILD_TYPE=Debug` to match the existing `build/` tree
+(see the CMAKE_BUILD_TYPE warning above — a Debug/Release mismatch is a false
+alarm, not a real difference); `ctrl_identity.wav`'s SHA-256 also matches the
+repo's pinned `ctrl_identity.sha256` independently. Determinism gate:
+`sampler_texture_deck` and `sampler_extremes` each double-rendered
+byte-identical. Structural corroboration: `git diff 35e7b2a..ee232f8 --
+engine/` touches only `engine/instrument.h` and
+`engine/sampler/sampler_engine.h` (Task 1's two read-only accessors) — no
+other engine file moved. Cold plugin build (`rm -rf host/vcv/build
+host/vcv/dist`, WinLibs MinGW-w64 g++ via an MSYS2 `make`, Rack SDK 2.6.6)
+succeeded for both the default and `dist` targets; the produced
+`Spotymod-2.7.0-win-x64.vcvplugin` contains `res/factory.wav`, and
+`plugin.json` still reads `2.7.0` and is untouched in the working tree.
+
+**Final whole-branch review — three blockers fixed on top of `62d9fd0`:**
+1. **I-1, Clear sample didn't survive save/reopen (two causes).** `onSave`
+   skipped writing a part with nothing to record, but left any WAV that an
+   *earlier* save had written for that part sitting in patch storage — Rack
+   garbage-collects patch storage per module, not per file, so a Clear ->
+   Save -> reopen reloaded the deleted recording right back.
+   Separately, `factoryTried[p]` was never persisted, so the same sequence
+   reset it to its construction-time `false` and let the factory drone
+   autoload into the freshly-cleared part on the first control tick after
+   patch open, with no user gesture at all.
+2. **I-2, a live preset load or module paste left stale audio playing.**
+   `restoreSamplerContent()` was written for the fresh-add path, where
+   `reinit()` has already zeroed the buffer, and had no branch for "neither
+   a file path nor a stored WAV exists" — on the already-live path (preset
+   load, Ctrl+V) the buffer kept whatever it held before, while the menu,
+   the JSON and the REC LED all described the new (empty) preset.
+3. **I-3, the factory autoload could stall the audio thread.** `load_sample`
+   begins with `SampleBuffer::clear()`, which unconditionally `memset`s the
+   whole 42 s allocation (16.1 MB) — roughly 1.5-3 ms inside one `process()`
+   call against Rack's 5.3 ms budget at a 256-sample block, worse at 128/64,
+   and reachable from the audio thread by the factory-drone autoload path
+   (including, per I-1's second cause, at patch open with no user gesture).
+
+Fixed together in `6137017`: `onSave` now deletes an orphaned stored WAV
+when a part has nothing to write; `factoryTried` is persisted alongside
+`factory` in `dataToJson`/`dataFromJson`; `restoreSamplerContent()` is now
+total (`inst.sampler_clear(p)` + `factoryTried[p] = false` when neither
+source exists, with the stored-WAV branch restricted to the fresh-add path
+— `getPatchStorageDirectory()` is scoped to the *current patch*, not the
+preset, so reading it on a live preset load would pull that patch's own
+autosave into a preset that never asked for it); and `SampleBuffer::clear()`
+skips its memset when the buffer is already empty (`_size == 0` going in),
+which is provably safe (`init()` always ends in `clear()` before content can
+exist, and `_size == 0` already means `read_linear()` returns silence
+regardless of memory contents) and pinned by a new doctest in
+`tests/test_sampler_engine.cpp` that inspects the raw buffer, not just
+`rec_size()`, after clearing a buffer that had content. Verification re-run
+in full because I-3 touches `engine/`: 485/485 doctest cases green (484 +
+the new test), the same 8 pinned non-sampler scenarios still byte-identical
+between `HEAD` and the `35e7b2a` worktree, `sampler_texture_deck`/
+`sampler_extremes` still double-render byte-identical, and a cold plugin
+build still links. Documentation fixes (this correction, the README's
+persistence and memory-footprint claims) followed in a second commit.
+Whole-branch commit range as of the fix commit: `35e7b2a`..`6137017`, 17
+commits — recount before citing this number in a future session, since the
+docs commit that lands after it adds one more.

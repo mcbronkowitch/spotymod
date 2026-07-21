@@ -118,6 +118,23 @@ public:
     void   set_monitor(bool on) { _monitor = on; }
     void   load_sample(const float* l, const float* r, size_t frames);
 
+    // Read the recorded content back out: Save sample..., the patch-storage
+    // autosave, and the host's sample-rate snapshot all need it. This hands
+    // back the very pointer the host injected, so the caller must respect
+    // rec_size() as the valid length -- past it lie stale frames. nullptr
+    // when no memory was injected.
+    //
+    // Note for callers carrying content across an init(): copy OUT first.
+    // init() ends in clear(), but clear() only memsets the buffer when it
+    // held content going in (_size != 0) -- see SampleBuffer::clear()'s I-3
+    // fast path. A buffer that never held content (_size == 0, e.g. memory
+    // a host just injected and has not written to yet) is NOT zeroed by
+    // init()/clear(). Hosts must inject already-zeroed memory: this matters
+    // for any host that carves buffers out of memory the platform does not
+    // zero at startup (e.g. Daisy SDRAM), where the overdub read-before-
+    // write path would otherwise read uninitialised garbage.
+    const SampleBuffer::Frame* sample_data() const { return _buf.raw(); }
+
     // --- edit layer ---
     void set_tape_mode(bool tape) { _tape = tape; }
     void set_reverse(bool on)     { _reverse = on; }

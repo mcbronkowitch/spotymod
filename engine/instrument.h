@@ -102,6 +102,7 @@ public:
     void  sampler_clear(int p)              { _parts[p].sampler().clear(); }
     float sampler_fill(int p) const         { return _parts[p].sampler().buffer_fill(); }
     bool  sampler_empty(int p) const        { return _parts[p].sampler().is_empty(); }
+    bool  sampler_is_recording(int p) const { return _parts[p].sampler().is_recording(); }
     void  sampler_monitor(int p, bool on)   { _parts[p].sampler().set_monitor(on); }
     int   sampler_grains(int p) const       { return _parts[p].sampler().active_grains(); }
     void  sampler_speed_mode(int p, bool tape) { _parts[p].sampler().set_tape_mode(tape); }
@@ -110,6 +111,10 @@ public:
     void  load_sample(int p, const float* l, const float* r, size_t frames) {
         _parts[p].sampler().load_sample(l, r, frames);
     }
+    const SampleBuffer::Frame* sampler_data(int p) const {
+        return _parts[p].sampler().sample_data();
+    }
+    size_t sampler_rec_size(int p) const { return _parts[p].sampler().rec_size(); }
 
     float lane_output(int p, int s)  const { return _parts[p].lane_output(s); }
     float target_value(int p, int s) const { return _parts[p].target_value(s); }

@@ -12,7 +12,7 @@ RACK_DIR ?= ../../../Rack-SDK
 # the plugin dir). Run make from this directory.
 REPO     := $(realpath ../..)
 
-FLAGS += -I$(REPO)/engine -I$(REPO)/third_party
+FLAGS += -I$(REPO)/engine -I$(REPO)/third_party -I$(REPO)/host
 # DaisySP fans its private headers (dsp.h, ...) across these subdirs; the engine's
 # FX chain pulls them in transitively, so all four must be on the include path.
 FLAGS += -I$(REPO)/lib/DaisySP/Source \
