@@ -159,8 +159,14 @@ FX_TOP   = [49.5, 62.75, 76.0]      # FRATE FLUX FFB -- the delay cluster
 # 6.0 mm minimum in test_no_overlap still has room to spare.
 FX_BOT   = [49.5, 58.333, 67.167, 76.0]   # GRIT COMP | DUST ROT
 PLAY_Y   = 103.6
-PAD_X    = [11.5, 22.0, 46.0, 56.5, 67.0, 77.5]   # ENG GRIT | STEP PRIN NEW TRIG
-STEPS_X  = 35.5                     # sequencer knob, between the two pad blocks
+# The PLAY row's left block re-spaced to seat REC between GRIT and STEPS
+# (spec 2026-07-18 "VCV layer": REC is the only new panel element). All four
+# left-block glyphs are LATCH r=2.7 except STEPS (KNOBI r=3.0); the pitches
+# below clear test_no_overlap's radius-sum minimum with >=1.8 mm to spare.
+PAD_X    = [10.0, 17.5, 46.0, 56.5, 67.0, 77.5]   # ENG GRIT | STEP PRIN NEW TRIG
+STEPS_X  = 37.0                     # sequencer knob, between the two pad blocks
+REC_X    = 25.0                     # REC pad (appended param, not templated)
+REC_LED_X = 30.0                    # its state LED, right of the pad
 
 # --- per-part control template (ORDER defines enum order; identical A/B) ------
 # Returns Ctl list with per-part coordinates (mirrored for B when mir=True).
@@ -350,6 +356,11 @@ PARAMS = PART_A + PART_B + SHARED + [
     Ctl("DUST_B", SMKNOB, W - FX_BOT[2], ROW_V2, "DUST"),
     Ctl("ROT_A",  SMKNOB, FX_BOT[3],     ROW_V2, "ROT"),
     Ctl("ROT_B",  SMKNOB, W - FX_BOT[3], ROW_V2, "ROT"),
+    # M5b: REC, the one new panel element of the texture deck. Appended LAST
+    # so REC_A/REC_B take fresh trailing ids and PART_STRIDE stays 23 -- every
+    # already-saved .vcv keeps every param id it has.
+    Ctl("REC_A", LATCH, REC_X,     PLAY_Y, "REC"),
+    Ctl("REC_B", LATCH, W - REC_X, PLAY_Y, "REC"),
 ]
 
 # --- lights --------------------------------------------------------------------
@@ -359,6 +370,10 @@ LIGHTS = [
     # glow at each ring center, driven by that part's gate
     Ctl("GATE_A_L", LIGHT, RING_CX_A,     RING_CY, ""),
     Ctl("GATE_B_L", LIGHT, W - RING_CX_A, RING_CY, ""),
+    # Appended after the gate lights: the C++ side centres the LED rings on
+    # kLightCtls[0..1], so the gate lights must keep index 0 and 1.
+    Ctl("REC_A_L", LIGHT, REC_LED_X,     PLAY_Y, ""),
+    Ctl("REC_B_L", LIGHT, W - REC_LED_X, PLAY_Y, ""),
 ]
 
 # --- shared panel lettering (drawn by SVG for preview, by C++ at runtime) -----

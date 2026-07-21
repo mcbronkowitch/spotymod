@@ -89,6 +89,8 @@ enum ParamId {
     DUST_B,
     ROT_A,
     ROT_B,
+    REC_A,
+    REC_B,
     NUM_PARAMS
 };
 enum InputId {
@@ -110,6 +112,8 @@ enum OutputId {
 enum LightId {
     GATE_A_L,
     GATE_B_L,
+    REC_A_L,
+    REC_B_L,
     NUM_LIGHTS
 };
 static const PanelCtl kParamCtls[] = {
@@ -129,9 +133,9 @@ static const PanelCtl kParamCtls[] = {
     {FLUX_A, WK_SMKNOB, {62.750f, 77.300f}, "FLUX", {62.750f, 82.900f}, 0, 1.90f, 0x171713, "FLUX"},
     {GRIT_A, WK_SMKNOB, {49.500f, 89.400f}, "GRIT", {49.500f, 95.000f}, 0, 1.90f, 0x171713, "GRIT"},
     {COMP_A, WK_SMKNOB, {58.333f, 89.400f}, "COMP", {58.333f, 95.000f}, 0, 1.90f, 0x171713, "COMP"},
-    {STEPS_A, WK_KNOBI, {35.500f, 103.600f}, "STPS", {35.500f, 109.200f}, 0, 1.90f, 0x171713, "STPS"},
-    {ENGINE_A, WK_LATCH, {11.500f, 103.600f}, "ENG", {11.500f, 109.000f}, 0, 1.90f, 0x171713, "ENG"},
-    {GRITMODE_A, WK_LATCH, {22.000f, 103.600f}, "GRIT", {22.000f, 109.000f}, 0, 1.90f, 0x171713, "GRIT"},
+    {STEPS_A, WK_KNOBI, {37.000f, 103.600f}, "STPS", {37.000f, 109.200f}, 0, 1.90f, 0x171713, "STPS"},
+    {ENGINE_A, WK_LATCH, {10.000f, 103.600f}, "ENG", {10.000f, 109.000f}, 0, 1.90f, 0x171713, "ENG"},
+    {GRITMODE_A, WK_LATCH, {17.500f, 103.600f}, "GRIT", {17.500f, 109.000f}, 0, 1.90f, 0x171713, "GRIT"},
     {STEP_A, WK_LATCH, {46.000f, 103.600f}, "STEP", {46.000f, 109.000f}, 0, 1.90f, 0x171713, "STEP"},
     {PRINCIPLE_A, WK_SMBTN, {56.500f, 103.600f}, "PRIN", {56.500f, 109.000f}, 0, 1.90f, 0x171713, "PRIN"},
     {NEWPHRASE_A, WK_SMBTN, {67.000f, 103.600f}, "NEW", {67.000f, 109.000f}, 0, 1.90f, 0x171713, "NEW"},
@@ -152,9 +156,9 @@ static const PanelCtl kParamCtls[] = {
     {FLUX_B, WK_SMKNOB, {150.610f, 77.300f}, "FLUX", {150.610f, 82.900f}, 0, 1.90f, 0x171713, "FLUX"},
     {GRIT_B, WK_SMKNOB, {163.860f, 89.400f}, "GRIT", {163.860f, 95.000f}, 0, 1.90f, 0x171713, "GRIT"},
     {COMP_B, WK_SMKNOB, {155.027f, 89.400f}, "COMP", {155.027f, 95.000f}, 0, 1.90f, 0x171713, "COMP"},
-    {STEPS_B, WK_KNOBI, {177.860f, 103.600f}, "STPS", {177.860f, 109.200f}, 0, 1.90f, 0x171713, "STPS"},
-    {ENGINE_B, WK_LATCH, {201.860f, 103.600f}, "ENG", {201.860f, 109.000f}, 0, 1.90f, 0x171713, "ENG"},
-    {GRITMODE_B, WK_LATCH, {191.360f, 103.600f}, "GRIT", {191.360f, 109.000f}, 0, 1.90f, 0x171713, "GRIT"},
+    {STEPS_B, WK_KNOBI, {176.360f, 103.600f}, "STPS", {176.360f, 109.200f}, 0, 1.90f, 0x171713, "STPS"},
+    {ENGINE_B, WK_LATCH, {203.360f, 103.600f}, "ENG", {203.360f, 109.000f}, 0, 1.90f, 0x171713, "ENG"},
+    {GRITMODE_B, WK_LATCH, {195.860f, 103.600f}, "GRIT", {195.860f, 109.000f}, 0, 1.90f, 0x171713, "GRIT"},
     {STEP_B, WK_LATCH, {167.360f, 103.600f}, "STEP", {167.360f, 109.000f}, 0, 1.90f, 0x171713, "STEP"},
     {PRINCIPLE_B, WK_SMBTN, {156.860f, 103.600f}, "PRIN", {156.860f, 109.000f}, 0, 1.90f, 0x171713, "PRIN"},
     {NEWPHRASE_B, WK_SMBTN, {146.360f, 103.600f}, "NEW", {146.360f, 109.000f}, 0, 1.90f, 0x171713, "NEW"},
@@ -189,6 +193,8 @@ static const PanelCtl kParamCtls[] = {
     {DUST_B, WK_SMKNOB, {146.193f, 89.400f}, "DUST", {146.193f, 95.000f}, 0, 1.90f, 0x171713, "DUST"},
     {ROT_A, WK_SMKNOB, {76.000f, 89.400f}, "ROT", {76.000f, 95.000f}, 0, 1.90f, 0x171713, "ROT"},
     {ROT_B, WK_SMKNOB, {137.360f, 89.400f}, "ROT", {137.360f, 95.000f}, 0, 1.90f, 0x171713, "ROT"},
+    {REC_A, WK_LATCH, {25.000f, 103.600f}, "REC", {25.000f, 109.000f}, 0, 1.90f, 0x171713, "REC"},
+    {REC_B, WK_LATCH, {188.360f, 103.600f}, "REC", {188.360f, 109.000f}, 0, 1.90f, 0x171713, "REC"},
 };
 static const PanelCtl kInputCtls[] = {
     {IN_L, WK_IN, {55.250f, 118.400f}, "L", {55.250f, 124.800f}, 0, 1.80f, 0x171713, "IN L"},
@@ -207,6 +213,8 @@ static const PanelCtl kOutputCtls[] = {
 static const PanelCtl kLightCtls[] = {
     {GATE_A_L, WK_LIGHT, {42.000f, 37.000f}, "", {42.000f, 37.000f}, 0, 1.90f, 0x171713, ""},
     {GATE_B_L, WK_LIGHT, {171.360f, 37.000f}, "", {171.360f, 37.000f}, 0, 1.90f, 0x171713, ""},
+    {REC_A_L, WK_LIGHT, {30.000f, 103.600f}, "", {30.000f, 103.600f}, 0, 1.90f, 0x171713, ""},
+    {REC_B_L, WK_LIGHT, {183.360f, 103.600f}, "", {183.360f, 103.600f}, 0, 1.90f, 0x171713, ""},
 };
 static const PanelTxt kPanelTexts[] = {
     {{42.000f, 38.600f}, 5.00f, 0.00f, 0x2E6355, "A"},

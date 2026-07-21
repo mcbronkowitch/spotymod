@@ -48,10 +48,11 @@ PARAM_ORDER = [
     'REV_DIFF', 'REV_SMEAR', 'REV_MOD', 'CHOKE', 'FILT_A', 'FILT_B', 'TIDE',
     'FLUXRATE_A', 'FLUXRATE_B', 'FLUXFB_A', 'FLUXFB_B', 'COLOR_A', 'COLOR_B',
     'DUST_A', 'DUST_B', 'ROT_A', 'ROT_B',
+    'REC_A', 'REC_B',
 ]
 INPUT_ORDER = ['IN_L', 'IN_R', 'CLOCK', 'RESET']
 OUTPUT_ORDER = ['OUT_L', 'OUT_R', 'PITCH_A', 'GATE_A', 'PITCH_B', 'GATE_B']
-LIGHT_ORDER = ['GATE_A_L', 'GATE_B_L']
+LIGHT_ORDER = ['GATE_A_L', 'GATE_B_L', 'REC_A_L', 'REC_B_L']
 
 
 def test_enum_order():
@@ -88,6 +89,24 @@ def test_dust_rot_kind():
     for enum in ("DUST_A", "DUST_B", "ROT_A", "ROT_B"):
         check(h.count(f"{{{enum}, WK_SMKNOB,") == 1,
               f"{enum} is not WK_SMKNOB in the generated header")
+
+
+def test_rec_params():
+    """REC is appended, not templated -- appending keeps PART_STRIDE at 23 so
+    every saved .vcv keeps its param ids. Same guard shape as
+    test_dust_params, and the kind is pinned the same way test_dust_rot_kind
+    pins DUST/ROT: a LATCH that silently became an SMBTN would still clear
+    test_no_overlap (identical radius), so the kind needs its own check."""
+    check(g.PART_STRIDE == 23, "PART_STRIDE must stay 23")
+    ids = {c.enum: i for i, c in enumerate(g.PARAMS)}
+    for e in ("REC_A", "REC_B"):
+        check(e in ids, f"{e} missing")
+        check(ids[e] >= 2 * g.PART_STRIDE, f"{e} must be appended, not templated")
+    check(ids["REC_A"] > ids["ROT_B"], "REC must append AFTER the existing tail")
+    h = g.header()
+    for e in ("REC_A", "REC_B"):
+        check(h.count(f"{{{e}, WK_LATCH,") == 1,
+              f"{e} is not WK_LATCH in the generated header")
 
 
 def test_no_overlap():
@@ -223,8 +242,8 @@ LOWER_A = {   # enum -> (x, y)   part A; part B is W - x
     'FLUXRATE_A': (49.50, 77.30), 'FLUX_A': (62.75, 77.30), 'FLUXFB_A': (76.00, 77.30),
     'GRIT_A': (49.50, 89.40), 'COMP_A': (58.333, 89.40),
     'DUST_A': (67.167, 89.40), 'ROT_A': (76.00, 89.40),
-    'ENGINE_A': (11.50, 103.60), 'GRITMODE_A': (22.00, 103.60),
-    'STEPS_A': (35.50, 103.60), 'STEP_A': (46.00, 103.60),
+    'ENGINE_A': (10.00, 103.60), 'GRITMODE_A': (17.50, 103.60),
+    'STEPS_A': (37.00, 103.60), 'STEP_A': (46.00, 103.60),
     'PRINCIPLE_A': (56.50, 103.60), 'NEWPHRASE_A': (67.00, 103.60),
     'TRIGGER_A': (77.50, 103.60),
 }
