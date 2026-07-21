@@ -20,6 +20,11 @@ float test_detune_factor(float cents);
 // driving a whole engine.
 float test_size_seconds(float n);
 
+// Test seam only: forwards to the anonymous-namespace spawn-interval helper
+// in sampler_engine.cpp, so the CPU floor can be checked at overlaps that
+// engage it (today's kOverlap = 4 does not) without driving a whole engine.
+float test_spawn_interval(float grain_len, int overlap);
+
 // The M5 texture deck: a granular cloud behind IPartEngine.
 //
 // Not a second melodic instrument -- the synth part makes the music, this

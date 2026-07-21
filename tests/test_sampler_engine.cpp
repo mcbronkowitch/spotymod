@@ -1099,11 +1099,47 @@ TEST_CASE("sampler: a grain may be longer than the material it reads") {
     CHECK(eng.last_spawn_len() > 24000);
 }
 
+TEST_CASE("sampler: spawn_interval clamps to its floor only when it must") {
+    // test_spawn_interval is the extracted helper _update_control calls to
+    // derive _spawn_every. Unlike the old version of this test, this one
+    // pins overlaps that actually engage the floor -- at today's kOverlap=4
+    // the shortest grain the SIZE curve can produce (48 samples at 48 kHz)
+    // already gives 12, above the floor, so a test confined to kOverlap=4
+    // could never see the clamp fire. These cases pick overlaps by hand
+    // instead, so the floor is exercised regardless of what kOverlap is
+    // today.
+    using namespace spky::sampler_cfg;
+
+    // Engages: 48 / 16 = 3, below kSpawnMinSamples (8) -- must clamp to
+    // exactly the floor. THIS is the assertion that dies if the floor line
+    // (`raw < kSpawnMinSamples ? kSpawnMinSamples : raw`) is deleted: without
+    // it the function would return the unclamped 3.
+    CHECK(spky::test_spawn_interval(48.f, 16) == doctest::Approx(kSpawnMinSamples));
+
+    // Does not engage: 48 / 4 = 12, already above the floor -- must pass
+    // through unclamped. Proves the floor doesn't stomp values that are fine.
+    CHECK(spky::test_spawn_interval(48.f, 4) == doctest::Approx(12.f));
+
+    // Boundary: raw exactly at the floor must return the floor unchanged...
+    CHECK(spky::test_spawn_interval(kSpawnMinSamples * 2.f, 2) == doctest::Approx(kSpawnMinSamples));
+    // ...and raw just below it must still be lifted up to the floor.
+    const float just_below = kSpawnMinSamples - 0.5f;
+    CHECK(spky::test_spawn_interval(just_below * 2.f, 2) == doctest::Approx(kSpawnMinSamples));
+}
+
 TEST_CASE("sampler: the spawn interval never falls below its floor") {
-    // This is the CPU guard Task 3 relocates, and the one that Task 6's
-    // density work would otherwise reopen without anyone noticing. It is
-    // written against the OBSERVED spawn count rather than the internal
-    // interval, so it keeps its meaning whatever kOverlap becomes.
+    // This is the CPU guard Task 3 relocates. At today's kOverlap (4), the
+    // shortest grain the SIZE curve can produce (SIZE=0 -> kSizeFloorS ->
+    // 48 samples at 48 kHz) already yields a 12-sample interval, above
+    // kSpawnMinSamples (8) -- so this test is DORMANT: the bound below holds
+    // no matter what spawn_interval's floor does, because the floor never
+    // fires along this path. It becomes a real check of the observed spawn
+    // rate once a later task raises kOverlap to 8 or 16, at which point the
+    // same SIZE=0 grain drives the interval under the floor and this test
+    // starts actually constraining behaviour. Kept (rather than deleted) so
+    // it is already in place and already correct when that happens. The
+    // helper-level test above, not this one, is what proves the floor works
+    // today.
     using namespace spky::sampler_cfg;
     SamplerEngine eng;
     std::vector<SampleBuffer::Frame> mem(48000);

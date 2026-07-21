@@ -40,10 +40,22 @@ inline float detune_factor(float cents) {
     const float x = cents * (1.f / 1200.f);
     return 1.f + x * (0.6931472f + x * (0.2402265f + x * 0.0555041f));
 }
+
+// The spawn interval, with its CPU floor. Extracted so the floor can be
+// tested at overlaps that actually engage it: at kOverlap = 4 the shortest
+// grain the SIZE curve can ask for (1 ms, 48 samples at 48 kHz) already
+// yields 12 samples, so nothing here fires until a later task raises the
+// overlap. A test pinned to today's kOverlap would assert a floor that
+// never runs.
+inline float spawn_interval(float grain_len, int overlap) {
+    const float raw = grain_len / static_cast<float>(overlap);
+    return raw < kSpawnMinSamples ? kSpawnMinSamples : raw;
+}
 }  // namespace
 
 float test_detune_factor(float cents) { return detune_factor(cents); }
 float test_size_seconds(float n) { return size_seconds(n); }
+float test_spawn_interval(float grain_len, int overlap) { return spawn_interval(grain_len, overlap); }
 
 void SamplerEngine::init(float sample_rate) {
     _sr = sample_rate;
@@ -245,8 +257,7 @@ void SamplerEngine::_update_control() {
     // this guards is per spawn, and kOverlap decouples the two: a length
     // floor stops bounding the spawn rate as soon as kOverlap rises. See
     // kSpawnMinSamples.
-    _spawn_every = _grain_len / static_cast<float>(kOverlap);
-    if (_spawn_every < kSpawnMinSamples) _spawn_every = kSpawnMinSamples;
+    _spawn_every = spawn_interval(_grain_len, kOverlap);
 
     // A shrinking interval must not leave a stale long countdown pending:
     // sweeping SIZE down would otherwise gap the carpet for up to the old
