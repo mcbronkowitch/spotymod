@@ -1372,3 +1372,77 @@ TEST_CASE("sampler: tape mode at max SIZE and min pitch keeps the cloud spawning
     // The grain length is bounded by the pool-fill time, not by SIZE / ratio.
     CHECK(eng.last_spawn_len() <= SamplerEngine::kGrains * 252000 + 1);
 }
+
+// --- Final review: the two maxima that had only ever been measured apart ----
+
+TEST_CASE("sampler: maximum record bloom into maximum resonance stays bounded") {
+    // The gap this closes: the record-feedback bloom (fixed point ~2.3 of
+    // full scale) and the resonance sweep (peak ~21x on unit-amplitude
+    // content) had each been measured on its own, never together, so the
+    // headroom into the SVF was unknown. This runs both at maximum at once.
+    //
+    // Stage 1 blooms the buffer: feedback at the top of its travel is above
+    // unity, so overdubbing hot material into the loop drives it up to the
+    // saturator's fixed point. Stage 2 granulates that bloomed content with
+    // resonance at maximum while sweeping FILT across its whole range --
+    // the condition a self-oscillating SVF is likeliest to ring under, and
+    // the same sweep the resonance ceiling was chosen against.
+    SamplerEngine eng;
+    std::vector<SampleBuffer::Frame> mem(48000);
+    eng.set_memory(mem.data(), mem.size());
+    eng.set_seed(0xB1005u);
+    eng.init(48000.f);
+
+    // --- stage 1: bloom the buffer ---
+    eng.set_feedback(1.f);                 // above unity: the bloom
+    eng.set_recording(true);
+    for (int i = 0; i < 48000 * 20; ++i)   // 20 passes over a 1 s loop
+        eng.process_in(0.9f * std::sin(6.2831853f * 220.f * float(i) / 48000.f),
+                       0.9f * std::sin(6.2831853f * 220.f * float(i) / 48000.f));
+    eng.set_recording(false);
+    for (int i = 0; i < 1024; ++i) eng.process_in(0.f, 0.f);   // let the fade finish
+
+    float content_peak = 0.f;
+    for (size_t i = 0; i < mem.size(); ++i) {
+        content_peak = std::fabs(mem[i].l) > content_peak ? std::fabs(mem[i].l) : content_peak;
+        content_peak = std::fabs(mem[i].r) > content_peak ? std::fabs(mem[i].r) : content_peak;
+    }
+    // The precondition the whole test rests on: the bloom actually happened,
+    // so the SVF below is being fed hot content and not a quiet loop.
+    REQUIRE(content_peak > 1.f);
+
+    // --- stage 2: granulate it at maximum resonance under a full FILT sweep ---
+    eng.set_resonance(1.f);                // clamps to the real ceiling (0.90)
+    float targets[LANE_COUNT] = { 0.f, 0.5f, 0.5f, 0.f, 1.f };
+    eng.set_targets(targets, 0.5f);
+    eng.set_flow(true);
+
+    const long n = 48000 * 10;
+    float peak = 0.f;
+    for (long i = 0; i < n; ++i) {
+        eng.set_filt(-1.f + 2.f * (static_cast<float>(i) / static_cast<float>(n)));
+        float l = 0.f, r = 0.f;
+        eng.process(l, r);
+        REQUIRE(std::isfinite(l));
+        REQUIRE(std::isfinite(r));
+        peak = std::fabs(l) > peak ? std::fabs(l) : peak;
+        peak = std::fabs(r) > peak ? std::fabs(r) : peak;
+    }
+    MESSAGE("bloom x resonance: content_peak=" << content_peak << " out_peak=" << peak);
+
+    // The outcome, recorded because it was genuinely unknown: the two maxima
+    // together do NOT multiply. Measured content_peak 2.20 (the bloom's
+    // saturator fixed point, matching the ~2.3 measured on its own) and
+    // out_peak 4.48 -- about 2x the content, nowhere near the ~48 that
+    // naively composing the bloom's 2.3 with the resonance sweep's 21x on
+    // unit-amplitude content would predict. Two things absorb it: the
+    // overlap normalization (1/sqrt(active)) divides the summed cloud down,
+    // and the 21x figure came from a sine parked at the cutoff, which a
+    // sweep passing through only touches briefly.
+    //
+    // 8.0 is the ceiling: ~1.8x headroom over the measurement for seed and
+    // build noise, and still tight enough to fail loudly on a real
+    // regression. Verified sensitive -- lifting set_resonance's clamp from
+    // 0.90 to 1.0 takes out_peak to 33.7 and fails this outright.
+    CHECK(peak < 8.f);
+}

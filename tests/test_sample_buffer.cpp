@@ -381,3 +381,90 @@ TEST_CASE("sample buffer: below unity the write path is untouched by the saturat
     const float fb = buf.feedback();
     CHECK(mem[probe].l == doctest::Approx(before * fb).epsilon(0.02));
 }
+
+// --- Final review, Minor 4: frame 0 at the loop seam is NOT a dropout -------
+
+TEST_CASE("sample buffer: frame 0 survives every way a recording can end") {
+    // Two successive reviews got this wrong in opposite directions, so the
+    // behaviour is pinned here rather than argued about again.
+    //
+    // The first triage claimed frame 0 is a PERMANENT zero, because the
+    // fade-in's first sample is hann_value_at(0) == 0 exactly. That is wrong:
+    // stopping a recording sets state = fadeout and, while the loop is not yet
+    // cut, resets _write_head to 0 so the fadeout wraps OVER the fade-in. The
+    // fadeout's first sample carries _fade_ctr == kRecordFade - 1 == 191, so
+    // its fade is ~1 and frame 0 receives full input. That is the crossfade
+    // the seam is supposed to have.
+    //
+    // A later review accepted that but proposed a narrower real case: a record
+    // that free-runs to CAPACITY takes write()'s `_write_head >= _buffer_size`
+    // branch, which calls cut() with no fadeout pass at all, supposedly
+    // leaving frame 0 at the fade-in's zero -- reachable now that kSizeCeilS
+    // is pinned to that same capacity, making "record the full 42 s" a
+    // designed gesture. That is also wrong, for two independent reasons, both
+    // asserted below: reaching capacity does not END the recording (the state
+    // stays `sustain`), so the locked loop resumes at frame 0 and overwrites
+    // it on the very next sample; and even a stop issued at exactly that
+    // instant runs its fadeout from _write_head == 0 with fade ~1, writing
+    // frame 0 anyway.
+    //
+    // Hot, constant, non-silent input throughout: silence would make frame 0
+    // read as zero for reasons that have nothing to do with the seam. (That
+    // is exactly why "the bloom stays bounded and finite" above excludes
+    // frame 0 -- it overdubs silence, and 0 is a fixed point of the bloom.)
+    const float kIn = 0.5f;
+    const size_t kCap = 4800;
+
+    SUBCASE("stopping before capacity crossfades over the fade-in") {
+        SampleBuffer buf;
+        std::vector<SampleBuffer::Frame> mem(kCap);
+        buf.init(mem.data(), mem.size(), 48000.f);
+        buf.set_recording(true);
+        for (size_t i = 0; i < 2000; ++i) buf.write(kIn, kIn);
+        buf.set_recording(false);
+        for (int i = 0; i < 512; ++i) buf.write(kIn, kIn);
+        // Full input, not zero and not a fade-in's toe.
+        CHECK(mem[0].l > 0.4f);
+    }
+
+    SUBCASE("free-running to capacity and stopping there still writes frame 0") {
+        SampleBuffer buf;
+        std::vector<SampleBuffer::Frame> mem(kCap);
+        buf.init(mem.data(), mem.size(), 48000.f);
+        buf.set_recording(true);
+        for (size_t i = 0; i < kCap; ++i) buf.write(kIn, kIn);   // last one cuts
+        buf.set_recording(false);
+        for (int i = 0; i < 512; ++i) buf.write(kIn, kIn);
+        CHECK(mem[0].l > 0.4f);
+    }
+
+    SUBCASE("the capacity cut is repaired by the very next sample") {
+        SampleBuffer buf;
+        std::vector<SampleBuffer::Frame> mem(kCap);
+        buf.init(mem.data(), mem.size(), 48000.f);
+        buf.set_recording(true);
+        for (size_t i = 0; i < kCap; ++i) buf.write(kIn, kIn);
+        // This is the one instant at which the fade-in's zero is still
+        // standing -- cut() has just fired and nothing has written since.
+        CHECK(mem[0].l == 0.f);
+        // The recording did NOT end: state is still sustain, the loop is
+        // locked, and _write_head is back at 0. One more sample closes it.
+        CHECK(buf.is_recording());
+        buf.write(kIn, kIn);
+        CHECK(mem[0].l > 0.4f);
+    }
+
+    SUBCASE("running past capacity leaves no seam") {
+        SampleBuffer buf;
+        std::vector<SampleBuffer::Frame> mem(kCap);
+        buf.init(mem.data(), mem.size(), 48000.f);
+        buf.set_recording(true);
+        for (size_t i = 0; i < kCap + 2000; ++i) buf.write(kIn, kIn);
+        buf.set_recording(false);
+        for (int i = 0; i < 512; ++i) buf.write(kIn, kIn);
+        CHECK(mem[0].l > 0.4f);
+        // ...and the seam is not a discontinuity either: frame 0 and its
+        // neighbour agree, which a one-sample dropout would break.
+        CHECK(std::fabs(mem[0].l - mem[1].l) < 0.05f);
+    }
+}
