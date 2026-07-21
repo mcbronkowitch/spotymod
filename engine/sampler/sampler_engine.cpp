@@ -439,11 +439,22 @@ void SamplerEngine::_spawn_one() {
     //
     // Applied to BOTH modes rather than only the tape branch, because it is
     // provably a no-op in digital and that is cheaper than a branch: there
-    // lenf == _grain_len, and _spawn_every == max(_grain_len / kOverlap,
-    // kSpawnMinSamples) >= _grain_len / kOverlap, so len_ceil >= _grain_len *
-    // kGrains / kOverlap == 2 * _grain_len while kGrains == 2 * kOverlap.
-    // Writing it unconditionally also keeps the invariant true if a future
-    // pair ever sets kGrains <= kOverlap.
+    // lenf == _grain_len, and _spawn_every == max(_grain_len / _overlap,
+    // kSpawnMinSamples) >= _grain_len / _overlap, so len_ceil >= _grain_len *
+    // kGrains / _overlap.
+    //
+    // _overlap is a runtime DENS value in [kOverlapMin, kOverlapMax] = [1, 8]
+    // since Task 1 (sampler_config.h), not the kOverlap = 8 compile-time
+    // constant this bound was first derived against -- kGrains is still
+    // fixed at 16, though, so at _overlap == kOverlapMax the bound is
+    // len_ceil >= _grain_len * kGrains / kOverlapMax == 2 * _grain_len (the
+    // 2x figure kGrains == 2 * kOverlapMax was chosen to guarantee). Below
+    // kOverlapMax, the same inequality only grows len_ceil's lower bound
+    // (smaller _overlap, larger kGrains / _overlap), so turning DENS down
+    // can only loosen this ceiling, never tighten it below that 2x floor --
+    // see the "lowering overlap only loosens the pool ceiling" test in
+    // test_sampler_engine.cpp. Writing the bound unconditionally also keeps
+    // it true if a future pair ever sets kGrains <= kOverlapMax.
     const float len_ceil = _spawn_every * static_cast<float>(kGrains);
     if (lenf > len_ceil) lenf = len_ceil;
 
