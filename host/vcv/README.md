@@ -62,7 +62,8 @@ part:
 - **Load sample…** / **Save sample…** — WAV import/export via a file dialog.
 - **Clear sample** — empties the buffer and forgets any remembered
   path/factory flag.
-- **Speed mode** — Digital (default) or Tape.
+- **Speed mode** — Tape (default) or Digital. Tape couples speed and pitch
+  like varispeed; Digital repitches grains at unchanged grain duration.
 - **Reverse** — plays the buffer backwards.
 - **Overdub feedback** — how much of the existing buffer content survives
   under a new recording (a slider, not a toggle).
