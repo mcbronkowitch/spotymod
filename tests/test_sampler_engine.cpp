@@ -1620,8 +1620,16 @@ TEST_CASE("sampler: the SCAN curve has a dead centre, hits 1.0x at the knee, top
     CHECK(test_scan_rate(-1.f) == doctest::Approx(-kScanMaxRate).epsilon(0.001));
     CHECK(test_scan_rate(kScanDead) == doctest::Approx(kScanMinRate).epsilon(0.01));
 
-    // Monotone over the whole travel -- the property that makes the knob
-    // playable. Checked with a step fine enough to catch a kink at either knee.
+    // Continuity ACROSS the knee, which the monotonicity loop below cannot
+    // see: it only catches falling steps, so a jump UP at the knee would pass
+    // it unnoticed. This is the assertion that pins the two branches together.
+    CHECK(test_scan_rate(kScanKnee + 1e-4f) == doctest::Approx(1.f).epsilon(0.002));
+    CHECK(test_scan_rate(-kScanKnee - 1e-4f) == doctest::Approx(-1.f).epsilon(0.002));
+
+    // Monotone over the whole travel, including the sign change at centre --
+    // the property that makes the knob playable. A sampled step like this
+    // can only ever catch a FALLING step; it cannot detect a rising kink at
+    // either knee (see the continuity checks above for that).
     float prev = -1e9f;
     for (int i = 0; i <= 400; ++i) {
         const float n = -1.f + 2.f * float(i) / 400.f;
@@ -1650,6 +1658,20 @@ TEST_CASE("sampler: SCAN advances the playhead, folds at the content edge, and r
     g.render(6000);
     const float back = g.e.scan_pos();
     CHECK(back > 12000.f);            // folded downward through zero
+}
+
+TEST_CASE("sampler: the playhead honours its [0, content) contract in reverse") {
+    // Regression pin for the fold guard: a reverse run repeatedly crosses
+    // zero, and that is exactly where a value just below zero folds to
+    // EXACTLY content in float32.
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.e.set_scan(-1.f);
+    for (int i = 0; i < 400; ++i) {
+        g.render(480);
+        CHECK(g.e.scan_pos() >= 0.f);
+        CHECK(g.e.scan_pos() < 24000.f);   // strictly below, never equal
+    }
 }
 
 TEST_CASE("sampler: a frozen SCAN leaves the playhead exactly where it was") {

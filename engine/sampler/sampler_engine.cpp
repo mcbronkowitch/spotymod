@@ -325,7 +325,14 @@ void SamplerEngine::_update_control() {
     if (scan_content > 0.f) {
         _scan_pos += _scan_rate * static_cast<float>(kCtrlInterval);
         _scan_pos -= scan_content * std::floor(_scan_pos / scan_content);
-        if (_scan_pos < 0.f) _scan_pos = 0.f;      // -0.0 and rounding at the seam
+        // Both ends, and the upper one is the one that actually fires: in
+        // float32 a _scan_pos just below zero folds to EXACTLY scan_content,
+        // not to something just under it. That is the value _spawn_one's own
+        // `span = content - 1.f` comment calls out as dangerous, and it would
+        // break the [0, rec_size) contract that scan_pos() promises to the
+        // VCV ring's read-position dot. The lower test is unreachable after a
+        // correct floor and stays only as a cheap belt on rounding.
+        if (_scan_pos >= scan_content || _scan_pos < 0.f) _scan_pos = 0.f;
     } else {
         _scan_pos = 0.f;
     }
