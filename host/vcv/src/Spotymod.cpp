@@ -94,6 +94,18 @@ struct Spotymod : Module {
     std::vector<spky::SampleBuffer::Frame> samplerMem[spky::PART_COUNT];
     spkyvcv::SamplerPartState smp[spky::PART_COUNT];
 
+    // First-use factory sample (Task 8): flipping ENG to Sampler on an empty
+    // part autoloads res/factory.wav so the deck sounds within one gesture.
+    // factoryTried[p] stops a failed load or a deliberate Clear from
+    // re-triggering on the next control tick -- only onReset() clears it.
+    // The WAV itself is read off disk (and resampled to the engine rate) at
+    // most once per module instance and cached here, shared by both parts --
+    // pushParams runs on the audio thread, so a second 3 MB file read must
+    // not happen.
+    bool factoryTried[spky::PART_COUNT] = {false, false};
+    spky::WavData factoryWav;
+    bool factoryWavTried = false;
+
     float curSr = 0.f;
     dsp::ClockDivider ctrlDiv;              // throttle param push to control rate
     dsp::SchmittTrigger clockTrig, resetTrig;
@@ -338,6 +350,40 @@ struct Spotymod : Module {
             inst.set_engine(p, !eng2 ? spky::ENGINE_SYNTH
                                      : (smp[p].testTone ? spky::ENGINE_TEST_TONE
                                                         : spky::ENGINE_SAMPLER));
+
+            // First-user experience: flipping ENG to Sampler on an empty part
+            // loads the factory drone, so one pad press makes sound. It never
+            // overwrites content -- sampler_empty() is the whole guard, and
+            // once loaded it behaves like any other sample (REC overdubs it,
+            // Clear clears it, and factoryLoaded keeps it out of patch
+            // storage).
+            if (eng2 && !smp[p].testTone && inst.sampler_empty(p)
+                     && !factoryTried[p]) {
+                factoryTried[p] = true;
+                if (!factoryWavTried) {
+                    factoryWavTried = true;
+                    std::string err;
+                    const std::string fp = asset::plugin(pluginInstance, "res/factory.wav");
+                    if (spky::read_wav(fp, factoryWav, err)) {
+                        if (factoryWav.sample_rate > 0 && curSr > 0.f
+                            && (float)factoryWav.sample_rate != curSr) {
+                            const double ratio = (double)curSr / (double)factoryWav.sample_rate;
+                            spkyvcv::resample_linear(factoryWav.l, ratio);
+                            spkyvcv::resample_linear(factoryWav.r, ratio);
+                        }
+                    } else {
+                        WARN("Spotymod: factory sample unavailable: %s", err.c_str());
+                        factoryWav.l.clear();
+                        factoryWav.r.clear();
+                    }
+                }
+                if (!factoryWav.l.empty()) {
+                    inst.load_sample(p, factoryWav.l.data(), factoryWav.r.data(),
+                                     factoryWav.l.size());
+                    smp[p].factoryLoaded = true;
+                }
+            }
+
             inst.sampler_speed_mode(p, smp[p].tapeIdx != 0);
             inst.sampler_reverse(p, smp[p].reverse);
             inst.sampler_feedback(p, smp[p].feedback);
@@ -450,7 +496,12 @@ struct Spotymod : Module {
         }
     }
 
-    void onReset() override { reinit(curSr > 0.f ? curSr : 48000.f); }
+    void onReset() override {
+        // Rack Initialize is the only gesture that should let the factory
+        // sample autoload again -- a mid-session Clear must stay cleared.
+        for (int p = 0; p < spky::PART_COUNT; ++p) factoryTried[p] = false;
+        reinit(curSr > 0.f ? curSr : 48000.f);
+    }
 
     // --- persistence -----------------------------------------------------
     // The module had no dataToJson at all: everything below is non-param
