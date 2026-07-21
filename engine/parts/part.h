@@ -97,6 +97,11 @@ public:
 
     SamplerEngine& sampler() { return _sampler; }
     const SamplerEngine& sampler() const { return _sampler; }
+    // Observer twin of sampler() above -- lets a test reach the Synth leg of
+    // the SUB/DTUN split directly (final-fixes pass, Befund B) the same way
+    // sampler() already lets it reach the sampler leg.
+    SynthEngine& synth() { return _synth; }
+    const SynthEngine& synth() const { return _synth; }
 
     int active_voices() const {
         return _engine_id == ENGINE_SYNTH ? _synth.active_voices() : 0;

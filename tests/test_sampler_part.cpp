@@ -359,7 +359,7 @@ TEST_CASE("sampler part: an inactive MOTION target leaves the overlap on the kno
 TEST_CASE("sampler part: a deactivated PITCH lane holds pitch but keeps firing") {
     // The whole point of the pitch decision: material and a synth deck stay
     // in one key, WITHOUT losing rhythmic triggering. _active gates the
-    // VALUE (part.cpp:44-57); lane_fired is independent of it (part.cpp:183),
+    // VALUE (part.cpp:44-57); lane_fired is independent of it (part.cpp:194),
     // which is why STEP still triggers.
     std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
     Part p;
@@ -383,7 +383,7 @@ TEST_CASE("sampler part: a deactivated PITCH lane holds pitch but keeps firing")
 TEST_CASE("sampler part: punch() produces a grain in the FLOW cloud") {
     // Regression pin for an M5b defect this plan fixes as a side effect:
     // trigger_manual only latches _burst_ratio, and _next_ratio reads that
-    // latch solely when !_flow (sampler_engine.cpp:226) -- so the pad has
+    // latch solely when !_flow (sampler_engine.cpp:247) -- so the pad has
     // been inert in the standing cloud. Renamed from the brief's "TRIG
     // produces a grain in the FLOW cloud": this calls punch() directly, not
     // through the Task 6 host/panel wiring (TRIG isn't connected to it yet),
@@ -426,18 +426,23 @@ TEST_CASE("sampler part: SUB and DTUN no longer reach the sampler") {
     //
     // Task 4 review, Befund 2: set_voice_sub/set_voice_detune (part.h) now
     // forward ONLY to _synth.set_sub()/_synth.set_detune() -- the sampler
-    // leg below is the half this case pins. Deleting BOTH forwarding calls
-    // (not just the sampler one) would still pass every CHECK here, because
-    // nothing below observes the synth leg. It should be pinned too, but
-    // SynthEngine/Voice expose no public getter for _sub_level or
-    // _detune_ct (engine/synth/synth_engine.h, engine/synth/voice.h) --
-    // there is no observer to assert against without adding one, and adding
-    // a getter is production-code surface this task's brief puts off limits.
-    // Left open rather than faked; see the Task 4 report.
+    // leg below is only half this case pinned. Deleting BOTH forwarding
+    // calls (not just the sampler one) would still pass every CHECK that
+    // used to be here, because nothing observed the synth leg.
+    //
+    // Final-fixes pass, Befund B: closed. SynthEngine now exposes
+    // sub_level()/detune_max_ct() (engine/synth/synth_engine.h) and Part
+    // exposes synth() alongside the existing sampler() (engine/parts/
+    // part.h), purely as observers -- neither changes what either engine
+    // does. The two CHECKs below pin that a future edit deleting both
+    // forwarding calls at once (not just the sampler-silencing one) would
+    // now be caught here.
     Part p;
     p.init(48000.f, 0);
     p.set_voice_sub(1.f);
     p.set_voice_detune(1.f);
     CHECK(p.sampler().sub() == doctest::Approx(0.f));
     CHECK(p.sampler().detune() == doctest::Approx(0.f));
+    CHECK(p.synth().sub_level() == doctest::Approx(1.f));
+    CHECK(p.synth().detune_max_ct() == doctest::Approx(SynthEngine::kDetuneCeilCt));
 }
