@@ -751,3 +751,47 @@ TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
     INFO("spawns in window=" << spawns);
     REQUIRE(spawns > 5);
 }
+
+TEST_CASE("part: a sampler STEP part drives the slice groove end to end") {
+    // Rig idiom of this file: Part + injected sampler memory. Load clicks,
+    // STEP on, run -- the engine must receive a real step clock and fires
+    // must land on slice starts without any test-side set_phrase_pos.
+    std::vector<SampleBuffer::Frame> mem(48000 * 4);
+    Part p;
+    p.init(48000.f, 1234, nullptr, nullptr, mem.data(), mem.size());
+    p.set_engine(ENGINE_SAMPLER);
+    for (int i = 0; i < 400; ++i) { float a,b,c,d; p.process(a,b,c,d); } // fade+swap
+    std::vector<float> l(48000, 0.f);
+    for (int c = 0; c < 8; ++c)
+        for (int i = 0; i < 240; ++i)
+            l[c * 6000 + i] = std::exp(-float(i) / 60.f);
+    p.sampler().load_sample(l.data(), l.data(), l.size());
+    REQUIRE(p.sampler().slice_count() == 8);
+    // Rate tightened off the SuperModulator default (also 0.5, super_
+    // modulator.h:97): at the default, the push made during the fade+swap
+    // loop above and the push made here after configuring STEP land on the
+    // exact same computed step_samples (clock_scale is 1.0 either way once
+    // _steps == 8 matches the default), so the CHECK below would pass
+    // vacuously -- same collision class the brief flags for the 6000
+    // sentinel, just a different coincidental value. 0.35 forces a real
+    // change in the pushed clock (empirically ~7745.97 -> ~23200.1 samples).
+    p.mod().set_rate(0.35f);
+    p.set_step(true, 8);
+    const float before = p.sampler().step_clock();
+    int spawns_on_marker = 0, spawns = 0;
+    for (int i = 0; i < 48000 * 4; ++i) {
+        float a, b, c, d;
+        p.process(a, b, c, d);
+        static int last_count = 0;
+        if (p.sampler().spawn_count() != last_count) {
+            last_count = p.sampler().spawn_count();
+            ++spawns;
+            const float pos = p.sampler().last_spawn_pos();
+            for (int s = 0; s < 8; ++s)
+                if (std::fabs(pos - float(s * 6000)) < 200.f) { ++spawns_on_marker; break; }
+        }
+    }
+    CHECK(p.sampler().step_clock() != before);   // Part pushed a real clock
+    CHECK(spawns > 4);                            // the phrase actually fired
+    CHECK(spawns_on_marker == spawns);            // every fire hit a slice
+}
