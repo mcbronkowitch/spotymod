@@ -6,7 +6,7 @@
 #include "sampler/sample_buffer.h"
 #include "sampler/sampler_config.h"
 #include "util/onepole.h"
-#include "Filters/svf.h"      // daisysp::Svf -- the engine's only DaisySP dep
+#include "util/svf_lp.h"     // low-pass-only SVF; see the header for why
 
 namespace spky {
 
@@ -242,7 +242,7 @@ private:
     Rng   _rng;
     uint32_t _seed = 0xC0FFEEu;
 
-    daisysp::Svf _svf_l, _svf_r;
+    SvfLp _svf_l, _svf_r;
     OnePole _level;
     OnePole _norm;          // smoothed 1/sqrt(active) -- see _update_control
 

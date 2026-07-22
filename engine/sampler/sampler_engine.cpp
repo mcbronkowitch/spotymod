@@ -104,10 +104,8 @@ void SamplerEngine::init(float sample_rate) {
     _svf_r.Init(sample_rate);
     _svf_l.SetFreq(kCutoffMaxHz);
     _svf_r.SetFreq(kCutoffMaxHz);
-    _svf_l.SetRes(_res_n);
+    _svf_l.SetRes(_res_n);   // no SetDrive: SvfLp has no drive term (svf_lp.h)
     _svf_r.SetRes(_res_n);
-    _svf_l.SetDrive(0.f);
-    _svf_r.SetDrive(0.f);
 
     _level.init(sample_rate, 0.01f);   // 10 ms, as the synth's LEVEL
     _norm.init(sample_rate, kNormSmoothS);

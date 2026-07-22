@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "Filters/svf.h"
+#include "util/svf_lp.h"
 #include "synth/morph_osc.h"
 #include "synth/env.h"
 
@@ -9,14 +9,16 @@ namespace spky {
 // One synth voice (x4 per part):
 //
 //   MorphOsc A ─┐
-//   MorphOsc B ─┼→ mix → Svf lowpass (FILTER) → Env (VCA) → equal-power pan
+//   MorphOsc B ─┼→ mix → SvfLp lowpass (FILTER) → Env (VCA) → equal-power pan
 //   sub sine  ──┘
 //
 // plus a slow per-voice drift LFO pair (pan + micro-detune, ~0.05-0.2 Hz,
 // rates drawn deterministically from spky::Rng at init). All parameters
 // arrive from SynthEngine at CONTROL RATE (update_control, once per
 // 96-sample block); process() is the pure per-sample audio path and uses
-// fast_sin only. daisysp::Svf is the single DaisySP dependency (spec).
+// fast_sin only. The FILTER is spky::SvfLp (util/svf_lp.h) -- daisysp::Svf
+// with its four unread outputs and its provably-zero drive term removed;
+// Low() is bit-identical. Voice now has no DaisySP dependency at all.
 class Voice {
 public:
     void init(float sample_rate, uint32_t seed);
@@ -48,7 +50,7 @@ private:
     MorphOsc _osc_a;
     MorphOsc _osc_b;
     Env _env;
-    daisysp::Svf _filt;
+    SvfLp _filt;
 
     float _sr = 48000.f;
     float _freq = 220.f;

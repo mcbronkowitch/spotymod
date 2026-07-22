@@ -18,8 +18,7 @@ void Voice::init(float sample_rate, uint32_t seed) {
     _env.init(sample_rate);
     _filt.Init(sample_rate);
     _filt.SetFreq(2000.f);
-    _filt.SetRes(0.15f);
-    _filt.SetDrive(0.f);
+    _filt.SetRes(0.15f);   // no SetDrive: SvfLp has no drive term (svf_lp.h)
 
     Rng rng;                               // used ONCE at init: deterministic
     rng.seed(seed);                        // per-voice drift character
