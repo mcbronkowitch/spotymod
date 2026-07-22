@@ -169,7 +169,28 @@ constexpr float  kSpawnMinSamples = 8.f;
 // Was er kostet: in den dichtesten Momenten faellt ein Spawn aus, gezaehlt in
 // dropped_spawns(). Bei DENS 8 betrifft das den Anteil der Zeit, in dem
 // ueberhaupt mehr als kOverlapMax + kSpawnHeadroom Grains klingen wuerden.
-constexpr int    kSpawnHeadroom = 1;
+//
+// Der WERT ist eine Hoerentscheidung und keine Messung, weil er zwei Dinge
+// gleichzeitig stellt. Der Deckel bestimmt naemlich auch die erreichbare
+// Poolgroesse, und len_ceil (sampler_engine.cpp) rechnet gegen dieselbe Zahl
+// -- er deckelt damit, wie weit Tape ein Grain strecken darf:
+//
+//   Headroom   Grains   Tape-Decke bei DENS max   Solo-Spitze/Mittel (HW)
+//   1          9        1.125x  (~2 Halbtoene)    1.14
+//   2          10       1.25x   (~4 Halbtoene)    1.18   <- gewaehlt
+//   3          11       1.375x  (~5 Halbtoene)    -
+//   ohne       16       2x      (1 Oktave)        1.33
+//
+// Bastian, 2026-07-22, nach Vorlage der Tabelle: "mach 2". Die Begruendung
+// gehoert dem Ohr -- Tape bei hoher Dichte war ihm die vier Zehntel
+// Spitzenreduktion wert. Wer hier spaeter aufraeumen will: 1 ist NICHT das
+// bessere Default, es ist die andere Seite desselben Handels.
+//
+// Am Instrument-Peak aendert die Wahl fast nichts (113.7 % bei 1 gegen
+// 113.1 % bei 2, docs/bench/2026-07-22): was dort ueber dem Budget steht,
+// ist nicht die Grainzahl, sondern die Dauerlast zweier Wolken unter der
+// vollen FX-Kette.
+constexpr int    kSpawnHeadroom = 2;
 
 // Harte Obergrenze fuer die Grain-Laenge in Ausgangssamples.
 //

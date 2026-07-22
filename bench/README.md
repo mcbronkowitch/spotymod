@@ -234,10 +234,12 @@ exactly rather than timed (`Grain::process` calls per block), the worst case
 spread 1.36x with the jitter and 1.01x without.
 
 `kSpawnHeadroom` (`sampler_config.h`) caps the live count at
-`ceil(overlap) + 1`. After it, `sampler_flow_worst` reads 1.14x peak-to-mean
-instead of 1.33x, and `sampler_worst_nomotion` — the row that settles the
-mechanism, and the reason it has to be a SOLO row — reads 1.01x on hardware,
-matching the offline count exactly.
+`ceil(overlap) + kSpawnHeadroom`. At the shipping value of 2,
+`sampler_flow_worst` reads 1.18x peak-to-mean instead of 1.33x, and
+`sampler_worst_nomotion` — the row that settles the mechanism, and the reason
+it has to be a SOLO row — reads 1.01x on hardware, matching the offline count
+exactly. The constant also sets how far tape mode may stretch a grain, so its
+value is an ear decision; the table is at the constant.
 
 Two traps this left behind, both worth knowing before adding a row here:
 

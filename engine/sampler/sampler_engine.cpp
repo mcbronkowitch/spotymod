@@ -637,8 +637,11 @@ void SamplerEngine::_spawn_one() {
     // keeps the cloud spawning" gefangen (8 Drops statt 0).
     //
     // Was das hoerbar kostet, und es gehoert benannt statt weggerechnet: die
-    // Tape-Zusage "low notes smear long" wird kuerzer. Bei DENS max deckelt
-    // sie jetzt auf ~1.1 statt 2 Grainlaengen, bei DENS min auf 2 statt 16.
+    // Tape-Zusage "low notes smear long" wird kuerzer. Bei kSpawnHeadroom = 2
+    // deckelt sie bei DENS max auf 1.25 statt 2 Grainlaengen (Smearing endet
+    // rund vier Halbtoene abwaerts statt erst eine Oktave tiefer), bei DENS
+    // min auf 3 statt 16. Die Wahl der 2 ist eine Hoerentscheidung und steht
+    // mit ihrer Tabelle bei kSpawnHeadroom.
     // Das ist kein Nebeneffekt, den man wegdesignen koennte -- ein langes
     // Tape-Grain IST Dichte, und beides gleichzeitig zu deckeln und laufen
     // zu lassen ist dieselbe Resource zweimal vergeben. Die alte Fassung
