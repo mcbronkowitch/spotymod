@@ -75,12 +75,20 @@ fixed, refindable knob position three-quarters of the way out rather than
 somewhere you have to hunt for — the last quarter is the steepest stretch of
 the curve, carrying the head up to eight times real time in either direction.
 
-**SCAN (MELO) rastet nach einem ENG-Flip ein.** Der Knopf trägt im Synth
-VARIATION und im Sampler SCAN, und die Init-Werte stehen für VARIATION an
-den Extremen. Ohne Sperre würde der Lesekopf beim ersten Flip auf Sampler
-mit bis zu −8× Realtime rückwärts losrasen. SCAN bleibt deshalb auf 0,
-bis MELO nach dem Flip einmal bewegt wurde (F-07, Review 2026-07-22).
-Getestet wird das von Hand — `Spotymod.cpp` ist nicht Teil der doctest-Suite.
+**SCAN springt beim ENG-Flip sofort auf die Knopfposition — offene Frage
+(F-07, Review 2026-07-22).** MELO trägt im Synth VARIATION und im Sampler
+SCAN, und die Init-Werte stehen für VARIATION an den Extremen (−0.728 und
+−1.0). Als SCAN gelesen sind das −0.81× und −8× Realtime rückwärts: der
+erste Flip auf Sampler lädt die Factory-Drone und schickt den Lesekopf im
+selben Control-Tick rückwärts los, ohne dass jemand etwas angefasst hat.
+
+Das ist als Fehler gemeldet worden, ist aber genau das Verhalten, das
+"Known limitations" weiter unten bewusst wählt: Knopfposition gilt über den
+Engine-Wechsel hinweg, ohne getrenntes Gedächtnis und ohne Soft-Takeover,
+weil die Hardware kein Soft-Takeover hat. Ein Soft-Takeover wurde gebaut und
+wieder zurückgenommen — über Patch-Laden hinweg dicht zu bekommen verlangt
+persistenten Zustand, also genau das, was diese Zeile ausschließt. Die
+Entscheidung liegt beim Autor des Instruments, nicht in der Engine.
 
 **NEW and TRIG both fire "new grain now" in the Sampler:** the tape head
 snaps back to ORGANIZE's position and a fresh grain spawns immediately. This
