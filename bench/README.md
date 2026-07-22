@@ -220,10 +220,37 @@ unchanged. Only `setup()` touches it.
 **What the rows found.** `inst_sampler_worst` is the same box as
 `instrument_worst` with both parts swapped to the sampler, and it is *cheaper
 on the mean block and more expensive on the worst* — the peak clears 100 % of
-the budget while the mean stays under it. That shape is the grain scheduler:
-the steady cloud is affordable, a block that happens to catch several spawns
-is not. Anyone reading the sampler rows for a "does it fit" answer has to read
-the max column, not the avg column.
+the budget while the mean stays under it. Anyone reading the sampler rows for
+a "does it fit" answer has to read the max column, not the avg column.
+
+The first reading of that shape was "a spawn burst," and it was wrong. The
+ablation rows below exist because that guess did not survive being measured:
+`inst_sampler_nomotion` moved the peak by 0.3 points, and `_slowspawn` — 75x
+fewer spawns — made the peak *worse*. What it actually was is grain-count
+variance. The spawn interval carries MOTION's ±75 % jitter while the grain
+length does not, so short intervals stack grains and the live count wanders
+5..11 where DENS asked for 8; per-block cost is linear in that count. Counted
+exactly rather than timed (`Grain::process` calls per block), the worst case
+spread 1.36x with the jitter and 1.01x without.
+
+`kSpawnHeadroom` (`sampler_config.h`) caps the live count at
+`ceil(overlap) + 1`. After it, `sampler_flow_worst` reads 1.14x peak-to-mean
+instead of 1.33x, and `sampler_worst_nomotion` — the row that settles the
+mechanism, and the reason it has to be a SOLO row — reads 1.01x on hardware,
+matching the offline count exactly.
+
+Two traps this left behind, both worth knowing before adding a row here:
+
+- **A `_nomotion` row at the instrument level does not remove MOTION.**
+  `Part::_active` defaults to all-true, so zeroing a target's base leaves its
+  lane still swinging it. The first version of that row measured the
+  unablated peak and read as "not MOTION" — the wrong answer, arrived at
+  confidently. It now calls `set_target_active(..., false)`.
+- **After the cap, a high peak-to-mean ratio means a low mean, not a high
+  peak.** The ceiling makes the worst block constant (the ceiling's worth of
+  grains); what the SIZE lane varies is the mean, by sweeping `grain_len`
+  over a factor of ~300. `inst_sampler_slowspawn`'s 1.6x is that, not a
+  burst.
 
 One thing deliberately **not** a row: `SamplerEngine::init()` on a buffer
 holding content ends in `clear()`, which memsets 16 MB of SDRAM. That is real

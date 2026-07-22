@@ -240,9 +240,14 @@ def verdict(rows, anchors):
             over = None
         if over is True:
             call = ("**Conclusion: the texture deck fits on average and "
-                    "overruns on peaks.** Its worst block is over the budget "
-                    "even though its mean block is under it, so what needs "
-                    "capping is the spawn burst, not the steady cloud.")
+                    "overruns on peaks.** The grain count itself is already "
+                    "capped (`kSpawnHeadroom`) and the ablations say the "
+                    "remainder is not a burst: with the MOTION and SIZE lanes "
+                    "quiet the cloud's per-block work is flat to 1 %, and the "
+                    "worst block is simply the ceiling's worth of grains plus "
+                    "the whole FX chain. Dropping either FLUX or the reverb "
+                    "from this patch brings it under 100 %; capping grains "
+                    "harder does not.")
         elif over is False:
             call = ("**Conclusion: a two-part texture deck fits**, peaks "
                     "included.")
