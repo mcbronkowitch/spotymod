@@ -58,10 +58,17 @@ public:
     int   cur_step() const { return _cur_step; }
     int   steps()    const { return _steps; }
     // Samples per STEP slot at the current rate: one slot is 1/_steps of the
-    // cycle and _phase_inc is cycle fraction per sample. 0 when stopped.
+    // cycle and the phase advances by _phase_inc * (1 + _ev_rate) per sample.
+    // The EVOLVE rate walk is part of the answer, not a detail: lane.cpp
+    // advances the phase by exactly that product (both in process() and in
+    // tick()'s dp1), and _ev_rate is clamped to +-0.2, so leaving it out made
+    // this up to 20% wrong under EVOLVE/GROW -- and the sampler's roll
+    // interval, spec'd as "step_samples / subdiv, sample-exact", inherits the
+    // error straight from here. 0 when stopped.
     float step_samples() const {
         return _phase_inc > 0.f
-            ? 1.f / (_phase_inc * static_cast<float>(_steps)) : 0.f;
+            ? 1.f / (_phase_inc * (1.f + _ev_rate) * static_cast<float>(_steps))
+            : 0.f;
     }
     float phase_eff() const;                  // audible phase = (_phase + EVOLVE offset), wrapped
     float target() const { return _target; }  // pre-smooth, pre-range held value
