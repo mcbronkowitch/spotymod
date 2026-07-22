@@ -76,3 +76,45 @@ TEST_CASE("slice map: clear empties, init resets the detector") {
     m.clear();
     CHECK(m.count() == 0);
 }
+
+TEST_CASE("slice map: live writes detect like the offline scan") {
+    const std::vector<size_t> at = { 4800, 14400, 24000 };
+    auto buf = clicks(30000, at);
+    SliceMap live, off;
+    live.init(48000.f);
+    off.init(48000.f);
+    off.scan(buf.data(), buf.size());
+    for (size_t i = 0; i < buf.size(); ++i) live.on_write(i, buf[i].l, buf[i].r);
+    REQUIRE(live.count() == off.count());
+    for (int i = 0; i < live.count(); ++i) CHECK(live.start(i) == off.start(i));
+}
+
+TEST_CASE("slice map: overdub pass replaces the markers it overwrites") {
+    auto take1 = clicks(30000, { 4800, 14400, 24000 });
+    SliceMap m;
+    m.init(48000.f);
+    for (size_t i = 0; i < take1.size(); ++i) m.on_write(i, take1[i].l, take1[i].r);
+    REQUIRE(m.count() == 3);
+    // Second pass overwrites [0, 20000) with ONE click at 9600. The passed
+    // region's old markers (4800, 14400) must go; 24000 must survive.
+    auto take2 = clicks(20000, { 9600 });
+    for (size_t i = 0; i < take2.size(); ++i) m.on_write(i, take2[i].l, take2[i].r);
+    REQUIRE(m.count() == 2);
+    const int pre = int(sampler_cfg::kOnsetPreRollS * 48000.f);
+    CHECK(m.start(0) >= 9600 - size_t(pre));
+    CHECK(m.start(0) <= 9600 + 144);
+    CHECK(m.start(1) >= 24000 - size_t(pre));
+}
+
+TEST_CASE("slice map: a punch-in mid-buffer only clears what it passes") {
+    auto take1 = clicks(30000, { 4800, 24000 });
+    SliceMap m;
+    m.init(48000.f);
+    for (size_t i = 0; i < take1.size(); ++i) m.on_write(i, take1[i].l, take1[i].r);
+    REQUIRE(m.count() == 2);
+    // Punch in at 20000, write 6000 silent frames: passes 24000's marker,
+    // leaves 4800's alone. (Silence detects nothing new.)
+    for (size_t i = 20000; i < 26000; ++i) m.on_write(i, 0.f, 0.f);
+    REQUIRE(m.count() == 1);
+    CHECK(m.start(0) <= 4800);
+}

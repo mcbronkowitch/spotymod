@@ -46,6 +46,7 @@ private:
     void _reset_detector();
     void _detect(size_t frame, float l, float r);
     void _insert(uint32_t frame, uint8_t strength);
+    void _remove(int i);
     int  _lower_bound(uint32_t frame) const;   // first marker with frame >= arg
 
     Marker _m[kMax];

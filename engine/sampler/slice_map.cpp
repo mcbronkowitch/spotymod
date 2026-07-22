@@ -93,5 +93,33 @@ uint32_t SliceMap::length(int i, size_t content) const {
     return end > _m[i].frame ? end - _m[i].frame : 0;
 }
 
-// Live path lands in Task 2; a stub keeps the linker honest until then.
-void SliceMap::on_write(size_t, float, float) {}
+void SliceMap::_remove(int i) {
+    if (i + 1 < _n)
+        std::memmove(&_m[i], &_m[i + 1],
+                     static_cast<size_t>(_n - i - 1) * sizeof(Marker));
+    --_n;
+}
+
+// Sequential writes sweep stale markers out from under the head: a marker at
+// frame F describes content that no longer exists once the head has written
+// F. Removal is a memmove, bounded to at most one per kOnsetRefractS of audio
+// by the refractory spacing of the markers themselves. Fresh markers from
+// THIS pass sit at frame - preroll <= head and must survive the sweep --
+// _insert leaves _sweep pointing past them (see below).
+void SliceMap::on_write(size_t frame, float l, float r) {
+    if (_last_frame == SIZE_MAX || frame != _last_frame + 1) {
+        // New take, punch-in, or ring wrap: re-aim the sweep and reset the
+        // detector -- the envelope history belongs to other material.
+        _sweep = _lower_bound(static_cast<uint32_t>(frame));
+        _reset_detector();
+    }
+    _last_frame = frame;
+    while (_sweep < _n && _m[_sweep].frame <= frame) _remove(_sweep);
+    const int n_before = _n;
+    _detect(frame, l, r);
+    if (_n != n_before) {
+        // _detect inserted at some p <= _sweep (its frame <= head).
+        // The sweep must stay aimed at the first marker AHEAD of the head.
+        _sweep = _lower_bound(static_cast<uint32_t>(frame) + 1u);
+    }
+}
