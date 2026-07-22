@@ -269,10 +269,6 @@ constexpr float  kWindowHalfMax = 0.5f;
 // ...and at least this fraction, so a closed knob is still click-free.
 constexpr float  kWindowHalfMin = 0.02f;
 
-// STEP burst: grains keep spawning this long past the gate falling, so a
-// chopped texture ends with a tail rather than a cut. Ear-tunable.
-constexpr float  kBurstReleaseS = 0.06f;
-
 // MOTION scatter, at MOTION = 1 (all ear-tunable):
 // +-the whole content length. Was 0.25 through M5a, which confined MOTION's
 // read position to a quarter of the buffer and is the likeliest reason the

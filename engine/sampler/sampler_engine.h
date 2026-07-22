@@ -47,9 +47,11 @@ float test_scan_rate(float n);
 //
 // - FLOW: a standing cloud. Grains respawn continuously; the lanes shape the
 //   texture and it never gaps.
-// - STEP: groove-gated bursts. Grains spawn only while the gate is high plus
-//   a short release, so the phrase generator's composed rhythm, DENSITY,
-//   CHOKE windows and the GATE jack all chop the texture for free.
+// - STEP: one composed note = one slice grain (spec 2026-07-22 slice-groove).
+//   Every trigger fires exactly one grain, placed on a transient marker and
+//   walked forward one slice per note; the gate falling releases what sounds.
+//   No free-running spawns under the gate any more -- the phrase generator's
+//   composed rhythm IS the spawn rhythm.
 class SamplerEngine : public IPartEngine {
 public:
     static constexpr int kGrains       = sampler_cfg::kGrains;
@@ -178,6 +180,17 @@ public:
     // and SIZE near the top is tens of seconds away.
     void punch();
 
+    // --- slice groove (spec 2026-07-22): the Part side channel ---
+    // Step duration in samples, pushed at the control tick. <= 0 is ignored
+    // (a stopped lane); the default keeps grid fallback sane before the
+    // first push.
+    void set_step_clock(float samples_per_step);
+    // Phrase position of the CURRENT fire, pushed immediately before
+    // trigger/trigger_chord. weight is the slot's metric weight
+    // (pg_metric_weight): downbeats near 1, offs low -- the roll dice reads
+    // it inverted.
+    void set_phrase_pos(int slot, int steps, float weight);
+
     // --- voice row, remapped ---
     void set_window_attack(float n);
     void set_window_decay(float n);
@@ -210,6 +223,9 @@ public:
     float detune() const { return _detune_n; }
     float last_spawn_pos() const    { return _last_pos; }
     int   last_spawn_len() const    { return _last_len; }
+    int   last_slice() const    { return _last_slice; }
+    float step_clock() const    { return _step_samples; }
+    int   retrig_period() const { return _retrig_period; }
 
 private:
     void  _update_control();     // recompute derived values on the raster
@@ -229,6 +245,14 @@ private:
     void  _kill_all();
     void  _release_all();
     float _next_ratio();         // chord round-robin + octave scatter
+
+    void _fire_slice();               // STEP: one fire = one slice grain
+    void _spawn_slice(int k, float pan);
+    int  _pool_size() const;          // live slices, or grid count in fallback
+    // Resolve pool index k (cursor + walk, already folded) to a start
+    // position and natural slice length. Marker mode reads the SliceMap;
+    // grid mode computes from SOURCE/SCAN base + k * _step_samples.
+    void _slice_pos(int k, float& pos, float& slice_len) const;
 
     SampleBuffer _buf;
     SliceMap _slices;
@@ -265,7 +289,6 @@ private:
     float _spawn_ctr   = 0.f;
     int   _ctrl_ctr    = 0;
     int   _rr          = 0;       // chord round-robin cursor
-    int   _release_ctr = 0;       // STEP burst release, in samples
 
     float _chord[kMaxChord] = { 0.5f, 0.5f, 0.5f, 0.5f };
     // ratio_for(_chord[i]) for i < _chord_n, refreshed once per control tick.
@@ -297,6 +320,19 @@ private:
     float _last_pan    = 0.f;
     int   _last_len    = 0;
     float _spawn_jitter = 0.f;   // spawn-interval jitter applied to the NEXT interval
+
+    // --- slice groove state ---
+    float _step_samples = 6000.f;     // Part pushes; default = sane grid
+    int   _phrase_slot  = 0;
+    int   _phrase_steps = 8;
+    float _phrase_weight = 1.f;
+    int   _cursor = 0;                // slices advanced since the phrase wrap
+    float _walk   = 0.f;             // MOTION walk offset, in slice units
+    int   _retrig_period = 0;        // samples between roll retriggers; 0 = none
+    int   _retrig_ctr    = 0;
+    int   _last_slot  = -1;          // wrap detection: slot went backwards
+    int   _last_slice = -1;
+    float _dec_ref[kGrains] = {};    // dec samples per slot, for gate-fall release
 
     float _in_l = 0.f, _in_r = 0.f;
 

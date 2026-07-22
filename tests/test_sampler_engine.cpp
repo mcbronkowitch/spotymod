@@ -69,7 +69,13 @@ TEST_CASE("sampler: FLOW is a standing cloud -- RMS never drops out") {
     CHECK(lowest > 0.2f * highest);        // ...and never gaps
 }
 
-TEST_CASE("sampler: STEP is silent until the gate opens, and tails off after") {
+// SLICE-GROOVE AUDIT (Task 9): the burst release (kBurstReleaseS) this
+// asserts on was removed in Task 5 -- a STEP note is now one slice grain
+// released over its own DEC, with no spawning tail past the gate. The
+// silence-before-the-gate and retired-a-second-later halves still describe
+// wanted behaviour; the tail half does not. Task 9 rewrites it.
+TEST_CASE("sampler: STEP is silent until the gate opens, and tails off after"
+          * doctest::skip(true)) {
     Rig g;
     g.e.set_flow(false);
     auto pre = g.render(4800);
@@ -82,7 +88,7 @@ TEST_CASE("sampler: STEP is silent until the gate opens, and tails off after") {
 
     g.e.set_gate(false);
     auto off = g.render(48000);
-    const int rel = int(sampler_cfg::kBurstReleaseS * 48000.f);
+    const int rel = int(0.06f * 48000.f);
     CHECK(rms(off, 0, size_t(rel / 2)) > 0.005f);   // the release still sounds
     CHECK(rms(off, 40000, 4800) < 0.001f);          // a second later, retired
     CHECK(g.e.active_grains() == 0);
@@ -772,7 +778,14 @@ TEST_CASE("sampler: detune_factor matches std::pow over the full DTUN range") {
 // single-note STEP burst holds its ratio while PITCH drifts underneath it"
 // covers the separate _burst_ratio cache.
 
-TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH drifts underneath it") {
+// SLICE-GROOVE AUDIT (Task 9): this needs 12 grains out of ONE trigger, which
+// only the free-running STEP burst removed in Task 5 could produce. The
+// property itself (a latched single note keeps its trigger-time ratio while
+// set_chord drifts underneath) is still real and still worth pinning -- from
+// Task 7 the roll retriggers give a single fire more than one grain again,
+// which is the natural place to re-express it. Task 9 settles it.
+TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH drifts underneath it"
+          * doctest::skip(true)) {
     // Property under test: _next_ratio's latched branch (latched &&
     // _chord_n <= 1) must read _burst_ratio, frozen at the trigger() that
     // set _burst_pitch -- NOT _chord_ratio[0], which tracks _chord[0] live.
@@ -2054,7 +2067,14 @@ TEST_CASE("F-02: a gate edge does not re-phase the FLOW scheduler") {
     CHECK(total <= 2);                          // der Anfangsspawn, sonst nichts
 }
 
-TEST_CASE("F-02: a gate edge still starts a STEP burst immediately") {
+// SLICE-GROOVE AUDIT (Task 9): the behaviour under test -- the gate edge
+// arming an immediate spawn via _spawn_ctr = 0 -- was removed in Task 5. The
+// underlying REQUIREMENT (STEP fires on the composed rhythm, not up to an
+// interval late) is now met by trigger()/trigger_chord() spawning directly,
+// which "sampler STEP: a fire spawns exactly one grain at a slice start"
+// covers. Task 9 decides whether this case is rewritten or retired.
+TEST_CASE("F-02: a gate edge still starts a STEP burst immediately"
+          * doctest::skip(true)) {
     // Die Gegenrichtung, und der Grund, warum _spawn_ctr = 0 ueberhaupt da
     // ist: ausserhalb des FLOW muss die Flanke sofort feuern, damit STEP die
     // komponierte Rhythmik trifft statt bis zu ein Intervall spaeter.
@@ -2121,9 +2141,14 @@ TEST_CASE("F-09: a stalled grain would emit DC -- the guard keeps it moving") {
     const float lowest = 0.f;                // TUNE 0 -> ratio 2^-4 = 0.0625
     g.e.set_chord(&lowest, 1);
     g.e.set_flow(false);
-    g.e.set_gate(true);
-    g.render(96);                            // die Flanke: ein Spawn
-    g.e.set_gate(false);
+    // Seit Task 5 (slice groove) feuert nicht mehr die Gate-Flanke, sondern
+    // die komponierte Note selbst: ein trigger() == ein Slice-Grain. Das Gate
+    // wird hier gar nicht mehr gebraucht -- ohne freilaufende Spawns unter
+    // dem Gate gibt es nichts mehr abzuschalten, und ein set_gate(false)
+    // wuerde das eine Grain sofort releasen und den Stall-Test entwerten.
+    // trigger(0.f) latcht dasselbe Ratio 2^-4, das set_chord oben stellt.
+    g.e.trigger(0.f);                        // ein Fire: ein Spawn
+    g.render(96);
     REQUIRE(g.e.spawn_count() == 1);
 
     // 19 Mio. Samples vorspulen -- weit jenseits der empirisch gemessenen
@@ -2446,4 +2471,117 @@ TEST_CASE("sampler: clear drops the slices with the content") {
     REQUIRE(g.e.slice_count() == 8);
     g.e.clear();
     CHECK(g.e.slice_count() == 0);
+}
+
+// --- Task 5: the STEP slice core -----------------------------------------
+
+// STEP slice rig: clicky content, STEP mode, phrase context pushed by hand
+// the way Part will in Task 8. 8 clicks over 1 s -> 8 slices; step clock
+// 6000 samples (an 8th at 120-ish bpm).
+struct StepRig : Rig {
+    StepRig() : Rig(0) {
+        feed_clicks(*this, 48000, 8);
+        e.set_flow(false);
+        e.set_step_clock(6000.f);
+        feed(0.5f);                     // MOTION 0, SIZE 0.5 (slice unity)
+    }
+    // one composed note: phrase position, latch, gate on
+    void fire(int slot, int steps = 8, float weight = 1.f) {
+        e.set_phrase_pos(slot, steps, weight);
+        e.trigger(0.5f);
+        e.set_gate(true);
+    }
+    void note_off() { e.set_gate(false); }
+};
+
+TEST_CASE("sampler STEP: a fire spawns exactly one grain at a slice start") {
+    StepRig g;
+    const int before = g.e.spawn_count();
+    g.fire(0);
+    g.render(64);
+    CHECK(g.e.spawn_count() == before + 1);
+    // spawn position sits on a marker
+    bool on_marker = false;
+    for (int i = 0; i < g.e.slice_count(); ++i)
+        if (std::fabs(g.e.last_spawn_pos() - float(i * 6000)) < 200.f)
+            on_marker = true;
+    CHECK(on_marker);
+}
+
+TEST_CASE("sampler STEP: MOTION 0 walks the slices in order and wraps home") {
+    StepRig g;
+    std::vector<int> seq;
+    for (int cycle = 0; cycle < 2; ++cycle)
+        for (int slot = 0; slot < 4; ++slot) {
+            g.fire(slot);
+            g.render(64);
+            seq.push_back(g.e.last_slice());
+            g.note_off();
+            g.render(64);
+        }
+    // ascending within a cycle, identical across cycles
+    for (int i = 0; i < 3; ++i) CHECK(seq[i + 1] == (seq[i] + 1) % 8);
+    for (int i = 0; i < 4; ++i) CHECK(seq[i] == seq[i + 4]);
+}
+
+TEST_CASE("sampler STEP: SIZE centre is slice unity, the ends trim and overrun") {
+    StepRig g;
+    g.fire(0);
+    g.render(64);
+    const int at_unity = g.e.last_spawn_len();
+    CHECK(at_unity == doctest::Approx(6000).epsilon(0.05));
+    g.note_off(); g.render(6000);
+    g.feed(0.5f, 0.f, 0.f);            // SIZE 0: attack tip
+    g.render(96);                       // let the control tick see it
+    g.fire(1);
+    g.render(64);
+    CHECK(g.e.last_spawn_len() < at_unity / 8);
+    g.note_off(); g.render(6000);
+    g.feed(0.5f, 0.f, 1.f);            // SIZE 1: overrun
+    g.render(96);
+    g.fire(2);
+    g.render(64);
+    CHECK(g.e.last_spawn_len() > at_unity * 8);
+}
+
+TEST_CASE("sampler STEP: the gate falling releases the grain, no burst tail") {
+    StepRig g;
+    g.feed(0.5f, 0.f, 1.f);            // long window so it outlives the note
+    g.render(96);
+    g.fire(0);
+    // The measurement window has to land on MATERIAL, and this rig's material
+    // is a click train: the grain starts on the marker at frame 0 at ratio 1,
+    // so output sample n reads frame n, and everything between the clicks
+    // (6000 apart) is genuine silence. Measured at the brief's original
+    // window (1000..1500): rms exactly 0 with a live 94464-sample grain
+    // sitting at pos 0 -- the window, not the engine. Sample 6000 is the
+    // second click, still far inside the grain, and reads 0.058.
+    auto v = g.render(8000);
+    CHECK(rms(v, 6000, 500) > 0.001f); // sounding under the gate
+    g.note_off();
+    g.render(48000);                    // far past any release fade
+    CHECK(g.e.active_grains() == 0);   // released, not sustained
+    const int n = g.e.spawn_count();
+    g.render(12000);
+    CHECK(g.e.spawn_count() == n);     // and nothing respawns after the gate
+}
+
+TEST_CASE("sampler STEP: transientless material falls back to the tempo grid") {
+    Rig g;                              // default rig: 441 Hz sine, no clicks
+    g.e.set_flow(false);
+    g.e.set_step_clock(6000.f);
+    REQUIRE(g.e.slice_count() < sampler_cfg::kMinSlices);
+    std::vector<float> pos;
+    for (int slot = 0; slot < 3; ++slot) {
+        g.e.set_phrase_pos(slot, 8, 1.f);
+        g.e.trigger(0.5f);
+        g.e.set_gate(true);
+        g.render(64);
+        pos.push_back(g.e.last_spawn_pos());
+        g.e.set_gate(false);
+        g.render(64);
+    }
+    // consecutive fires step exactly one step-clock through the material
+    CHECK(std::fabs(pos[1] - pos[0] - 6000.f) < 1.f);
+    CHECK(std::fabs(pos[2] - pos[1] - 6000.f) < 1.f);
 }

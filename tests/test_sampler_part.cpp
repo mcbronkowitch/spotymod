@@ -191,6 +191,24 @@ TEST_CASE("part: the composed gate reaches the sampler in STEP") {
     }
     CHECK(hi > 0.005f);          // it sounds
     CHECK(lo < 0.4f * hi);       // ...and it is chopped, not a standing cloud
+}
+
+// SLICE-GROOVE AUDIT (Task 9). Split out of "part: the composed gate reaches
+// the sampler in STEP" above, whose first half still holds. This half asserts
+// that re-pushing the CURRENT gate at an engine swap makes the sampler sound
+// -- true only while a gate EDGE spawned a grain, which Task 5 removed: a
+// STEP grain now comes from trigger()/trigger_chord(), never from the gate.
+// The Part-side requirement (the swap must re-push gate/flow/hold/cycle to
+// the freshly active engine) is unchanged and still worth a test; it just
+// needs an observable that survives the new STEP core. Task 9 settles it.
+TEST_CASE("part: an engine swap re-pushes the held gate to the sampler"
+          * doctest::skip(true)) {
+    InstRig g;
+    g.inst.set_target_active(PART_B, LANE_LEVEL, false);
+    g.inst.set_target_base(PART_B, LANE_LEVEL, 0.f);
+    std::vector<float> tone(24000);
+    for (size_t i = 0; i < tone.size(); ++i)
+        tone[i] = std::sin(6.2831853f * 300.f * float(i) / 48000.f);
 
     // Swap re-sync: forcing an engine swap while a note is held must
     // re-push the CURRENT gate to the freshly active engine (part.cpp's

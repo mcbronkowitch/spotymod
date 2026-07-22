@@ -114,7 +114,6 @@ void SamplerEngine::init(float sample_rate) {
     _kill_all();
     _spawn_ctr   = 0.f;
     _ctrl_ctr    = 0;
-    _release_ctr = 0;
     _update_control();
 }
 
@@ -128,7 +127,6 @@ void SamplerEngine::set_targets(const float* t, float /*tune*/) {
 void SamplerEngine::set_flow(bool flow) {
     if (flow == _flow) return;
     _flow = flow;
-    if (!_flow) _release_ctr = 0;      // leaving FLOW: running grains decay out
 }
 
 void SamplerEngine::set_hold(bool on) {
@@ -137,28 +135,26 @@ void SamplerEngine::set_hold(bool on) {
     if (_hold) _release_all();
 }
 
+// The gate no longer ARMS anything in STEP: the fire itself spawns (see
+// _fire_slice, called from trigger/trigger_chord). All that is left for the
+// falling edge is to stop rolls and release what is sounding, each grain over
+// its own DEC -- so a composed note ends where the composer wrote it, with a
+// window tail rather than the old fixed kBurstReleaseS burst.
+//
+// FLOW is untouched by this: it never read _gate in the scheduler, and the
+// _release_ctr this used to arm existed only for the STEP burst.
 void SamplerEngine::set_gate(bool on) {
-    if (on == _gate) return;
     _gate = on;
+    if (_flow) return;
     if (!on) {
-        // DEC stretches the burst tail: a long decay leaves a longer trail
-        // after the composed note ends (spec, voice-row table).
-        const float rel = kBurstReleaseS * (0.5f + 1.5f * _dec_n);
-        _release_ctr = static_cast<int>(rel * _sr);
-    } else if (!_flow) {
-        // Start the burst on the edge, not up to _spawn_every samples late:
-        // leaving FLOW mid-cycle (or a prior STEP burst) can leave _spawn_ctr
-        // anywhere in [0, _spawn_every), and STEP is supposed to reproduce
-        // the phrase generator's composed rhythm exactly.
-        //
-        // Nur ausserhalb des FLOW. Im FLOW laeuft der Scheduler bereits, und
-        // Part liefert dort trotzdem eine steigende Flanke pro PITCH-Zyklus
-        // (part.cpp:226-229 setzt _gate_ctr ohne STEP-Pruefung). Jede davon
-        // erzwang einen Sofort-Spawn und haengte die Wolkendichte an den
-        // Phrasenrhythmus statt an DENS: bei SIZE 1.0 / DENS min sind das 50
-        // Spawns in 10 s gegen den einen, den das 42-s-Intervall vorsieht.
-        // Die untere DENS-Haelfte war dadurch praktisch wirkungslos.
-        _spawn_ctr = 0.f;
+        _retrig_period = 0;
+        for (int i = 0; i < kGrains; ++i) {
+            if (!_grains[i].active()) continue;
+            int fade = static_cast<int>(_dec_ref[i]);
+            if (fade < static_cast<int>(kRecordFade))
+                fade = static_cast<int>(kRecordFade);
+            _grains[i].release(fade);
+        }
     }
 }
 
@@ -205,6 +201,7 @@ void SamplerEngine::trigger(float pitch_norm) {
     _chord[0] = pitch_norm;
     _chord_n  = 1;
     _rr = 0;
+    if (!_flow) _fire_slice();
 }
 
 void SamplerEngine::trigger_chord(const float* p, int n) {
@@ -216,6 +213,7 @@ void SamplerEngine::trigger_chord(const float* p, int n) {
     _burst_ratio   = ratio_for(_burst_pitch);   // control-rate: std::pow is fine here
     _burst_latched = true;
     _rr = 0;
+    if (!_flow) _fire_slice();
 }
 
 void SamplerEngine::set_chord(const float* p, int n) {
@@ -701,6 +699,136 @@ void SamplerEngine::_spawn_one() {
     ++_spawn_count;
 }
 
+int SamplerEngine::_pool_size() const {
+    const int n = _slices.count();
+    if (n >= kMinSlices) return n;
+    const int g = static_cast<int>(static_cast<float>(_buf.rec_size()) / _step_samples);
+    return g < 1 ? 1 : g;
+}
+
+void SamplerEngine::_slice_pos(int k, float& pos, float& slice_len) const {
+    const size_t content = _buf.rec_size();
+    if (_slices.count() >= kMinSlices) {
+        pos = static_cast<float>(_slices.start(k));
+        slice_len = static_cast<float>(_slices.length(k, content));
+        return;
+    }
+    // Grid fallback: SOURCE + SCAN place the base, k steps of tempo grid on
+    // top, folded into the content.
+    const float span = content > 1 ? static_cast<float>(content) - 1.f : 0.f;
+    float centre = clampf(_targets[LANE_SOURCE], 0.f, 1.f) * span + _scan_pos
+                 + static_cast<float>(k) * _step_samples;
+    const float c = static_cast<float>(content);
+    while (centre >= c) centre -= c;
+    while (centre < 0.f) centre += c;
+    pos = centre;
+    slice_len = _step_samples;
+}
+
+// One fire = one slice grain (spec 2026-07-22).
+// --- Rng draw order is contract: walk, roll, pan. All three ALWAYS drawn. ---
+// Walk applies from Task 6, roll from Task 7; drawing them from day one means
+// the draw contract never shifts once tests pin it.
+void SamplerEngine::_fire_slice() {
+    if (_buf.is_empty()) return;
+
+    // Phrase wrap: the slot counter went backwards -> cursor goes home.
+    if (_phrase_slot < _last_slot) { _cursor = 0; _walk = 0.f; }
+    _last_slot = _phrase_slot;
+
+    const float motion = clampf(_targets[LANE_MOTION], 0.f, 1.f);
+    const float wdraw = _rng.next_bipolar();     // 1st: walk (applied Task 6)
+    const float rdraw = _rng.next_unipolar();    // 2nd: roll (applied Task 7)
+    const float pan   = _rng.next_bipolar() * motion;  // 3rd: pan
+    (void)wdraw; (void)rdraw;                    // applied in Tasks 6/7
+
+    const int pool = _pool_size();
+    int k;
+    if (_slices.count() >= kMinSlices) {
+        // Marker mode: base slice from SOURCE + SCAN, cursor on top.
+        const size_t content = _buf.rec_size();
+        const float span = content > 1 ? static_cast<float>(content) - 1.f : 0.f;
+        float centre = clampf(_targets[LANE_SOURCE], 0.f, 1.f) * span + _scan_pos;
+        const float c = static_cast<float>(content);
+        while (centre >= c) centre -= c;
+        while (centre < 0.f) centre += c;
+        const int base = _slices.index_at(centre);
+        k = (base + _cursor) % pool;
+    } else {
+        // Grid mode: _slice_pos folds base + k steps itself.
+        k = _cursor % pool;
+    }
+    if (k < 0) k += pool;
+
+    _spawn_slice(k, pan);
+    ++_cursor;
+    _retrig_period = 0;              // rolls land in Task 7
+}
+
+void SamplerEngine::_spawn_slice(int k, float pan) {
+    // Same first line as _spawn_one, and load-bearing on the OTHER caller:
+    // _fire_slice already guards this, but the roll path (Task 7) reaches
+    // here straight from process(), and a clear() under a held note would
+    // then send _slice_pos's grid fold (`while (centre >= c) centre -= c`)
+    // into an infinite loop at c == 0. Cheaper to be empty-safe here than to
+    // make every future caller remember.
+    if (_buf.is_empty()) return;
+
+    // Slot search + density ceiling: the same shape as _spawn_one, and the
+    // same drop accounting.
+    int slot = -1;
+    int live = 0;
+    for (int i = 0; i < kGrains; ++i) {
+        if (_grains[i].active())      ++live;
+        else if (slot < 0)            slot = i;
+    }
+    const int ceiling = static_cast<int>(std::ceil(_overlap)) + kSpawnHeadroom;
+    if (slot < 0 || live >= (ceiling < kGrains ? ceiling : kGrains)) {
+        ++_dropped_spawns;
+        return;
+    }
+
+    float pos, slice_len;
+    _slice_pos(k, pos, slice_len);
+    if (slice_len < 2.f) slice_len = 2.f;
+
+    const float ratio = _next_ratio();   // latched burst pitch; draws nothing
+
+    // SIZE in STEP: a factor around slice unity at knob centre. exp2f at
+    // trigger rate -- the scan_rate() precedent, never per-sample.
+    const float f = std::exp2((clampf(_targets[LANE_SIZE], 0.f, 1.f) - 0.5f)
+                              * 2.f * kSliceSizeOct);
+    float lenf = slice_len * f;
+    // Tape keeps its meaning: a fixed amount of MATERIAL, so duration is /ratio.
+    if (_tape) lenf /= (ratio > 0.001f ? ratio : 0.001f);
+    if (lenf > kGrainLenCeil) lenf = kGrainLenCeil;
+    if (lenf < 2.f) lenf = 2.f;
+    const int len = static_cast<int>(lenf);
+
+    const float atk_f = lerpf(kWindowHalfMin, kWindowHalfMax, _atk_n);
+    const float dec_f = lerpf(kWindowHalfMin, kWindowHalfMax, _dec_n);
+    int atk = static_cast<int>(lenf * atk_f);
+    int dec = static_cast<int>(lenf * dec_f);
+    if (atk < 1) atk = 1;
+    if (dec < 1) dec = 1;
+
+    _grains[slot].spawn(pos, ratio, pan, len, atk, dec, _reverse);
+    // _size_ref = 0 keeps _trim_running's hands off slice grains: its rescale
+    // maps SIZE-in-seconds to grain length, which no longer holds here, and
+    // the note end (gate fall) already cuts them. 0 is its "no live grain"
+    // sentinel, so the loop skips these slots entirely.
+    _size_ref[slot] = 0.f;
+    _len_ref[slot]  = static_cast<float>(len);
+    _dec_ref[slot]  = static_cast<float>(dec);
+
+    _last_slice = k;
+    _last_ratio = ratio;
+    _last_pan   = pan;
+    _last_pos   = pos;
+    _last_len   = len;
+    ++_spawn_count;
+}
+
 void SamplerEngine::process(float& outL, float& outR) {
     if (_ctrl_ctr == 0) {
         _ctrl_ctr = kCtrlInterval;
@@ -709,18 +837,27 @@ void SamplerEngine::process(float& outL, float& outR) {
     --_ctrl_ctr;
 
     // --- scheduling ---
-    const bool spawning = !_hold && (_flow || _gate || _release_ctr > 0);
-    if (_release_ctr > 0 && !_gate) --_release_ctr;
-
-    if (spawning) {
-        _spawn_ctr -= 1.f;
-        if (_spawn_ctr <= 0.f) {
-            _spawn_one();                    // zieht _spawn_jitter neu
-            // _next_interval() bodet bereits auf kSpawnMinSamples, und
-            // _spawn_ctr ist an dieser Stelle > -1, also bleibt die Summe
-            // sicher positiv -- die alte `if (_spawn_ctr < 1.f)`-Klemme war
-            // genau die Stelle, an der der Jitter den CPU-Boden unterlief.
-            _spawn_ctr += _next_interval();
+    if (_flow) {
+        if (!_hold) {
+            _spawn_ctr -= 1.f;
+            if (_spawn_ctr <= 0.f) {
+                _spawn_one();                    // zieht _spawn_jitter neu
+                // _next_interval() bodet bereits auf kSpawnMinSamples, und
+                // _spawn_ctr ist an dieser Stelle > -1, also bleibt die Summe
+                // sicher positiv -- die alte `if (_spawn_ctr < 1.f)`-Klemme war
+                // genau die Stelle, an der der Jitter den CPU-Boden unterlief.
+                _spawn_ctr += _next_interval();
+            }
+        }
+    } else if (!_hold && _gate && _retrig_period > 0) {
+        // Rolls (Task 7): tempo-locked retriggers while the note holds.
+        if (--_retrig_ctr <= 0) {
+            _retrig_ctr = _retrig_period;
+            const float motion = clampf(_targets[LANE_MOTION], 0.f, 1.f);
+            const float wdraw = _rng.next_bipolar();          // walk (Task 6)
+            const float pan   = _rng.next_bipolar() * motion; // pan
+            (void)wdraw;
+            _spawn_slice(_last_slice, pan);
         }
     }
 
@@ -823,9 +960,23 @@ void SamplerEngine::set_overlap(float n) {
 
 void SamplerEngine::set_scan(float bipolar) { _scan_rate = scan_rate(bipolar); }
 
+void SamplerEngine::set_step_clock(float samples_per_step) {
+    if (samples_per_step > 0.f) _step_samples = samples_per_step;
+}
+
+void SamplerEngine::set_phrase_pos(int slot, int steps, float weight) {
+    _phrase_slot   = slot;
+    _phrase_steps  = steps > 0 ? steps : 1;
+    _phrase_weight = clampf(weight, 0.f, 1.f);
+}
+
 void SamplerEngine::punch() {
     _scan_pos  = 0.f;
     _spawn_ctr = 0.f;   // the next process() spawns; see the scheduling block
+    // "New gene now" sends the slice cursor home too, so the next STEP fire
+    // starts the walk over from the base slice.
+    _cursor    = 0;
+    _walk      = 0.f;
 }
 
 }  // namespace spky
