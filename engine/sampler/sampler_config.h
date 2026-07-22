@@ -9,11 +9,21 @@ namespace sampler_cfg {
 
 // --- record core (carried over from src/core/config.h:57,73) ---
 // 192 samples == 4 ms @ 48 kHz, and == the hann table size in fx_util.h, so
-// the fade counter indexes the curve 1:1. Both facts are load-bearing.
+// the fade counter indexes the curve 1:1. TRAGEND ist die zweite Gleichung:
+// die Tabellengroesse. Die 4 ms gelten nur bei 48 kHz -- dies ist eine
+// Sample-Zahl, waehrend _cut (SoftSwitch) ueber init(sample_rate) echte 4 ms
+// haelt, sodass die beiden bei anderen Raten auseinanderlaufen.
 constexpr size_t kRecordFade      = 192;
 // Knob position. NOTE: this sits ABOVE kFbKnee, so it means something
-// slightly different than it did in M5a -- about -1.8 dB rather than -3 dB.
-// The boot state gets marginally hotter and still stops short of unity.
+// slightly different than it did in M5a -- about -1.8 dB (linear ~0.817)
+// rather than -3 dB, but ONLY once something calls set_feedback(0.95) and
+// runs it through the post-knee curve above. SampleBuffer::init() does not:
+// it computes _feedback directly with the pre-knee formula
+// (60*(kDefaultFeedback - 1) dB, i.e. -3 dB / ~0.708 linear) and never calls
+// set_feedback() itself, so the actual boot state -- before any host pushes
+// the knob -- is still the M5a -3 dB, unchanged. -1.8 dB / 0.817 is what the
+// knob reads once a host (or a test, see F-06 below) explicitly sets it to
+// this position; it is not what plays on power-up.
 constexpr float  kDefaultFeedback = 0.95f;
 
 // Record-feedback knee. Below this the mapping is the M5a one exactly:
@@ -25,6 +35,56 @@ constexpr float  kDefaultFeedback = 0.95f;
 // lowering kFbMaxDb widens that spot, raising it narrows it.
 constexpr float  kFbKnee   = 0.9f;
 constexpr float  kFbMaxDb  = 2.5f;
+
+// Ab welchem KOEFFIZIENTEN (nicht Knopfwert) der Overdub in fast_tanh
+// laeuft. Frueher war das implizit 1.0, und genau dort lag der Fehler: der
+// Overdub ist ein Integrator mit Fixpunkt in/(1-fb), der knapp UNTER Unity
+// unbegrenzt waechst, waehrend er ueber Unity von tanh gefangen wird. Nach
+// 60 s Overdub eines 0.5-Signals gemessen: Knob 0.9700 -> Peak 87,
+// 0.9705 -> 234 (asymptotisch ~579), 0.9710 -> 2.3, 1.0 -> 2.31. Das
+// lauteste Verhalten des Geraets lag damit in einem ~0.001 breiten Fenster
+// unterhalb des Anschlags.
+//
+// Der Wert ist gemessen, nicht geraten. Peak nach 30 s Overdub eines
+// 0.5-Signals, alle vier Varianten auf demselben Raster (0.94 .. 0.97 in
+// Schritten von 0.0025, darueber 0.0005, weil die Spitze schmal ist):
+//
+//              Default (0.95)   hoechste Spitze     Anschlag 1.0   Inversion
+//   ohne       2.74             132.2 @ 0.9705      1.756          75x
+//   0.98       2.74              16.79 @ 0.9675     1.756          9.6x
+//   0.90       2.74               4.16 @ 0.9575     1.756          2.4x
+//   unbedingt  1.18             keine               1.756          1.0x
+//
+// Der Anschlag ist in allen vier Zeilen dieselbe Zahl, und das ist kein
+// Messfehler: bei Knopf 1.0 ist der Koeffizient 10^(2.5/20) = 1.33 und
+// liegt damit ueber JEDER der Schwellen, also laeuft dort ueberall
+// derselbe Code. Eine frueherer Fassung dieser Tabelle trug hier 2.31 fuer
+// "ohne" -- eine 60-s-Messung, die versehentlich neben die 30-s-Spalten
+// geraten war. Wer die Tabelle erweitert: dieselbe Dauer, dasselbe Raster.
+//
+// 0.90 gewinnt gegen 0.98 ohne Gegenleistung: gleiche Bauart, halb so hohe
+// Spitze, und der Auslieferungs-Default bleibt bei beiden unberuehrt --
+// kDefaultFeedback = 0.95 bildet ueber die kFbKnee-Kennlinie (set_feedback())
+// auf ~0.817 ab und damit unter jede der beiden Schwellen. Das gilt fuer den
+// Wert, den ein Host ueber set_feedback(0.95) tatsaechlich einstellt (und
+// den der F-06-Test unten so nachstellt) -- der reine Boot-Zustand VOR jedem
+// set_feedback()-Aufruf ist etwas anderes: SampleBuffer::init() setzt
+// _feedback direkt ueber die Vor-Knie-Formel und landet bei -3 dB / ~0.708
+// (siehe kDefaultFeedback oben). Gefaerbt wird in beiden Faellen nur der
+// oberste Zipfel des Knopfwegs (ab ~0.96), also genau die Zone, die der
+// Kommentar bei kFbKnee ohnehin als Selbstsaettigung beschreibt.
+//
+// Ehrlich bleibt: eine Restunstetigkeit an der Schwelle. Direkt darunter
+// steht der unsaturierte Fixpunkt in/(1-fb) = 5, direkt darueber faengt
+// tanh bei ~1.3 -- ein Sprung um Faktor 3.2, gegen Faktor 75 vorher. Ganz
+// verschwindet sie nur mit unbedingtem tanh, und das kostet den Default
+// 57 % seines Pegels. Das ist eine Hoerentscheidung und keine technische,
+// deshalb steht sie hier als Option und nicht als Code.
+//
+// Ear-tunable, aber nach oben gebunden: ueber ~0.95 waechst die Spitze
+// wieder schnell (bei 0.98 schon auf 16.8), unter ~0.8 beginnt die Faerbung
+// in gehoerte Einstellungen zu greifen.
+constexpr float  kFbSatKnee = 0.90f;
 
 // --- the cloud ---
 constexpr int    kGrains        = 16;        // per part
@@ -47,13 +107,19 @@ constexpr float  kSizeFloorS    = 0.001f;   // 1 ms: a pitched buzz, not a textu
 // this the modulo fold in read_linear would only repeat material the same
 // grain already covered.
 //
-// That justification is RATE-SPECIFIC, and the constant is a duration, not a
-// frame count. At 96 kHz this asks for twice the capacity the buffer has, so
-// the top of SIZE spans two loops rather than one and the "exactly once
-// under a single window" argument no longer holds -- the fold simply repeats
-// the first pass. Not a crash and not a range to narrow: read_linear folds
-// safely and the result is a slower swell over repeated material, which is
-// still musical. Recorded so nobody re-derives the 42 as rate-independent.
+// Die Rechtfertigung ist ratenspezifisch, die Konstante aber eine DAUER und
+// die Kapazitaet folgt ihr: beide Hosts allozieren sekundenbasiert
+// (host/render/main.cpp:23,48 und host/vcv/src/Spotymod.cpp:105,304 rechnen
+// 42.0 * sample_rate). Der Puffer fasst damit bei jeder Rate 42 s, und das
+// "genau einmal unter einem Fenster"-Argument oben bleibt gueltig.
+//
+// (Eine frueherer Fassung dieses Absatzes behauptete das Gegenteil -- bei
+// 96 kHz reiche die Kapazitaet nur fuer die Haelfte. Das war falsch und lud
+// dazu ein, eine gesunde Konstante zu reparieren.)
+//
+// Was bei 96 kHz tatsaechlich auseinanderlaeuft, steht bei kRecordFade: das
+// ist eine Sample-Zahl (4 ms bei 48 kHz, 2 ms bei 96 kHz), waehrend _cut
+// (SoftSwitch) ueber init(sample_rate) echte 4 ms haelt.
 constexpr float  kSizeCeilS     = 42.f;
 
 // Pitch: piecewise, unity at 0.5. The middle half of travel [0.25, 0.75] is
@@ -71,6 +137,76 @@ constexpr float  kPitchOctaves = 4.f;
 // which with kOverlap = 16 would have permitted a spawn every 2 samples.
 // 8 samples caps the rate at 6 kHz per part. NOT ear-tunable.
 constexpr float  kSpawnMinSamples = 8.f;
+
+// Harte Obergrenze fuer die Grain-Laenge in Ausgangssamples.
+//
+// Grain haelt die Leseposition als Startframe plus relativen Offset, und
+// dieser Offset friert ein, sobald die lokale float32-ulp die Schrittweite
+// _ratio erreicht (grain.h). Ab _len >= 2^23 = 8 388 608 ist das fuer die
+// erreichbaren Ratios der Fall, und das Grain gibt fuer den Rest seines
+// Fensters DC aus.
+//
+// grain.h hielt das fuer unerreichbar und rechnete dafuer mit der
+// Pool-Decke bei kOverlap = 8 (kGrains * _spawn_every = 4 032 000). Seit
+// DENS den Overlap zur Laufzeit auf 1 stellen kann, ist dieselbe Decke
+// _grain_len * kGrains / 1 = 32 256 000 -- viermal ueber der Schranke.
+// Erreichbar mit ENG Sampler, GENE SIZE 1.0, TAPE an, TUNE 0, DENS 0.
+//
+// 2^22 laesst eine Oktave Reserve zur Stall-Schranke. NICHT ear-tunable:
+// das ist eine Float-Grenze, kein Klangwert.
+//
+// Wo diese Decke wirklich greift, und das ist mehr als die eine Ecke oben:
+// sie bindet, sobald len_ceil = _grain_len * kGrains / _overlap sie
+// uebersteigt, also bei Overlap unter ~7.7 zusammen mit SIZE ueber ~5.5 s
+// und einem Tape-Ratio unter ~0.48. Das ist ein knappes Drittel des
+// DENS-Wegs zusammen mit einem guten Drittel des Pitch-Bereichs, nicht nur
+// DENS 0. Hoerbar ist es dort trotzdem nicht: 2^22 Samples sind 87 s, weit
+// jenseits jedes musikalischen Grains, und gekappt wird nur, was ohnehin
+// als Standbild wahrgenommen wird. Aber die Reichweite gehoert benannt,
+// statt sie als Extremfall zu verbuchen.
+constexpr float  kGrainLenCeil = 4194304.f;   // 2^22
+
+// Overlap range for the DENS knob in the sampler (spec 2026-07-21
+// morphagene-controls). The ceiling stays at kGrains / 2 = 8 and does NOT
+// rise to kGrains: above 8 the pool-throughput bound
+// len_ceil = _spawn_every * kGrains (sampler_engine.cpp) starts trimming
+// grain length silently. Downward the bound only gets looser, so lowering
+// overlap is safe under all conditions.
+constexpr float  kOverlapMin = 1.f;
+constexpr float  kOverlapMax = 8.f;
+
+// SCAN: the running playhead (spec 2026-07-21 morphagene-controls). The knob
+// is bipolar; the sign is the direction. The curve is piecewise, mirroring
+// the SIZE curve's shape:
+//   |n| < kScanDead          -> exactly 0. A real dead zone, so a frozen head
+//                               stays frozen under knob noise.
+//   kScanDead .. kScanKnee   -> exponential, kScanMinRate .. 1.0x realtime.
+//   above kScanKnee          -> linear, 1.0x .. kScanMaxRate.
+// Realtime (1.0x) therefore lands on a fixed, findable knob position instead
+// of somewhere in the sweep. The top quarter carries the factor 8 and is the
+// steepest stretch of the curve -- if it plays too nervously, the fix is an
+// exponential top segment, not a smaller range (spec "Nicht in diesem
+// Entwurf" / listening notes).
+constexpr float  kScanDead    = 0.02f;
+constexpr float  kScanKnee    = 0.75f;
+constexpr float  kScanMinRate = 0.001f;
+constexpr float  kScanMaxRate = 8.f;
+
+// SCAN's fixed lag behind the write head while a recording is running
+// (spec 2026-07-21 morphagene-controls). Folding the playhead modulo content
+// length -- the ordinary SCAN behaviour above -- assumes content is fixed;
+// while recording, content grows by one frame per sample, and SCAN at
+// realtime forward grows _scan_pos by the identical amount from the same
+// zero start, so _scan_pos == content every control tick and the fold resets
+// to 0 every time: the head is pinned, not running. The fix is to clamp
+// instead of fold while recording (_update_control), holding the read
+// position a fixed distance behind the write head rather than exactly on it
+// -- exactly on it is the case sampler_engine.cpp's `span = content - 1.f`
+// comment (_spawn_one) already documents as making the cloud go near-silent.
+// Comfortably above kRecordFade's 4 ms record blend so the lag is never
+// swallowed by it; short enough that overdubbing still feels like
+// listening just behind the write head, not stale. Ear-tunable.
+constexpr float  kScanRecordLagS = 0.25f;
 
 // Grain window: the ATK/DEC halves each span at most this fraction of the
 // grain, so a fully-open ATK and DEC still leave the window a real shape
@@ -90,7 +226,10 @@ constexpr float  kBurstReleaseS = 0.06f;
 // 2026-07-18-sampler-texture-deck-design.md). Ear-tunable.
 constexpr float  kScatterPosFrac  = 1.0f;
 constexpr float  kScatterTimeFrac = 0.75f;   // spawn-interval jitter, fraction of interval
-constexpr float  kScatterOctProb  = 0.25f;   // chance a chord note jumps an octave
+// kScatterOctProb (0.25) lived here: the chance a grain jumped an octave.
+// Removed 2026-07-21 with the scatter itself -- it was the one MOTION scatter
+// that moved PITCH, which the sampler must hold still so a sampler deck and a
+// synth deck can play in the same key. See SamplerEngine::_next_ratio.
 
 // --- voice row, remapped ---
 constexpr float  kCutoffMinHz   = 60.f;      // same rails as the synth FILTER

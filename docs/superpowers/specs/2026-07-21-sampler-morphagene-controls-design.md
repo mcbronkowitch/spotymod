@@ -61,8 +61,17 @@ Kontextmenü.
 ### Beschriftung
 
 `gen_panel.py` bekommt für die vier umgedeuteten Regler eine zweite Beschriftungszeile mit
-der Sampler-Bedeutung (`SUB` / `SIZE`, `DTUN` / `ORG`, `DENS` / `MRPH`, `MELO` / `SCAN`).
-Beide Bedeutungen stehen gleichrangig auf der Platte, weil beide gleichrangig gelten.
+der Sampler-Bedeutung: `MELO` / `SCAN`, `SUB` / `LEN`, `DTUN` / `ORG`. Beide
+Bedeutungen stehen gleichrangig auf der Platte, weil beide gleichrangig gelten.
+
+**`DENSITY` bekommt keine zweite Zeile** und behält `DENS` — das Wort stimmt in beiden
+Engines (Groove-Dichte im Synth, Korndichte im Sampler). Es heißt insbesondere nicht
+`MRPH`: dieser Name gehört dem globalen A/B-Überblendregler.
+
+Die Kornlänge heißt auf der Platte **`LEN`, nicht `SIZE`** — `SIZE` steht bereits als
+Hallgröße in der ROOM-Sektion, und derselbe String an zwei Stellen ist genau die
+Verwechslung, die bei MORPH vermieden wurde. `LEN` ist zugleich kürzer und entspannt
+damit die engste Stelle des Layouts, den Spalt unter der VOICE-Box.
 
 `NEW` und `TRIG` behalten ihre Beschriftung unverändert — „neu" und „auslösen" treffen die
 Sampler-Bedeutung genauso wie die Synth-Bedeutung, eine zweite Zeile wäre nur Lärm.

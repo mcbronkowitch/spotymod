@@ -56,9 +56,10 @@ float Part::target_raw(int slot) const {
     return v;
 }
 
-// PITCH target + TUNE offset, summed BEFORE quantization so the final audible
-// pitch always lands on the scale grid (tune is a bipolar +/-18-semi transpose,
-// 0.5 = neutral). Quantizing the sum keeps both parts on one shared grid.
+// PITCH target + TUNE offset (a bipolar +/-18-semi transpose, 0.5 = neutral).
+// On a SYNTH part the sum is quantized afterwards, so the final audible pitch
+// lands on the scale grid and both parts share one grid. On a SAMPLER part it
+// is used as-is -- see the quantizer comment in _control_tick.
 float Part::pitch_pre_quant() const {
     return clampf(target_raw(LANE_PITCH) + (_tune - 0.5f), 0.f, 1.f);
 }
@@ -93,7 +94,14 @@ void Part::trigger_manual() {
     float chord[ChordBuilder::kMaxNotes];
     const int n = _chord.build(target_value(LANE_PITCH), _chord_mask(),
                                _quant.root_semis(), chord);
-    _engine->trigger_chord(chord, n);
+    // Durch _flatten_for_sampler, genau wie der Fire-Pfad in process()
+    // (part.cpp:306). Ohne das landeten bei COLOR > 0 bis zu vier Toene in
+    // der SamplerEngine, bis der naechste _control_tick (<= 96 Samples) ueber
+    // set_chord korrigiert -- weit genug fuer rund ein Dutzend Spawns mit
+    // Oktavspruengen beim TRIG-Druck, auf einem Deck, das ausdruecklich EINE
+    // Tonhoehe halten soll. Auf einer Synth-Part gibt der Helper nch
+    // unveraendert zurueck, dort aendert sich also nichts.
+    _engine->trigger_chord(chord, _flatten_for_sampler(chord, n));
 }
 
 float Part::max_voice_env() const {
@@ -116,9 +124,85 @@ float Part::max_voice_env() const {
 // the same sample double-steps the glide.
 void Part::_control_tick() {
     for (int i = 0; i < LANE_COUNT; ++i) _tg[i] = target_raw(i);
-    _tg[LANE_PITCH] = _quant.process(pitch_pre_quant());
-    _pitch_q = _tg[LANE_PITCH];                              // clean, drives pitch_cv()
+
+    const float pitch_raw = pitch_pre_quant();
+    // Called unconditionally, even when the sampler discards the result: the
+    // quantizer carries a slew counter and a hysteresis note across calls, and
+    // skipping it while a part is on the sampler would leave that state frozen
+    // and make the first synth tick after an engine switch depend on how long
+    // the part spent as a sampler. Cheap, and it keeps the synth's behaviour
+    // exactly what it was.
+    const float pitch_quantized = _quant.process(pitch_raw);
+
+    // The SAMPLER does not quantize. The quantizer is a melody device: it snaps
+    // a lane's pitch onto the scale so composed notes land in key. The sampler
+    // has no melody -- the morphagene-controls work switched its PITCH lane off
+    // -- and TUNE there means one thing only: transpose this recording as a
+    // whole, to match material that may be tonal, atonal, or plainly out of
+    // tune. Snapping that to the instrument's scale is meaningless, and at the
+    // knob's centre it was actively wrong: 0.5 of a 36-semitone span is exactly
+    // 18 semitones, a tritone above the root, which most scales do not contain.
+    // Measured at TUNE 0.5 with the PITCH lane off: three of the eight scales
+    // snapped the "neutral" detent a semitone flat, one a semitone sharp, and
+    // only four left it at unity -- so recorded material played back off-pitch
+    // against its own source, and which way depended on the SCALE knob.
+    // Unquantized, the centre is exactly 1.0 for every scale and root, and the
+    // knob transposes continuously (the author's call: out-of-tune material has
+    // to be tunable to the key, which a semitone grid cannot do).
+    _pitch_q = _engine_id == ENGINE_SAMPLER ? pitch_raw : pitch_quantized;
     _tg[LANE_PITCH] = clampf(_pitch_q + _detune_cents * (1.f / 3600.f), 0.f, 1.f);
+
+    // MOTION's Scatter startet auf einem Sampler-Deck bei null, nicht bei der
+    // Lane-Basis 0.5. Dieselbe Schicht und dieselbe Begruendung wie
+    // _flatten_for_sampler und die abgeschaltete PITCH-Lane: die INSTRUMENT-
+    // Schicht entscheidet, was ein Sampler-Deck nicht tut.
+    //
+    // Der Grund ist messbar, nicht aesthetisch. Die Basis 0.5 schreibt
+    // niemand -- weder Host noch Instrument -- und SuperModulator::set_range
+    // trifft nur LANE_PITCH, die Texturlanes behalten also _range = 1. Bei
+    // MOD = 0 stand _targets[LANE_MOTION] damit unabaenderlich auf 0.5, und
+    // in SamplerEngine::_spawn_one ist der Positions-Jitter dann
+    // gleichverteilt ueber ein Intervall der Breite GENAU content. Damit ist
+    // (SOURCE*span + _scan_pos + jitter) mod content exakt gleichverteilt,
+    // unabhaengig von beiden Summanden: ORGANIZE und SCAN hatten auf die
+    // Spawn-Position nachweislich null Effekt (gemessen: Mittelwert 12036 /
+    // 11896 / 11951 bei SOURCE 0 / 0.25 / 0.9 ueber content 24000).
+    //
+    // Nur der Basisanteil faellt weg, die Lane-Modulation bleibt: bei MOD > 0
+    // schiebt sie von 0 nach oben, MOD wird also zum MOTION-Regler des Decks
+    // und der Nebel bleibt erreichbar.
+    //
+    // Bewusst an _tg und nicht an _base: COLOR (cmod) und DENS (omod) unten
+    // lesen _mod.lane_output(LANE_MOTION) direkt und bleiben davon unberuehrt.
+    //
+    // Fuer Szenario-Autoren (review 2026-07-22, F-04-Nachtrag): auf einem
+    // Sampler-Deck ist set_target_base(part, LANE_MOTION, …) damit absichtlich
+    // wirkungslos, egal welchen Wert man ihm gibt -- der Regler, der MOTION
+    // hier tatsaechlich bewegt, ist MOD (set_depth), nicht die Lane-Basis. Ein
+    // Szenario, das stattdessen die Basis walkt, rendert an allen Punkten
+    // dieselbe Audio (traf host/render/scenarios/sampler_extremes.json genau
+    // so, bevor es korrigiert wurde).
+    //
+    // Die Lane selbst bleibt bipolar: _mod.lane_output(LANE_MOTION) liefert
+    // [-1, 1] (_range bleibt 1, siehe oben), und clampf(mmod, 0.f, 1.f) unten
+    // kappt die untere Haelfte komplett weg, statt sie -- wie die alte
+    // 0.5+mod-Formel -- symmetrisch um einen Mittelpunkt zu falten. Hoerbar
+    // heisst das: der Scatter PULSIERT (steht die halbe Modulationsperiode
+    // lang exakt bei 0 und schiesst dann in einen positiven Ausschlag),
+    // statt gleichmaessig zu ATMEN. Zwei Alternativen, falls das nicht die
+    // gewuenschte Form ist: fabsf(mmod) fuer eine kontinuierliche
+    // Vollratenversion (beide Halbwellen tragen bei, nie ein Stillstand),
+    // oder eine reskalierte bipolare Abbildung (0.5f + 0.5f*mmod), die wieder
+    // atmet statt zu pulsen. Der harte Clamp hier ist die aktuell gehoerte
+    // und vorlaeufig akzeptierte Fassung (Variante a) -- welche der drei am
+    // Ende bleibt, ist eine Hoerentscheidung, keine, die dieser Kommentar
+    // trifft.
+    if (_engine_id == ENGINE_SAMPLER) {
+        const float mmod = _active[LANE_MOTION]
+            ? _mod.lane_output(LANE_MOTION) * _depth * _tdepth[LANE_MOTION]
+            : 0.f;
+        _tg[LANE_MOTION] = clampf(mmod, 0.f, 1.f);
+    }
 
     // chord layer: refresh the surface every tick (cheap interval apply);
     // full voice-leading build only on a fire
@@ -132,9 +216,26 @@ void Part::_control_tick() {
         : 0.f;
     _color_eff = clampf(_color + cmod, 0.f, 1.f);
     _chord.set_color(_color_eff);
+
+    // DENS -> grain overlap, with MOTION's swing on top (spec 2026-07-21
+    // morphagene-controls). Pushed straight at _sampler rather than through
+    // _engine: it is a sampler-only parameter, and _sampler is a concrete
+    // member here just as it is for the voice row (part.h). On a synth part
+    // this is one float store into an engine nobody is listening to.
+    const float omod = _active[LANE_MOTION]
+        ? _mod.lane_output(LANE_MOTION) * _depth * kOverlapMod
+        : 0.f;
+    _overlap_eff = clampf(_overlap + omod, 0.f, 1.f);
+    _sampler.set_overlap(_overlap_eff);
     float chord[ChordBuilder::kMaxNotes];
-    const int nch = _chord.apply(_tg[LANE_PITCH], _chord_mask(),
-                                 _quant.root_semis(), chord);
+    // apply() runs unconditionally even when the sampler discards its result:
+    // ChordBuilder carries zone hysteresis and voice-leading state across
+    // calls, and skipping it on a sampler part would freeze that state and
+    // make the first synth tick after an engine switch depend on how long the
+    // part had been a sampler. Same reasoning as the quantizer call above.
+    int nch = _chord.apply(_tg[LANE_PITCH], _chord_mask(),
+                           _quant.root_semis(), chord);
+    nch = _flatten_for_sampler(chord, nch);
     _engine->set_chord(chord, nch);
 
     // Raster-rate push is safe because both receivers smooth on their own
@@ -220,8 +321,11 @@ void Part::process(float inL, float inR, float& outL, float& outR,
 
     if (fired && !_note_suppressed) {
         float chord[ChordBuilder::kMaxNotes];
-        const int nch = _chord.build(_tg[LANE_PITCH], _chord_mask(),
-                                     _quant.root_semis(), chord);
+        // build() unconditionally, for the same state reason as apply() in
+        // _control_tick.
+        int nch = _chord.build(_tg[LANE_PITCH], _chord_mask(),
+                               _quant.root_semis(), chord);
+        nch = _flatten_for_sampler(chord, nch);
         _engine->trigger_chord(chord, nch);
     }
 

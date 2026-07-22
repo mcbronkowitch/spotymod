@@ -65,10 +65,45 @@ void SampleBuffer::set_recording(bool on) {
             }
             break;
         case State::fadeout:
-            break;                       // already stopping; ignore
+            // Punch-in mitten im Fade-out: zurueck in den Fade-in, mit dem
+            // Zaehler, der gerade steht. Das ist symmetrisch zu dem, was der
+            // umgekehrte Weg unten schon tut (Stopp im Fade-in uebernimmt den
+            // Teilzaehler), und die Hann-Kurve blendet einfach von dem Pegel
+            // wieder auf, den sie erreicht hat -- kein Sprung.
+            //
+            // Vorher wurde der Wunsch verworfen, der Fade-out lief zu Ende
+            // und cut() nagelte die Loop-Laenge fest. Der VCV-Host vergleicht
+            // level-basiert gegen is_recording(), das im Fade-out noch true
+            // liefert, sodass der Re-Arm hier gar nicht mehr ankam und
+            // stattdessen ein Overdub des gekuerzten Loops begann: ein
+            // REC-Doppelklick innerhalb von 4 ms kuerzte die Aufnahme
+            // dauerhaft.
+            //
+            // _write_head zusaetzlich zurueck auf _fadeout_resume_head: ohne
+            // das blieb er auf der 0, auf die der Stopp-Zweig unten ihn fuer
+            // die Kopf-Ueberblendung gerade erst gezogen hatte, und die neue
+            // Aufnahme schrieb von vorn -- eine Splice statt einer Fortsetzung.
+            // Mit fb = 1 (Feedback-Uebergang steht noch auf aus, _cut ist
+            // nicht an) summiert write() dort obendrein, statt zu ersetzen, so
+            // dass der Anfang der ersten Aufnahme mit dem Anfang der zweiten
+            // verschmolz (review 2026-07-22, F-08 Nachtrag). Der gestashte
+            // Wert ist unabhaengig davon immer korrekt: lief der Stopp-Zweig
+            // NICHT zurueck (schon im Loop, _cut.is_on()), ist er identisch
+            // mit dem aktuellen _write_head, die Zeile also ein No-op.
+            if (on) {
+                _state      = State::fadein;
+                _write_head = _fadeout_resume_head;
+            }
+            break;
         default:
             if (!on) {
                 _state = State::fadeout;
+                // Stash BEFORE the rewind below can zero it -- the only
+                // record of where this take actually was, needed if a
+                // punch-in interrupts the fade-out (see the fadeout case
+                // above). Unconditional: when the rewind does not fire
+                // (_cut.is_on()) this just captures the same value again.
+                _fadeout_resume_head = _write_head;
                 // Wrap around and fade out OVER the fade-in, so the loop
                 // point is a real crossfade rather than two dips with a
                 // seam between them. This matters MORE here than in the
@@ -132,15 +167,26 @@ void SampleBuffer::write(float in0, float in1) {
     // Saturate what was read back BEFORE the feedback multiply -- the order
     // that keeps EchoDelay::Process stable at its 1.2 coefficient
     // (engine/fx/flux.h:129-141). Saturating after the multiply would not
-    // bound the write. Only above unity: fast_tanh compresses audibly from
-    // about half scale up, so running it unconditionally would give every
-    // overdub a tape character it does not have today.
-    if (_feedback > 1.f) {
+    // bound the write. Nicht unbedingt: fast_tanh komprimiert ab etwa halber
+    // Aussteuerung hoerbar, und jeder Overdub bekaeme sonst einen
+    // Tape-Charakter, den er heute nicht hat.
+    //
+    // Die Schwelle liegt bei kFbSatKnee und NICHT bei 1.0. An 1.0 gebunden
+    // war der Bereich knapp darunter voellig unbegrenzt -- ein Integrator
+    // mit Fixpunkt in/(1-fb) -- und lauter als jede Einstellung darueber.
+    if (_feedback > sampler_cfg::kFbSatKnee) {
         f.l = fast_tanh(f.l);
         f.r = fast_tanh(f.r);
     }
     f.l = in0 * fade + f.l * fb_fade;
     f.r = in1 * fade + f.r * fb_fade;
+    // Ein einziges nicht-endliches Sample bliebe sonst fuer immer: der
+    // Overdub liest es zurueck, multipliziert und schreibt es wieder, und nur
+    // clear() heilt das. In VCV kann es vom Nachbarmodul kommen. Zwei
+    // Vergleiche pro Sample, und sie fangen NaN wie Inf (jeder Vergleich mit
+    // NaN ist falsch, also greift die Negation).
+    if (!(f.l > -1e6f && f.l < 1e6f)) f.l = 0.f;
+    if (!(f.r > -1e6f && f.r < 1e6f)) f.r = 0.f;
     _buffer[_write_head] = f;
 
     ++_write_head;
@@ -188,10 +234,11 @@ void SampleBuffer::clear() {
     // that DID hold content (_size != 0) still gets the full memset.
     if (_buffer && _buffer_size && _size != 0)
         std::memset(_buffer, 0, sizeof(Frame) * _buffer_size);
-    _write_head = 0;
-    _size       = 0;
-    _fade_ctr   = 0;
-    _state      = State::idle;
+    _write_head          = 0;
+    _size                = 0;
+    _fade_ctr            = 0;
+    _fadeout_resume_head = 0;
+    _state               = State::idle;
     _cut.set_on(false, true);
 }
 
@@ -218,10 +265,18 @@ void SampleBuffer::read_linear(float frame, float& out0, float& out1) const {
     // VRINTM on the Daisy's Cortex-M7 FPv5 -- not a libm call, and cheaper
     // than the loop even in the common case.
     frame -= fsz * std::floor(frame / fsz);
-    if (frame < 0.f) frame = 0.f;         // -0.0 and rounding at the seam
+    // BEIDE Kanten hier, vor i0 und frac, und nicht nur i0 spaeter: bei
+    // grossem fsz rundet fsz - epsilon in float32 auf exakt fsz, was ein
+    // knapp negatives frame genau hierher bringt. Wurde nur i0 korrigiert,
+    // blieb frac = fsz stehen und die Interpolation lief mit dem Faktor der
+    // Puffergroesse -- an einem Puffer mit nur +-0.3 Inhalt gemessene
+    // Ausgaenge von 14 400 (24 000 Frames) bis 1 209 600 (2 016 000 Frames).
+    // Erreichbar ueber REVERSE-Grains, sobald _start + _off unter 0 laeuft
+    // (grain.h:111). frame und i0 muessen dieselbe Zahl beschreiben.
+    if (!(frame >= 0.f) || frame >= fsz) frame = 0.f;
 
     size_t i0 = static_cast<size_t>(frame);
-    if (i0 >= _size) i0 = 0;                     // float edge at fsz - epsilon
+    if (i0 >= _size) i0 = 0;                     // Guertel zum Hosentraeger
     size_t i1 = i0 + 1;
     if (i1 >= _size) i1 = 0;
 

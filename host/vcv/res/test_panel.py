@@ -219,7 +219,7 @@ def test_sector_captions():
             (11.00, 8.20, 'PITCH'),
             (g.W - 74.00, 8.20, 'MOTION'), (g.W - 74.00, 67.60, 'TIMBRE'),
             (g.W - 11.00, 8.20, 'PITCH')]
-    got = [(x, y, t) for (x, y, sz, sp, col, t) in g.TEXTS
+    got = [(x, y, t) for (x, y, sz, sp, col, an, t) in g.TEXTS
            if t in ('MOTION', 'TIMBRE', 'PITCH')]
     check(len(got) == 6, f"{len(got)} sector captions, want 6")
     for wx, wy, wt in want:
@@ -288,7 +288,7 @@ def test_group_legend_geometry():
                 f'width="{g.mm(cw)}" height="2.6" fill="{g.PAPER}"/>')
         check(chip in s, f"legend chip for {name} missing/misplaced")
         check(any(approx(tx, x + 5.0) and approx(ty, y + 0.75) and t == name
-                  for (tx, ty, sz, sp, col, t) in g.TEXTS),
+                  for (tx, ty, sz, sp, col, an, t) in g.TEXTS),
               f"legend text for {name} missing at ({x + 5.0:.2f}, {y + 0.75:.2f})")
 
 
@@ -333,7 +333,7 @@ def test_center_card_is_gone():
 
 def test_old_eyebrow_texts_are_gone():
     """TIME/ROOM are group legends now, not free-floating eyebrows."""
-    for (x, y, sz, sp, col, t) in g.TEXTS:
+    for (x, y, sz, sp, col, an, t) in g.TEXTS:
         if t in ('TIME', 'ROOM'):
             check(approx(sz, 1.8) and approx(x, g.CX - 20.5 + 5.0),
                   f"{t} is still the old eyebrow (size {sz} at x {x:.2f})")
@@ -450,6 +450,164 @@ def test_config_wires_tip_not_label():
           "configInput is not wired to c.tip -- jack tooltips will show panel labels")
     check("configOutput(c.id, c.tip)" in cpp,
           "configOutput is not wired to c.tip -- jack tooltips will show panel labels")
+
+
+# --- 2026-07-21 morphagene-controls: the sampler meanings on the plate --------
+# ENG remaps four knobs. Three get a second caption line; DENSITY deliberately
+# does not -- DENS reads correctly in both engines (groove density / grain
+# density), and the obvious alternative "MRPH" is already the global A/B knob's
+# name, so putting it on a part knob would be an operating error by design.
+SAMPLER_CAPTIONS = [("MELODY", "SCAN"), ("SUB", "LEN"), ("DETUNE", "ORG")]
+
+
+def sampler_text(word, near):
+    """The SCAN/LEN/ORG entry nearest to a given control glyph. Picking by
+    distance rather than by exact coordinate keeps this test independent of
+    how the generator derives the position -- it can only pass if the caption
+    really landed next to its knob."""
+    hits = [t for t in g.TEXTS if t[-1] == word]
+    if not hits:
+        return None
+    return min(hits, key=lambda t: math.hypot(t[0] - near.x, t[1] - near.y))
+
+
+def test_sampler_captions_exist():
+    """Every remapped knob carries its sampler meaning on the plate."""
+    txt = [t[-1] for t in g.TEXTS]
+    for _base, word in SAMPLER_CAPTIONS:
+        check(txt.count(word) == 2,
+              f"sampler caption {word!r} appears {txt.count(word)}x, want 2 (A and B)")
+    check("MRPH" not in txt,
+          "DENS must keep its label -- MORPH is the global A/B control")
+    check(ctl('DENSITY_A').label == 'DENS' and ctl('DENSITY_B').label == 'DENS',
+          "DENSITY lost its DENS label")
+
+
+# The pair's extent on the caption baseline: (left, right) in mm. Derived
+# from the drawn anchors, not from the generator's intent, so it measures
+# what actually lands on the plate.
+def inline_span(c, word):
+    lx, _ly, anchor, size, _col = g.label_of(c)
+    t = sampler_text(word, c)
+    cap_l = lx - g.text_w(c.label, size) if anchor == 'end' else lx
+    return (cap_l, t[0] + g.text_w(word, t[2]))
+
+
+def test_sampler_words_sit_inline_behind_their_caption():
+    """Every sampler word shares its caption's baseline and follows it one gap
+    behind, in reading order on both halves (2026-07-22). They used to hang
+    3 mm below, which read as orphaned from the knob."""
+    for suffix, colour in (('_A', g.GREEN), ('_B', g.COPPER)):
+        for base, word in SAMPLER_CAPTIONS:
+            c = ctl(base + suffix)
+            lx, ly, anchor, size, _col = g.label_of(c)
+            t = sampler_text(word, c)
+            check(t is not None, f"{c.enum}: no {word} caption at all")
+            if t is None:
+                continue
+            check(approx(t[1], ly),
+                  f"{c.enum}: {word} baseline {t[1]:.2f} != {c.label}'s {ly:.2f}")
+            check(approx(t[2], 1.5), f"{c.enum}: {word} size {t[2]}, want 1.5")
+            check(t[4] == colour,
+                  f"{c.enum}: {word} colour {t[4]}, want {colour}")
+            # Start-anchored regardless of how the parent is anchored: the two
+            # grow AWAY from the gap, so a wrong MONO_ADV cannot close it.
+            check(t[5] == 'start',
+                  f"{c.enum}: {word} anchored {t[5]!r}, want 'start'")
+            cap_end = lx if anchor == 'end' else lx + g.text_w(c.label, size)
+            check(approx(t[0] - cap_end, g.SAMPLER_GAP),
+                  f"{c.enum}: gap {t[0] - cap_end:.2f} mm, want {g.SAMPLER_GAP}")
+            # The word must clear the knob it belongs to -- nearest corner of
+            # its glyph box against the knob's radius, not just its anchor.
+            left, right = t[0], t[0] + g.text_w(word, t[2])
+            near_x = min(max(c.x, left), right)
+            near_y = min(max(c.y, t[1] - 0.7 * t[2]), t[1])
+            check(math.hypot(near_x - c.x, near_y - c.y) > g.GLYPH_R[c.kind],
+                  f"{c.enum}: {word} overlaps the knob glyph")
+
+
+def test_sampler_centred_captions_hand_their_centring_to_the_pair():
+    """SUB and DTUN are centred below their knob, so the PAIR takes over that
+    centring -- otherwise adding a word would shove the caption off its knob.
+    MELODY is excluded: its caption is placed radially and keeps its anchor."""
+    for suffix in ('_A', '_B'):
+        for base, word in SAMPLER_CAPTIONS:
+            if base in g.SAMPLER_RADIAL:
+                continue
+            c = ctl(base + suffix)
+            _lx, _ly, anchor, _size, _col = g.label_of(c)
+            check(anchor == 'end',
+                  f"{c.enum}: caption anchored {anchor!r}, want 'end'")
+            left, right = inline_span(c, word)
+            check(approx((left + right) / 2.0, c.x),
+                  f"{c.enum}: pair centred at {(left + right) / 2.0:.2f}, "
+                  f"knob at {c.x:.2f}")
+
+
+def test_sampler_radial_caption_did_not_move():
+    """MELODY's caption position is measured, not free -- orbit_label puts it
+    outside the knob so nothing lands between knob and LED ring, and pushing a
+    second line further out ended at the plate edge. Adding SCAN beside it must
+    therefore leave MELO exactly where orbit_label puts it."""
+    for base in g.SAMPLER_RADIAL:
+        for suffix, mir in (('_A', False), ('_B', True)):
+            c = ctl(base + suffix)
+            cx = g.W - g.RING_CX_A if mir else g.RING_CX_A
+            want = g.orbit_label(cx, g.RING_CY, g.ORBIT_ANG[base], mir)
+            got = g.label_of(c)
+            check(all(approx(a, b) if isinstance(a, float) else a == b
+                      for a, b in zip(got, want)),
+                  f"{c.enum}: caption moved to {got}, orbit_label says {want}")
+
+
+def test_sampler_inline_pairs_fit_the_voice_row():
+    """The pair is wider than the caption was, so it has to be shown to still
+    fit: inside the VOICE box on both sides, and clear of the neighbouring
+    VOICE-row captions it grew towards."""
+    voice_a = next(gr for gr in g.GROUPS if gr[4] == 'VOICE' and gr[0] < g.CX)
+    voice_b = next(gr for gr in g.GROUPS if gr[4] == 'VOICE' and gr[0] > g.CX)
+    blocks = []
+    for suffix, box in (('_A', voice_a), ('_B', voice_b)):
+        for base, word in ((b, w) for b, w in SAMPLER_CAPTIONS
+                           if b not in g.SAMPLER_RADIAL):
+            c = ctl(base + suffix)
+            left, right = inline_span(c, word)
+            check(left >= box[0] + 0.5 and right <= box[0] + box[2] - 0.5,
+                  f"{c.enum}: pair {left:.2f}..{right:.2f} leaves the VOICE box "
+                  f"{box[0]:.2f}..{box[0] + box[2]:.2f}")
+            blocks.append((c.enum, left, right))
+    # ...and against every OTHER caption on that row, inline or not.
+    plain = []
+    for enum in ('RES_A', 'RES_B'):
+        c = ctl(enum)
+        lx, _ly, _a, size, _col = g.label_of(c)
+        half = g.text_w(c.label, size) / 2.0
+        plain.append((enum, lx - half, lx + half))
+    for name, l0, r0 in blocks:
+        for other, l1, r1 in blocks + plain:
+            if other == name:
+                continue
+            check(r0 <= l1 - 0.8 or l0 >= r1 + 0.8,
+                  f"{name} ({l0:.2f}..{r0:.2f}) crowds {other} ({l1:.2f}..{r1:.2f})")
+
+
+def test_panel_texts_stay_on_the_plate():
+    for t in g.TEXTS:
+        check(1.0 <= t[0] <= g.W - 1.0 and 1.0 <= t[1] <= g.Hh - 1.0,
+              f"panel text {t[-1]!r} off plate at ({t[0]:.2f}, {t[1]:.2f})")
+
+
+def test_header_carries_text_anchor():
+    """The SVG preview and Rack must align these the same way; the C++ can only
+    do that if the generated table ships the anchor."""
+    h = g.header()
+    check("unsigned char anchor; const char* str;" in h,
+          "PanelTxt has no anchor column")
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "..", "src", "Spotymod.cpp")) as f:
+        cpp = f.read()
+    check("alignOf(t.anchor)" in cpp,
+          "the kPanelTexts draw loop ignores the anchor column")
 
 
 def main():

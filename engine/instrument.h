@@ -108,6 +108,41 @@ public:
     void  sampler_speed_mode(int p, bool tape) { _parts[p].sampler().set_tape_mode(tape); }
     void  sampler_reverse(int p, bool on)   { _parts[p].sampler().set_reverse(on); }
     void  sampler_feedback(int p, float n)  { _parts[p].sampler().set_feedback(n); }
+    // --- M5c sampler controls (spec 2026-07-21 morphagene-controls) ---
+    // NOTE: not "morph" -- set_morph is already taken by the global A/B
+    // control (see set_morph above). This is the grain overlap.
+    void  sampler_overlap(int p, float n)  { _parts[p].set_sampler_overlap(n); }
+    void  sampler_scan(int p, float bipolar) { _parts[p].sampler().set_scan(bipolar); }
+    void  sampler_punch(int p)             { _parts[p].sampler().punch(); }
+    float sampler_scan_pos(int p) const    { return _parts[p].sampler().scan_pos(); }
+    // last_spawn_pos(): the actual centre a grain last read from, i.e. SOURCE
+    // (clamped) * span + scan_pos + jitter, folded (SamplerEngine::_spawn_one).
+    // scan_pos() alone is only the tape-head OFFSET, not the read position --
+    // it sits at 0 whenever ORGANIZE parks the head mid-buffer. The VCV ring's
+    // read-position dot wants the read position (spec 2026-07-21
+    // morphagene-controls, "Der Kopf wird sichtbar"), so it must use this, not
+    // sampler_scan_pos(). sampler_scan_pos() itself stays -- tests/
+    // test_scenario.cpp pins it directly.
+    float sampler_last_spawn_pos(int p) const { return _parts[p].sampler().last_spawn_pos(); }
+    // Observer for tests/scenarios: the knob plus MOTION's swing, as last
+    // pushed to the engine on the most recent control tick (Part::overlap_eff).
+    float sampler_overlap_eff(int p) const { return _parts[p].overlap_eff(); }
+    // Observer only: the pitch ratio the most recent grain spawned at. Lets a
+    // test pin that a sampler deck grants every grain ONE pitch.
+    float sampler_last_spawn_ratio(int p) const {
+        return _parts[p].sampler().last_spawn_ratio();
+    }
+    // Observer only, for tests: the engine's own cumulative spawn counter
+    // (SamplerEngine::spawn_count()). last_spawn_pos()/last_spawn_ratio() hold
+    // their value BETWEEN spawns, so a test that only watches those two can
+    // pass vacuously if no spawn actually lands in its observation window --
+    // this lets it assert a real count of spawns happened instead (K-01,
+    // review 2026-07-22, mirroring the guard F-04's "ORGANIZE reaches the
+    // spawn position" test already uses via the bare Part).
+    int sampler_spawn_count(int p) const { return _parts[p].sampler().spawn_count(); }
+    // Observer only: how many notes the SYNTH leg last received, so a test can
+    // pin that the sampler's chord flattening does not reach the synth.
+    int synth_chord_n(int p) const { return _parts[p].synth().chord_n(); }
     void  load_sample(int p, const float* l, const float* r, size_t frames) {
         _parts[p].sampler().load_sample(l, r, frames);
     }

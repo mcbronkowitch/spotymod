@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <cmath>
+#include <limits>
 #include <vector>
 #include "sampler/sample_buffer.h"
 #include "sampler/sampler_config.h"
@@ -473,4 +474,254 @@ TEST_CASE("sample buffer: frame 0 survives every way a recording can end") {
         // neighbour agree, which a one-sample dropout would break.
         CHECK(std::fabs(mem[0].l - mem[1].l) < 0.05f);
     }
+}
+
+// --- Review 2026-07-22: Faltkante ---
+
+TEST_CASE("F-05: read_linear stays in range at the negative fold seam") {
+    // frac wurde aus dem ungeclampten frame gebildet: ein knapp negatives
+    // frame faltet in float32 auf exakt fsz, dann ist i0 = 0 aber frac = fsz
+    // -- eine Interpolation mit dem Faktor der Puffergroesse. Erreichbar
+    // ueber REVERSE-Grains, sobald _start + _off unter 0 laeuft.
+    for (size_t sz : {size_t(4800), size_t(24000), size_t(2016000)}) {
+        std::vector<SampleBuffer::Frame> mem(sz);
+        for (size_t i = 0; i < sz; ++i) {
+            mem[i].l = (i % 2) ? 0.3f : -0.3f;
+            mem[i].r = mem[i].l;
+        }
+        SampleBuffer b;
+        b.init(mem.data(), sz, 48000.f);
+        b.set_rec_size(sz);
+
+        const float fsz = static_cast<float>(sz);
+        float worst = 0.f, worst_at = 0.f;
+        auto probe = [&](float frame) {
+            float o0 = 0.f, o1 = 0.f;
+            b.read_linear(frame, o0, o1);
+            if (std::fabs(o0) > std::fabs(worst)) { worst = o0; worst_at = frame; }
+        };
+
+        // Die negative Naht: das ist der Weg, auf dem der Fehler real
+        // auftrat (REVERSE-Grain laeuft unter 0).
+        for (int k = 1; k <= 4000; ++k) probe(-float(k) * 0.0001f);
+
+        // Die positive Naht, obwohl dort heute nichts schiefgeht. Die
+        // Faltung ist auf dieser Seite eine Subtraktion nahezu gleich
+        // grosser Zahlen und nach Sterbenz exakt, waehrend sie auf der
+        // negativen Seite eine verlustbehaftete Addition ist -- der Fehler
+        // ist also von Natur aus einseitig. Der Guard deckt trotzdem beide
+        // Kanten ab, und ohne diese Proben wuerde niemand merken, wenn
+        // jemand ihn spaeter auf `if (frame < 0.f)` zurueck vereinfacht:
+        // die negativen Proben blieben gruen, und der alte Knall waere
+        // fuer jeden kuenftigen Aufrufer wieder offen.
+        probe(fsz);
+        probe(2.f * fsz);
+        probe(std::nextafter(fsz, 0.f));
+        probe(fsz - 0.5f);
+
+        INFO("size=" << sz << " worst=" << worst << " at frame=" << worst_at);
+        // Lineare Interpolation zwischen Werten aus [-0.3, 0.3] kann diesen
+        // Bereich nicht verlassen. Kleine Toleranz fuer Float-Rundung.
+        CHECK(std::fabs(worst) <= 0.31f);
+    }
+}
+
+// --- Review 2026-07-22: Feedback-Saettigung ---
+
+TEST_CASE("F-06: no feedback setting lets the buffer grow without bound") {
+    // Die Saettigung hing an _feedback > 1. Direkt darunter war der Overdub
+    // ein unbegrenzter Integrator mit Fixpunkt in/(1-fb): Knob 0.9705 gab
+    // nach 60 s Peak 234, waehrend Knob 1.0 bei 2.31 blieb -- das lauteste
+    // Verhalten lag in einem 0.001 breiten Fenster UNTER dem Anschlag.
+    using namespace spky::sampler_cfg;
+    constexpr size_t kSz  = 4800;
+    constexpr float  kIn  = 0.5f;
+
+    // Die Schranke ist aus kFbSatKnee abgeleitet: unterhalb der Schwelle
+    // laeuft der Overdub ungesaettigt auf seinen Fixpunkt kIn / (1 - fb),
+    // und das groesste fb, das die Schwelle noch passieren laesst, ist
+    // kFbSatKnee selbst.
+    //
+    // Was diese Schranke leistet und was nicht, damit niemand mehr hinein
+    // liest als drin steht: sie prueft, dass das Gate dort greift, wo es
+    // definiert ist -- eine Selbstkonsistenzpruefung des Mechanismus. Als
+    // Regressionswaechter auf die HOEHE der Schwelle taugt sie nicht, denn
+    // sie waechst mit ihr mit: bei kFbSatKnee = 0.98 waere sie 25, und die
+    // dort gemessene Spitze von 16.8 kaeme bequem durch. Dagegen stehen die
+    // beiden Pruefungen unten.
+    const float ceiling = kIn / (1.f - kFbSatKnee);
+
+    // Erstens: die Schwelle selbst muss vernuenftig bleiben. Diese Zeile
+    // kostet keine Rechenzeit und faengt eine Rueckkehr zu 0.98 (ceiling 25)
+    // sofort ab, ohne dass 41 x 60 s Audio dafuer laufen muessten.
+    CHECK(ceiling <= 6.f);
+
+    float peak_at_top = 0.f, worst = 0.f, worst_knob = 0.f;
+    for (int step = 0; step <= 40; ++step) {
+        const float knob = 0.90f + 0.0025f * float(step);   // 0.90 .. 1.00
+        std::vector<SampleBuffer::Frame> mem(kSz);
+        SampleBuffer b;
+        b.init(mem.data(), kSz, 48000.f);
+        b.set_feedback(knob);
+        b.set_recording(true);
+        for (int i = 0; i < 48000 * 60; ++i) b.write(kIn, kIn);
+
+        float peak = 0.f;
+        for (size_t i = 0; i < kSz; ++i) {
+            const float a = std::fabs(mem[i].l);
+            if (a > peak) peak = a;
+        }
+        INFO("knob=" << knob << " peak=" << peak << " ceiling=" << ceiling);
+        CHECK(peak <= ceiling);
+        if (peak > worst) { worst = peak; worst_knob = knob; }
+        // Explizit auf knob 1.0 gebunden statt auf "die letzte Runde": wer
+        // die Sweep-Grenzen aendert, wuerde sonst die Bedeutung der zweiten
+        // Pruefung unten still verschieben, ohne dass irgendetwas meckert.
+        if (knob >= 1.f - 1e-6f) peak_at_top = peak;
+    }
+    REQUIRE(peak_at_top > 0.f);             // der Sweep hat knob 1.0 erreicht
+
+    // Und der eigentliche Befund, der mit einer blossen Obergrenze nicht
+    // gefasst waere: das Geraet darf unterhalb des Anschlags nicht drastisch
+    // lauter sein als am Anschlag. Genau das war der Fehler -- 234 gegen
+    // 2.31, ein Faktor von 101, und der Knopf wurde beim Weiterdrehen ueber
+    // Unity hinaus schlagartig leiser statt lauter.
+    //
+    // Faktor 3 ist keine runde Zahl aus dem Nichts: gemessen liegt das
+    // Verhaeltnis bei kFbSatKnee = 0.90 bei 4.16 / 1.76 = 2.4, bei 0.98
+    // dagegen bei 16.79 / 1.76 = 9.6 und ohne Fix bei 132.2 / 1.76 = 75.
+    // Die Grenze trennt also die umgesetzte Wahl von beiden Alternativen,
+    // mit Reserve fuer Rundung, aber nicht so viel, dass 0.98 durchkaeme.
+    // Eine Restunstetigkeit bleibt bewusst zugelassen (siehe den Kommentar
+    // an kFbSatKnee); sie ganz zu beseitigen verlangt unbedingtes tanh und
+    // kostet den Auslieferungs-Default 57 % Pegel -- eine Hoerentscheidung.
+    INFO("worst peak " << worst << " at knob " << worst_knob
+         << ", peak at full travel " << peak_at_top);
+    CHECK(worst <= 3.f * peak_at_top);
+}
+
+TEST_CASE("F-06: the shipped feedback default is untouched by the saturation knee") {
+    // kDefaultFeedback = 0.95 ist ein by-ear-Wert. Der Test haelt fest, dass
+    // die Schwelle ihn nicht erreicht -- wer sie spaeter verschiebt, sieht
+    // hier sofort, ob er in gehoerte Einstellungen greift.
+    using namespace spky::sampler_cfg;
+    constexpr size_t kSz = 4800;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+    b.set_feedback(kDefaultFeedback);
+    b.set_recording(true);
+    for (int i = 0; i < 48000 * 10; ++i) b.write(0.5f, 0.5f);
+
+    float peak = 0.f;
+    for (size_t i = 0; i < kSz; ++i) {
+        const float a = std::fabs(mem[i].l);
+        if (a > peak) peak = a;
+    }
+    // Ohne Saettigung: Fixpunkt 0.5/(1-0.817) = 2.73. Die Schwelle darf
+    // diesen Wert nicht nach unten druecken.
+    INFO("default feedback peak=" << peak);
+    CHECK(peak > 2.f);
+    CHECK(peak < 5.f);
+}
+
+// --- Review 2026-07-22: Punch-in im Fade-out ---
+
+TEST_CASE("F-08: a punch-in during the record fade-out resumes the recording") {
+    // Der fadeout-Zweig verwarf set_recording(true) stillschweigend. Danach
+    // lief der Fade-out zu Ende und cut() nagelte die Loop-Laenge fest -- ein
+    // REC-Doppelklick innerhalb von 4 ms kuerzte die Aufnahme dauerhaft.
+    constexpr size_t kSz = 48000;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+
+    b.set_recording(true);
+    for (int i = 0; i < 1000; ++i) b.write(0.5f, 0.5f);
+    b.set_recording(false);
+    for (int i = 0; i < 5; ++i) b.write(0.5f, 0.5f);   // mitten im Fade-out
+    b.set_recording(true);                              // Punch-in
+    for (int i = 0; i < 20000; ++i) b.write(0.5f, 0.5f);
+
+    INFO("rec_size=" << b.rec_size() << " recording=" << b.is_recording());
+    CHECK(b.is_recording());
+    CHECK(b.rec_size() > 1000u);
+}
+
+TEST_CASE("F-08: a punch-in during the record fade-out does not splice the take") {
+    // Die beiden CHECKs oben (is_recording(), rec_size() > 1000) sind mit dem
+    // selben Wert (0.5, 0.5) auf beiden Seiten der Unterbrechung gebaut worden
+    // und daher blind fuer eine Splice: der Bug rewindete _write_head auf 0
+    // fuer den Punch-in, statt an der Stelle weiterzuschreiben, an der die
+    // erste Aufnahme stand -- und mit fb = 1 (der Feedback-Uebergang steht
+    // noch auf aus, solange _cut nicht an ist) summiert write() dort, statt zu
+    // ersetzen. Zwei UNTERSCHIEDLICHE Werte machen das sichtbar:
+    //
+    // 1000 Frames +0.5, Stopp, 5 Frames in den Fade-out, Punch-in, 20000
+    // Frames -0.9. Vor dem Fix (Reviewer-Probe): Frame 500 landet bei -0.400
+    // (beide Takes aufsummiert -- 0.5 + -0.9, da der Fade laengst im Sustain
+    // ist, also fb_fade == 1 und write() schreibt in0*1 + alt*1), Frame 1500
+    // bei -0.900 (unveraendert, weil dort vorher nichts stand -- 0 + -0.9).
+    // Nach dem Fix setzt die zweite Aufnahme bei Frame 1000 fort statt bei 0:
+    // Frame 500 gehoert dann NUR der ersten Aufnahme (+0.500, nie
+    // ueberschrieben), Frame 1500 bleibt bei -0.900 wie zuvor -- die einzige
+    // Zahl, die den Unterschied zeigt, ist Frame 500.
+    //
+    // Verifiziert von Hand: mit dem Fix zurueckgenommen (kein Restore von
+    // _write_head beim Punch-in) meldet Frame 500 -0.400 und dieser Test
+    // schlaegt fehl; mit dem Fix steht dort +0.500 und der Test ist gruen.
+    constexpr size_t kSz = 48000;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+
+    b.set_recording(true);
+    for (int i = 0; i < 1000; ++i) b.write(0.5f, 0.5f);   // take 1: +0.5
+    b.set_recording(false);
+    for (int i = 0; i < 5; ++i) b.write(0.5f, 0.5f);       // mitten im Fade-out
+    b.set_recording(true);                                  // Punch-in
+    for (int i = 0; i < 20000; ++i) b.write(-0.9f, -0.9f);  // take 2: -0.9
+
+    INFO("mem[500].l=" << mem[500].l << " mem[1500].l=" << mem[1500].l);
+    CHECK(mem[500].l  == doctest::Approx(0.5f).epsilon(1e-3));   // take 1, untouched
+    CHECK(mem[1500].l == doctest::Approx(-0.9f).epsilon(1e-3));  // take 2
+}
+
+TEST_CASE("F-08: a completed fade-out still cuts the loop") {
+    // Die Gegenprobe: wird der Fade-out NICHT unterbrochen, muss er wie
+    // bisher zu Ende laufen und die Laenge festnageln.
+    constexpr size_t kSz = 48000;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+
+    b.set_recording(true);
+    for (int i = 0; i < 1000; ++i) b.write(0.5f, 0.5f);
+    b.set_recording(false);
+    for (int i = 0; i < 1000; ++i) b.write(0.5f, 0.5f);   // Fade-out laeuft aus
+
+    INFO("rec_size=" << b.rec_size() << " recording=" << b.is_recording());
+    CHECK_FALSE(b.is_recording());
+    CHECK(b.rec_size() == 1000u);
+}
+
+TEST_CASE("K-02: a NaN in the input does not poison the buffer") {
+    // read_linear prueft die POSITION auf Endlichkeit, nie die Samples. Ein
+    // einziges NaN blieb fuer immer, weil der Overdub es wieder einliest.
+    constexpr size_t kSz = 4800;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+    b.set_feedback(0.9f);
+    b.set_recording(true);
+
+    const float nan_v = std::numeric_limits<float>::quiet_NaN();
+    for (int i = 0; i < 500; ++i) b.write(nan_v, nan_v);
+    for (int i = 0; i < 20000; ++i) b.write(0.2f, 0.2f);   // sauberer Overdub
+
+    float o0 = 0.f, o1 = 0.f;
+    b.read_linear(10.f, o0, o1);
+    INFO("read after NaN then clean overdub: " << o0);
+    CHECK(o0 == o0);            // kein NaN
+    CHECK(std::isfinite(o0));
 }

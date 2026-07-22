@@ -77,6 +77,18 @@ static_assert(RATE_B == RATE_A + PART_STRIDE, "part-block stride drifted from ge
 static_assert(TUNE_B == TUNE_A + PART_STRIDE, "part-block stride drifted from generator");
 static_assert(TRIGGER_B == TRIGGER_A + PART_STRIDE, "part-block stride drifted from generator");
 
+// REC is the exception and must never be read with pp()/ppb(). M5b appended it
+// LAST (gen_panel.py:359) so that adding it would not grow PART_STRIDE and
+// shift every already-saved patch's part-B ids -- so REC_A/REC_B are adjacent
+// trailing ids, not a strided pair. ppb(REC_A, 1) therefore indexed
+// REC_A + 23 == 99 into a 78-element params vector: out of bounds, and part B
+// could never record. Read them as `p ? REC_B : REC_A`, the way the REC lights
+// already do.
+static_assert(REC_B == REC_A + 1,
+              "REC ids are trailing, not part-strided -- read them explicitly, never via pp()");
+static_assert(REC_A + PART_STRIDE >= NUM_PARAMS,
+              "if REC ever moves into the part blocks, revisit the explicit REC reads");
+
 struct Spotymod : Module {
     spky::Instrument inst;
     spky::FxMem fxmem;
@@ -415,7 +427,10 @@ struct Spotymod : Module {
             // engine's set_recording is idempotent, and sampler_record flips
             // monitoring with it, so pushing every control tick is correct.
             // On a synth part REC is inert: ENG is the only mode selector.
-            const bool wantRec = ppb(REC_A, p) && eng2 && !smp[p].testTone;
+            // NOT ppb(REC_A, p): REC is not part-strided (see the static_assert
+            // block near the top of this file).
+            const bool wantRec = params[p ? REC_B : REC_A].getValue() > 0.5f
+                                 && eng2 && !smp[p].testTone;
             if (wantRec != inst.sampler_is_recording(p)) {
                 inst.sampler_record(p, wantRec);
                 // path/factoryLoaded mean "the buffer still holds exactly
@@ -428,6 +443,61 @@ struct Spotymod : Module {
                 }
             }
 
+            // --- sampler control surface (spec 2026-07-21 morphagene-controls) ---
+            // Four knobs that do nothing in the sampler's FLOW cloud get a
+            // job of their own. The param ids do not change, so no saved
+            // patch moves; only what the knob means when ENG says Sampler.
+            //
+            // set_variation and set_density above keep firing unconditionally
+            // -- the "push to both, let the inactive side ignore it" pattern
+            // the voice row already uses. DENS is the one knob that genuinely
+            // does two things in sampler STEP mode: it still thins the groove
+            // gate AND now sets grain overlap. Both point the same direction
+            // (sparser), so this is left as-is and flagged for the listening
+            // pass rather than special-cased.
+            const bool samplerPart = eng2 && !smp[p].testTone;
+            inst.sampler_overlap(p, pp(DENSITY_A, p));
+
+            // SCAN nur fuer Sampler-Parts (K-03). Das ist nicht bloss
+            // Kosmetik: set_scan -> scan_rate enthaelt im Exponentialast ein
+            // std::pow, und bei ctrlDiv = 16 waren das bis zu 6000 Aufrufe/s
+            // im Audio-Callback fuer eine Engine, die niemand hoert.
+            //
+            // Kein Soft-Takeover hier, und das ist eine Entscheidung, keine
+            // Luecke. Der Review vom 2026-07-22 meldete als F-07, dass der
+            // erste ENG-Flip den Lesekopf sofort losrasen laesst: MELO traegt
+            // im Synth VARIATION, steht im Init-Patch an den Extremen
+            // (-0.728 und -1.0), und als SCAN gelesen sind das -0.81x und
+            // -8x Realtime rueckwaerts. Das stimmt -- aber es ist genau das
+            // Verhalten, das README.md unter "Known limitations" ausdruecklich
+            // waehlt: die Knopfposition gilt ueber den Engine-Wechsel hinweg,
+            // ohne getrenntes Gedaechtnis und ohne Soft-Takeover, weil die
+            // Hardware kein Soft-Takeover hat und beide Seiten dasselbe tun
+            // sollen. Eine Sperre einzubauen hiesse, diese Linie zu verlassen
+            // -- und sie ueber Patch-Laden hinweg dicht zu bekommen verlangt
+            // genau das persistente Gedaechtnis, das dort ausgeschlossen ist.
+            // Offen fuer den Autor des Instruments, nicht fuer die Engine.
+            if (samplerPart) inst.sampler_scan(p, pp(MELODY_A, p));
+
+            // GENE SIZE and ORGANIZE ride the lane BASES, so they must be
+            // gated: in the synth these two slots drive the filter and the
+            // timbre position, and writing SUB/DTUN into them there would be
+            // wrong. The else branch is load-bearing -- a base left behind on
+            // an engine flip would silently stick.
+            if (samplerPart) {
+                inst.set_target_base(p, spky::LANE_SIZE,   pp(SUB_A, p));
+                inst.set_target_base(p, spky::LANE_SOURCE, pp(DETUNE_A, p));
+            } else {
+                inst.set_target_base(p, spky::LANE_SIZE,   0.5f);
+                inst.set_target_base(p, spky::LANE_SOURCE, 0.5f);
+            }
+
+            // Stable pitch in the sampler: the lane still FIRES (that is what
+            // keeps STEP triggering alive, part.cpp:194), it just stops
+            // moving the pitch. Sample material and a synth deck can then sit
+            // in the same key.
+            inst.set_target_active(p, spky::LANE_PITCH, !samplerPart);
+
             inst.set_grit_mode(p, ppb(GRITMODE_A, p) ? spky::GritMode::Reduce
                                                      : spky::GritMode::Drive);
             inst.set_step(p, ppb(STEP_A, p), (int)std::round(pp(STEPS_A, p)));
@@ -436,8 +506,23 @@ struct Spotymod : Module {
                 principleIdx[p] = (principleIdx[p] + 1) % 5;   // cycle the 5 principles
                 inst.set_principle(p, principleIdx[p]);
             }
-            if (newPhraseTrig[p].process(ppb(NEWPHRASE_A, p))) inst.new_phrase(p);
-            if (triggerTrig[p].process(ppb(TRIGGER_A, p))) inst.trigger_manual(p);
+            // NEW is "new gene now" in the sampler: the playhead returns to
+            // ORGANIZE and a grain spawns immediately. Without it the long
+            // end of GENE SIZE is unplayable -- every knob stays dead until
+            // the next scheduled spawn, tens of seconds away at overlap 1.
+            if (newPhraseTrig[p].process(ppb(NEWPHRASE_A, p))) {
+                if (samplerPart) inst.sampler_punch(p);
+                else             inst.new_phrase(p);
+            }
+            // TRIG punches AND triggers. trigger_manual alone is inert in the
+            // sampler's FLOW cloud -- _next_ratio reads the burst latch only
+            // when !_flow (sampler_engine.cpp:247) -- so the pad has been
+            // dead there since M5b. The punch fixes FLOW; the trigger keeps
+            // STEP behaving as it does today.
+            if (triggerTrig[p].process(ppb(TRIGGER_A, p))) {
+                if (samplerPart) inst.sampler_punch(p);
+                inst.trigger_manual(p);
+            }
         }
 
         inst.set_morph(params[MORPH].getValue());
@@ -843,6 +928,40 @@ struct SpkyRing : Widget {
             nvgFillColor(args.vg, nvgRGBAf(cr, cg, cb, b));
             nvgFill(args.vg);
         }
+
+        // --- sampler read position (spec 2026-07-21 morphagene-controls) ---
+        // Drawn separately rather than through bright[]: that array carries
+        // brightness only, and every dot in it is kColGlow[part], so a head
+        // folded into it would be indistinguishable from a lane. Warm white
+        // at full brightness reads as "this one is different" without a
+        // second palette. On a synth part, or with nothing recorded, nothing
+        // is drawn -- an idle ring stays dark, as it does today.
+        //
+        // sampler_last_spawn_pos(), NOT sampler_scan_pos(): scan_pos() is only
+        // the tape-head OFFSET accumulated by SCAN, not where grains actually
+        // read from -- that is clamp(SOURCE)*span + scan_pos + jitter, folded
+        // (SamplerEngine::_spawn_one). With ORGANIZE parked mid-buffer,
+        // scan_pos() sits at 0 while the cloud reads from the middle, which
+        // would show the dot in the wrong place. last_spawn_pos() is the
+        // actual centre of the most recently spawned grain, which is what
+        // the spec's "Der Kopf wird sichtbar" asks for.
+        if (module && module->inst.engine_id(part) == spky::ENGINE_SAMPLER) {
+            const size_t content = module->inst.sampler_rec_size(part);
+            if (content > 0) {
+                const float frac =
+                    module->inst.sampler_last_spawn_pos(part) / float(content);
+                const float a = TWO_PI * frac;
+                Vec hp = c.plus(Vec(std::sin(a), -std::cos(a)).mult(R));
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, hp.x, hp.y, dr * 3.0f);
+                nvgFillColor(args.vg, nvgRGBAf(1.f, 0.95f, 0.85f, 0.20f));
+                nvgFill(args.vg);
+                nvgBeginPath(args.vg);
+                nvgCircle(args.vg, hp.x, hp.y, dr * 1.15f);
+                nvgFillColor(args.vg, nvgRGBAf(1.f, 0.95f, 0.85f, 0.95f));
+                nvgFill(args.vg);
+            }
+        }
     }
 };
 
@@ -890,10 +1009,15 @@ struct PanelText : Widget {
 
         // section titles + brand -- the shared TEXTS table from the generator,
         // so runtime lettering matches the SVG preview one-to-one
+        // ... plus the sampler captions, which inherit the anchor of the
+        // caption they sit under -- MELO/SCAN is right-aligned on part A and
+        // left-aligned on B, so this table carries an anchor like PanelCtl.
         for (const auto& t : kPanelTexts) {
             nvgTextLetterSpacing(args.vg, mm2px(t.spacing));
+            nvgTextAlign(args.vg, alignOf(t.anchor) | NVG_ALIGN_BASELINE);
             text(t.mm.x, t.mm.y, t.size, col(t.rgb), t.str);
         }
+        nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BASELINE);
         nvgTextLetterSpacing(args.vg, 0.f);
     }
 };

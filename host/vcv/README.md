@@ -57,6 +57,84 @@ part holds content and isn't recording, and **dark** when the part is empty
 or on Synth — the light tracks ENG, not leftover buffer state, so switching
 a part away from Sampler doesn't relight it.
 
+**Four Synth controls take on a different job the moment ENG says Sampler.**
+The parameter IDs don't change — for the hardware this is a merge of existing
+controls, not a new set of them — only what turning the knob does:
+
+| Control | Label | Sampler meaning | Range |
+|---|---|---|---|
+| MELODY | `MELO` / `SCAN` | tape-head advance | centre is a true dead zone; exponential out to real time at three-quarters of travel, then linear up to 8×; sign is direction |
+| DENSITY | `DENS` | grain overlap | 1…8, continuous; the MOTION lane modulates around it |
+| SUB | `SUB` / `LEN` | grain length | 1 ms…42 s |
+| DETUNE | `DTUN` / `ORG` | read position in the material | full material length |
+
+SCAN's dead zone is exact and deliberate: a frozen tape head has to stay
+frozen even through knob noise, so nothing moves for the first couple of
+percent off centre. From there it ramps in gently, and real time lands on a
+fixed, refindable knob position three-quarters of the way out rather than
+somewhere you have to hunt for — the last quarter is the steepest stretch of
+the curve, carrying the head up to eight times real time in either direction.
+
+**SCAN springt beim ENG-Flip sofort auf die Knopfposition — offene Frage
+(F-07, Review 2026-07-22).** MELO trägt im Synth VARIATION und im Sampler
+SCAN, und die Init-Werte stehen für VARIATION an den Extremen (−0.728 und
+−1.0). Als SCAN gelesen sind das −0.81× und −8× Realtime rückwärts: der
+erste Flip auf Sampler lädt die Factory-Drone und schickt den Lesekopf im
+selben Control-Tick rückwärts los, ohne dass jemand etwas angefasst hat.
+
+Das ist als Fehler gemeldet worden, ist aber genau das Verhalten, das
+"Known limitations" weiter unten bewusst wählt: Knopfposition gilt über den
+Engine-Wechsel hinweg, ohne getrenntes Gedächtnis und ohne Soft-Takeover,
+weil die Hardware kein Soft-Takeover hat. Ein Soft-Takeover wurde gebaut und
+wieder zurückgenommen — über Patch-Laden hinweg dicht zu bekommen verlangt
+persistenten Zustand, also genau das, was diese Zeile ausschließt. Die
+Entscheidung liegt beim Autor des Instruments, nicht in der Engine.
+
+Mit derselben Änderung ging eine stille Last weg (K-03): `sampler_scan()`
+wurde für **beide** Decks aufgerufen, auch für ein Synth-Deck, und
+`scan_rate()` enthält im Exponentialast ein `std::pow`. Bei `ctrlDiv = 16`
+waren das bis zu 6000 `pow`-Aufrufe pro Sekunde im Audio-Callback für eine
+Engine, die niemand hört. Der Aufruf hängt jetzt an `samplerPart`, wie SUB
+und DTUN es schon taten.
+
+**NEW and TRIG both fire "new grain now" in the Sampler:** the tape head
+snaps back to ORGANIZE's position and a fresh grain spawns immediately. This
+exists because a grain's position, pitch and length are frozen the instant
+it's spawned, and the next chance to change any of them is the next
+scheduled spawn — at overlap 1 and a long LEN that's up to ten seconds away.
+Without this gesture, the long end of LEN wouldn't be a playable state at
+all; the deck would just stop answering every knob for that stretch. On
+TRIG this comes on top of the ordinary trigger, not instead of it.
+
+**LEN is live downward, latched upward.** Turning LEN *down* immediately
+rescales every grain that's already sounding to the length it would have got
+at the new setting, fading it out click-free; turning LEN *up* leaves running
+grains exactly as they are. The asymmetry is the point. Length is latched at
+spawn (see NEW/TRIG above), and that used to apply in both directions: a grain
+spawned at the top of LEN sounded for its full 42 s however far the knob came
+back down — 84 s in Tape with a pitch an octave under — and nothing on the
+deck could stop it, since the only thing that releases a running grain is the
+*other* part's CHOKE window. LEN effectively had a settling time of up to 42 s
+during which the knob and what you heard disagreed. Downward-live fixes that
+without touching the deliberate lag on the way up, so the cloud still drags
+behind a rising lane. In Tape the rescale is proportional, so "low notes smear
+long" survives it rather than being clipped to LEN.
+
+**The tape head shows up on the LED ring** as a bright travelling dot,
+as soon as a part is in Sampler and has material in its buffer.
+
+**Pitch holds still in the Sampler.** The PITCH lane is switched off there;
+tuning happens exclusively through TUNE, the bipolar ±18-semitone transpose
+shared with the Synth's scale grid. The point is that a Dorian sample on one
+deck and a Dorian-played Synth on the other land in the same key. Rhythmic
+triggering through STEP survives this untouched — the lane keeps firing on
+step boundaries, it just stops moving pitch while it does.
+
+**SUB and DTUN give up their Synth jobs in the Sampler.** They no longer
+reach it as octave share and detune — those two abilities are retired here
+so that a single knob doesn't carry two jobs inside the same engine. The
+Synth keeps both.
+
 The right-click context menu carries a **Sampler A / Sampler B** submenu per
 part:
 - **Load sample…** / **Save sample…** — WAV import/export via a file dialog.
@@ -92,6 +170,18 @@ stale WAV sitting in patch storage.
 
 ### Known limitations
 
+- **Knob position holds across engines — there is no separate memory and no
+  soft takeover.** This is on purpose: it's the one behaviour VCV and the
+  eventual hardware can share exactly, since the hardware has no
+  soft-takeover to fall back on. The price is that an ENG switch can't be
+  prepared in advance. Right up until the last second, these four knobs are
+  still the Synth's knobs — dialing in SUB ahead of time audibly detunes the
+  Synth that's still playing. Every switch forces the sequence "wrong first,
+  then dial it in." Fine for a staged transition on stage; not for a
+  seamless one.
+- **There are no parameter CV inputs.** The jacks are IN L/R, CLOCK and
+  RESET; PIT and GAT are outputs. External modulation of these controls only
+  reaches VCV through third-party mapping modules.
 - **A sample-rate DROP silently truncates the recording's tail.** The record
   buffer is sized in frames (42 s × the engine's sample rate), so switching
   your audio device from 48 kHz down to 44.1 kHz shrinks that allocation and

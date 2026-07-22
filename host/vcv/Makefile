@@ -55,6 +55,16 @@ SOURCES += \
 	$(REPO)/lib/DaisySP/Source/Control/phasor.cpp \
 	$(REPO)/lib/DaisySP/Source/Filters/svf.cpp
 
-DISTRIBUTABLES += res plugin.json
+# The two runtime assets only -- NOT the whole res/ directory. res/ also holds
+# gen_panel.py, test_panel.py and their __pycache__, and shipping the panel
+# generator (plus stale .pyc files) inside every user's plugin package is both
+# noise and a small footgun: the .svg in the package would silently disagree
+# with a .py someone edited in place. plugin.mk copies these with
+# `cp -r --parents`, so the res/ prefix is preserved in dist/.
+#
+# plugin.json is deliberately absent here: plugin.mk:15 already adds it, and
+# naming it again made `cp` warn about a duplicate source on every dist run.
+# That duplication predates this change -- the old `res plugin.json` had it too.
+DISTRIBUTABLES += res/factory.wav res/Spotymod.svg
 
 include $(RACK_DIR)/plugin.mk

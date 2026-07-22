@@ -66,6 +66,16 @@ private:
     size_t  _write_head  = 0;
     size_t  _fade_ctr    = 0;
     State   _state       = State::idle;
+    // Stashed _write_head, taken the instant a take enters fadeout -- BEFORE
+    // the free-run branch below (set_recording) rewinds _write_head to 0 for
+    // the crossfade into the loop point. A punch-in that interrupts the
+    // fade-out restores this instead of resuming at the rewound 0, so the
+    // second take continues where the first stopped rather than splicing
+    // over its own beginning (F-08 follow-up, review 2026-07-22). When the
+    // rewind does not happen (already looping, _cut.is_on()) this simply
+    // equals _write_head at the moment of the stop, so restoring it is a
+    // no-op there.
+    size_t  _fadeout_resume_head = 0;
 };
 
 }  // namespace spky

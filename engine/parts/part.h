@@ -41,6 +41,11 @@ public:
     // swing (spec 2026-07-18 color-motion-target). Equals the knob when
     // MOD = 0 or the MOTION target is inactive.
     float color_eff() const { return _color_eff; }
+    // DENS in the sampler: the grain-overlap knob. Stored, not pushed --
+    // _control_tick combines it with the MOTION lane and hands the sampler
+    // the effective value, exactly as COLOR does.
+    void set_sampler_overlap(float n) { _overlap = clampf(n, 0.f, 1.f); }
+    float overlap_eff() const { return _overlap_eff; }
     void set_detune_cents(float c) { _detune_cents = c; }   // DRIFT tune tap; engine pitch only
     void set_target_active(int slot, bool on) { _active[slot] = on; }
     void set_target_base(int slot, float b)   { _base[slot] = clampf(b, 0.f, 1.f); }
@@ -81,12 +86,22 @@ public:
     void set_voice_attack(float n)    { _synth.set_attack(n);    _sampler.set_window_attack(n); }
     void set_voice_decay(float n)     { _synth.set_decay(n);     _sampler.set_window_decay(n); }
     void set_voice_resonance(float n) { _synth.set_resonance(n); _sampler.set_resonance(n); }
-    void set_voice_sub(float n)       { _synth.set_sub(n);       _sampler.set_sub(n); }
-    void set_voice_detune(float n)    { _synth.set_detune(n);    _sampler.set_detune(n); }
+    // SUB and DETUNE are synth-only from the morphagene-controls spec on
+    // (2026-07-21): on the panel these two knobs are GENE SIZE and ORGANIZE
+    // in the sampler, so forwarding them here as well would give one knob two
+    // simultaneous jobs in the same engine. SamplerEngine::_sub_n and
+    // _detune_n default to 0 and now stay there.
+    void set_voice_sub(float n)       { _synth.set_sub(n); }
+    void set_voice_detune(float n)    { _synth.set_detune(n); }
     void set_voice_filt(float t)      { _synth.set_filt(t);      _sampler.set_filt(t); }
 
     SamplerEngine& sampler() { return _sampler; }
     const SamplerEngine& sampler() const { return _sampler; }
+    // Observer twin of sampler() above -- lets a test reach the Synth leg of
+    // the SUB/DTUN split directly (final-fixes pass, Befund B) the same way
+    // sampler() already lets it reach the sampler leg.
+    SynthEngine& synth() { return _synth; }
+    const SynthEngine& synth() const { return _synth; }
 
     int active_voices() const {
         return _engine_id == ENGINE_SYNTH ? _synth.active_voices() : 0;
@@ -143,6 +158,32 @@ private:
             case ENGINE_SAMPLER: return static_cast<IPartEngine*>(&_sampler);
             default:             return static_cast<IPartEngine*>(&_tone);
         }
+    }
+
+    // The sampler deck plays ONE pitch: the PITCH target, which with the lane
+    // switched off is TUNE alone. Collapse any composed chord to that single
+    // note before it reaches the engine.
+    //
+    // The sampler's grain cloud spreads a chord round-robin across grains --
+    // one grain per note, cycling. On a synth that is a chord; on a granulated
+    // recording it is the same material replayed at several transpositions at
+    // once, which is a harmonizer, not a texture. With COLOR at its factory
+    // 0.647 a freshly-flipped deck A granulated at four ratios spanning nearly
+    // two octaves (+1.80, -3.20, +4.80, +21.13 semitones, measured), heard as
+    // grains jumping octaves. COLOR is not part of the sampler's control
+    // surface in the morphagene-controls spec -- it was simply never
+    // considered, and it reached pitch through the chord surface the way
+    // MOTION reached it through the octave scatter.
+    //
+    // Done HERE rather than in SamplerEngine on purpose: the engine stays a
+    // general granular engine that can spread a chord (its own tests still
+    // cover that), and the INSTRUMENT decides a sampler deck has no melody.
+    // Same layer, and the same reasoning, as switching LANE_PITCH off and
+    // keeping SUB/DTUN on the synth.
+    int _flatten_for_sampler(float* chord, int nch) const {
+        if (_engine_id != ENGINE_SAMPLER) return nch;
+        chord[0] = _tg[LANE_PITCH];
+        return 1;
     }
 
     // Everything the engine and FX consume at their own control rate -- see
@@ -212,6 +253,13 @@ private:
     // all five targets boot active, with staggered depths — FILTER 0.55 (the
     // exponential cutoff dominates; the big sweep belongs to FILT), MOTION
     // 0.7 (width moves without pumping). Ear-tunable. M6 pads toggle _active.
+    // Until then there is only one writer: watch for this the day M6 lands,
+    // because host/vcv/src/Spotymod.cpp already calls
+    // set_target_active(p, LANE_PITCH, ...) unconditionally every block (the
+    // sampler pitch-hold gate, spec 2026-07-21 morphagene-controls) -- once a
+    // pad can also toggle LANE_PITCH's _active, that per-block push will
+    // silently overwrite whatever the pad just set. Harmless today only
+    // because the pad doesn't exist yet.
     std::array<bool,  LANE_COUNT> _active { { true, true, true, true, true } };
     std::array<float, LANE_COUNT> _base   { { 0.5f, 0.5f, 0.5f, 0.5f, 0.8f } };
     std::array<float, LANE_COUNT> _tdepth { { 1.f, 0.55f, 1.f, 0.7f, 1.f } };
@@ -240,11 +288,21 @@ private:
     static constexpr float kColorMod  = 0.2f;
     static constexpr float kColorGate = 0.01f;
 
+    // DENS is a fourth destination of the MOTION lane (spec 2026-07-21
+    // morphagene-controls), so the cloud breathes in density instead of
+    // standing still. Bipolar and additive, same shape as kColorMod. No gate
+    // twin to kColorGate: the sampler has no bit-identity guarantee to
+    // protect at knob 0, and overlap 1 is a musical value, not an off state.
+    // Ear-tunable.
+    static constexpr float kOverlapMod = 0.2f;
+
     float _depth = 1.f;
     float _tune = 0.5f;
     float _detune_cents = 0.f;   // DRIFT detune, applied post-quantizer to the engine only
     float _color = 0.f;          // COLOR knob; effective color is computed in process()
     float _color_eff = 0.f;      // knob + MOTION swing, as last pushed to _chord
+    float _overlap = 1.f;        // DENS knob; effective value computed in _control_tick
+    float _overlap_eff = 1.f;    // knob + MOTION swing, as last pushed to _sampler
     int   _gate_ctr = 0;
     int   _gate_len = 240;   // ~5 ms @ 48k, recomputed in init()
     float _sr = 48000.f;

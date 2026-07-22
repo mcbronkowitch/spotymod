@@ -32,6 +32,11 @@ float test_spawn_interval(float grain_len, int overlap);
 // Test seam only: forwards to the anonymous-namespace pitch mapping.
 float test_ratio_for(float pitch_norm);
 
+// Test seam only: forwards to the anonymous-namespace SCAN curve helper in
+// sampler_engine.cpp, so the dead zone, both knees and the endpoints can be
+// pinned without driving a whole engine.
+float test_scan_rate(float n);
+
 // The M5 texture deck: a granular cloud behind IPartEngine.
 //
 // Not a second melodic instrument -- the synth part makes the music, this
@@ -140,6 +145,38 @@ public:
     void set_reverse(bool on)     { _reverse = on; }
     void set_feedback(float knob) { _buf.set_feedback(knob); }
 
+    // DENS in the sampler: grain overlap, 1..8 (spec 2026-07-21
+    // morphagene-controls). n is a knob position 0..1. This is the density
+    // control that kOverlap used to fix at compile time; at low overlap the
+    // grain window stops being a Constant-OverLap-Add system and ATK/DEC
+    // become audible.
+    void set_overlap(float n);
+
+    // SCAN: the running playhead (spec 2026-07-21 morphagene-controls).
+    // bipolar is -1..+1; the sign is the direction, the centre is a real dead
+    // zone. The accumulated position is ADDED to the SOURCE target in
+    // _spawn_one, so ORGANIZE sets where the head starts and SCAN moves it.
+    //
+    // Calls std::pow (scan_rate(), sampler_engine.cpp) -- a control-rate-only
+    // caller, never the per-sample audio path. This engine's own control tick
+    // is kCtrlInterval = 96 samples (~2 ms @ 48 kHz); the VCV host currently
+    // calls this more often than that -- ctrlDiv divides by 16 samples
+    // (host/vcv/src/Spotymod.cpp), i.e. every ~0.33 ms @ 48 kHz. Measured
+    // affordable at that rate; a future caller pushing this every audio
+    // sample would put a std::pow on the per-sample path and must not.
+    void set_scan(float bipolar);
+
+    // "New gene now" (spec 2026-07-21 morphagene-controls): the playhead
+    // returns to ORGANIZE and a grain spawns immediately. Wired to NEW and
+    // TRIG in the sampler.
+    //
+    // Deliberately NOT routed through _kill_all: this is a gesture on a
+    // running cloud, so grains that are already sounding keep sounding. It is
+    // what makes the long-grain end of SIZE playable at all -- without it,
+    // every knob is dead until the next scheduled spawn, which at overlap 1
+    // and SIZE near the top is tens of seconds away.
+    void punch();
+
     // --- voice row, remapped ---
     void set_window_attack(float n);
     void set_window_decay(float n);
@@ -151,6 +188,11 @@ public:
     // --- observation (CSV, tests) ---
     int   active_grains() const;
     float grain_len_samples() const { return _grain_len; }
+    float overlap() const               { return _overlap; }
+    float spawn_interval_samples() const { return _spawn_every; }
+    // Accumulated playhead offset in frames, folded into [0, rec_size).
+    // Drives the VCV ring's read-position dot as well as the tests.
+    float scan_pos() const { return _scan_pos; }
     int   spawn_count() const       { return _spawn_count; }
     // Incremented in _spawn_one when every slot is busy and the spawn is
     // skipped -- the exact moment a spawn is lost. Never reset except by
@@ -158,12 +200,29 @@ public:
     int   dropped_spawns() const    { return _dropped_spawns; }
     float last_spawn_ratio() const  { return _last_ratio; }
     float last_spawn_pan() const    { return _last_pan; }
+    // SUB and DTUN no longer reach the sampler (spec 2026-07-21
+    // morphagene-controls); these stay at their silent 0.f defaults. Exposed
+    // so tests can pin the disconnection down.
+    float sub() const    { return _sub_n; }
+    float detune() const { return _detune_n; }
     float last_spawn_pos() const    { return _last_pos; }
     int   last_spawn_len() const    { return _last_len; }
 
 private:
     void  _update_control();     // recompute derived values on the raster
+    // Das effektive Intervall bis zum naechsten Spawn: Grundintervall mal
+    // Timing-Jitter, danach auf kSpawnMinSamples gebodet. Zwei Aufrufer, und
+    // dass es DIESELBE Zahl ist, ist der ganze Punkt -- process() zaehlt
+    // damit herunter, _update_control clamped dagegen. Rechnete der Clamp mit
+    // dem ungejitterten _spawn_every, kappte er jedes zu LANGE Intervall
+    // weg und liess jedes zu kurze stehen, womit ein symmetrisch gezogener
+    // Jitter die Wolke systematisch beschleunigte (bis +21 % bei MOTION 1).
+    // Der Boden gehoert hierher und nicht in spawn_interval(): dort steht er
+    // vor dem Jitter, und der Jitter unterlief ihn anschliessend bis auf 2
+    // Samples -- das Vierfache der in sampler_config.h zugesagten 6 kHz.
+    float _next_interval() const;
     void  _spawn_one();          // spawn into a free slot, if any
+    void  _trim_running();       // SIZE turned down: shorten what is sounding
     void  _kill_all();
     void  _release_all();
     float _next_ratio();         // chord round-robin + octave scatter
@@ -173,6 +232,13 @@ private:
     size_t _mem_frames = 0;
 
     Grain _grains[kGrains];
+    // _grain_len at the instant slot i was spawned, and the length it was
+    // given. _trim_running needs both to rescale a running grain to "what it
+    // would have been at today's SIZE" without asking Grain to know anything
+    // about SIZE, tape mode or ratios -- the policy stays here, where SIZE
+    // lives, and Grain stays a playback object. Zero means "no live grain".
+    float _size_ref[kGrains]  = {};
+    float _len_ref[kGrains]   = {};
     Rng   _rng;
     uint32_t _seed = 0xC0FFEEu;
 
@@ -186,6 +252,9 @@ private:
     // derived at the control tick
     float _grain_len   = 960.f;   // output samples
     float _spawn_every = 240.f;   // samples between spawns
+    float _overlap     = static_cast<float>(kOverlap);   // 1..8, DENS
+    float _scan_rate   = 0.f;     // frames per sample, signed
+    float _scan_pos    = 0.f;     // accumulated offset in frames, folded
     float _filt_gain   = 1.f;
     float _norm_target = 1.f;     // 1/sqrt(active), fed through _norm per sample
 

@@ -73,11 +73,19 @@ WKMAP = {BIGKNOB:"WK_BIGKNOB", KNOBC:"WK_KNOBC", SMKNOB:"WK_SMKNOB",
 LBL_DY = {BIGKNOB: 7.2, KNOBC: 7.2, SMKNOB: 5.6, KNOBI: 5.6, SW2: 6.6,
           LATCH: 5.4, SMBTN: 5.4, IN: 6.4, OUT: 6.4, LIGHT: 0.0}
 
+def default_label_of(c):
+    """The centred-below-the-glyph placement, ignoring any override.
+
+    Split out from label_of so a caller that OVERWRITES c.lbl can still ask
+    what the default was -- sampler_texts() derives the inline LEN / ORG pair
+    from it and would otherwise read back its own result on a second call."""
+    return (c.x, c.y + LBL_DY[c.kind], "middle", 1.9, INK)
+
 def label_of(c):
     """(x, y, anchor, size, colour) for a control's caption."""
     if c.lbl is not None:
         return c.lbl
-    return (c.x, c.y + LBL_DY[c.kind], "middle", 1.9, INK)
+    return default_label_of(c)
 
 class Ctl:
     def __init__(self, enum, kind, x, y, label):
@@ -128,7 +136,7 @@ def group_box(x, y, w, h, legend):
         f'height="2.6" fill="{PAPER}"/>'])
 
 def legend_texts():
-    return [(x + 5.0, y + 0.75, 1.8, 0.35, colour, name)
+    return [(x + 5.0, y + 0.75, 1.8, 0.35, colour, "middle", name)
             for (x, y, w, h, name, colour) in GROUPS]
 
 def orbit(cx, cy, r, ang_deg, mir=False):
@@ -166,7 +174,12 @@ PLAY_Y   = 103.6
 PAD_X    = [10.0, 17.5, 46.0, 56.5, 67.0, 77.5]   # ENG GRIT | STEP PRIN NEW TRIG
 STEPS_X  = 37.0                     # sequencer knob, between the two pad blocks
 REC_X    = 25.0                     # REC pad (appended param, not templated)
-REC_LED_X = 30.0                    # its state LED, right of the pad
+# Its state LED, centred in the gap between the REC pad and the STEPS knob.
+# It used to sit at 30.0, hard against a hairline at 28.7 that separated the
+# mode pads from the sequencer block; with that hairline gone (2026-07-22,
+# Bastian: the LED and the rule crowded each other and read as one smudged
+# element) the LED has the whole gap and is centred in it.
+REC_LED_X = (REC_X + STEPS_X) / 2.0
 
 # --- per-part control template (ORDER defines enum order; identical A/B) ------
 # Returns Ctl list with per-part coordinates (mirrored for B when mir=True).
@@ -376,18 +389,104 @@ LIGHTS = [
     Ctl("REC_B_L", LIGHT, W - REC_LED_X, PLAY_Y, ""),
 ]
 
+# --- sampler meanings of the remapped knobs (spec 2026-07-21) -----------------
+# ENG turns four knobs into the sampler's own controls, so both meanings belong
+# on the plate. DENS is deliberately absent: the word already fits both engines
+# (groove density / grain density), and MORPH is taken by the global A/B knob --
+# two things called MORPH on one plate would be a built-in operating error.
+SAMPLER_LBL = [("MELODY", "SCAN"), ("SUB", "LEN"), ("DETUNE", "ORG")]
+SAMPLER_SIZE = 1.5     # mm; the main captions are 1.9
+
+# All three sit INLINE, on the same baseline as the caption they qualify and
+# one gap behind it (2026-07-22, Bastian: "org und len sitzen unguenstig
+# unter der box, da ist noch Platz neben den normalen labels" and then "scan
+# passt auch noch hinter melo im gleichen style"). They used to hang
+# SAMPLER_DY = 3.0 mm below their parent, which read as orphaned -- the words
+# belonged to nothing in particular.
+#
+# The word always follows in reading order, on both halves. The panel mirrors
+# geometry, but text does not: "SCAN MELO" on part B to match a mirrored
+# layout would be a different label, not a mirrored one.
+SAMPLER_GAP    = 0.8   # mm of air between a caption and its sampler word
+# MELODY's caption is placed radially by orbit_label(); SUB and DETUNE use the
+# centred default. That difference decides which pair rule applies -- see
+# sampler_texts. Keyed by name rather than by "does c.lbl exist", because this
+# function overwrites c.lbl and such a test would answer differently on a
+# second call.
+SAMPLER_RADIAL = {"MELODY"}
+# Advance width of the monospace face, in ems. Only ever used to CENTRE or to
+# follow, never to butt two texts together -- see the anchor note in
+# sampler_texts() for why an error in this number cannot make them collide.
+MONO_ADV       = 0.6
+
+def text_w(s, size_mm):
+    return len(s) * MONO_ADV * size_mm
+
+def sampler_texts():
+    """The sampler word beside its caption, derived from it -- never typed out.
+
+    The word is always start-anchored one SAMPLER_GAP behind where the
+    caption ENDS. Anchoring it away from the gap rather than from the pair's
+    left edge is what makes the layout tolerant of MONO_ADV being wrong: if
+    Rack's monospace face is wider than the estimate, caption and word grow
+    away from each other, so the pair can drift but the gap can never close
+    and the two can never overlap.
+
+    Where the pair as a whole sits depends on how the parent was placed, and
+    the two rules are NOT interchangeable:
+
+    * Centred captions (SUB, DETUNE) hand their centring to the pair. The
+      caption gives up its "middle" anchor and ends half a gap left of the
+      knob's centre-of-pair, so "SUB LEN" straddles the knob the way "SUB"
+      used to.
+    * The radial caption (MELODY) keeps its anchor point EXACTLY. That
+      position is measured, not free: orbit_label puts it outside the knob so
+      nothing lands between knob and LED ring, and the earlier attempt to
+      push a second line further out ended at x ~= 4 mm, hard against the
+      plate edge and visually orphaned from its knob. Re-anchoring the pair
+      would move MELO there for the same reason, so the word follows the
+      caption instead and the caption does not move at all.
+
+    NOTE: this MUTATES c.lbl. It reads SAMPLER_RADIAL and default_label_of
+    rather than inspecting c.lbl, so a second call recomputes from the same
+    starting point instead of from its own output.
+    """
+    out = []
+    for suffix, colour in (("_A", GREEN), ("_B", COPPER)):
+        for base, word in SAMPLER_LBL:
+            c = next(c for c in PARAMS if c.enum == base + suffix)
+            ws = text_w(word, SAMPLER_SIZE)
+            if base in SAMPLER_RADIAL:
+                lx, ly, anchor, size, col = c.lbl          # set by orbit_label
+                # Where the caption's own glyphs end, whichever side it is
+                # anchored from -- part A ends at its anchor, part B starts
+                # there and runs a caption-width to the right.
+                cap_end = lx if anchor == "end" else lx + text_w(c.label, size)
+            else:
+                _lx, ly, _anchor, size, col = default_label_of(c)
+                mid = (text_w(c.label, size) - ws) / 2.0
+                cap_end = c.x + mid - SAMPLER_GAP / 2.0
+                c.lbl = (cap_end, ly, "end", size, col)
+            out.append((cap_end + SAMPLER_GAP, ly, SAMPLER_SIZE,
+                        0.0, colour, "start", word))
+    return out
+
 # --- shared panel lettering (drawn by SVG for preview, by C++ at runtime) -----
-# (x, y baseline, size mm, letter-spacing mm, hex colour, text)
+# (x, y baseline, size mm, letter-spacing mm, hex colour, anchor, text)
+# The anchor column arrived with the sampler captions: they inherit the anchor
+# of the caption they sit under, and the radial orbit captions are start/end
+# aligned, so a middle-only text table would set them beside their parent.
 TEXTS = [
-    (RING_CX_A,     RING_CY + 1.6, 5.0, 0.0, GREEN_DIM,  "A"),
-    (W - RING_CX_A, RING_CY + 1.6, 5.0, 0.0, COPPER_DIM, "B"),
-    (CX,            7.0,           3.6, 0.9, INK,        "SPOTYMOD"),  # top brand
+    (RING_CX_A,     RING_CY + 1.6, 5.0, 0.0, GREEN_DIM,  "middle", "A"),
+    (W - RING_CX_A, RING_CY + 1.6, 5.0, 0.0, COPPER_DIM, "middle", "B"),
+    (CX,            7.0,           3.6, 0.9, INK,        "middle", "SPOTYMOD"),
 ] + [
     # sector captions, tucked into the free panel corners (spec §1)
-    (W - cx if mir else cx, cy, 1.7, 0.3, COPPER if mir else GREEN, name)
+    (W - cx if mir else cx, cy, 1.7, 0.3, COPPER if mir else GREEN,
+     "middle", name)
     for mir in (False, True)
     for (name, _a0, _a1, (cx, cy)) in SECTORS
-] + legend_texts()
+] + legend_texts() + sampler_texts()
 
 # =============================================================================
 #  SVG
@@ -490,10 +589,11 @@ def svg():
             P.append(f'<rect x="{mm(bx + 1.4)}" y="{mm(JACK_BOX_Y + 1.6)}" '
                      f'width="{mm(JACK_BOX_W - 2.8)}" '
                      f'height="{mm(JACK_BOX_H - 3.2)}" rx="1.2" fill="{WELL}"/>')
-    # PLAY: hairline between the two mode pads and the sequencer block
-    for dx in (28.7, W - 28.7):
-        P.append(f'<line x1="{mm(dx)}" y1="100.6" x2="{mm(dx)}" y2="109.2" '
-                 f'stroke="{LINE}" stroke-width="0.35"/>')
+    # The PLAY row used to carry a hairline at 28.7 dividing the mode pads
+    # from the sequencer block. Removed 2026-07-22: the REC LED landed 1.3 mm
+    # to its right and the two read as a single smudged element rather than a
+    # rule and an indicator. The gap between REC and STEPS separates the two
+    # blocks on its own, which is what the rest of the row already relies on.
     # brand flanking dots -- one per colour, flanking the top SPOTYMOD logo
     P.append(f'<circle cx="{mm(CX-15)}" cy="5.9" r="0.9" fill="{GREEN}"/>')
     P.append(f'<circle cx="{mm(CX+15)}" cy="5.9" r="0.9" fill="{COPPER}"/>')
@@ -527,8 +627,8 @@ def svg():
                      f'text-anchor="{anchor}" font-family="monospace" '
                      f'font-size="{size}">{c.label}</text>')
     # shared lettering (preview only -- Rack draws these via PanelText)
-    for (x, y, size, spacing, col, txt) in TEXTS:
-        P.append(f'<text x="{mm(x)}" y="{mm(y)}" fill="{col}" text-anchor="middle" '
+    for (x, y, size, spacing, col, anchor, txt) in TEXTS:
+        P.append(f'<text x="{mm(x)}" y="{mm(y)}" fill="{col}" text-anchor="{anchor}" '
                  f'font-family="monospace" font-size="{size}" '
                  f'letter-spacing="{spacing}" font-weight="bold">{txt}</text>')
     P.append('</svg>')
@@ -551,7 +651,8 @@ def header():
               "XY lbl; unsigned char anchor; float lblSize; unsigned lblRgb; "
               "const char* tip; };")
     L2.append("// anchor: 0 = middle, 1 = start (left-aligned), 2 = end (right-aligned)")
-    L2.append("struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; const char* str; };")
+    L2.append("struct PanelTxt { XY mm; float size; float spacing; unsigned rgb; "
+              "unsigned char anchor; const char* str; };")
     L2.append(f"static constexpr int PART_STRIDE = {PART_STRIDE};")
     L2.append(f"static constexpr float kRingR = {RING_R:.3f}f;      // mm, LED-dot orbit")
     L2.append(f"static constexpr float kRingDotR = 0.95f;   // mm, lit-dot radius")
@@ -589,8 +690,9 @@ def header():
     emit_table("kLightCtls",  LIGHTS)
 
     L2.append("static const PanelTxt kPanelTexts[] = {")
-    for (x, y, size, spacing, col, txt) in TEXTS:
-        L2.append(f'    {{{{{x:.3f}f, {y:.3f}f}}, {size:.2f}f, {spacing:.2f}f, {rgb(col)}, "{txt}"}},')
+    for (x, y, size, spacing, col, anchor, txt) in TEXTS:
+        L2.append(f'    {{{{{x:.3f}f, {y:.3f}f}}, {size:.2f}f, {spacing:.2f}f, '
+                  f'{rgb(col)}, {ANCHOR_ID[anchor]}, "{txt}"}},')
     L2.append("};")
     L2.append("} // namespace spkyvcv")
     return "\n".join(L2) + "\n"

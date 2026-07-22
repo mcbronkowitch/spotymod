@@ -72,6 +72,18 @@ public:
     int   sustain_voice() const;
     int   sustain_count() const;
 
+    // --- observation (tests) ---
+    // Raw values behind set_sub()/set_detune(), exposed so a test can pin the
+    // Synth-only leg of the SUB/DTUN split (spec 2026-07-21
+    // morphagene-controls, Part::set_voice_sub/set_voice_detune) without
+    // reaching into private state. Not used on the audio path.
+    float sub_level() const     { return _sub_level; }
+    float detune_max_ct() const { return _detune_max_ct; }
+    // How many notes the last set_chord() pushed. Lets a test pin that
+    // Part::_flatten_for_sampler collapses the chord for the SAMPLER only and
+    // leaves the synth's chord surface intact. Not used on the audio path.
+    int chord_n() const { return _chord_n; }
+
 private:
     void _do_trigger(float pitch_norm, float vel, int chord_slot);
     void _demote_all();

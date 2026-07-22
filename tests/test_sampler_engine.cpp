@@ -426,17 +426,24 @@ TEST_CASE("sampler: MOTION 0 is tight and centred; MOTION 1 spreads") {
     CHECK(panmax > 0.7f);
 }
 
-TEST_CASE("sampler: MOTION 1 scatters some chord notes an octave away") {
+TEST_CASE("sampler: MOTION never moves a grain off its chord note") {
+    // This test used to assert the OPPOSITE -- that MOTION scattered roughly
+    // kScatterOctProb of grains an octave away. That scatter was removed
+    // (sampler_engine.cpp, _next_ratio): it defeated the morphagene-controls
+    // requirement that a sampler deck hold its pitch against a synth deck in
+    // the same key, and it did so through LANE_MOTION, which survives the
+    // PITCH lane being switched off. MOTION's other scatters stay; this pins
+    // that pitch is not among them.
     Rig g;
     g.e.set_flow(true);
-    g.feed(0.5f, 0.5f, 0.2f, 1.f);         // MOTION 1
+    g.feed(0.5f, 0.5f, 0.2f, 1.f);         // MOTION 1 -- the worst case
     const float chord[3] = { 0.45f, 0.55f, 0.65f };
     g.e.set_chord(chord, 3);
 
     auto s = collect(g, 600);
     REQUIRE(s.ratio.size() == 600);
 
-    int octaves = 0, plain = 0;
+    int plain = 0, octaves = 0;
     for (float rr : s.ratio) {
         for (int i = 0; i < 3; ++i) {
             const float base = std::pow(8.f, chord[i] - 0.5f);
@@ -445,11 +452,27 @@ TEST_CASE("sampler: MOTION 1 scatters some chord notes an octave away") {
                      std::fabs(rr - base * 0.5f) < 0.002f) ++octaves;
         }
     }
-    CHECK(plain + octaves == 600);          // nothing lands off the chord
-    // The probability is kScatterOctProb; with 600 draws the binomial band is
-    // tight enough to assert both that it happens and that it stays a spice.
-    CHECK(octaves > 600 * sampler_cfg::kScatterOctProb * 0.5f);
-    CHECK(octaves < 600 * sampler_cfg::kScatterOctProb * 1.6f);
+    CHECK(plain == 600);        // every grain on a chord note, at full MOTION
+    CHECK(octaves == 0);        // and not one octave away
+}
+
+TEST_CASE("sampler: a single note holds one exact ratio at every MOTION") {
+    // The single-note case is the one the author actually plays (COLOR 0), and
+    // the one the octave scatter broke on his panel: LANE_MOTION sits on
+    // Part's default base of 0.5 even with MOD at zero, so 12.5% of grains
+    // jumped. Sweeping MOTION across its range must not produce a second
+    // ratio.
+    for (float motion : {0.f, 0.25f, 0.5f, 0.75f, 1.f}) {
+        Rig g;
+        g.e.set_flow(true);
+        g.feed(0.5f, 0.5f, 0.2f, motion);
+        auto s = collect(g, 400);
+        REQUIRE(s.ratio.size() == 400);
+        const float first = s.ratio.front();
+        bool all_same = true;
+        for (float rr : s.ratio) if (rr != first) all_same = false;
+        CHECK(all_same);
+    }
 }
 
 TEST_CASE("sampler: MOTION 1 jitters the spawn timing, MOTION 0 does not") {
@@ -858,29 +881,45 @@ TEST_CASE("sampler: golden vector -- Rng draw order and SOURCE mapping are locke
     // last_spawn_ratio, last_spawn_len) for the first 20 spawns under FLOW.
     // Captured once from a known-good build -- see the file-level comment
     // above this test before changing any of these numbers.
+    //
+    // RECAPTURED 2026-07-21, and the file-level comment's "STOP, ask why"
+    // applies -- so here is why. _next_ratio() lost BOTH of its Rng draws when
+    // MOTION's octave scatter was removed (the roll, and the up/down direction
+    // draw). That is one of the causes that comment enumerates, and every
+    // following draw in _spawn_one shifts two positions up the stream, so all
+    // 20 tuples move. The numbers were not adjusted until the test passed;
+    // they were re-captured wholesale and then checked against what the change
+    // predicts:
+    //
+    //   The chord's three ratios are 8^(p-0.5) = 0.794, 1.109, 1.516. Every
+    //   ratio below is one of those three, at most halved once by SUB and
+    //   detuned by a few cents -- there is no factor of 2 anywhere. The old
+    //   vector spanned 0.020..2.214 (0.794 halved by both the octave roll and
+    //   SUB, up to 1.107 doubled); this one spans 0.406..1.529, narrowed by
+    //   exactly one octave at each end. pos, pan and len are unchanged in
+    //   character, only re-drawn.
     static const Spawn golden[20] = {
         // pos,            pan,          ratio,        len
-        // Updated for kScatterPosFrac 0.25 -> 1.0
-        { 12803.53027344f, -0.69252360f, 0.20196824f, 3821 },
-        {  2237.63378906f,  0.98490131f, 0.55502838f, 3821 },
-        { 13720.91796875f, -0.30681819f, 1.53079367f, 3821 },
-        {  1708.38085938f, -0.88041586f, 0.40453154f, 3821 },
-        { 19170.82031250f, -0.11837190f, 0.55053788f, 3821 },
-        { 14489.21093750f,  0.86559057f, 0.75218982f, 3821 },
-        { 15170.44531250f,  0.43894804f, 0.40997744f, 3821 },
-        {  4912.32128906f,  0.79144990f, 0.55878091f, 3821 },
-        {   870.30957031f,  0.07455552f, 1.52497661f, 3821 },
-        {  2560.60449219f,  0.83863580f, 0.40733621f, 3821 },
-        {  7252.95117188f, -0.27693748f, 0.55035543f, 3821 },
-        { 17490.03710938f, -0.75745511f, 1.52152061f, 3821 },
-        {  2490.95703125f,  0.96780789f, 0.40774995f, 3821 },
-        {  2534.66406250f,  0.42561364f, 0.55428278f, 3821 },
-        { 12696.35742188f, -0.26600885f, 1.51086748f, 3821 },
-        { 14777.22656250f, -0.27030134f, 0.81130999f, 3821 },
-        { 17399.78125000f, -0.78998744f, 1.10466695f, 3821 },
-        { 14736.56640625f, -0.03883266f, 0.76514953f, 3821 },
-        { 17097.07421875f, -0.89893818f, 0.81913930f, 3821 },
-        { 22963.72070312f, -0.89280307f, 2.21407151f, 3821 },
+        { 12803.53027344f, -0.69252360f, 0.40792397f, 3821 },
+        { 12347.84765625f, -0.53483331f, 1.11854935f, 3821 },
+        { 14493.06835938f, -0.98459131f, 1.51102293f, 3821 },
+        { 21022.68359375f,  0.71411252f, 0.80873936f, 3821 },
+        { 14869.51953125f, -0.82430881f, 1.11897147f, 3821 },
+        {  2658.53613281f,  0.29880500f, 1.51594043f, 3821 },
+        { 17732.84179688f, -0.76020461f, 0.81971961f, 3821 },
+        {   366.85937500f, -0.92472601f, 0.55725181f, 3821 },
+        { 17776.35937500f,  0.88420212f, 1.51119888f, 3821 },
+        {  6994.29687500f, -0.24982208f, 0.40905151f, 3821 },
+        {   870.30957031f,  0.07455552f, 0.55567920f, 3821 },
+        {  2460.46289062f, -0.39328730f, 0.75581837f, 3821 },
+        { 15710.42968750f,  0.25942016f, 0.80998176f, 3821 },
+        { 19427.55859375f, -0.08393264f, 1.10071087f, 3821 },
+        { 17490.03710938f, -0.75745511f, 1.52877951f, 3821 },
+        { 21073.81835938f,  0.60381067f, 0.40589118f, 3821 },
+        {  4529.81250000f, -0.02573544f, 1.11435354f, 3821 },
+        { 20963.06445312f, -0.77458274f, 1.51434517f, 3821 },
+        { 12696.35742188f, -0.26600885f, 0.81264138f, 3821 },
+        { 15659.34960938f, -0.31699651f, 0.55088216f, 3821 },
     };
 
     // Absolute, not relative, tolerance: the regression this test exists to
@@ -1553,4 +1592,726 @@ TEST_CASE("sample_data is null without injected memory") {
     CHECK(bare.sample_data() == nullptr);
     CHECK(bare.rec_size() == 0);
     CHECK(bare.is_empty());
+}
+
+TEST_CASE("sampler: DENS sets the grain overlap, and the spawn interval follows") {
+    Rig g;
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.5f);          // SIZE 0.5 -> 0.2 s -> 9600 samples
+    g.render(200);
+    const float len = g.e.grain_len_samples();
+    REQUIRE(len == doctest::Approx(9600.f).epsilon(0.05));
+
+    // Knob 1.0 -> overlap 8: the shipped density, unchanged from M5b.
+    g.e.set_overlap(1.f);
+    g.render(200);
+    CHECK(g.e.overlap() == doctest::Approx(8.f));
+    CHECK(g.e.spawn_interval_samples() == doctest::Approx(len / 8.f).epsilon(0.01));
+
+    // Knob 0.0 -> overlap 1: one grain at a time, back to back. This is the
+    // sparse regime where the ATK/DEC window shape becomes audible at all
+    // (measured: 23% crest-factor swing isolated vs 1-16% in the dense cloud).
+    g.e.set_overlap(0.f);
+    g.render(200);
+    CHECK(g.e.overlap() == doctest::Approx(1.f));
+    CHECK(g.e.spawn_interval_samples() == doctest::Approx(len).epsilon(0.01));
+
+    // Knob 0.5 -> overlap 4.5: pin the midpoint too. The two extremes above
+    // are consistent with either a linear or a symmetric-curve mapping; only
+    // a value strictly between them can catch a mis-mapped (e.g.
+    // exponential) curve, and getting this shape right is exactly the open
+    // question flagged for the listening pass (final-fixes report, Befund F).
+    g.e.set_overlap(0.5f);
+    g.render(200);
+    CHECK(g.e.overlap() == doctest::Approx(4.5f));
+}
+
+TEST_CASE("sampler: the CPU floor on the spawn interval survives at every overlap") {
+    // kSpawnMinSamples caps the spawn RATE, so it must bind hardest at the
+    // shortest grain and the highest overlap. 1 ms at 48 kHz is 48 samples;
+    // 48 / 8 = 6, which is below the floor of 8.
+    //
+    // Swept over every integer overlap 1..8 (final-fixes report, Befund F) --
+    // the previous version of this test pinned only the two edges (1 and 8)
+    // despite its name; a floor regression that only misfired at, say,
+    // overlap 5 would have passed silently.
+    for (int overlap = 1; overlap <= 8; ++overlap) {
+        const float raw = 48.f / static_cast<float>(overlap);
+        const float expect = raw < sampler_cfg::kSpawnMinSamples
+                                  ? sampler_cfg::kSpawnMinSamples : raw;
+        CHECK(test_spawn_interval(48.f, overlap) == doctest::Approx(expect));
+    }
+    // A grain long enough that the floor never binds within the overlap
+    // range at all (9600 / 8 = 1200, far above the floor of 8).
+    CHECK(test_spawn_interval(9600.f, 8) == doctest::Approx(1200.f));
+    CHECK(test_spawn_interval(9600.f, 1) == doctest::Approx(9600.f));
+}
+
+TEST_CASE("sampler: lowering overlap only loosens the pool ceiling, never tightens it") {
+    // len_ceil = _spawn_every * kGrains, and _spawn_every grows as overlap
+    // falls -- so a lower overlap can never trim a grain that a higher one
+    // would have allowed. This is the invariant that makes DENS safe to turn
+    // down under any SIZE.
+    const float len = 9600.f;
+    float prev = 0.f;
+    for (int ov = 8; ov >= 1; --ov) {
+        const float ceil_v = test_spawn_interval(len, ov) * float(SamplerEngine::kGrains);
+        CHECK(ceil_v >= prev);
+        prev = ceil_v;
+    }
+}
+
+
+TEST_CASE("sampler: the SCAN curve has a dead centre, hits 1.0x at the knee, tops at 8x") {
+    using namespace sampler_cfg;
+    // Dead zone: not "small", exactly zero. A creeping playhead at knob
+    // centre would make the frozen state unreachable.
+    CHECK(test_scan_rate(0.f)      == 0.f);
+    CHECK(test_scan_rate(0.019f)   == 0.f);
+    CHECK(test_scan_rate(-0.019f)  == 0.f);
+
+    // Knee: realtime, on both sides, exactly.
+    CHECK(test_scan_rate(kScanKnee)  == doctest::Approx(1.f).epsilon(0.001));
+    CHECK(test_scan_rate(-kScanKnee) == doctest::Approx(-1.f).epsilon(0.001));
+
+    // Ends.
+    CHECK(test_scan_rate(1.f)  == doctest::Approx(kScanMaxRate).epsilon(0.001));
+    CHECK(test_scan_rate(-1.f) == doctest::Approx(-kScanMaxRate).epsilon(0.001));
+    CHECK(test_scan_rate(kScanDead) == doctest::Approx(kScanMinRate).epsilon(0.01));
+
+    // Continuity ACROSS the knee, which the monotonicity loop below cannot
+    // see: it only catches falling steps, so a jump UP at the knee would pass
+    // it unnoticed. This is the assertion that pins the two branches together.
+    CHECK(test_scan_rate(kScanKnee + 1e-4f) == doctest::Approx(1.f).epsilon(0.002));
+    CHECK(test_scan_rate(-kScanKnee - 1e-4f) == doctest::Approx(-1.f).epsilon(0.002));
+
+    // Monotone over the whole travel, including the sign change at centre --
+    // the property that makes the knob playable. A sampled step like this
+    // can only ever catch a FALLING step; it cannot detect a rising kink at
+    // either knee (see the continuity checks above for that).
+    float prev = -1e9f;
+    for (int i = 0; i <= 400; ++i) {
+        const float n = -1.f + 2.f * float(i) / 400.f;
+        const float v = test_scan_rate(n);
+        CHECK(v >= prev - 1e-6f);
+        prev = v;
+    }
+}
+
+TEST_CASE("sampler: SCAN advances the playhead, folds at the content edge, and reverses") {
+    Rig g(24000);                     // 0.5 s of content
+    g.e.set_flow(true);
+    CHECK(g.e.scan_pos() == 0.f);
+
+    // Realtime forward: after 24000 samples the head has travelled one full
+    // content length and folded back to ~0.
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(12000);
+    const float half = g.e.scan_pos();
+    CHECK(half == doctest::Approx(12000.f).epsilon(0.02));
+    g.render(12000);
+    CHECK(g.e.scan_pos() < 600.f);    // folded, not run past the end
+
+    // Reverse walks it back down.
+    g.e.set_scan(-sampler_cfg::kScanKnee);
+    g.render(6000);
+    const float back = g.e.scan_pos();
+    CHECK(back > 12000.f);            // folded downward through zero
+}
+
+TEST_CASE("sampler: the playhead honours its [0, content) contract in reverse") {
+    // Regression pin for the fold guard: a reverse run repeatedly crosses
+    // zero, and that is exactly where a value just below zero folds to
+    // EXACTLY content in float32.
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.e.set_scan(-1.f);
+    for (int i = 0; i < 400; ++i) {
+        g.render(480);
+        CHECK(g.e.scan_pos() >= 0.f);
+        CHECK(g.e.scan_pos() < 24000.f);   // strictly below, never equal
+    }
+}
+
+TEST_CASE("sampler: a frozen SCAN leaves the playhead exactly where it was") {
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(4800);
+    const float parked = g.e.scan_pos();
+    REQUIRE(parked > 0.f);
+
+    g.e.set_scan(0.f);
+    g.render(48000);                  // a full second of nothing happening
+    CHECK(g.e.scan_pos() == parked);  // exactly, not approximately
+}
+
+TEST_CASE("sampler: an empty buffer parks the playhead instead of drifting") {
+    Rig g(0);
+    REQUIRE(g.e.is_empty());
+    g.e.set_flow(true);
+    g.e.set_scan(1.f);
+    g.render(48000);
+    CHECK(g.e.scan_pos() == 0.f);
+}
+
+TEST_CASE("sampler: clear() and load_sample() send the playhead home") {
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(4800);
+    REQUIRE(g.e.scan_pos() > 0.f);
+
+    g.e.clear();
+    CHECK(g.e.scan_pos() == 0.f);
+
+    g.e.load_sample(g.l.data(), g.r.data(), 24000);
+    g.render(4800);
+    REQUIRE(g.e.scan_pos() > 0.f);
+    g.e.load_sample(g.l.data(), g.r.data(), 24000);
+    CHECK(g.e.scan_pos() == 0.f);
+}
+
+TEST_CASE("sampler: SCAN moves what the grains actually read") {
+    // The point of the whole feature: not that a counter advances, but that
+    // the spawn position follows it. ORGANIZE stays put; only SCAN moves.
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.5f);          // SOURCE 0 -- the head sits at the start
+    g.e.set_scan(0.f);
+    g.render(4800);
+    const float parked = g.e.last_spawn_pos();
+
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(9600);
+    CHECK(g.e.last_spawn_pos() > parked + 1000.f);
+}
+
+TEST_CASE("sampler: punch() forces a grain now, even where the next one is seconds away") {
+    // This is the test that carries the feature's reason for existing. At
+    // overlap 1 and a long SIZE the scheduler is idle for the whole grain
+    // length, so every knob is dead until the next spawn. punch() is the
+    // gesture that says "read again now".
+    Rig g(kFrames);
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 1.f);           // SIZE 1.0 -> 42 s
+    g.e.set_overlap(0.f);             // overlap 1 -> _spawn_every == grain length
+    g.render(4800);
+
+    const int before = g.e.spawn_count();
+    g.render(4800);                   // 100 ms: nowhere near the next spawn
+    REQUIRE(g.e.spawn_count() == before);
+
+    g.e.punch();
+    g.render(200);                    // a couple of control ticks
+    CHECK(g.e.spawn_count() > before);
+}
+
+TEST_CASE("sampler: punch() rewinds the playhead without killing what is sounding") {
+    Rig g(24000);
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.5f);
+    g.e.set_scan(sampler_cfg::kScanKnee);
+    g.render(9600);
+    REQUIRE(g.e.scan_pos() > 0.f);
+    const int sounding = g.e.active_grains();
+    REQUIRE(sounding > 0);
+
+    g.e.punch();
+    CHECK(g.e.scan_pos() == 0.f);
+    // The distinction from clear()/load_sample(): those go through _kill_all
+    // and silence the deck. punch() is a musical gesture on a running cloud.
+    CHECK(g.e.active_grains() == sounding);
+}
+
+TEST_CASE("sampler: SCAN keeps a constant lag behind the write head while recording") {
+    // The bug this guards: record and playback heads are supposed to be
+    // independent (spec 2026-07-21 morphagene-controls), but both _scan_pos
+    // and rec_size() start at zero and, at SCAN realtime forward, grow by the
+    // identical amount every control tick. Folding _scan_pos modulo rec_size()
+    // -- the ordinary (non-recording) behaviour -- then resets it to 0 on
+    // every single tick, so the head is effectively nailed at the start the
+    // whole time a recording runs. A test that only asserted "scan_pos() > 0"
+    // would not tell that broken state apart from a real running head, since
+    // both can show a small positive number at any single instant. What
+    // actually distinguishes them is measuring the GAP between the two heads
+    // (rec_size() - scan_pos()) at several points in time and requiring it to
+    // settle on a constant: under the fold it is pinned near 0 forever; under
+    // the fix it climbs to kScanRecordLagS worth of frames and then stops
+    // moving, because ceiling = content - lag grows by exactly the amount
+    // _scan_pos does each tick once both are advancing at realtime.
+    Rig g(0);
+    REQUIRE(g.e.is_empty());
+    g.e.set_flow(true);
+    g.e.set_scan(sampler_cfg::kScanKnee);   // realtime forward, exactly 1.0x
+    g.e.set_recording(true);
+
+    const float lag_frames = sampler_cfg::kScanRecordLagS * 48000.f;   // 12000
+    std::vector<float> gaps;
+    for (int i = 0; i < 48000; ++i) {       // 1 s: well past the lag, short of
+        g.e.process_in(0.f, 0.f);           // the Rig's 2 s capacity
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        if (i % 2400 == 2399) gaps.push_back(float(g.e.rec_size()) - g.e.scan_pos());
+    }
+    g.e.set_recording(false);
+
+    REQUIRE(gaps.size() >= 10);
+    // Settled at the lag, not just "some positive gap" -- the number that
+    // tells this apart from a coincidental fold remainder.
+    for (size_t i = gaps.size() - 5; i < gaps.size(); ++i)
+        CHECK(gaps[i] == doctest::Approx(lag_frames).epsilon(0.02));
+    // ...and CONSTANT across those later points, not merely close to the
+    // target independently at each one -- the property a still-drifting
+    // value could not have.
+    const float last = gaps.back();
+    for (size_t i = gaps.size() - 5; i < gaps.size(); ++i)
+        CHECK(gaps[i] == doctest::Approx(last).epsilon(0.002));
+}
+
+TEST_CASE("sampler: SCAN slower than realtime falls behind on its own during recording") {
+    // The clamp must not turn into a second fold: when the head is naturally
+    // slower than the write head, it should fall further back with time
+    // (reading progressively older material), not get held at a fixed
+    // distance. The lag ceiling only matters when SCAN would otherwise catch
+    // up to (or reach) the write head; below realtime it never gets that
+    // close, so the clamp stays slack throughout.
+    Rig g(0);
+    g.e.set_flow(true);
+    // Comfortably inside the sub-knee exponential segment, so scan_rate() is
+    // small and positive -- confirmed indirectly by the test itself finding a
+    // growing gap; test_scan_rate() pins the curve shape separately.
+    g.e.set_scan(sampler_cfg::kScanDead + 0.05f);
+    g.e.set_recording(true);
+
+    auto gap_after = [&](int frames) {
+        for (int i = 0; i < frames; ++i) {
+            g.e.process_in(0.f, 0.f);
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+        }
+        return float(g.e.rec_size()) - g.e.scan_pos();
+    };
+
+    const float gap_early = gap_after(24000);   // 0.5 s
+    const float gap_late  = gap_after(24000);    // another 0.5 s, cumulative 1 s
+
+    // Growing without bound is exactly what distinguishes "falling behind" (no
+    // clamp engaged) from "held at the lag" (Test above) -- both give a
+    // positive gap, but only one keeps climbing.
+    CHECK(gap_late > gap_early + 1000.f);
+    g.e.set_recording(false);
+}
+
+TEST_CASE("sampler: the lag clamp never sends the playhead negative early in a recording") {
+    // content - lag is negative for the first kScanRecordLagS seconds of any
+    // recording into empty material (content grows from 0, lag is fixed at
+    // 12000 frames @ 48 kHz) -- the exact case the spec calls out as needing
+    // its own floor at 0, separate from the ceiling clamp.
+    Rig g(0);
+    g.e.set_flow(true);
+    g.e.set_scan(sampler_cfg::kScanKnee);   // realtime forward
+    g.e.set_recording(true);
+
+    const float lag_frames = sampler_cfg::kScanRecordLagS * 48000.f;
+    for (int i = 0; i < 4800; ++i) {         // 0.1 s: content stays far below lag
+        g.e.process_in(0.f, 0.f);
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        REQUIRE(float(g.e.rec_size()) < lag_frames);   // the condition under test
+        CHECK(g.e.scan_pos() == 0.f);                  // clamped to the floor, not negative
+    }
+    g.e.set_recording(false);
+}
+
+// --- Review 2026-07-22: Spawn-Rate und CPU-Boden ---
+
+TEST_CASE("F-01: the spawn rate matches nominal even with timing jitter") {
+    // Der Timing-Jitter ist symmetrisch gezogen (Rng::next_bipolar), also
+    // muss er die MITTLERE Rate unangetastet lassen. Vor dem Fix kappte der
+    // Clamp in _update_control nur die zu LANGEN Intervalle, womit die Rate
+    // bei MOTION = 1 um rund 20 % zu hoch lag.
+    //
+    // MOTION wird hier ausdruecklich gesetzt statt auf dem Lane-Default zu
+    // ruhen: F-04 aendert diesen Default, und dieser Test misst den
+    // Scheduler, nicht die Lane.
+    for (float size : {0.2f, 0.5f, 0.8f}) {
+        Rig g;
+        g.feed(0.5f, 0.f, size, 1.f, 1.f);      // MOTION = 1: maximaler Jitter
+        g.e.set_overlap(1.f);
+        g.e.set_flow(true);
+
+        const int kSamples = 48000 * 10;
+        g.render(kSamples);
+
+        const float every   = g.e.spawn_interval_samples();
+        const float nominal = float(kSamples) / every;
+        // Verlorene Spawns zaehlen mit: gemessen wird die RATE des
+        // Schedulers, nicht wie viele Slots gerade frei waren.
+        const float actual  = float(g.e.spawn_count() + g.e.dropped_spawns());
+
+        INFO("SIZE=" << size << " spawn_every=" << every
+             << " nominal=" << nominal << " actual=" << actual);
+        CHECK(actual == doctest::Approx(nominal).epsilon(0.03));
+    }
+}
+
+TEST_CASE("F-03: the CPU floor bounds the spawn rate WITH jitter applied") {
+    // sampler_config.h:73 sagt zu, kSpawnMinSamples deckle die Spawn-Rate
+    // bei 6 kHz pro Part. Vor dem Fix multiplizierte der Jitter erst NACH
+    // dem Boden, sodass real 2-Sample-Intervalle auftraten (24 kHz).
+    using namespace spky::sampler_cfg;
+    for (float motion : {0.5f, 1.f}) {
+        Rig g;
+        g.feed(0.5f, 0.f, 0.f, motion, 1.f);    // SIZE 0 -> kuerzestes Grain
+        g.e.set_overlap(1.f);                   // overlap 8 -> 48/8 = 6 < Boden
+        g.e.set_flow(true);
+
+        int prev = g.e.spawn_count() + g.e.dropped_spawns();
+        int last_i = 0, shortest = 1 << 30;
+        for (int i = 0; i < 48000 * 5; ++i) {
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+            const int now = g.e.spawn_count() + g.e.dropped_spawns();
+            if (now != prev) {
+                if (last_i != 0 && i - last_i < shortest) shortest = i - last_i;
+                last_i = i;
+                prev = now;
+            }
+        }
+        INFO("MOTION=" << motion << " shortest interval=" << shortest);
+        CHECK(float(shortest) >= kSpawnMinSamples);
+    }
+}
+
+TEST_CASE("F-01: a shrinking SIZE still cancels a long pending countdown") {
+    // Das ist der Zweck, den der Clamp urspruenglich hatte, und er muss den
+    // Fix ueberleben: faehrt SIZE herunter, darf kein Countdown des ALTEN,
+    // langen Intervalls stehenbleiben und die Wolke verstummen lassen.
+    Rig g;
+    g.feed(0.5f, 0.f, 0.9f, 0.f, 1.f);          // langes Grain, kein Jitter
+    g.e.set_overlap(0.f);                       // overlap 1 -> Intervall = Grain
+    g.e.set_flow(true);
+    g.render(96);                               // ein Control-Tick: Spawn laeuft
+    const float long_every = g.e.spawn_interval_samples();
+    REQUIRE(long_every > 100000.f);
+
+    g.feed(0.5f, 0.f, 0.3f, 0.f, 1.f);          // SIZE faellt drastisch
+    g.render(96);
+    const float short_every = g.e.spawn_interval_samples();
+    REQUIRE(short_every < long_every / 10.f);
+
+    // Innerhalb zweier neuer Intervalle muss wieder gespawnt werden.
+    const int before = g.e.spawn_count();
+    g.render(int(short_every) * 2 + 96);
+    CHECK(g.e.spawn_count() > before);
+}
+
+TEST_CASE("F-02: a gate edge does not re-phase the FLOW scheduler") {
+    // Im FLOW laeuft der Scheduler ohnehin. _spawn_ctr = 0 auf der Flanke
+    // erzwingt dort einen Sofort-Spawn, und Part liefert eine Flanke pro
+    // PITCH-Zyklus auch im FLOW -- bei langem SIZE und kleinem DENS spawnt
+    // die Wolke dadurch im Phrasenrhythmus statt nach DENS.
+    Rig g;
+    g.feed(0.5f, 0.f, 1.0f, 0.f, 1.f);          // SIZE max
+    g.e.set_overlap(0.f);                       // DENS min -> overlap 1
+    g.e.set_flow(true);
+    g.render(96);
+    const float every = g.e.spawn_interval_samples();
+    REQUIRE(every > 48000.f * 20.f);            // ~42 s Grundintervall
+
+    // Fuenf Gate-Flanken, eine alle 9600 Samples (0.2 s), wie ein PITCH-Zyklus
+    // sie liefert -- zusammen 1 s, also ein Vierzigstel des 42-s-Intervalls.
+    // Jede Flanke, die durchkaeme, waere ein Spawn, den DENS nicht bestellt hat.
+    for (int k = 0; k < 5; ++k) {
+        g.e.set_gate(true);  g.render(240);
+        g.e.set_gate(false); g.render(9360);
+    }
+    const int total = g.e.spawn_count() + g.e.dropped_spawns();
+    INFO("spawn_every=" << every << " total spawns in 1 s=" << total);
+    CHECK(total <= 2);                          // der Anfangsspawn, sonst nichts
+}
+
+TEST_CASE("F-02: a gate edge still starts a STEP burst immediately") {
+    // Die Gegenrichtung, und der Grund, warum _spawn_ctr = 0 ueberhaupt da
+    // ist: ausserhalb des FLOW muss die Flanke sofort feuern, damit STEP die
+    // komponierte Rhythmik trifft statt bis zu ein Intervall spaeter.
+    Rig g;
+    g.feed(0.5f, 0.f, 0.5f, 0.f, 1.f);
+    g.e.set_overlap(0.f);                       // langes Intervall
+    g.e.set_flow(false);
+    g.render(4800);                             // Scheduler steht (kein Gate)
+    const int before = g.e.spawn_count() + g.e.dropped_spawns();
+
+    g.e.set_gate(true);
+    g.render(4);                                // wenige Samples nach der Flanke
+    const int after = g.e.spawn_count() + g.e.dropped_spawns();
+    INFO("before=" << before << " after=" << after);
+    CHECK(after > before);
+}
+
+TEST_CASE("F-09: grain length stays under the _off stall bound at any DENS") {
+    // grain.h begruendet die Stall-Freiheit mit der Pool-Decke bei kOverlap
+    // = 8 (4 032 000). Seit DENS zur Laufzeit auf overlap 1 gehen kann, ist
+    // die Decke 32 256 000 -- weit ueber 2^23, wo _off in float32 einfriert
+    // und das Grain fuer den Rest seiner Lebensdauer DC ausgibt.
+    using namespace spky::sampler_cfg;
+    Rig g;
+    g.feed(0.f, 0.f, 1.0f, 0.f, 1.f);       // SIZE max (PITCH lane does not
+                                             // reach the sampler ratio --
+                                             // set_chord below does)
+    g.e.set_tape_mode(true);                // Tape: lenf = _grain_len / ratio
+    g.e.set_overlap(0.f);                   // DENS min -> overlap 1
+    const float lowest = 0.f;               // TUNE 0 -> ratio 2^-4 = 0.0625
+    g.e.set_chord(&lowest, 1);
+    g.e.set_flow(true);
+    g.render(48000);
+
+    REQUIRE(g.e.spawn_count() > 0);
+    INFO("last_spawn_len=" << g.e.last_spawn_len()
+         << " ceil=" << kGrainLenCeil);
+    CHECK(float(g.e.last_spawn_len()) <= kGrainLenCeil);
+}
+
+TEST_CASE("F-09: a stalled grain would emit DC -- the guard keeps it moving") {
+    // Der Verhaltenstest hinter der Zahl. Ein isoliertes Grain statt der
+    // FLOW-Wolke: bei FLOW ueberlappen bis zu kGrains phasenversetzte Kopien
+    // desselben Ratios, und ein frisch gespawnter Nachbar maskiert im
+    // Summensignal jedes einzelne eingefrorene Grain -- probeweise blieb die
+    // FLOW-Wolke bei diesem Setup ueber 40e6 Samples hoerbar in Bewegung,
+    // obwohl das aelteste Grain laengst haette einfrieren muessen. Isoliert
+    // (FLOW aus, ein Gate-Puls) zeigt sich der Stall unmaskiert.
+    //
+    // Die Pruefung selbst ist eine Disjunktion, nicht "bewegt sich noch":
+    // ein Grain, das laengst uebliche zuende gegangen ist, ist gesund, egal
+    // ob das Fenster in dem Moment gerade zufaellig ausklingt. Der Bug ist
+    // ausschliesslich "noch aktiv UND eingefroren". Das macht die Pruefung
+    // robust gegen den Mechanismus des jeweiligen Fixes: der hier gewaehlte
+    // (eine harte Laengendecke) beendet das Grain, bevor es je in die
+    // Stall-Zone kaeme, und beweist damit nicht per se, dass die
+    // Leseposition dort noch fein genug schreitet -- nur, dass niemand mehr
+    // zuhoert, wenn sie es nicht mehr taete.
+    Rig g;
+    g.feed(0.f, 0.f, 1.0f, 0.f, 1.f);        // SIZE max (see set_chord below
+                                              // for why PITCH is set there)
+    g.e.set_tape_mode(true);
+    g.e.set_overlap(0.f);                    // DENS min -> overlap 1
+    const float lowest = 0.f;                // TUNE 0 -> ratio 2^-4 = 0.0625
+    g.e.set_chord(&lowest, 1);
+    g.e.set_flow(false);
+    g.e.set_gate(true);
+    g.render(96);                            // die Flanke: ein Spawn
+    g.e.set_gate(false);
+    REQUIRE(g.e.spawn_count() == 1);
+
+    // 19 Mio. Samples vorspulen -- weit jenseits der empirisch gemessenen
+    // Einfrier-Schwelle dieses Setups (~17-18e6, siehe grain.h) und weit
+    // jenseits von kGrainLenCeil (4 194 304 = 87 s) -- und dann ein enges,
+    // 1-Sekunden-Fenster (statt "die zweite Haelfte" eines riesigen Renders)
+    // messen: ein grobes Fenster ueber Millionen Samples faengt sowohl die
+    // noch bewegte Fruehphase als auch eine spaeter eingefrorene Spaetphase
+    // ein und mittelt den Stall damit weg.
+    g.render(19000000);
+    auto v = g.render(48000);
+    float lo = 1e9f, hi = -1e9f;
+    for (float x : v) { if (x < lo) lo = x; if (x > hi) hi = x; }
+    const bool retired = g.e.active_grains() == 0;
+    INFO("active_grains=" << g.e.active_grains()
+         << " signal range at ~19e6 samples in: " << lo << " .. " << hi);
+    CHECK((retired || (hi - lo > 1e-4f)));
+}
+
+TEST_CASE("F-10: the tape ceiling binds at one octave down, not at an extreme") {
+    // Kein Verhaltensfix, sondern die Zahl, die der Kommentar am Cap nennen
+    // muss. Bei DENS max ist len_ceil = 2 * _grain_len, und Tape gibt
+    // lenf = _grain_len / ratio -- die Decke greift also schon ab ratio =
+    // 0.5, bei ganz normalem SIZE. Deshalb hier bewusst KEIN feed()-Aufruf,
+    // der SIZE aendert -- der Rig-Default (0.5) ist Teil des Befunds, nicht
+    // ein Extremwert wie SIZE 1.0 in F-09.
+    //
+    // Die PITCH-Spur von feed() erreicht das Sampler-Ratio nicht (siehe
+    // ratio_for's Kommentar und F-09's set_chord-Aufrufe): _next_ratio()
+    // liest _chord_ratio, gefuettert ueber set_chord(). Die pitch_norm-Werte
+    // unten sind also fuer set_chord, nicht die feed()-PITCH-Spur, und
+    // test_ratio_for() macht das resultierende Ratio direkt nachpruefbar,
+    // statt es aus 8^(p-0.5) zu erraten -- unterhalb von kPitchKneeLo gilt
+    // diese Formel ohnehin nicht mehr.
+    Rig g;
+    g.e.set_tape_mode(true);
+    g.e.set_overlap(1.f);                   // DENS max -> overlap 8
+    g.e.set_flow(true);
+
+    // Diesseits der Decke: unter einer Oktave abwaerts.
+    const float p_shy = 0.375f;
+    const float ratio_shy = spky::test_ratio_for(p_shy);
+    REQUIRE(ratio_shy > 0.5f);
+    g.e.set_chord(&p_shy, 1);
+    g.render(48000);
+    const float len_shy = float(g.e.last_spawn_len());
+    const float base    = g.e.grain_len_samples();
+    INFO("ratio=" << ratio_shy << " len=" << len_shy << " base=" << base);
+    // 1.2 ist die Mitte zwischen den beiden Faellen, die der Test trennen
+    // muss: ungekappt streckt Tape hier auf 1/0.771 = 1.297 * base, gekappt
+    // waere es genau 1.0 * base. Jede Grenze dazwischen taete es; 1.2 laesst
+    // zu beiden Seiten Luft fuer Rundung und die Integer-Trunkierung in
+    // _spawn_one.
+    CHECK(len_shy > 1.2f * base);           // Tape streckt noch, ungekappt
+
+    // Jenseits der Decke: eine Oktave abwaerts oder mehr -- nicht die alten
+    // vier Oktaven / 45 Minuten aus dem urspruenglichen Kommentar, sondern
+    // der naechstliegende Punkt, an dem die Decke schon bindet.
+    Rig g2;
+    g2.e.set_tape_mode(true);
+    g2.e.set_overlap(1.f);
+    g2.e.set_flow(true);
+    const float p_deep = 0.2f;
+    const float ratio_deep = spky::test_ratio_for(p_deep);
+    REQUIRE(ratio_deep < 0.5f);
+    g2.e.set_chord(&p_deep, 1);
+    g2.render(48000);
+    const float len_deep = float(g2.e.last_spawn_len());
+    const float base2    = g2.e.grain_len_samples();
+    INFO("ratio=" << ratio_deep << " len=" << len_deep << " base=" << base2);
+    CHECK(len_deep == doctest::Approx(2.f * base2).epsilon(0.01));
+}
+
+// --- SIZE is asymmetrically live -------------------------------------------
+//
+// Bastian, 2026-07-22: "wenn ich len aufdrehe dann laeuft die Geschichte ja
+// sehr lange, wenn ich len dann wieder runter drehe aktualisiert er nicht die
+// Laenge der laufenden Grains. Unter Umstaenden laeuft da was minutenlang und
+// ich kann es nicht abbrechen."
+//
+// He was right, and it was not a small window: at SIZE 1.0 a grain is 42 s
+// (kSizeCeilS), in tape mode the pool ceiling allows 84 s and kGrainLenCeil
+// 87 s. Nothing on the deck could stop it -- _release_all has exactly one
+// caller, set_hold, and that is driven only by the OTHER part's CHOKE window
+// (instrument.cpp:110). Leaving FLOW deliberately does not release either
+// (grain.h's release() comment).
+//
+// The fix is deliberately one-directional. Turning SIZE DOWN re-scales every
+// running grain as if it had been spawned at the new size; turning it UP
+// changes nothing, so the "cloud drags behind a moving lane" character the
+// Grain class was built around survives on the way up.
+//
+// These tests switch FLOW off after priming so that no new grains muddy the
+// measurement -- FLOW off stops spawning but, by design, does not touch what
+// is already running, which is exactly the isolation wanted here.
+
+// Samples until the render goes and stays quiet, or -1 if it never does.
+static int silence_after(const std::vector<float>& v, float thresh = 1e-4f) {
+    for (size_t i = v.size(); i-- > 0; )
+        if (std::fabs(v[i]) > thresh) return static_cast<int>(i) + 1;
+    return 0;
+}
+
+TEST_CASE("sampler: SIZE turned down cuts the cloud that is already sounding") {
+    // SIZE 0.8 sits on the exponential segment: 0.02 * 100^0.8 = 0.796 s,
+    // 38,218 samples. SIZE 0.2 is 0.05 s, 2,411 -- a factor of ~16 down.
+    // 3,000 and not more: the spawn interval at SIZE 0.8 is 38,218 / 8 =
+    // 4,777, so exactly ONE grain is running and the tail below measures it
+    // alone. Priming past the interval leaves a second, younger grain whose
+    // own rescaled length is what the render then shows.
+    Rig g;
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.8f);
+    g.render(3000);                       // a long grain is running
+    g.e.set_flow(false);                  // no new spawns from here on
+
+    // Control: left alone, it keeps sounding for the rest of its 38,218.
+    {
+        Rig h;
+        h.e.set_flow(true);
+        h.feed(0.5f, 0.f, 0.8f);
+        h.render(3000);
+        h.e.set_flow(false);
+        auto tail = h.render(20000);
+        REQUIRE(silence_after(tail) > 19000);
+    }
+
+    g.feed(0.5f, 0.f, 0.2f);              // SIZE down
+    auto tail = g.render(20000);
+    // 38,218 * (2,411 / 38,218) = 2,411 total, and 3,000 are already played,
+    // so the cap is in the past: the grain gets the click-free floor and is
+    // gone within a few hundred samples, not twenty thousand.
+    CHECK(silence_after(tail) < 500);
+}
+
+TEST_CASE("sampler: SIZE turned up does not stretch what is already sounding") {
+    Rig g;
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.2f);              // short grains, 2,411 samples
+    g.render(500);
+    g.e.set_flow(false);
+
+    g.feed(0.5f, 0.f, 0.8f);              // SIZE up -- must change nothing
+    auto tail = g.render(8000);
+    // The grain still ends on its own 2,411 (minus the 500 already rendered),
+    // not stretched to 38,218.
+    const int end = silence_after(tail);
+    CHECK(end > 1500);
+    CHECK(end < 2500);
+}
+
+TEST_CASE("sampler: a SIZE wobble that returns does not compound") {
+    // The rejected design multiplied the remaining life by (new / previous)
+    // on every control tick where SIZE fell. That telescopes: a lane
+    // modulating SIZE would shorten the cloud by the full ratio once per LFO
+    // cycle and the cloud would collapse over a few seconds. Scaling against
+    // the size the grain was SPAWNED at instead is idempotent -- the result
+    // depends only on where SIZE is now, not on how it got there.
+    // Both variants render the SAME number of samples and differ only in how
+    // many of the eight blocks dip SIZE. Comparing two runs of unequal length
+    // would just measure the extra rendering (the first draft did, and read
+    // as a 2,800-sample "compounding" that was nothing but elapsed time).
+    auto lifetime = [](int dips) {
+        Rig g;
+        g.e.set_flow(true);
+        g.feed(0.5f, 0.f, 0.8f);
+        g.render(500);
+        g.e.set_flow(false);
+
+        std::vector<float> all;
+        auto add = [&all](std::vector<float> v) {
+            all.insert(all.end(), v.begin(), v.end());
+        };
+        for (int i = 0; i < 8; ++i) {
+            g.feed(0.5f, 0.f, i < dips ? 0.5f : 0.8f);   // down to 0.2 s
+            add(g.render(200));           // > kCtrlInterval, so it lands
+            g.feed(0.5f, 0.f, 0.8f);      // and back up
+            add(g.render(200));
+        }
+        add(g.render(30000));
+        return silence_after(all);
+    };
+    const int none = lifetime(0);
+    const int once = lifetime(1);
+    const int many = lifetime(8);
+    REQUIRE(none > once + 1000);          // the trim did something...
+    CHECK(many > once - 200);             // ...and doing it 8x does no more
+    CHECK(many < once + 200);
+}
+
+TEST_CASE("sampler: tape keeps its smear when SIZE is trimmed") {
+    // Tape length is _grain_len / ratio, so a tape grain is legitimately
+    // LONGER than the current SIZE. Capping at SIZE itself would silently
+    // end the "low notes smear long" promise the moment the knob moved; the
+    // scaling rule keeps the proportion.
+    auto tape_life = [](float size_now) {
+        Rig g;
+        g.e.set_tape_mode(true);
+        g.e.set_flow(true);
+        g.feed(0.25f, 0.f, 0.5f);         // pitched down -> a long tape grain
+        g.render(500);
+        g.e.set_flow(false);
+        g.feed(0.25f, 0.f, size_now);
+        return silence_after(g.render(120000));
+    };
+    const int untouched = tape_life(0.5f);
+    const int halved    = tape_life(0.35f);   // 0.02*100^0.35 / 0.2 = 0.502
+    REQUIRE(untouched > 5000);
+    // Still a long grain, just proportionally shorter -- not clipped to the
+    // 0.1 s that SIZE 0.35 alone would give.
+    CHECK(halved < untouched);
+    CHECK(halved > 0.25f * static_cast<float>(untouched));
 }
