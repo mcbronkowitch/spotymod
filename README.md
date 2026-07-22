@@ -32,6 +32,18 @@ deck is deliberately not a second melodic instrument — it is the room the
 synth part plays in. Both sit behind the same five modulation lanes and the
 same voice row, so no knob goes dead when you flip the engine.
 
+On the texture deck, **STEP** doesn't step a metronome grid — it walks a
+`SliceMap` of transients marked as the buffer is recorded or loaded, so each
+phrase fire spawns exactly one grain on a real attack in the material. MOTION
+orders that walk at zero and scrambles it toward one, the same lane that
+scatters the synth's melody now scattering which slice plays next. DENS caps
+how far a roll can fill the tempo grid, biased by the slot's metric weight so
+downbeats stay solid while the offs are free to roll. Material without enough
+transients — a drone, a pad — falls back to the old even tempo grid
+automatically, so nothing goes silent or errors out just because the source
+has nothing to slice. FLOW is unchanged: it still LFOs continuously across
+the same lanes regardless of engine.
+
 Each of the two **parts** is a **SuperModulator** — one performable macro
 surface (RATE, SHAPE, DENSITY, SMOOTH, RANGE, MOD) sitting on top of
 **five independent modulation lanes**, one per target. Every lane has its own

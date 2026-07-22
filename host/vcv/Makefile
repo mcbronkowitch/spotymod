@@ -45,7 +45,8 @@ SOURCES += \
 	$(REPO)/engine/synth/voice.cpp \
 	$(REPO)/engine/synth/synth_engine.cpp \
 	$(REPO)/engine/sampler/sample_buffer.cpp \
-	$(REPO)/engine/sampler/sampler_engine.cpp
+	$(REPO)/engine/sampler/sampler_engine.cpp \
+	$(REPO)/engine/sampler/slice_map.cpp
 
 # minimal DaisySP slice the FX chain needs
 SOURCES += \

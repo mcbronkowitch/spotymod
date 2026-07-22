@@ -17,4 +17,7 @@
 # scenarios like assets_percussive_source.json, which is regenerable. A
 # scenario referencing a missing input fails loudly, which is the right
 # behaviour -- it is not silently rendered as silence.
-/host/render/scenarios/assets/
+# Generator scripts (e.g. gen_clicks.py) are code, not sample material --
+# tracked so the material they write is reproducible from a clean checkout.
+/host/render/scenarios/assets/*
+!/host/render/scenarios/assets/*.py
