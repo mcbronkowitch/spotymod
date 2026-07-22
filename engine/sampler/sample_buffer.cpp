@@ -65,7 +65,21 @@ void SampleBuffer::set_recording(bool on) {
             }
             break;
         case State::fadeout:
-            break;                       // already stopping; ignore
+            // Punch-in mitten im Fade-out: zurueck in den Fade-in, mit dem
+            // Zaehler, der gerade steht. Das ist symmetrisch zu dem, was der
+            // umgekehrte Weg unten schon tut (Stopp im Fade-in uebernimmt den
+            // Teilzaehler), und die Hann-Kurve blendet einfach von dem Pegel
+            // wieder auf, den sie erreicht hat -- kein Sprung.
+            //
+            // Vorher wurde der Wunsch verworfen, der Fade-out lief zu Ende
+            // und cut() nagelte die Loop-Laenge fest. Der VCV-Host vergleicht
+            // level-basiert gegen is_recording(), das im Fade-out noch true
+            // liefert, sodass der Re-Arm hier gar nicht mehr ankam und
+            // stattdessen ein Overdub des gekuerzten Loops begann: ein
+            // REC-Doppelklick innerhalb von 4 ms kuerzte die Aufnahme
+            // dauerhaft.
+            if (on) _state = State::fadein;
+            break;
         default:
             if (!on) {
                 _state = State::fadeout;

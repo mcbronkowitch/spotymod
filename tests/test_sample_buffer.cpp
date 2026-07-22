@@ -624,4 +624,45 @@ TEST_CASE("F-06: the shipped feedback default is untouched by the saturation kne
     CHECK(peak < 5.f);
 }
 
+// --- Review 2026-07-22: Punch-in im Fade-out ---
+
+TEST_CASE("F-08: a punch-in during the record fade-out resumes the recording") {
+    // Der fadeout-Zweig verwarf set_recording(true) stillschweigend. Danach
+    // lief der Fade-out zu Ende und cut() nagelte die Loop-Laenge fest -- ein
+    // REC-Doppelklick innerhalb von 4 ms kuerzte die Aufnahme dauerhaft.
+    constexpr size_t kSz = 48000;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+
+    b.set_recording(true);
+    for (int i = 0; i < 1000; ++i) b.write(0.5f, 0.5f);
+    b.set_recording(false);
+    for (int i = 0; i < 5; ++i) b.write(0.5f, 0.5f);   // mitten im Fade-out
+    b.set_recording(true);                              // Punch-in
+    for (int i = 0; i < 20000; ++i) b.write(0.5f, 0.5f);
+
+    INFO("rec_size=" << b.rec_size() << " recording=" << b.is_recording());
+    CHECK(b.is_recording());
+    CHECK(b.rec_size() > 1000u);
+}
+
+TEST_CASE("F-08: a completed fade-out still cuts the loop") {
+    // Die Gegenprobe: wird der Fade-out NICHT unterbrochen, muss er wie
+    // bisher zu Ende laufen und die Laenge festnageln.
+    constexpr size_t kSz = 48000;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+
+    b.set_recording(true);
+    for (int i = 0; i < 1000; ++i) b.write(0.5f, 0.5f);
+    b.set_recording(false);
+    for (int i = 0; i < 1000; ++i) b.write(0.5f, 0.5f);   // Fade-out laeuft aus
+
+    INFO("rec_size=" << b.rec_size() << " recording=" << b.is_recording());
+    CHECK_FALSE(b.is_recording());
+    CHECK(b.rec_size() == 1000u);
+}
+
 
