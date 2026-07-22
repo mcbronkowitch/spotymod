@@ -86,7 +86,18 @@ TEST_CASE("part_fx: comp default 0 leaves chain and send bit-exact") {
         float l = s, r = s, sl = 0.f, sr = 0.f;
         fx.process(l, r, sl, sr, fxv);
         CHECK(l == s);                                   // FX off + comp 0 = dry bits
-        CHECK(sl == doctest::Approx(s * std::sin(0.5f * 1.5707963f)));
+        // The send law is still sin(mix * pi/2) -- what changed (2026-07-22 CPU
+        // hunt) is who evaluates it: fast_sin instead of libm, because this call
+        // site ran 192 libm sinf per 96-sample block on the two-part instrument
+        // and was a third of the whole FX-off chain's cost. fast_sin is EXACT at
+        // the endpoints (mix 0 -> silent send, mix 1 -> unity, both still bit-
+        // exact -- the two test cases above are unchanged and still pass) and
+        // carries up to 1.2e-3 absolute error in between, which is 1e-3 relative
+        // here at mix 0.5 -- past doctest's default 1.19e-5 epsilon. The gain
+        // error is 0.009 dB on a reverb send. Widening the epsilon keeps the
+        // assertion's intent (the law, and that comp 0 does not touch it); it
+        // does not weaken it into "any gain will do".
+        CHECK(sl == doctest::Approx(s * std::sin(0.5f * 1.5707963f)).epsilon(2e-3));
     }
 }
 

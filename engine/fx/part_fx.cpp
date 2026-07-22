@@ -1,4 +1,5 @@
 #include "fx/part_fx.h"
+#include "util/fast_sin.h"
 #include <cmath>
 
 using namespace spky;
@@ -42,7 +43,13 @@ void PartFx::process(float& l, float& r, float& send_l, float& send_r,
 
     _comp.process(l, r);   // one-knob comp — BEFORE the send tap (spec: full-wet must profit)
 
-    const float g = std::sin(v[FXT_REV_SEND] * 1.5707963f);   // equal-power
+    // Equal-power send law. fast_sin(p) IS sin(2*pi*p), so 0.25 * v is
+    // exactly the quarter-turn this used to spell as v * pi/2 -- same curve,
+    // <1.2e-3 absolute error on a send gain (util/fast_sin.h). This call site
+    // runs once per sample per part: 192 libm sinf per 96-sample block on the
+    // two-part instrument, measured at ~120 cycles each, and it is a THIRD of
+    // what the whole FX-off chain (bench fx_none) costs. Do not put libm back.
+    const float g = fast_sin(v[FXT_REV_SEND] * 0.25f);
     send_l = l * g;
     send_r = r * g;
 }
