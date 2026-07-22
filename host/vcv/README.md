@@ -170,6 +170,21 @@ stale WAV sitting in patch storage.
 
 ### Known limitations
 
+- **Grain density is capped, and that caps tape's downward smear too** (since
+  2.8.0). MOTION jitters the spawn interval by ±75 % while grain length stays
+  fixed, so short intervals used to stack grains — the cloud reached 11 live
+  grains where DENS had asked for 8, and the cost of an audio block is linear
+  in that number. `kSpawnHeadroom` (`engine/sampler/sampler_config.h`) now
+  caps it at `DENS + 2`.
+
+  Two things you can hear. At DENS near maximum the densest moments are
+  slightly thinner than before — a few percent of spawns are dropped there,
+  and none at all at ordinary settings. And in **Tape** mode, transposing down
+  stops making grains longer past roughly four semitones: a long tape grain
+  *is* density, so the same ceiling bounds both. The value is an ear decision
+  and the trade table sits at the constant; raise it if you want the smear
+  back.
+
 - **Knob position holds across engines — there is no separate memory and no
   soft takeover.** This is on purpose: it's the one behaviour VCV and the
   eventual hardware can share exactly, since the hardware has no

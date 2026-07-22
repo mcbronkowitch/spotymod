@@ -38,8 +38,11 @@ is actually built today, and what is still design-only.
 | **+ COLOR-MOTION** | MOTION becomes COLOR's third destination — bipolar additive with a zero-gate, density varies per note | ✅ **done** (engine only; no new surface) |
 | **Bench** | Bench firmware — DWT cycle measurement of the engine, nine DaisySP candidates and SRAM-vs-SDRAM buffer access on real hardware | ✅ **done** (`bench/`, results in `docs/bench/`) |
 | **M5a** | Sampler — the texture deck: engine + render host (granular cloud, live resampling) | ✅ **done** (engine + desktop host; VCV wiring is M5b) |
-| **M5a — generous ranges** | SIZE, PITCH, resonance, MOTION scatter and record-feedback ranges opened from M5a's conservative first pass, each ceiling chosen from measurement rather than habit; listening renders produced for the ranges to be judged by ear | ✅ **done** (engine + render host; spec `docs/superpowers/specs/2026-07-21-sampler-generous-ranges-design.md`; branch `sampler-deck`, **not merged** — Bastian decides after listening) |
-| **M5b** | Sampler on the panel — ENG remap, REC pad, WAV load/save, patch persistence, factory sample | ⬜ planned |
+| **M5a — generous ranges** | SIZE, PITCH, resonance, MOTION scatter and record-feedback ranges opened from M5a's conservative first pass, each ceiling chosen from measurement rather than habit; listening renders produced for the ranges to be judged by ear | ✅ **done** (engine + render host; spec `docs/superpowers/specs/2026-07-21-sampler-generous-ranges-design.md`; merged) |
+| **M5b** | Sampler on the panel — ENG remap, REC pad, WAV load/save, patch persistence, factory sample | ✅ **done** (VCV host; merged) |
+| **M5c** | Morphagene-style control surface — DENS (runtime grain overlap), SCAN (running playhead with a real dead zone), NEW/punch, LEN and ORG remapped onto the voice row; SIZE made live downward so turning LEN back shortens what is already sounding | ✅ **done** (engine + VCV host; spec `docs/superpowers/specs/2026-07-21-sampler-morphagene-controls.md`) |
+| **Sampler bench + grain cap** | The texture deck priced on the Daisy (7 rows + 6 ablations), and the grain-count spike it exposed capped via `kSpawnHeadroom` | ✅ **done** (`bench/workloads_sampler.cpp`, `docs/bench/2026-07-22-*`) |
+| **CPU hunt round 3** | Three measured removals: libm `sinf` on the reverb send per sample, a filter computing five outputs to use one (`engine/util/svf_lp.h`), and control-rate libm re-run on unchanged inputs | ✅ **done** (engine; released in 2.8.0) |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
 
 Milestone order follows the design spec's build order (audible first, hardware
@@ -571,21 +574,38 @@ Seed at 480 MHz, 48 kHz, block 96 (`docs/bench/2026-07-19-6e38090.md`):
 Numbers, method and the full nine-candidate DaisySP table live in
 `docs/bench/`; how to run the bench yourself is in `bench/README.md`.
 
-## Planned
-
-### M5 — Sampler: the texture deck ⬜
+### M5 — Sampler: the texture deck ✅
 A granular cloud as a third engine behind `engine_iface` — not a second
-melodic instrument, but the room the synth part plays in. Fresh grain
-scheduler (8 grains/part, chord-locked and scale-quantized, MOTION as an
-order→chaos scatter macro) over a copied `Buffer` record core; live IN L/R
-recording is the primary path, WAV loading the second, and the cloud plays
-while recording. The voice row (ATK DEC FILT RES SUB DTUN) is remapped to
-analogous cloud meanings so no knob goes dead. Panel cost: the existing ENG
-pad plus one REC button per part.
+melodic instrument, but the room the synth part plays in. Grain scheduler
+(16 slots/part, chord-locked, MOTION as an order→chaos scatter macro) over a
+ported `Buffer` record core; live IN L/R recording is the primary path, WAV
+loading the second, and the cloud plays while recording. The voice row
+(ATK DEC FILT RES SUB DTUN) is remapped to analogous cloud meanings so no knob
+goes dead. Panel cost: the existing ENG pad plus one REC button per part.
+
+Shipped in three passes — **M5a** engine + render host, **M5b** the VCV panel
+(ENG/REC, WAV load/save, patch persistence, factory sample), **M5c** the
+Morphagene-style surface (DENS, SCAN, NEW, LEN/ORG). Released in **2.8.0**.
 
 Spec: `docs/superpowers/specs/2026-07-18-sampler-texture-deck-design.md`
 (supersedes the older Deck/Vox adapter spec, whose slice-player trigger model
-predates the melody rework, the groove engine, CHOKE and the chord layer).
+predates the melody rework, the groove engine, CHOKE and the chord layer),
+extended by `2026-07-21-sampler-morphagene-controls.md`.
+
+Two things a later reader should not have to re-derive:
+
+- **Grain count is capped** (`kSpawnHeadroom`, `engine/sampler/sampler_config.h`).
+  MOTION jitters the spawn *interval* by ±75 % while grain *length* stays
+  fixed, so short intervals stacked grains — the live count wandered 5..11
+  where DENS asked for 8, and per-block cost is linear in it. The cap also
+  bounds how far tape mode may stretch a grain; those are the same resource,
+  and the value is an ear decision with its table at the constant.
+- **The deck's worst case still exceeds the block budget** (107 % max against
+  the synth's 94 %). The overrun is steady FX-chain load, not the cloud:
+  dropping either FLUX or the reverb from that patch clears it. See
+  `docs/bench/2026-07-22-8668367.md`.
+
+## Planned
 
 ### M6 — Firmware shell ⬜
 Thin Daisy shell hosting `engine/` next to the original `app.cpp` (kept

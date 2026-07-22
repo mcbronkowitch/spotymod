@@ -9,7 +9,7 @@ beside the code instead of in a context window.
 
 `docs/roadmap.md` is the forward-looking, feature-level counterpart: it
 already gives the authoritative "what's built, what's planned" status table
-and per-milestone feature descriptions through M5a and Bench. Where this
+and per-milestone feature descriptions through M5 and the CPU rounds. Where this
 document repeats a milestone's scope, treat roadmap.md as the summary and
 this file as the archive of *how it got there* — commit SHAs, false starts,
 reviewer verdicts, and the specific by-ear/play-test iterations, none of
@@ -833,7 +833,7 @@ Deferred to user: the 4 live Rack checks (label legibility, group legends,
 loading a pre-redesign patch, jack tooltips); tag `v2.5.0` is the user's
 call.
 
-## M5a — Sampler texture deck + generous parameter ranges (2026-07-21, merged commit `499e5a7`, not pushed)
+## M5a — Sampler texture deck + generous parameter ranges (2026-07-21, merged commit `499e5a7`; pushed and released 2026-07-22 in v2.8.0)
 
 Two specs, both in the fork: `2026-07-18-sampler-texture-deck-design.md`
 (the deck) and `2026-07-21-sampler-generous-ranges-design.md` (the
@@ -878,7 +878,7 @@ diffed line-for-line against CMake. Also needs: ENG remap to
 Synth↔Sampler, REC pad + LED via `gen_panel.py`, `dr_wav` vendored,
 `dataToJson`/`dataFromJson` from scratch, factory sample + autoload.
 
-## M5b — Sampler on the VCV panel (2026-07-21, branch `sampler-vcv`, not merged)
+## M5b — Sampler on the VCV panel (2026-07-21, branch `sampler-vcv`; merged into `main` and released 2026-07-22 in v2.8.0)
 
 Plan `docs/superpowers/plans/2026-07-21-sampler-vcv-binding.md` (9 tasks,
 subagent-driven, one implementer + one independent reviewer per task,
@@ -1039,3 +1039,131 @@ persistence and memory-footprint claims) followed in a second commit.
 Whole-branch commit range as of the fix commit: `35e7b2a`..`6137017`, 17
 commits — recount before citing this number in a future session, since the
 docs commit that lands after it adds one more.
+
+## M5c — Morphagene control surface (2026-07-21/22, branch `sampler-controls`, merged `ec4f633`)
+
+Spec `docs/superpowers/specs/2026-07-21-sampler-morphagene-controls.md`.
+Turns the M5b deck from "a cloud with knobs" into a playable surface:
+**DENS** makes grain overlap a runtime value (1..8) where it had been the
+compile-time `kOverlap`; **SCAN** adds a running playhead with a real dead
+zone at centre, an exponential lower segment so 1.0x realtime lands on a
+findable knob position, and a fixed lag behind the write head while recording
+(folding modulo content pins the head to the write head and the cloud goes
+near-silent — that was found by test, not by ear); **NEW/punch** returns the
+playhead to ORGANIZE and spawns immediately without killing what is already
+sounding, which is what makes the long-grain end of SIZE playable at all.
+LEN and ORG take over the SUB/DTUN knob positions in the sampler, so those two
+stop reaching the deck entirely (`_sub_n`/`_detune_n` stay at 0).
+
+**SIZE became live downward** (`63b7dd0`), from Bastian's own report: "wenn ich
+len aufdrehe dann laeuft die Geschichte ja sehr lange, wenn ich len dann
+wieder runter drehe aktualisiert er nicht die Laenge der laufenden Grains."
+He was right and it was not a small window — at SIZE 1.0 a grain runs 42 s and
+nothing on the panel could stop it. `Grain::trim_total` now lets the engine
+shorten a running grain from outside; only shortening, so the drag-behind
+character survives on the way up.
+
+## Sampler bench family + the grain-count cap (2026-07-22)
+
+**The bench had stopped linking** the moment `Part` began carrying a
+`SamplerEngine`: `.bss` overflowed the 256K SRAM region by 6168 bytes and the
+sampler sources were never in `CPP_SOURCES`. Fixed by adding an *additive*
+`.sram_exec_bss` section to `alt_sram.lds` and moving the bench's 64 KB arena
+into it. `SRAM_EXEC` and `SRAM` are the same physical AXI SRAM split by a
+bookkeeping line, so no measurement condition changed; the shipping firmware
+emits nothing into the new section and its map is unchanged (verified by
+building it). `SRAM_EXEC` now sits at 93 % — the next overflow will be code,
+and there is no third half.
+
+Seven rows (`bench/workloads_sampler.cpp`) plus six ablations. Headline:
+`inst_sampler_worst` ran 92 % of the block budget on the mean block and
+**117 % on the worst**, where the same box on the synth ran 93 / 98.
+
+**The first diagnosis was wrong, and the ablations are what said so.** It was
+called a spawn burst; removing MOTION moved the peak by 0.3 points, and 75x
+fewer spawns made the peak *worse* (141 %). The actual cause, counted exactly
+rather than timed (`Grain::process` calls per 96-sample block, 1000 blocks):
+the spawn *interval* carries MOTION's +-75 % jitter while grain *length* does
+not, so short intervals stack grains — live count wandered 5..11 where DENS
+asked for 8, spread 1.36x with the jitter and 1.01x without.
+
+`kSpawnHeadroom` caps the live count at `ceil(overlap) + n`. Two traps it left
+behind, both now in `bench/README.md`: an instrument-level `_nomotion` row
+does **not** remove MOTION (`Part::_active` defaults to all-true, so zeroing a
+target's base leaves its lane driving it — the first such row measured the
+unablated peak and read as "not MOTION"), and after a cap a high peak-to-mean
+ratio means a **low mean**, not a high peak.
+
+Two consequences owned rather than designed away: `len_ceil` now measures the
+*reachable* pool rather than `kGrains` (leaving it at `kGrains` dimensioned
+grains for 16 live voices while the cap allowed 9, and the tape corner then
+dropped spawns even at MOTION 0), and that shortens tape's downward smear —
+a long tape grain **is** density, so both cannot be capped and let run.
+Bastian chose `kSpawnHeadroom = 2` over 1 after seeing the trade table: four
+semitones of tape smear instead of two, paying 1.18 instead of 1.14 solo
+peak-to-mean. The table and the attribution live at the constant.
+
+Also fixed on the way: dropping a spawn left `_spawn_jitter` frozen, so a
+negative draw repeated its short interval until one got through — a symmetric
+jitter turned into a one-sided **+3.5 % speed-up**, caught by the existing
+F-01 test. Set to 0 rather than redrawn, because a redraw consumes an Rng
+value and shifts the locked golden vector from the first drop on.
+
+## CPU hunt round 3 (2026-07-22, subagent-driven)
+
+Dispatched with the bench, the current numbers, the dead ends above, and the
+methodology rules that came out of them. Found its consumers by **counting
+call sites per block** against `setup_inst_worst`, not by timing. Three
+removals, each measured before and after on the Seed:
+
+1. **`engine/fx/part_fx.cpp:45` called libm `sinf` every sample** for the
+   equal-power reverb-send law — 192 calls per block on the two-part
+   instrument, about a third of the whole FX-off chain. `fast_sin` already
+   existed and `fast_sin(v*0.25)` is exactly `sin(v*pi/2)`. -0.65 pp per part.
+2. **`daisysp::Svf` computed five outputs to use one**, plus a provably-zero
+   `drive*band^3` (both call sites `SetDrive(0.f)` once and never again), plus
+   a `powf(res,0.25)` recomputed on every `SetFreq` although it depends on
+   resonance alone. 768 calls per block. Replaced by `engine/util/svf_lp.h`,
+   whose `Low()` is bit-identical to the original for every call sequence this
+   engine makes (pinned by `tests/test_svf_lp.cpp` against the real
+   `daisysp::Svf`). `synth_4_voices` -1.98 pp.
+3. **Exact change guards** on `Env::set_times`, `MorphOsc::set_detune_cents`
+   and `SvfLp::SetRes`, which were re-running `expf`/`powf` on unchanged
+   inputs at control rate. -0.26 pp.
+
+Measured (`docs/bench/2026-07-22-8668367.md`): `instrument_worst` 98.1 -> **93.7 %**
+max, `instrument_worst_taps` 103.4 -> **99.2 %** (inside the budget for the
+first time), `inst_sampler_worst` 113.1 -> **106.8 %** (still over),
+`instrument_init` 74.7 -> 70.0 %. Anchored `instrument_worst` 98.1 -> 94.0 %.
+
+**One test moved and it is a real trade:** the send-law test asserted against
+libm at doctest's 1.19e-5 epsilon; `fast_sin` carries 1.2e-3, i.e. **0.009 dB**
+on a reverb send. Epsilon widened to 2e-3 with the reasoning at the call site;
+the mix-0 and mix-1 endpoint tests are untouched and still exact. 24 of 66
+bench checksums moved as a result — expected when an approximation is swapped,
+not a silent regression, and the `sampler_win_sram`/`sampler_win_sdram`
+same-checksum invariant still holds.
+
+**Two premises it checked and rejected** — both had been handed to it as
+leads, and both were wrong. The "TapBank costs more in context than solo"
+lead was an arithmetic error in the briefing (one bank solo, 3.49 pp, compared
+against *two* banks in context, 5.29 pp — two solo would be 6.98, so the taps
+are *cheaper* in context; there was no coupling to explain). And
+`instrument_init` at 63 % is not a mystery but the sum of its parts.
+
+Left as proposals because they trade something: `MorphOsc`'s `powf` -> fast
+exp2 (~0.6 pp, but a tuning path), `Comp`'s `log10f`+`powf` (~0.4 pp), and the
+sampler's remaining overrun.
+
+## Released v2.8.0 (2026-07-22)
+
+`plugin.json` 2.7.0 -> 2.8.0 (MINOR: the texture deck is new user-facing
+capability), commit `5fdaafa`, annotated tag `v2.8.0`. `main` pushed to
+`origin` (146 commits ahead — M5a, M5b, M5c, the sampler bench, the grain cap
+and CPU round 3 had all been sitting local). CI green on all four jobs,
+Release published with `win-x64`, `mac-arm64` and `lin-x64` assets.
+
+Open at the release: the sampler's worst case is still 107 % of the block
+budget against the synth's 94 %. The ablations put that on steady FX-chain
+load rather than on the cloud — dropping either FLUX or the reverb from that
+patch clears it — so it is a design decision, not a bug to chase.
