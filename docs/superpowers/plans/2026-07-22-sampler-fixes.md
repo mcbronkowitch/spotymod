@@ -852,13 +852,15 @@ Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>"
 > | Knopf | ohne Fix | Knee 0.98 | Knee 0.90 | tanh unbedingt |
 > |---|---|---|---|---|
 > | 0.95 = Auslieferungs-Default | 2.74 | 2.74 | 2.74 | **1.18** |
-> | höchste Spitze | 234 @ 0.9705 | 9.40 @ 0.965 | 3.53 @ 0.955 | keine |
-> | Anschlag 1.0 | 2.31 | 1.76 | 1.76 | 1.76 |
-> | Inversionsfaktor | 101 | 5.3 | 2.0 | 1.0 |
+> | höchste Spitze | 132.2 @ 0.9705 | 16.79 @ 0.9675 | 4.16 @ 0.9575 | keine |
+> | Anschlag 1.0 | 1.756 | 1.756 | 1.756 | 1.756 |
+> | Inversionsfaktor | 75 | 9.6 | 2.4 | 1.0 |
 >
-> **Umgesetzt ist Knee 0.90.** Es schlägt 0.98 ohne Gegenleistung — halb so hohe Spitze bei gleicher Bauart, und der Default bleibt bei beiden unberührt (0.95 bildet auf ~0.817 ab, unter jeder der beiden Schwellen). Es macht außerdem die Testschranke ableitbar statt willkürlich: `0.5/(1−0.9) = 5`.
+> Der Anschlag ist überall dieselbe Zahl, weil der Koeffizient dort 1.33 beträgt und über jeder Schwelle liegt — alle Varianten laufen an dieser Stelle durch denselben Code.
 >
-> **Offen für Bastians Ohr:** eine Restunstetigkeit bleibt. Direkt unter der Schwelle steht der ungesättigte Fixpunkt bei 5, direkt darüber fängt tanh bei ~1.3 — ein Sprung um Faktor 2.8 gegen Faktor 101 vorher. Ganz verschwindet sie nur mit unbedingtem tanh, und das kostet den Auslieferungs-Default 57 % seines Pegels. Das ist eine Hörentscheidung, keine technische.
+> **Umgesetzt ist Knee 0.90.** Es schlägt 0.98 ohne Gegenleistung — halb so hohe Spitze bei gleicher Bauart, und der Default bleibt bei beiden unberührt (0.95 bildet auf ~0.817 ab, unter jeder der beiden Schwellen). Es macht außerdem die Testschranke ableitbar statt willkürlich: `0.5/(1−0.9) = 5`, und der Test prüft diese Schranke zusätzlich gegen eine feste Obergrenze von 6, damit eine Rückkehr zu 0.98 (Schranke 25) sofort auffällt.
+>
+> **Offen für Bastians Ohr:** eine Restunstetigkeit bleibt. Direkt unter der Schwelle steht der ungesättigte Fixpunkt bei 5, direkt darüber fängt tanh bei ~1.3 — ein Sprung um Faktor 3.2 gegen Faktor 75 vorher. Ganz verschwindet sie nur mit unbedingtem tanh, und das kostet den Auslieferungs-Default 57 % seines Pegels. Das ist eine Hörentscheidung, keine technische.
 
 **Hintergrund für den Umsetzer:** `fast_tanh` greift nur bei `_feedback > 1.f`. Direkt darunter ist der Overdub ein unbegrenzter Integrator mit Fixpunkt `in/(1-fb)`. Gemessen nach 60 s Overdub eines 0.5-Signals: Knob 0.9700 → Peak ~87, Knob 0.9705 → 234 (asymptotisch ~579), Knob 0.9710 → 2.3 (tanh greift), Knob 1.0 → 2.31. Das lauteste erreichbare Verhalten liegt also in einem ~0.001 breiten Fenster **unterhalb** des Anschlags, und das Überschreiten von Unity macht den Puffer um Faktor ~100 leiser. `sampler_config.h:22-25` verspricht dort „ein Loop, der ewig steht" — er wächst.
 

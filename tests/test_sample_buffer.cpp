@@ -536,12 +536,24 @@ TEST_CASE("F-06: no feedback setting lets the buffer grow without bound") {
     constexpr size_t kSz  = 4800;
     constexpr float  kIn  = 0.5f;
 
-    // Die Schranke ist aus kFbSatKnee abgeleitet, nicht gewaehlt: unterhalb
-    // der Schwelle laeuft der Overdub ungesaettigt auf seinen Fixpunkt
-    // kIn / (1 - fb), und das groesste fb, das die Schwelle noch passieren
-    // laesst, ist kFbSatKnee selbst. Wer die Schwelle verschiebt, verschiebt
-    // damit auch diese Zahl -- sie darf nicht als runder Wert hier stehen.
+    // Die Schranke ist aus kFbSatKnee abgeleitet: unterhalb der Schwelle
+    // laeuft der Overdub ungesaettigt auf seinen Fixpunkt kIn / (1 - fb),
+    // und das groesste fb, das die Schwelle noch passieren laesst, ist
+    // kFbSatKnee selbst.
+    //
+    // Was diese Schranke leistet und was nicht, damit niemand mehr hinein
+    // liest als drin steht: sie prueft, dass das Gate dort greift, wo es
+    // definiert ist -- eine Selbstkonsistenzpruefung des Mechanismus. Als
+    // Regressionswaechter auf die HOEHE der Schwelle taugt sie nicht, denn
+    // sie waechst mit ihr mit: bei kFbSatKnee = 0.98 waere sie 25, und die
+    // dort gemessene Spitze von 16.8 kaeme bequem durch. Dagegen stehen die
+    // beiden Pruefungen unten.
     const float ceiling = kIn / (1.f - kFbSatKnee);
+
+    // Erstens: die Schwelle selbst muss vernuenftig bleiben. Diese Zeile
+    // kostet keine Rechenzeit und faengt eine Rueckkehr zu 0.98 (ceiling 25)
+    // sofort ab, ohne dass 41 x 60 s Audio dafuer laufen muessten.
+    CHECK(ceiling <= 6.f);
 
     float peak_at_top = 0.f, worst = 0.f, worst_knob = 0.f;
     for (int step = 0; step <= 40; ++step) {
@@ -561,8 +573,12 @@ TEST_CASE("F-06: no feedback setting lets the buffer grow without bound") {
         INFO("knob=" << knob << " peak=" << peak << " ceiling=" << ceiling);
         CHECK(peak <= ceiling);
         if (peak > worst) { worst = peak; worst_knob = knob; }
-        peak_at_top = peak;                 // die letzte Runde ist knob 1.0
+        // Explizit auf knob 1.0 gebunden statt auf "die letzte Runde": wer
+        // die Sweep-Grenzen aendert, wuerde sonst die Bedeutung der zweiten
+        // Pruefung unten still verschieben, ohne dass irgendetwas meckert.
+        if (knob >= 1.f - 1e-6f) peak_at_top = peak;
     }
+    REQUIRE(peak_at_top > 0.f);             // der Sweep hat knob 1.0 erreicht
 
     // Und der eigentliche Befund, der mit einer blossen Obergrenze nicht
     // gefasst waere: das Geraet darf unterhalb des Anschlags nicht drastisch
@@ -571,8 +587,10 @@ TEST_CASE("F-06: no feedback setting lets the buffer grow without bound") {
     // Unity hinaus schlagartig leiser statt lauter.
     //
     // Faktor 3 ist keine runde Zahl aus dem Nichts: gemessen liegt das
-    // Verhaeltnis bei kFbSatKnee = 0.90 bei 3.53 / 1.76 = 2.0, mit Reserve
-    // fuer Rundung und fuer eine spaetere kleine Verschiebung der Schwelle.
+    // Verhaeltnis bei kFbSatKnee = 0.90 bei 4.16 / 1.76 = 2.4, bei 0.98
+    // dagegen bei 16.79 / 1.76 = 9.6 und ohne Fix bei 132.2 / 1.76 = 75.
+    // Die Grenze trennt also die umgesetzte Wahl von beiden Alternativen,
+    // mit Reserve fuer Rundung, aber nicht so viel, dass 0.98 durchkaeme.
     // Eine Restunstetigkeit bleibt bewusst zugelassen (siehe den Kommentar
     // an kFbSatKnee); sie ganz zu beseitigen verlangt unbedingtes tanh und
     // kostet den Auslieferungs-Default 57 % Pegel -- eine Hoerentscheidung.
@@ -605,4 +623,5 @@ TEST_CASE("F-06: the shipped feedback default is untouched by the saturation kne
     CHECK(peak > 2.f);
     CHECK(peak < 5.f);
 }
+
 

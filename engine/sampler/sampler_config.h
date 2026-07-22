@@ -36,13 +36,21 @@ constexpr float  kFbMaxDb  = 2.5f;
 // unterhalb des Anschlags.
 //
 // Der Wert ist gemessen, nicht geraten. Peak nach 30 s Overdub eines
-// 0.5-Signals, ueber den Knopfweg 0.88 .. 1.00, fuer drei Kandidaten:
+// 0.5-Signals, alle vier Varianten auf demselben Raster (0.94 .. 0.97 in
+// Schritten von 0.0025, darueber 0.0005, weil die Spitze schmal ist):
 //
-//              Default (Knopf 0.95)   hoechste Spitze   Anschlag 1.0
-//   ohne       2.74                   234 @ 0.9705      2.31
-//   0.98       2.74                   9.40 @ 0.965      1.76
-//   0.90       2.74                   3.53 @ 0.955      1.76
-//   unbedingt  1.18                   keine             1.76
+//              Default (0.95)   hoechste Spitze     Anschlag 1.0   Inversion
+//   ohne       2.74             132.2 @ 0.9705      1.756          75x
+//   0.98       2.74              16.79 @ 0.9675     1.756          9.6x
+//   0.90       2.74               4.16 @ 0.9575     1.756          2.4x
+//   unbedingt  1.18             keine               1.756          1.0x
+//
+// Der Anschlag ist in allen vier Zeilen dieselbe Zahl, und das ist kein
+// Messfehler: bei Knopf 1.0 ist der Koeffizient 10^(2.5/20) = 1.33 und
+// liegt damit ueber JEDER der Schwellen, also laeuft dort ueberall
+// derselbe Code. Eine frueherer Fassung dieser Tabelle trug hier 2.31 fuer
+// "ohne" -- eine 60-s-Messung, die versehentlich neben die 30-s-Spalten
+// geraten war. Wer die Tabelle erweitert: dieselbe Dauer, dasselbe Raster.
 //
 // 0.90 gewinnt gegen 0.98 ohne Gegenleistung: gleiche Bauart, halb so hohe
 // Spitze, und der Auslieferungs-Default bleibt bei beiden unberuehrt --
@@ -53,13 +61,13 @@ constexpr float  kFbMaxDb  = 2.5f;
 //
 // Ehrlich bleibt: eine Restunstetigkeit an der Schwelle. Direkt darunter
 // steht der unsaturierte Fixpunkt in/(1-fb) = 5, direkt darueber faengt
-// tanh bei ~1.3 -- ein Sprung um Faktor 2.8, gegen Faktor 101 vorher. Ganz
+// tanh bei ~1.3 -- ein Sprung um Faktor 3.2, gegen Faktor 75 vorher. Ganz
 // verschwindet sie nur mit unbedingtem tanh, und das kostet den Default
 // 57 % seines Pegels. Das ist eine Hoerentscheidung und keine technische,
 // deshalb steht sie hier als Option und nicht als Code.
 //
 // Ear-tunable, aber nach oben gebunden: ueber ~0.95 waechst die Spitze
-// wieder schnell (bei 0.98 schon auf 9.4), unter ~0.8 beginnt die Faerbung
+// wieder schnell (bei 0.98 schon auf 16.8), unter ~0.8 beginnt die Faerbung
 // in gehoerte Einstellungen zu greifen.
 constexpr float  kFbSatKnee = 0.90f;
 
