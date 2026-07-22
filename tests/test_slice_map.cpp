@@ -142,3 +142,47 @@ TEST_CASE("slice map: a ring wrap clears the region the head re-passes") {
     CHECK(m.start(1) >= 24000 - size_t(pre));
     CHECK(m.start(1) <= 24000);
 }
+
+// Spec (2026-07-22 slice-groove, Tests): "Staerke-Ordnung" -- the strength
+// byte must ORDER transients, so a later reader (a chop kit picking the
+// hardest hits, say) can rank them. Nothing pinned it: every other case here
+// asserts positions and counts, and a detector that wrote a constant
+// strength would pass all of them.
+//
+// Measured over a steady background rather than silence on purpose: with a
+// silent floor _env_slow is ~0, SliceMap::_detect saturates the ratio at 8 and
+// every marker comes out 255. The floor is what makes the ratio informative.
+TEST_CASE("slice map: strength orders the transients") {
+    const float bg = 0.05f;
+    const std::vector<float> amp = { 0.15f, 0.4f, 1.0f };   // soft, mid, hard
+    std::vector<SampleBuffer::Frame> v(60000, SampleBuffer::Frame{ bg, bg });
+    for (size_t k = 0; k < amp.size(); ++k) {
+        const size_t c = 9600 + k * 14400;                  // 300 ms apart
+        for (size_t i = c; i < c + 480; ++i) {
+            const float a = bg + amp[k] * std::exp(-float(i - c) / 120.f);
+            v[i].l = a; v[i].r = a;
+        }
+    }
+    SliceMap m;
+    m.init(48000.f);
+    m.scan(v.data(), v.size());
+    // Four, not three: the buffer's own start is a transient too -- the
+    // detector boots with both envelopes at 0 and the background switching on
+    // at frame 0 is a genuine onset by its rule. Marker 0 is that; the three
+    // hits follow.
+    REQUIRE(m.count() == 4);
+    INFO("strengths: " << int(m.strength(0)) << " " << int(m.strength(1))
+         << " " << int(m.strength(2)) << " " << int(m.strength(3)));
+    CHECK(m.strength(1) < m.strength(2));
+    CHECK(m.strength(2) < m.strength(3));
+    // Measured: 0 / 1 / 6 for the three hits (255 for the buffer start, whose
+    // _env_slow really is ~0). The ORDER is what this pins, and the order is
+    // what the spec asks for -- but the spread is worth naming rather than
+    // discovering later: _detect fires on the first sample where
+    // _env_fast > kOnsetThresh * _env_slow, so the ratio it then measures is
+    // barely past the threshold whatever the hit, and the byte only separates
+    // by the ONE-SAMPLE overshoot, which scales with the attack slope. A
+    // reader that wants a wide "how hard was this hit" number needs the
+    // detector to measure the peak after the crossing, not at it. That is a
+    // behaviour change and belongs to the instrument's author, not here.
+}

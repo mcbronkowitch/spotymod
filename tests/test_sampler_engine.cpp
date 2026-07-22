@@ -814,9 +814,12 @@ TEST_CASE("sampler: detune_factor matches std::pow over the full DTUN range") {
 // The property is genuinely owned elsewhere: "sampler: golden vector -- Rng
 // draw order and SOURCE mapping are locked" pins the exact ratio of each of
 // the first 20 spawns over a 3-note chord (0.20 / 0.55 / 1.53 ... -- visibly
-// per-note, so a constant or a wrong cache entry fails it), and "a latched
-// single-note STEP burst holds its ratio while PITCH drifts underneath it"
-// covers the separate _burst_ratio cache.
+// per-note, so a constant or a wrong cache entry fails it), and "sampler: a
+// latched single-note STEP roll holds its ratio while PITCH drifts underneath
+// it" covers the separate _burst_ratio cache. (That case was named "...STEP
+// burst..." until Task 9 moved its vehicle from the deleted free-running burst
+// to a roll; this cross-reference kept the dead name until the whole-branch
+// review caught it.)
 
 // Task 9 rewrite of "...a latched single-note STEP burst holds its ratio while
 // PITCH drifts underneath it". The property is unchanged and still real; only
@@ -2788,6 +2791,21 @@ TEST_CASE("sampler STEP: an off-beat at DENS max rolls at exactly step/subdiv") 
     CHECK(g.e.spawn_count() == start + 4);   // gate fall stops the roll dead
 }
 
+// The two halves below are a PAIR, and only together do they discriminate.
+//
+// The arming block reads `max_subdiv >= 2 && rdraw < p_roll`, with
+// p_roll = (1 - weight) * dens_n. At DENS min BOTH conditions fail on their
+// own -- max_subdiv is 1 AND dens_n is 0 -- so the first half alone passes on
+// a build with either guard deleted. It is a test of the all-rolls-off state,
+// not of the subdivision guard it looks like it covers.
+//
+// The second half sits in the window where the two disagree: overlap 1.35
+// gives dens_n = 0.05 (nonzero, so p_roll is a real probability and the dice
+// genuinely land under it) while max_subdiv is still int(1.35 + 0.5) == 1.
+// Delete the `max_subdiv >= 2` guard and that window starts arming rolls at
+// period = step / 1 -- a "roll" that retriggers once per step, i.e. a doubled
+// note. The third half then shows the block is not simply dead just above the
+// minimum: at overlap 1.7 the subdivision reaches 2 and rolls DO appear.
 TEST_CASE("sampler STEP: DENS min never rolls, whatever the dice say") {
     StepRig g;
     g.e.set_overlap(0.f);              // DENS min -> subdiv cap 1
@@ -2798,6 +2816,189 @@ TEST_CASE("sampler STEP: DENS min never rolls, whatever the dice say") {
         g.note_off();
         g.render(128);
     }
+}
+
+TEST_CASE("sampler STEP: DENS above the floor but below subdiv 2 still never rolls") {
+    StepRig g;
+    g.e.set_overlap(0.05f);            // overlap 1.35: dens_n 0.05, subdiv 1
+    g.render(96);
+    REQUIRE(g.e.overlap() == doctest::Approx(1.35f).epsilon(1e-4));
+    for (int i = 0; i < 64; ++i) {
+        g.fire(i % 8, 8, 0.f);         // weight 0: the dice are as generous as
+        CHECK(g.e.retrig_period() == 0);   // they get at this DENS
+        g.note_off();
+        g.render(128);
+    }
+}
+
+TEST_CASE("sampler STEP: DENS just past subdiv 2 does roll -- the block is live") {
+    StepRig g;
+    g.e.set_overlap(0.1f);             // overlap 1.7: dens_n 0.1, subdiv 2
+    g.render(96);
+    REQUIRE(g.e.overlap() == doctest::Approx(1.7f).epsilon(1e-4));
+    int rolls = 0;
+    for (int i = 0; i < 64; ++i) {
+        g.fire(i % 8, 8, 0.f);         // weight 0 -> p_roll = dens_n = 0.1
+        if (g.e.retrig_period() > 0) {
+            ++rolls;
+            CHECK(g.e.retrig_period() == int(6000.f / 2.f));   // step / subdiv
+        }
+        g.note_off();
+        g.render(128);
+    }
+    INFO("rolls at overlap 1.7 over 64 fires: " << rolls);
+    CHECK(rolls > 0);                  // ~6 expected at p = 0.1
+}
+
+// --- whole-branch review fixes -------------------------------------------
+
+// F1: a roll armed in STEP must not survive a trip through FLOW.
+//
+// The old STEP scheduler cleared its _release_ctr in set_flow(); that line
+// went with the variable and nothing replaced it for _retrig_period, which is
+// where a roll now lives. set_gate(false) used to return early in FLOW, so a
+// gate that fell while the engine was in FLOW disarmed nothing -- and coming
+// back to STEP with _gate still true let process() roll with NO fire behind
+// it, off a _last_slice and _walk_ref belonging to some earlier note. That is
+// exactly what "F-02: in STEP the gate arms nothing -- only a fire spawns"
+// claims cannot happen; it cannot see this because it never toggles FLOW.
+TEST_CASE("sampler STEP: a roll does not survive a FLOW round trip") {
+    StepRig g;
+    g.e.set_overlap(1.f);              // DENS max -> deep offs always roll
+    g.render(96);
+    g.fire(1, 8, 0.f);                 // weight 0: p_roll = 1
+    REQUIRE(g.e.retrig_period() > 0);
+
+    // Half one: entering FLOW disarms on the spot.
+    g.e.set_flow(true);
+    CHECK(g.e.retrig_period() == 0);   // fails without set_flow's clear
+
+    // Half two: the falling edge disarms even though it arrives in FLOW, so
+    // the round trip cannot resurrect the roll either.
+    g.render(64);
+    g.e.set_gate(false);               // gate falls while still in FLOW
+    g.e.set_flow(false);               // ...back to STEP...
+    g.e.set_gate(true);                // ...gate high again, but NO fire
+    const int before = g.e.spawn_count() + g.e.dropped_spawns();
+    g.render(12000);                   // two full steps: a live roll would fire
+    CHECK(g.e.retrig_period() == 0);
+    CHECK(g.e.spawn_count() + g.e.dropped_spawns() == before);
+}
+
+// F3: a fire whose grain was dropped must not arm a roll.
+//
+// The arming block used to run unconditionally after _spawn_slice, which can
+// return early (empty buffer, density ceiling). _last_slice and _walk_ref then
+// still describe the PREVIOUS note, so the roll retriggers a note the dropped
+// fire never sounded -- "the note you didn't hear retriggers the note before
+// it". The three draws stay unconditional; only the arming is gated.
+TEST_CASE("sampler STEP: a fire that was dropped arms no roll") {
+    StepRig g;
+    g.feed(0.5f, 0.f, 1.f);            // SIZE 1: grains far outlive the fires
+    g.e.set_overlap(1.f);              // DENS max -> p_roll = 1 at weight 0
+    g.render(96);
+
+    // Fire without releasing until the pool ceiling swallows one. _fire_slice
+    // runs inline inside trigger(), so spawn_count answers immediately and
+    // nothing is rendered after the dropped fire -- _retrig_period below can
+    // only be what THAT fire left.
+    bool dropped_fire = false;
+    for (int i = 0; i < 40 && !dropped_fire; ++i) {
+        const int before = g.e.spawn_count();
+        g.fire(i % 8, 8, 0.f);
+        dropped_fire = (g.e.spawn_count() == before);
+        if (!dropped_fire) g.render(64);
+    }
+    REQUIRE(dropped_fire);
+    CHECK(g.e.retrig_period() == 0);
+}
+
+// F2: the phrase wrap resets _walk_ref along with _walk.
+//
+// punch() resets all three (cursor, walk, walk_ref) and its comment explains
+// why; the wrap branch reset only two. It is normally papered over because
+// _spawn_slice re-snapshots _walk_ref -- but only on a SUCCESSFUL spawn, so a
+// fire dropped right after a wrap leaves the difference the roll measures
+// (_walk - _walk_ref) carrying a whole phrase of stale accumulation.
+//
+// Honest note on what this pins: with F3 in place a dropped fire arms no roll,
+// so nothing AUDIBLE reads the stale reference any more -- the two fixes
+// overlap. This case therefore asserts the invariant directly, through
+// walk_offset(), rather than through a sound. Reverting F2 alone fails it;
+// reverting F3 alone does not.
+// The vehicle is a SYMMETRY, because that is the property at issue: punch()
+// and the phrase wrap are the engine's two "go home" gestures and they must
+// leave the same state behind. Two rigs run the identical fire sequence --
+// identical Rng draws, three per fire, punch() draws none -- and differ only
+// in HOW they go home for the last fire: one wraps the phrase, the other
+// punches and does not wrap. That last fire is forced to DROP (the DENS-min
+// pool ceiling), so _spawn_slice cannot re-snapshot _walk_ref and paper the
+// difference over. With the fix both offsets are the last draw's own walk;
+// without it the wrapping rig's offset carries the stale reference on top.
+TEST_CASE("sampler STEP: the phrase wrap resets the roll's walk reference too") {
+    auto go_home = [](bool by_wrap) {
+        StepRig g;
+        g.feed(0.5f, 0.f, 1.f, 1.f);   // SIZE 1 (long grains), MOTION 1 (walk moves)
+        g.e.set_overlap(0.f);          // DENS min -> lowest ceiling: fires drop early
+        g.render(96);
+        for (int slot = 1; slot < 32; ++slot) {   // 31 fires, walk accumulates
+            g.fire(slot, 32, 0.f);
+            g.render(64);
+        }
+        const int dropped = g.e.dropped_spawns();
+        REQUIRE(dropped > 0);          // the ceiling is already biting
+        if (by_wrap) {
+            g.fire(0, 32, 0.f);        // slot 0 < slot 31: the phrase wraps
+        } else {
+            g.e.punch();               // ...the other way home
+            g.fire(31, 32, 0.f);       // slot 31 == last slot: no wrap
+        }
+        REQUIRE(g.e.dropped_spawns() == dropped + 1);   // the last fire dropped
+        return g.e.walk_offset();
+    };
+    const float wrapped  = go_home(true);
+    const float punched  = go_home(false);
+    INFO("wrap offset=" << wrapped << " punch offset=" << punched);
+    // Non-vacuous: a fire really does add walk, so neither is trivially 0.
+    REQUIRE(std::fabs(punched) > 0.01f);
+    CHECK(wrapped == doctest::Approx(punched).epsilon(1e-6));
+}
+
+// F7 (spec Tests, "SCAN verschiebt die Basis"): SCAN must move the base slice
+// in MARKER mode.
+//
+// In grid mode _scan_pos is added to the spawn position continuously
+// (_slice_pos), and several cases upstream cover that. In marker mode it
+// reaches the spawn position ONLY through _slices.index_at(_base_pos()) --
+// quantized marker-hopping, a different code path with a different failure
+// mode (an index_at that ignored its argument, or a base that never left 0,
+// would be invisible to every other STEP test, all of which run at SCAN 0).
+TEST_CASE("sampler STEP: SCAN moves the base slice in marker mode") {
+    // Each pass is a fresh rig so the cursor is always 0 and `last_slice` IS
+    // the base. StepRig's material is 8 clicks over 48000 frames, so one slice
+    // is 6000 frames and SCAN at kScanKnee (0.75) is exactly realtime -- n
+    // steps of 6000 samples walk the base n markers forward.
+    auto base_after = [](int steps) {
+        StepRig g;                      // MOTION 0: no walk on top
+        g.e.set_scan(0.75f);            // exactly 1.0x realtime
+        g.render(steps * 6000);
+        g.e.set_scan(0.f);              // park it, then fire
+        g.fire(0);
+        g.render(64);
+        // The marker index the accumulated head actually sits in.
+        int want = 0;
+        for (int i = 0; i < g.e.slice_count(); ++i)
+            if (float(g.e.slice_start(i)) <= g.e.scan_pos()) want = i;
+        INFO("steps=" << steps << " scan_pos=" << g.e.scan_pos()
+             << " slice=" << g.e.last_slice() << " want=" << want);
+        CHECK(g.e.last_slice() == want);
+        return g.e.last_slice();
+    };
+    const int b0 = base_after(0);
+    CHECK(b0 == 0);                     // SCAN parked: the base is the first slice
+    int moved = 0;
+    for (int s = 1; s <= 5; ++s) if (base_after(s) != b0) ++moved;
+    CHECK(moved == 5);                  // every step past the first moved it
 }
 
 TEST_CASE("sampler STEP: downbeats mostly hit once, offs roll -- the bias is real") {
@@ -2842,6 +3043,24 @@ TEST_CASE("sampler STEP: downbeats mostly hit once, offs roll -- the bias is rea
 // or its pool scaling changed, SliceMap's marker placement shifted -- STOP.
 // Ask WHY the numbers changed before touching them. Updating them to get back
 // to green silently re-opens exactly the hole this test exists to close.
+//
+// RE-BASELINING PROCEDURE, if a change is genuinely meant to move this table
+// (the FLOW vector above carries a worked example of it, dated 2026-07-21):
+//   1. Write down, BEFORE recapturing, what the change predicts: how many rows
+//      the table should have, and which columns should move in which
+//      direction. A removed draw shifts every following row; a changed roll
+//      subdivision changes the table's LENGTH before it changes a row; a walk
+//      change moves `slice` and `pos` but leaves `pan` alone.
+//   2. Recapture the whole table wholesale. Never hand-edit individual rows
+//      until the test goes green -- that fits the numbers to the build instead
+//      of checking the build against the numbers.
+//   3. Check the new table against the prediction from step 1 and record the
+//      comparison here, dated, as a RECAPTURED note. If it does not match the
+//      prediction, the change did something beyond what was intended.
+//   4. Re-pin the spec's Determinism section in the same commit.
+// As of 2026-07-23 (whole-branch review fixes F1-F11) this table has never
+// been recaptured: every fix in that round left all 44 rows byte-identical,
+// which is how they were checked.
 TEST_CASE("sampler STEP: golden vector -- the slice-groove draw order is locked") {
     StepRig g;                         // seed 4242, 8 clicks -> 8 slices,
                                        // step clock 6000
@@ -2876,9 +3095,10 @@ TEST_CASE("sampler STEP: golden vector -- the slice-groove draw order is locked"
             }
         }
     };
-    // 12 fires across two phrase cycles: slots 0..7 then 0..3. The wrap at
-    // fire 8 (slot 3 -> slot 0) is deliberate -- it drives _fire_slice's
-    // "phrase went backwards, cursor goes home" branch inside the table.
+    // 12 fires across two phrase cycles: slots 0..7 then 0..3. `slot` is
+    // `fire % 8`, so the wrap sits at fire 8, where slot goes 7 -> 0 -- it is
+    // deliberate, and it drives _fire_slice's "phrase went backwards, cursor
+    // goes home" branch inside the table.
     for (int fire = 0; fire < 12; ++fire) {
         const int slot = fire % 8;
         g.e.set_phrase_pos(slot, 8, weight[slot]);
