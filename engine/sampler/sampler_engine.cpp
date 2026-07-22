@@ -540,9 +540,12 @@ void SamplerEngine::_spawn_one() {
     if (lenf > len_ceil) lenf = len_ceil;
 
     // Zweite, absolute Decke. Die Pool-Decke oben skaliert mit 1 / _overlap
-    // und wird bei DENS min viermal so gross wie die float32-Schranke, ab
-    // der Grain::_off einfriert (kGrainLenCeil). Die Pool-Decke allein
-    // reicht also nicht mehr, seit der Overlap zur Laufzeit veraenderlich
+    // und wird bei DENS min viermal so gross wie 2^23 -- die Schranke, ab
+    // der Grain::_off in float32 einfriert (32 256 000 gegen 8 388 608).
+    // kGrainLenCeil ist NICHT diese Schranke, sondern 2^22 und damit
+    // bewusst ihre Haelfte, als Reserve fuer die kleinsten erreichbaren
+    // Ratios. Die Pool-Decke allein reicht jedenfalls nicht mehr, seit der
+    // Overlap zur Laufzeit veraenderlich
     // ist -- was grain.h's Stall-Argument voraussetzt.
     if (lenf > kGrainLenCeil) lenf = kGrainLenCeil;
 

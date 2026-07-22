@@ -133,6 +133,16 @@ constexpr float  kSpawnMinSamples = 8.f;
 //
 // 2^22 laesst eine Oktave Reserve zur Stall-Schranke. NICHT ear-tunable:
 // das ist eine Float-Grenze, kein Klangwert.
+//
+// Wo diese Decke wirklich greift, und das ist mehr als die eine Ecke oben:
+// sie bindet, sobald len_ceil = _grain_len * kGrains / _overlap sie
+// uebersteigt, also bei Overlap unter ~7.7 zusammen mit SIZE ueber ~5.5 s
+// und einem Tape-Ratio unter ~0.48. Das ist ein knappes Drittel des
+// DENS-Wegs zusammen mit einem guten Drittel des Pitch-Bereichs, nicht nur
+// DENS 0. Hoerbar ist es dort trotzdem nicht: 2^22 Samples sind 87 s, weit
+// jenseits jedes musikalischen Grains, und gekappt wird nur, was ohnehin
+// als Standbild wahrgenommen wird. Aber die Reichweite gehoert benannt,
+// statt sie als Extremfall zu verbuchen.
 constexpr float  kGrainLenCeil = 4194304.f;   // 2^22
 
 // Overlap range for the DENS knob in the sampler (spec 2026-07-21
