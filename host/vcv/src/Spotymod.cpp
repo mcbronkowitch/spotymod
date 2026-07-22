@@ -132,6 +132,15 @@ struct Spotymod : Module {
     dsp::BooleanTrigger triggerTrig[2], spotTrig, settleTrig;
     dsp::BooleanTrigger principleTrig[2], newPhraseTrig[2];
     int principleIdx[2] = {0, 0};   // current principle per part (0=TwoMotif)
+    // Soft-Takeover fuer MELO, das im Sampler SCAN traegt. Nach einem
+    // ENG-Flip bleibt SCAN auf 0, bis der Knopf einmal bewegt wurde. Ohne
+    // das rast der Lesekopf beim ersten Flip sofort los: die Init-Defaults
+    // stehen an den Extremen (MELODY_A = -0.728 -> ~-0.81x, MELODY_B = -1.0
+    // -> -8x Realtime rueckwaerts), und die Factory-Drone laedt im selben
+    // Control-Tick. Die Defaults selbst bleiben unangetastet -- sie sind der
+    // VARIATION-Wert des Init-Patches und by-ear gesetzt.
+    bool  scanArmed[spky::PART_COUNT]    = { false, false };
+    float scanLastKnob[spky::PART_COUNT] = { 0.f, 0.f };
     float clkSamples = 0.f;                 // samples since last external clock edge
     float gateFilt[2] = {0.f, 0.f};
     float recPhase[2] = {0.f, 0.f};        // REC LED pulse while recording
@@ -457,7 +466,32 @@ struct Spotymod : Module {
             // pass rather than special-cased.
             const bool samplerPart = eng2 && !smp[p].testTone;
             inst.sampler_overlap(p, pp(DENSITY_A, p));
-            inst.sampler_scan(p, pp(MELODY_A, p));
+
+            // SCAN nur fuer Sampler-Parts, und erst nach einer Knopfbewegung.
+            //
+            // Das "nur fuer Sampler-Parts" ist nicht bloss Kosmetik: set_scan
+            // -> scan_rate enthaelt im Exponentialast ein std::pow, und bei
+            // ctrlDiv = 16 sind das bis zu 6000 Aufrufe/s im Audio-Callback
+            // fuer eine Engine, die niemand hoert (K-03).
+            //
+            // Das Soft-Takeover deckt F-07 ab: MELO ist im Synth VARIATION
+            // und steht im Init-Patch an den Extremen. Ohne diese Sperre
+            // laedt der erste ENG-Flip die Factory-Drone und laesst den
+            // Lesekopf im selben Control-Tick mit bis zu -8x Realtime
+            // rueckwaerts losrasen, ohne dass jemand etwas angefasst hat.
+            if (samplerPart) {
+                const float scanKnob = pp(MELODY_A, p);
+                if (!scanArmed[p]) {
+                    if (std::fabs(scanKnob - scanLastKnob[p]) > 1e-4f) scanArmed[p] = true;
+                    else                                              inst.sampler_scan(p, 0.f);
+                }
+                if (scanArmed[p]) inst.sampler_scan(p, scanKnob);
+            } else {
+                // Beim Verlassen der Sampler-Engine entwaffnen, damit der
+                // naechste Flip wieder bei stehendem Kopf beginnt.
+                scanArmed[p]    = false;
+                scanLastKnob[p] = pp(MELODY_A, p);
+            }
 
             // GENE SIZE and ORGANIZE ride the lane BASES, so they must be
             // gated: in the synth these two slots drive the filter and the
