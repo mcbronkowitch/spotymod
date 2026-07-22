@@ -557,26 +557,79 @@ TEST_CASE("F-04: ORGANIZE reaches the spawn position on a sampler deck") {
     // noch Instrument. Der Positions-Scatter ist damit +-content und die
     // Spawn-Position exakt gleichverteilt, egal was ORGANIZE sagt. Der Test
     // misst bei MOD = 0, wo gar kein Scatter sein darf.
-    InstRig g;
-    const int p = 0;
-    g.inst.set_engine(p, ENGINE_SAMPLER);
-    g.inst.set_depth(p, 0.f);                   // MOD = 0
+    //
+    // A single last_spawn_pos() read after the render is not enough: pre-fix,
+    // that position is uniform over the whole buffer (kSFrames = 48000), and
+    // the pass window here is Approx(want).epsilon(0.02), i.e. roughly
+    // +-864 around want ~= 43199 -- about 3.6% of the 48000-wide range. A
+    // uniform draw lands inside a 3.6%-wide window by pure chance about 1
+    // time in 28, so a single sample is nowhere near enough to tell "fixed"
+    // from "unfixed": it would pass on the broken code about as often as it
+    // fails on the fixed one, purely on which RNG seed the run happens to
+    // draw. That is exactly what happened during Task 3 -- this case only
+    // went red because that particular seed happened to land outside the
+    // window; a different seed would have shipped the bug silently.
+    //
+    // Collecting every spawn across the whole render and requiring ALL of
+    // them inside the window (the same shape the MOD sibling below uses to
+    // track lo/hi) closes that hole: with the fix, MOD = 0 means every spawn
+    // reads the exact same centre (no scatter at all), so every one of them
+    // must land in the window. A still-uniform (unfixed) distribution would
+    // need EVERY collected spawn to land in the same 3.6% sliver to slip
+    // past -- for more than a handful of spawns that is not a realistic
+    // false pass, unlike the single-draw version above.
+    // A bare Part, not InstRig: this needs sampler().spawn_count(), the
+    // engine's own cumulative counter (already used by the punch() test
+    // above), to detect each real spawn. last_spawn_pos() itself cannot do
+    // that job here -- it holds its value between spawns, and WITH the fix
+    // MOD = 0 means every spawn reads the exact same centre (no scatter at
+    // all, which is the whole point). So consecutive spawns are bit-identical
+    // and a "value changed" test would see only the very first one and then
+    // go quiet, undercounting real spawns down to one -- checked empirically
+    // while building this test. spawn_count() has no such blind spot: it
+    // increments once per spawn regardless of whether the position moved.
+    std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+    p.set_engine(ENGINE_SAMPLER);
+    p.set_depth(0.f);                    // MOD = 0
 
     std::vector<float> l(kSFrames), r(kSFrames);
     for (size_t i = 0; i < kSFrames; ++i) {
         l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
         r[i] = l[i];
     }
-    g.inst.load_sample(p, l.data(), r.data(), kSFrames);
+    p.sampler().load_sample(l.data(), r.data(), kSFrames);
 
     // ORGANIZE ans obere Ende: alle Spawns muessen dort landen.
-    g.inst.set_target_base(p, spky::LANE_SOURCE, 0.9f);
-    g.render(48000);
+    p.set_target_base(LANE_SOURCE, 0.9f);
 
-    const float pos = g.inst.sampler_last_spawn_pos(p);
+    int last_count = p.sampler().spawn_count();
+    std::vector<float> spawns;
+    for (int i = 0; i < 48000 * 4; ++i) {
+        float a = 0.f, b = 0.f;
+        p.process(a, b);
+        const int count = p.sampler().spawn_count();
+        if (count != last_count) {
+            last_count = count;
+            spawns.push_back(p.sampler().last_spawn_pos());
+        }
+    }
+
+    // Guard against passing vacuously: if the deck never actually spawned
+    // (a broken rig, an engine that silently stayed on ENGINE_SYNTH, an empty
+    // buffer, etc.) `spawns` would be empty and every CHECK below would
+    // trivially pass by never running. Four seconds of render at these grain
+    // settings produces well over a thousand spawns (measured while building
+    // this test); 20 is a generous floor that only trips if spawning itself
+    // is broken, not if the count merely varies with grain-length settings.
+    REQUIRE(spawns.size() > 20);
+
     const float want = 0.9f * float(kSFrames - 1);
-    INFO("last_spawn_pos=" << pos << " want~" << want);
-    CHECK(pos == doctest::Approx(want).epsilon(0.02));
+    for (float pos : spawns) {
+        INFO("spawn pos=" << pos << " want~" << want);
+        CHECK(pos == doctest::Approx(want).epsilon(0.02));
+    }
 }
 
 TEST_CASE("F-04: MOD brings the sampler's scatter back") {
