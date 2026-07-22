@@ -752,10 +752,20 @@ TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
     REQUIRE(spawns > 5);
 }
 
-TEST_CASE("part: a sampler STEP part drives the slice groove end to end") {
+TEST_CASE("part: a sampler STEP part pushes a real step clock and fires on slices") {
     // Rig idiom of this file: Part + injected sampler memory. Load clicks,
     // STEP on, run -- the engine must receive a real step clock and fires
     // must land on slice starts without any test-side set_phrase_pos.
+    //
+    // Scope warning (review 2026-07-22, Finding 1): of the four assertions
+    // below, only the step_clock() one discriminates a Part-side push. The
+    // RED run taken before EITHER push was wired already showed
+    // slice_count() == 8, spawns > 4 and spawns_on_marker == spawns passing:
+    // fires land on slice starts because the engine's OWN grid/marker
+    // fallback puts them there (_slice_pos/_fire_slice), not because the
+    // phrase position reached it. So this case pins set_step_clock only.
+    // The set_phrase_pos push is pinned separately, by the roll-arming case
+    // below -- do not read this one as covering it.
     std::vector<SampleBuffer::Frame> mem(48000 * 4);
     Part p;
     p.init(48000.f, 1234, nullptr, nullptr, mem.data(), mem.size());
@@ -779,10 +789,14 @@ TEST_CASE("part: a sampler STEP part drives the slice groove end to end") {
     p.set_step(true, 8);
     const float before = p.sampler().step_clock();
     int spawns_on_marker = 0, spawns = 0;
+    // Plain local, NOT a function-local static (review 2026-07-22, Finding 2):
+    // a static here survives every re-entry into this TEST_CASE within the
+    // same process, so the moment this case gains a SUBCASE the second pass
+    // would start with the first pass's spawn count and silently miscount.
+    int last_count = 0;
     for (int i = 0; i < 48000 * 4; ++i) {
         float a, b, c, d;
         p.process(a, b, c, d);
-        static int last_count = 0;
         if (p.sampler().spawn_count() != last_count) {
             last_count = p.sampler().spawn_count();
             ++spawns;
@@ -794,4 +808,74 @@ TEST_CASE("part: a sampler STEP part drives the slice groove end to end") {
     CHECK(p.sampler().step_clock() != before);   // Part pushed a real clock
     CHECK(spawns > 4);                            // the phrase actually fired
     CHECK(spawns_on_marker == spawns);            // every fire hit a slice
+}
+
+TEST_CASE("part: the phrase position reaches the sampler -- off-beat fires arm rolls") {
+    // The discriminating half of the slice-groove wiring (review 2026-07-22,
+    // Finding 1). The sibling case above cannot tell whether Part actually
+    // pushes set_phrase_pos: fires land on slice starts by way of the
+    // engine's own grid/marker fallback either way. This one can, because it
+    // observes the ONE piece of engine state that is structurally unreachable
+    // without the push.
+    //
+    // The mechanism (sampler_engine.cpp, _fire_slice):
+    //
+    //     const float p_roll = (1.f - _phrase_weight) * dens_n;
+    //     if (max_subdiv >= 2 && rdraw < p_roll) { _retrig_period = ...; }
+    //
+    // _phrase_weight is initialised to 1.f (sampler_engine.h) and is written
+    // by exactly one function, set_phrase_pos, whose only caller in the whole
+    // engine is Part's per-fire push. With the push removed, every fire looks
+    // to the engine like slot 0 -- a downbeat, weight 1 -- so p_roll is
+    // identically 0, rdraw < 0 is false for the unipolar draw, and
+    // _retrig_period can never leave 0 no matter how long the render runs or
+    // how high DENS sits. With the push in place, Part passes
+    // pg_metric_weight(slot): 1.0 on slot 0, but 0.2 on every odd slot and
+    // 0.35/0.5 on the even offs (phrase_gen.h), so at DENS max (dens_n == 1)
+    // the odd slots roll with p == 0.8 and a roll arms within the first
+    // phrase cycle or two.
+    //
+    // DENS is pinned at maximum and MOD at zero so MOTION's swing on the
+    // overlap (part.cpp: _overlap_eff = _overlap + omod) cannot pull dens_n
+    // down mid-render; max_subdiv == 8 then also clears the >= 2 gate.
+    //
+    // The observable is retrig_period() sampled every process() call, not a
+    // spawn count: a roll re-arms and clears on the very next fire, so a
+    // once-at-the-end read would almost always miss it, and spawn counts are
+    // confounded by the ordinary per-fire spawn.
+    std::vector<SampleBuffer::Frame> mem(48000 * 4);
+    Part p;
+    p.init(48000.f, 1234, nullptr, nullptr, mem.data(), mem.size());
+    p.set_engine(ENGINE_SAMPLER);
+    for (int i = 0; i < 400; ++i) { float a, b, c, d; p.process(a, b, c, d); }
+    std::vector<float> l(48000, 0.f);
+    for (int c = 0; c < 8; ++c)
+        for (int i = 0; i < 240; ++i)
+            l[c * 6000 + i] = std::exp(-float(i) / 60.f);
+    p.sampler().load_sample(l.data(), l.data(), l.size());
+    REQUIRE(p.sampler().slice_count() == 8);
+
+    p.set_depth(0.f);                 // no MOTION swing on the overlap
+    p.set_sampler_overlap(1.f);       // DENS max -> dens_n == 1, max_subdiv == 8
+    p.mod().set_rate(0.35f);
+    p.set_step(true, 8);
+    p.set_target_base(LANE_LEVEL, 1.f);
+
+    int  fires = 0, last_count = 0;
+    bool rolled = false;
+    for (int i = 0; i < 48000 * 8; ++i) {
+        float a, b, c, d;
+        p.process(a, b, c, d);
+        if (p.sampler().spawn_count() != last_count) {
+            last_count = p.sampler().spawn_count();
+            ++fires;
+        }
+        if (p.sampler().retrig_period() > 0) rolled = true;
+    }
+
+    // Guard against passing vacuously: no fires means no dice were ever
+    // thrown, and `rolled` would be false for a reason that has nothing to do
+    // with the phrase push. Several phrase cycles' worth at this rate.
+    REQUIRE(fires > 16);
+    CHECK(rolled);   // only reachable if _phrase_weight < 1, i.e. Part pushed it
 }
