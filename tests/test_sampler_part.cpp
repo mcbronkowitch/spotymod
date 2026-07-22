@@ -549,3 +549,60 @@ TEST_CASE("part: the sampler granulates at ONE pitch whatever COLOR says") {
     g.render(2000);
     CHECK(g.inst.synth_chord_n(PART_B) > 1);
 }
+
+// --- Review 2026-07-22: MOTION pinnt den Sampler nicht mehr ---
+
+TEST_CASE("F-04: ORGANIZE reaches the spawn position on a sampler deck") {
+    // LANE_MOTION hat die Basis 0.5, und niemand schreibt sie -- weder Host
+    // noch Instrument. Der Positions-Scatter ist damit +-content und die
+    // Spawn-Position exakt gleichverteilt, egal was ORGANIZE sagt. Der Test
+    // misst bei MOD = 0, wo gar kein Scatter sein darf.
+    InstRig g;
+    const int p = 0;
+    g.inst.set_engine(p, ENGINE_SAMPLER);
+    g.inst.set_depth(p, 0.f);                   // MOD = 0
+
+    std::vector<float> l(kSFrames), r(kSFrames);
+    for (size_t i = 0; i < kSFrames; ++i) {
+        l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    g.inst.load_sample(p, l.data(), r.data(), kSFrames);
+
+    // ORGANIZE ans obere Ende: alle Spawns muessen dort landen.
+    g.inst.set_target_base(p, spky::LANE_SOURCE, 0.9f);
+    g.render(48000);
+
+    const float pos = g.inst.sampler_last_spawn_pos(p);
+    const float want = 0.9f * float(kSFrames - 1);
+    INFO("last_spawn_pos=" << pos << " want~" << want);
+    CHECK(pos == doctest::Approx(want).epsilon(0.02));
+}
+
+TEST_CASE("F-04: MOD brings the sampler's scatter back") {
+    // Die Gegenprobe: der Nebel muss erreichbar bleiben, sonst hat der Fix
+    // eine Klangfarbe entfernt statt sie steuerbar zu machen.
+    InstRig g;
+    const int p = 0;
+    g.inst.set_engine(p, ENGINE_SAMPLER);
+    g.inst.set_depth(p, 1.f);                   // MOD = 1
+
+    std::vector<float> l(kSFrames), r(kSFrames);
+    for (size_t i = 0; i < kSFrames; ++i) {
+        l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    g.inst.load_sample(p, l.data(), r.data(), kSFrames);
+    g.inst.set_target_base(p, spky::LANE_SOURCE, 0.9f);
+
+    // Ueber viele Spawns hinweg muss die Position wandern.
+    float lo = 1e9f, hi = -1e9f;
+    for (int i = 0; i < 48000 * 4; ++i) {
+        g.render(1);
+        const float pos = g.inst.sampler_last_spawn_pos(p);
+        if (pos < lo) lo = pos;
+        if (pos > hi) hi = pos;
+    }
+    INFO("spawn position range " << lo << " .. " << hi);
+    CHECK(hi - lo > 0.2f * float(kSFrames));
+}

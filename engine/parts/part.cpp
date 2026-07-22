@@ -145,6 +145,35 @@ void Part::_control_tick() {
     _pitch_q = _engine_id == ENGINE_SAMPLER ? pitch_raw : pitch_quantized;
     _tg[LANE_PITCH] = clampf(_pitch_q + _detune_cents * (1.f / 3600.f), 0.f, 1.f);
 
+    // MOTION's Scatter startet auf einem Sampler-Deck bei null, nicht bei der
+    // Lane-Basis 0.5. Dieselbe Schicht und dieselbe Begruendung wie
+    // _flatten_for_sampler und die abgeschaltete PITCH-Lane: die INSTRUMENT-
+    // Schicht entscheidet, was ein Sampler-Deck nicht tut.
+    //
+    // Der Grund ist messbar, nicht aesthetisch. Die Basis 0.5 schreibt
+    // niemand -- weder Host noch Instrument -- und SuperModulator::set_range
+    // trifft nur LANE_PITCH, die Texturlanes behalten also _range = 1. Bei
+    // MOD = 0 stand _targets[LANE_MOTION] damit unabaenderlich auf 0.5, und
+    // in SamplerEngine::_spawn_one ist der Positions-Jitter dann
+    // gleichverteilt ueber ein Intervall der Breite GENAU content. Damit ist
+    // (SOURCE*span + _scan_pos + jitter) mod content exakt gleichverteilt,
+    // unabhaengig von beiden Summanden: ORGANIZE und SCAN hatten auf die
+    // Spawn-Position nachweislich null Effekt (gemessen: Mittelwert 12036 /
+    // 11896 / 11951 bei SOURCE 0 / 0.25 / 0.9 ueber content 24000).
+    //
+    // Nur der Basisanteil faellt weg, die Lane-Modulation bleibt: bei MOD > 0
+    // schiebt sie von 0 nach oben, MOD wird also zum MOTION-Regler des Decks
+    // und der Nebel bleibt erreichbar.
+    //
+    // Bewusst an _tg und nicht an _base: COLOR (cmod) und DENS (omod) unten
+    // lesen _mod.lane_output(LANE_MOTION) direkt und bleiben davon unberuehrt.
+    if (_engine_id == ENGINE_SAMPLER) {
+        const float mmod = _active[LANE_MOTION]
+            ? _mod.lane_output(LANE_MOTION) * _depth * _tdepth[LANE_MOTION]
+            : 0.f;
+        _tg[LANE_MOTION] = clampf(mmod, 0.f, 1.f);
+    }
+
     // chord layer: refresh the surface every tick (cheap interval apply);
     // full voice-leading build only on a fire
     // COLOR is MOTION's third destination, alongside pan fan and drift (spec
