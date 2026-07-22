@@ -2041,25 +2041,89 @@ Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>"
 
 ## Ergebnis
 
-*(Von Task 13 auszufüllen.)*
+Ausgeführt am 2026-07-22 auf `sampler-controls`, 22 Commits ab `a5400be`.
+Suite: 509 Cases vorher, **530 nachher, alle grün**.
 
-| ID | Status | Test |
+| ID | Status | Spur |
 |---|---|---|
-| F-01 | | |
-| F-02 | | |
-| F-03 | | |
-| F-04 | | |
-| F-05 | | |
-| F-06 | | |
-| F-07 | | |
-| F-08 | | |
-| F-09 | | |
-| F-10 | | |
-| K-01 | | |
-| K-02 | | |
-| K-03 | | |
-| K-04 | | |
-| K-05 | | |
+| F-01 | behoben | `F-01: the spawn rate matches nominal even with timing jitter`, `F-01: a shrinking SIZE still cancels a long pending countdown` |
+| F-02 | behoben | `F-02: a gate edge does not re-phase the FLOW scheduler`, `F-02: a gate edge still starts a STEP burst immediately` |
+| F-03 | behoben | `F-03: the CPU floor bounds the spawn rate WITH jitter applied` |
+| F-04 | behoben (Variante a) | `F-04: ORGANIZE reaches the spawn position on a sampler deck`, `F-04: MOD brings the sampler's scatter back` |
+| F-05 | behoben | `F-05: read_linear stays in range at the negative fold seam` |
+| F-06 | behoben (Knee 0.90) | `F-06: no feedback setting lets the buffer grow without bound`, `F-06: the shipped feedback default is untouched by the saturation knee` |
+| F-07 | **offen gelassen** | `host/vcv/README.md` — Design-Entscheidung, siehe unten |
+| F-08 | behoben | `F-08: a punch-in during the record fade-out resumes the recording`, `F-08: a completed fade-out still cuts the loop` |
+| F-09 | behoben | `F-09: grain length stays under the _off stall bound at any DENS`, `F-09: a stalled grain would emit DC` |
+| F-10 | als Verhalten gepinnt | `F-10: the tape ceiling binds at one octave down, not at an extreme` |
+| K-01 | behoben | `K-01: trigger_manual flattens the chord on a sampler deck` |
+| K-02 | behoben | `K-02: a NaN in the input does not poison the buffer` |
+| K-03 | behoben | `host/vcv/README.md` |
+| K-04 | behoben | Anker in `sampler_config.h` (die falsche Behauptung darf nicht zurückkommen) |
+| K-05 | behoben | Anker in `sampler_scan.json` |
+
+### F-07 wurde bewusst nicht behoben
+
+Die Sperre war gebaut (`1724252`) und wurde wieder zurückgenommen (`26ab5e1`).
+Grund: `host/vcv/README.md` legt unter „Known limitations" ausdrücklich fest,
+dass die Knopfposition über den Engine-Wechsel hinweg gilt — ohne getrenntes
+Gedächtnis und ohne Soft-Takeover, weil die Hardware keins hat und beide
+Seiten dasselbe Verhalten zeigen sollen. Damit ist F-07 nicht klar ein
+Fehler, sondern die dokumentierte Konsequenz dieser Entscheidung; der
+Reviewer, der ihn meldete, kannte die Passage nicht.
+
+Dazu kam ein handfestes Argument: das Review der Sperre fand, dass sie beim
+Patch-Laden und beim Duplizieren wirkungslos ist, weil ihr Zustand nie neu
+gesetzt wird. Sie dicht zu bekommen verlangt persistenten Zustand — genau
+das, was die README-Zeile ausschließt. Der Fix hätte sich mit jedem Schritt
+weiter von der Design-Linie entfernt.
+
+Bastian hat das am 2026-07-22 bestätigt: so lassen.
+
+### Was während der Ausführung anders lief als geplant
+
+Der Plan war an sechs Stellen falsch, und die Reviews haben jede davon
+gefunden. Der Vollständigkeit halber, weil das die eigentliche Ausbeute des
+Verfahrens ist:
+
+1. **Knee 0.98 war mit der Testschranke unvereinbar** (Task 5). Der
+   ungesättigte Fixpunkt `in/(1-fb)` übersteigt 5 für jedes `fb > 0.9`, und
+   0.9 liegt bei Knopf ~0.96, weit unter der 0.98-Schwelle. Der Implementer
+   meldete korrekt NEEDS_CONTEXT statt zu pfuschen. Alle vier Varianten neu
+   gemessen, Knee auf 0.90 — strikt besser, Default unberührt.
+2. **Eine Messzelle war schlicht falsch** (Task 5, zweite Runde). Die Tabelle
+   wies am Anschlag 2.31 für „ohne Fix" aus und 1.76 für alle anderen. Bei
+   Knopf 1.0 ist der Koeffizient aber 1.33 und liegt über *jeder* Schwelle —
+   dort läuft überall derselbe Code. Eine 60-s-Zahl war neben 30-s-Spalten
+   geraten. Alles auf einem Raster neu gemessen.
+3. **Der F-04-Test hatte einen 3.6-%-Blindfleck** (Task 3). Er prüfte nur den
+   letzten Spawn, bei vorher gleichverteilter Position. Verstärkt auf jeden
+   Spawn; der Nachweis mit neutralisiertem Fix zeigt 155 von 161 Assertions
+   fallend — die 3.6 % empirisch bestätigt.
+4. **`feed()`s Pitch-Argument erreicht das Sampler-Ratio nicht** (Tasks 8, 9,
+   10). Der Sampler liest einen Chord-Cache. Drei Task-Tests hätten am Ziel
+   vorbeigemessen; alle drei auf `set_chord()` umgestellt.
+5. **Die Pitch-Kurve hat einen Knick** (Task 9). `p = 0.125` gibt Ratio 0.193,
+   nicht 0.125. Der Plan rechnete linear.
+6. **Der K-01-Test diskriminierte gar nicht** (Task 10). Bit-identische
+   Zahlen mit und ohne Fix. Umgebaut, und dabei zeigte sich eine andere
+   Fehlersignatur als beschrieben: Ratio exakt 0.0 aus einem nie befüllten
+   Cache-Slot. Das Review hat verifiziert, dass dieser Pfad nach dem Fix
+   geschlossen ist.
+
+Und das Register selbst hatte die Lücke, die es verhindern soll: sein
+Kommentar behauptete, K-03 werde eingefordert, geprüft wurde nur F-07, und
+K-03 stand nirgends. Behoben in `6a8dda2`, zusammen mit einer Zählprüfung,
+die genau diesen Fall findet.
+
+### Offen für Bastians Ohr
+
+- **F-06:** Es bleibt ein Sprung um Faktor 3.2 an der Sättigungsschwelle.
+  Ganz weg nur mit unbedingtem `tanh`, das kostet den Auslieferungs-Default
+  57 % Pegel (2.74 → 1.18). Bastian hat entschieden: so lassen.
+- **F-04:** Variante (a) ist umgesetzt, MOD wird zum Streuungsregler des
+  Decks. Hörproben liegen vor (`scan_*`, `overlap_*`, je vorher/nachher).
+- **F-07:** siehe oben — offen, bewusst.
 
 ## Bewusst nicht in diesem Plan
 
