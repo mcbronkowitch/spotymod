@@ -249,37 +249,51 @@ int        g_inst_ctr = 0;
 float      g_out_l[kBlock];
 float      g_out_r[kBlock];
 
-void setup_inst_sampler_worst()
+void setup_inst_sampler(float size_n, float motion_n,
+                        bool flux_on = true, float reverb_mix = 0.5f,
+                        int sampler_parts = PART_COUNT)
 {
     fill_source();
     g_inst.init(kSampleRate, fx_mem());
     g_inst.set_tempo_bpm(120.f);
     g_inst_ctr = 0;
     for (int p = 0; p < PART_COUNT; ++p) {
-        g_inst.set_engine(p, ENGINE_SAMPLER);
-        // Both parts load the same source material. Their read positions do
-        // not coincide: MOTION scatter is drawn from each part's own RNG,
-        // seeded off Part::init's per-part seed_base.
-        g_inst.load_sample(p, sdram_arena(), sdram_arena() + kSrcOffset, kSamplerFrames);
-        // The sampler's own worst case, reached through the part's controls.
-        g_inst.set_target_base(p, LANE_SIZE, 0.05f);
-        g_inst.set_target_base(p, LANE_MOTION, 1.f);
-        g_inst.sampler_overlap(p, 1.f);
-        g_inst.sampler_scan(p, 0.5f);
+        if (p < sampler_parts) {
+            g_inst.set_engine(p, ENGINE_SAMPLER);
+            // Both parts load the same source material. Their read positions
+            // do not coincide: MOTION scatter is drawn from each part's own
+            // RNG, seeded off Part::init's per-part seed_base.
+            g_inst.load_sample(p, sdram_arena(), sdram_arena() + kSrcOffset,
+                               kSamplerFrames);
+            // The sampler's own worst case, reached through the part's
+            // controls.
+            g_inst.set_target_base(p, LANE_SIZE, size_n);
+            g_inst.set_target_base(p, LANE_MOTION, motion_n);
+            // Setting the BASE to zero is not the same as MOTION being zero:
+            // Part::_active defaults to all-true (part.h), so the MOTION lane
+            // keeps swinging the target whatever its base says. The first
+            // version of the _nomotion row below missed this and measured the
+            // unablated peak, which is exactly the wrong answer to have
+            // trusted. Deactivating the target is what actually silences the
+            // lane.
+            if (motion_n == 0.f) g_inst.set_target_active(p, LANE_MOTION, false);
+            g_inst.sampler_overlap(p, 1.f);
+            g_inst.sampler_scan(p, 0.5f);
+        }
         // ...and instrument_worst's surroundings, unchanged.
         g_inst.set_color(p, 1.f);
         g_inst.set_density(p, 1.f);
         g_inst.set_depth(p, 1.f);
         g_inst.set_rate(p, 0.8f);
         g_inst.set_fx_on(p, FxBlock::Grit, true);
-        g_inst.set_fx_on(p, FxBlock::Flux, true);
+        g_inst.set_fx_on(p, FxBlock::Flux, flux_on);
         g_inst.set_grit_mix(p, 1.f);
         g_inst.set_flux_mix(p, 1.f);
         g_inst.set_comp(p, 1.f);
         g_inst.set_voice_decay(p, 1.f);
         g_inst.trigger_manual(p);
     }
-    g_inst.set_reverb_mix(0.5f);
+    g_inst.set_reverb_mix(reverb_mix);
     g_inst.set_reverb_size(1.f);
     g_inst.set_reverb_decay(0.95f);
     g_inst.set_reverb_diffusion(0.9f);
@@ -293,6 +307,83 @@ void setup_inst_sampler_worst()
     const float* in = test_input();
     for (int i = 0; i < 200; ++i)
         g_inst.process(in, in, g_out_l, g_out_r, kBlock);
+}
+
+void setup_inst_sampler_worst() { setup_inst_sampler(0.05f, 1.f); }
+
+// --- ablations: what is actually in the peak ---------------------------------
+// inst_sampler_worst runs 25 points of spread between its mean block and its
+// worst, where the same box on the synth runs 6. These two rows exist to say
+// which half of the worst-case patch that spread belongs to, because the two
+// candidates are not separable by reading the code:
+//
+//   MOTION 1 does THREE things at once (SamplerEngine::_spawn_one): it
+//   scatters spawn positions over the whole 42 s of content, it scatters pan,
+//   and it jitters the spawn INTERVAL by +-kScatterTimeFrac (0.75). That last
+//   one is a burst mechanism in its own right -- at SIZE 0.05 the nominal
+//   interval is 16 samples and the jittered one floors at kSpawnMinSamples
+//   (8), so a block can catch roughly twice the mean number of spawns.
+//
+//   SIZE 0.05 sets how OFTEN a fresh random position is taken. It does not
+//   change how many grains are live (that is DENS, and it stays at 8 in all
+//   three rows): 128-sample grains spawning every 16 hold the same ~7.7 live
+//   grains as 9600-sample grains spawning every 1200. What it changes is that
+//   the first reads after each spawn are cold, ~3000 times a second instead
+//   of ~40.
+//
+// So: _nomotion removes the scatter and the interval jitter but keeps the
+// spawn rate. _slowspawn keeps the full scatter but takes a fresh position
+// 75x less often. Whichever one flattens the peak names the cause.
+//
+// Answered 2026-07-22, and only after the first _nomotion row was fixed: it
+// set the MOTION target's BASE to zero and left the lane driving it, so it
+// measured the unablated peak and read as "not MOTION." With the lane
+// actually deactivated, and confirmed by counting Grain::process calls per
+// block offline (1.36x spread with the interval jitter, 1.01x without), the
+// answer is the interval jitter. kSpawnHeadroom is the cap that came out of
+// it; these rows stay as its before/after.
+void setup_inst_sampler_nomotion()  { setup_inst_sampler(0.05f, 0.f); }
+void setup_inst_sampler_slowspawn() { setup_inst_sampler(0.5f,  1.f); }
+
+// Round two, after round one came back saying "neither." _nomotion measured
+// the same peak as _worst and _slowspawn measured a HIGHER one on a LOWER
+// mean -- so the peak is not the grain scheduler, and a peak that grows while
+// the mean shrinks is not the sampler's own arithmetic either. What is left
+// is the company it keeps: FLUX streams four echo lines through SDRAM and the
+// Oliverb sweeps 128 KB of SRAM, and the sampler now walks up to 16 read
+// streams across 32 MB of the same SDRAM. These three rows ablate the
+// neighbours instead of the sampler, exactly as inst_worst_noflux /
+// inst_worst_noreverb do for the synth (82 % / 82 % against 93 %).
+void setup_inst_sampler_noflux()   { setup_inst_sampler(0.05f, 1.f, false, 0.5f); }
+void setup_inst_sampler_noreverb() { setup_inst_sampler(0.05f, 1.f, true,  0.f);  }
+// One part on the sampler, one on the synth: half the read streams, the whole
+// FX chain. If the peak halves with them, it is bandwidth; if it stays, it is
+// something one part alone already triggers.
+void setup_inst_sampler_onepart()  { setup_inst_sampler(0.05f, 1.f, true, 0.5f, 1); }
+
+// The same discriminator without the FX chain around it, so the solo cloud's
+// own spread can be read separately from anything the reverb and the two FLUX
+// tapes contribute by competing for the same SDRAM.
+void setup_flow_worst_slowspawn()
+{
+    setup_flow_worst();
+    const float t[LANE_COUNT] = { 0.5f, 0.5f, 0.5f, 1.f, 0.8f };
+    g_s.set_targets(t, 0.5f);
+    settle();
+}
+
+// The row that settles it, and the reason it has to be the SOLO one: the
+// engine's targets are set directly here, with no modulation plane on top.
+// inst_sampler_nomotion does not actually remove MOTION -- Part::_active
+// defaults to all-true (part.h), so the MOTION lane keeps swinging the target
+// whatever its base is set to, which is why that row measured the same peak
+// as the unablated one. Here MOTION is genuinely zero.
+void setup_flow_worst_nomotion()
+{
+    setup_flow_worst();
+    const float t[LANE_COUNT] = { 0.5f, 0.05f, 0.5f, 0.f, 0.8f };
+    g_s.set_targets(t, 0.5f);
+    settle();
 }
 
 float proc_inst_sampler()
@@ -327,6 +418,13 @@ const Workload kSamplerWorkloads[] = {
     { "sampler", "sampler_win_sram",     setup_win_sram,           proc_solo         },
     { "sampler", "sampler_win_sdram",    setup_win_sdram,          proc_solo         },
     { "sampler", "inst_sampler_worst",   setup_inst_sampler_worst, proc_inst_sampler },
+    { "sampler", "sampler_worst_slowspawn",  setup_flow_worst_slowspawn,  proc_solo         },
+    { "sampler", "inst_sampler_nomotion",    setup_inst_sampler_nomotion, proc_inst_sampler },
+    { "sampler", "inst_sampler_slowspawn",   setup_inst_sampler_slowspawn,proc_inst_sampler },
+    { "sampler", "inst_sampler_noflux",      setup_inst_sampler_noflux,   proc_inst_sampler },
+    { "sampler", "inst_sampler_noreverb",    setup_inst_sampler_noreverb, proc_inst_sampler },
+    { "sampler", "inst_sampler_onepart",     setup_inst_sampler_onepart,  proc_inst_sampler },
+    { "sampler", "sampler_worst_nomotion",   setup_flow_worst_nomotion,   proc_solo         },
 };
 const int kSamplerCount = sizeof(kSamplerWorkloads) / sizeof(kSamplerWorkloads[0]);
 

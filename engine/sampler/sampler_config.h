@@ -138,6 +138,39 @@ constexpr float  kPitchOctaves = 4.f;
 // 8 samples caps the rate at 6 kHz per part. NOT ear-tunable.
 constexpr float  kSpawnMinSamples = 8.f;
 
+// Wieviele Grains ueber den angeforderten Overlap hinaus gleichzeitig klingen
+// duerfen. Wie kSpawnMinSamples ein CPU-Schutz und NICHT ear-tunable: er
+// deckelt die Kosten des schlechtesten Blocks, nicht den Klang des mittleren.
+//
+// Der Grund, gemessen. _spawn_every ist _grain_len / _overlap, aber das
+// tatsaechliche Intervall ist _spawn_every * (1 + _spawn_jitter), und der
+// Jitter ist bei MOTION 1 +-kScatterTimeFrac = +-75 %. Die Grainlaenge bleibt
+// dabei fest, also stapeln kurze Intervalle Grains auf: die Zahl der
+// gleichzeitig klingenden Grains schwankt bei DENS 8 zwischen 5 und 11 statt
+// bei 8 zu stehen. Exakt gezaehlt (Grain::process-Aufrufe pro 96-Sample-Block,
+// nicht gestoppt) ueber 1000 Bloecke bei SIZE 0.05, DENS max:
+//
+//   MOTION 1: Mittel 732 Grain-Samples/Block, Maximum 998 -> Faktor 1.36
+//   MOTION 0: Mittel 757,                     Maximum 762 -> Faktor 1.01
+//
+// Der Jitter allein ist also der ganze Ausschlag. Auf der Hardware kostet das
+// dieselben 1.30x Spitze-zu-Mittel in JEDER Sampler-Zeile des Bench, auch in
+// sampler_win_sram, wo der ganze Record-Puffer 64 KB im SRAM liegt -- es ist
+// die Grainzahl, kein Speichereffekt. Im ganzen Instrument mit beiden Parts
+// auf dem Sampler wurde daraus 92 % Budget im Mittel und 117 % im schlimmsten
+// Block (docs/bench/2026-07-22).
+//
+// Warum ein Deckel und nicht ein kleinerer kScatterTimeFrac: der Jitter ist
+// ear-tunable und gehoert dem Ohr, der Blockdeckel ist eine
+// Echtzeitschranke. Ein kleinerer Jitter macht den Ausschlag nur
+// unwahrscheinlicher, ein Deckel macht ihn unmoeglich -- und fuer einen
+// Audio-Callback ist die Schranke der Punkt, nicht der Erwartungswert.
+//
+// Was er kostet: in den dichtesten Momenten faellt ein Spawn aus, gezaehlt in
+// dropped_spawns(). Bei DENS 8 betrifft das den Anteil der Zeit, in dem
+// ueberhaupt mehr als kOverlapMax + kSpawnHeadroom Grains klingen wuerden.
+constexpr int    kSpawnHeadroom = 1;
+
 // Harte Obergrenze fuer die Grain-Laenge in Ausgangssamples.
 //
 // Grain haelt die Leseposition als Startframe plus relativen Offset, und

@@ -1326,22 +1326,44 @@ TEST_CASE("sampler: density telemetry at worst case") {
             << " dropped=" << eng.dropped_spawns()
             << " drop_frac=" << drop_frac);
 
-    // peak <= kGrains is structural (active_grains() counts a fixed-size
-    // array), not evidence either way -- see dropped_spawns() for the real
-    // check. At (kOverlap=8, kGrains=16) the pool is sized to keep up with
-    // worst-case MOTION/SIZE, so the honest claim is that drops stay a
-    // negligible fraction of attempts, not that there are none: this same
-    // worst case measured 0 dropped of 11514 attempted spawns at (8, 16).
-    // For scale, the old (4, 8) pair -- which this worst case pinned at
-    // peak == kGrains, i.e. structurally indistinguishable from "dropping
-    // spawns" by the peak check alone -- actually dropped only 1 of 5962
-    // attempts (0.017%) once counted directly (see
-    // .superpowers/sdd/task-6-report.md, "Drop counter" section). 1% leaves
-    // headroom above both measurements against seed/measurement noise while
-    // still catching a real regression (e.g. kGrains shrinking back toward
-    // kOverlap's old ratio).
-    CHECK(peak <= kGrains);
-    CHECK(drop_frac < 0.01);
+    // Was dieser Test bis 2026-07-22 behauptete: drop_frac < 1 %, denn "der
+    // Pool ist gross genug, um mit Worst-Case-MOTION/SIZE mitzuhalten"
+    // (gemessen 0 von 11514 Versuchen bei (8, 16)). Das stimmte und war
+    // genau das Problem: mitzuhalten hiess, die Grainzahl auf bis zu 11
+    // stapeln zu lassen, wo DENS 8 bestellt hatte, und die CPU-Kosten eines
+    // Blocks sind linear in dieser Zahl. Auf der Hardware waren das 117 %
+    // des Blockbudgets im schlimmsten Block gegen 92 % im mittleren
+    // (docs/bench/2026-07-22, inst_sampler_worst).
+    //
+    // Seit kSpawnHeadroom ist das Fallenlassen die ABSICHT, nicht der
+    // Defekt: der Deckel kauft die Spitze mit ein paar Prozent der Spawns.
+    // Die beiden Zusagen unten sind deshalb neu, und die zweite ist die
+    // wichtigere -- ein Deckel, der im gewoehnlichen Betrieb zuschlaegt,
+    // waere ein Dichteverlust und kein CPU-Schutz.
+    const int ceiling =
+        int(std::ceil(double(SamplerEngine::kOverlap))) + spky::sampler_cfg::kSpawnHeadroom;
+    CHECK(peak <= ceiling);      // der Deckel haelt, nicht bloss kGrains
+    CHECK(drop_frac < 0.10);     // und er kostet eine Minderheit der Spawns
+
+    // Der Deckel greift NUR im Extrem. Dieselbe Wolke bei musikalischer
+    // Dichte (DENS ~4, halbsekundige Grains, MOTION halb) darf keinen
+    // einzigen Spawn verlieren -- gemessen 0.0 %.
+    SamplerEngine calm;
+    calm.set_memory(mem.data(), mem.size());
+    calm.set_seed(0x51A9u);
+    calm.init(48000.f);
+    calm.load_sample(l.data(), r.data(), 48000);
+    float calm_targets[LANE_COUNT] = { 0.5f, 0.35f, 0.5f, 0.5f, 1.f };
+    calm.set_targets(calm_targets, 0.5f);
+    calm.set_overlap(0.45f);
+    calm.set_flow(true);
+    for (int i = 0; i < 48000 * 10; ++i) {
+        float a = 0.f, b = 0.f;
+        calm.process(a, b);
+    }
+    MESSAGE("musical setting: spawned=" << calm.spawn_count()
+            << " dropped=" << calm.dropped_spawns());
+    CHECK(calm.dropped_spawns() == 0);
 }
 
 // --- Final review, Critical: tape mode must not starve the grain pool -------
@@ -2123,11 +2145,23 @@ TEST_CASE("F-09: a stalled grain would emit DC -- the guard keeps it moving") {
 
 TEST_CASE("F-10: the tape ceiling binds at one octave down, not at an extreme") {
     // Kein Verhaltensfix, sondern die Zahl, die der Kommentar am Cap nennen
-    // muss. Bei DENS max ist len_ceil = 2 * _grain_len, und Tape gibt
-    // lenf = _grain_len / ratio -- die Decke greift also schon ab ratio =
-    // 0.5, bei ganz normalem SIZE. Deshalb hier bewusst KEIN feed()-Aufruf,
-    // der SIZE aendert -- der Rig-Default (0.5) ist Teil des Befunds, nicht
-    // ein Extremwert wie SIZE 1.0 in F-09.
+    // muss. Bei DENS max ist len_ceil = (overlap + kSpawnHeadroom) /
+    // overlap * _grain_len, und Tape gibt lenf = _grain_len / ratio -- die
+    // Decke greift also schon knapp unter Unity, bei ganz normalem SIZE.
+    // Deshalb hier bewusst KEIN feed()-Aufruf, der SIZE aendert -- der
+    // Rig-Default (0.5) ist Teil des Befunds, nicht ein Extremwert wie
+    // SIZE 1.0 in F-09.
+    //
+    // Der Titel sagt "eine Oktave", und das war die Zahl, solange len_ceil
+    // gegen kGrains rechnete (Faktor 2 bei DENS max, also ratio 0.5). Seit
+    // dem Dichtedeckel rechnet sie gegen die ERREICHBARE Poolgroesse
+    // (sampler_engine.cpp, len_ceil), und die ist bei DENS max 9 statt 16 --
+    // Faktor 1.125, also bindet die Decke schon ab ratio 8/9 = 0.889, rund
+    // zwei Halbtoenen abwaerts. Der Befund ist damit nicht widerlegt,
+    // sondern verschaerft: die Decke sitzt noch weiter im gewoehnlichen
+    // Bereich als bei ihrer Aufnahme. Alle Zahlen unten haengen an
+    // kSpawnHeadroom, damit sie der Konstanten folgen statt ihr
+    // hinterherzulaufen.
     //
     // Die PITCH-Spur von feed() erreicht das Sampler-Ratio nicht (siehe
     // ratio_for's Kommentar und F-09's set_chord-Aufrufe): _next_ratio()
@@ -2141,25 +2175,35 @@ TEST_CASE("F-10: the tape ceiling binds at one octave down, not at an extreme") 
     g.e.set_overlap(1.f);                   // DENS max -> overlap 8
     g.e.set_flow(true);
 
-    // Diesseits der Decke: unter einer Oktave abwaerts.
-    const float p_shy = 0.375f;
+    // Der Deckenfaktor bei DENS max, aus denselben Groessen gerechnet, die
+    // _spawn_one benutzt: erreichbare Slots geteilt durch Overlap.
+    const float kOvlMax = spky::sampler_cfg::kOverlapMax;
+    const float ceil_fac =
+        (std::ceil(kOvlMax) + float(spky::sampler_cfg::kSpawnHeadroom)) / kOvlMax;
+
+    // Diesseits der Decke: knapp unter Unity, wo Tape noch streckt. Bei
+    // ceil_fac = 1.125 muss ratio ueber 0.889 liegen; 0.95 laesst zu beiden
+    // Seiten Luft.
+    const float p_shy = 0.4753f;
     const float ratio_shy = spky::test_ratio_for(p_shy);
-    REQUIRE(ratio_shy > 0.5f);
+    REQUIRE(ratio_shy > 1.f / ceil_fac);
+    REQUIRE(ratio_shy < 1.f);
     g.e.set_chord(&p_shy, 1);
     g.render(48000);
     const float len_shy = float(g.e.last_spawn_len());
     const float base    = g.e.grain_len_samples();
     INFO("ratio=" << ratio_shy << " len=" << len_shy << " base=" << base);
-    // 1.2 ist die Mitte zwischen den beiden Faellen, die der Test trennen
-    // muss: ungekappt streckt Tape hier auf 1/0.771 = 1.297 * base, gekappt
-    // waere es genau 1.0 * base. Jede Grenze dazwischen taete es; 1.2 laesst
-    // zu beiden Seiten Luft fuer Rundung und die Integer-Trunkierung in
-    // _spawn_one.
-    CHECK(len_shy > 1.2f * base);           // Tape streckt noch, ungekappt
+    // Zwei Aussagen, und die zweite ist die, die den Test von "streckt
+    // ueberhaupt" zu "streckt UNGEKAPPT" macht: die Laenge ist genau
+    // base / ratio, und sie liegt unter der Decke. Ohne die zweite wuerde
+    // eine Decke, die auf einen Wert zwischen base und base/ratio kappt,
+    // hier noch durchgehen.
+    CHECK(len_shy == doctest::Approx(base / ratio_shy).epsilon(0.01));
+    CHECK(len_shy < ceil_fac * base);
 
-    // Jenseits der Decke: eine Oktave abwaerts oder mehr -- nicht die alten
-    // vier Oktaven / 45 Minuten aus dem urspruenglichen Kommentar, sondern
-    // der naechstliegende Punkt, an dem die Decke schon bindet.
+    // Jenseits der Decke -- nicht die alten vier Oktaven / 45 Minuten aus
+    // dem urspruenglichen Kommentar, sondern tief genug, dass die Decke
+    // sicher bindet.
     Rig g2;
     g2.e.set_tape_mode(true);
     g2.e.set_overlap(1.f);
@@ -2172,7 +2216,7 @@ TEST_CASE("F-10: the tape ceiling binds at one octave down, not at an extreme") 
     const float len_deep = float(g2.e.last_spawn_len());
     const float base2    = g2.e.grain_len_samples();
     INFO("ratio=" << ratio_deep << " len=" << len_deep << " base=" << base2);
-    CHECK(len_deep == doctest::Approx(2.f * base2).epsilon(0.01));
+    CHECK(len_deep == doctest::Approx(ceil_fac * base2).epsilon(0.01));
 }
 
 // --- SIZE is asymmetrically live -------------------------------------------

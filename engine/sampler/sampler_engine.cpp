@@ -471,12 +471,58 @@ void SamplerEngine::_update_control() {
 void SamplerEngine::_spawn_one() {
     if (_buf.is_empty()) return;
 
+    // Ein Durchlauf, zwei Antworten: der erste freie Slot und wieviele Grains
+    // gerade klingen. Der Zaehler ist gratis -- die Schleife lief ohnehin --
+    // und ohne ihn bräuchte der Deckel unten ein zweites active_grains().
     int slot = -1;
-    for (int i = 0; i < kGrains; ++i)
-        if (!_grains[i].active()) { slot = i; break; }
-    if (slot < 0) { ++_dropped_spawns; return; } // all busy: skip this spawn
-
+    int live = 0;
+    for (int i = 0; i < kGrains; ++i) {
+        if (_grains[i].active())      ++live;
+        else if (slot < 0)            slot = i;
+    }
     const float motion  = clampf(_targets[LANE_MOTION], 0.f, 1.f);
+
+    // Dichtedeckel (kSpawnHeadroom). Der Pool ist mit kGrains == 2 *
+    // kOverlapMax bewusst doppelt so gross wie der hoechste angeforderte
+    // Overlap, damit der Timing-Jitter Grains stapeln kann, ohne Spawns zu
+    // verlieren. Genau dieses Stapeln ist aber der teuerste Block: gelesen
+    // wird pro Sample einmal je klingendem Grain, und deren Zahl schwankt bei
+    // MOTION 1 um Faktor 1.36 statt um 1.01 (Messung in sampler_config.h bei
+    // kSpawnHeadroom).
+    //
+    // Der Deckel haengt an _overlap und nicht an kGrains, weil DENS die
+    // angeforderte Dichte IST: wer DENS herunterdreht, bekommt auch den
+    // billigeren Worst Case, statt weiter fuer die Pooldecke zu bezahlen.
+    // std::ceil, damit ein gebrochener Overlap (DENS ist stufenlos) nach oben
+    // aufgeht und der Deckel nie unter die bestellte Dichte faellt.
+    const int ceiling = static_cast<int>(std::ceil(_overlap)) + kSpawnHeadroom;
+    const bool full   = slot < 0;
+    const bool capped = live >= (ceiling < kGrains ? ceiling : kGrains);
+    if (full || capped) {
+        ++_dropped_spawns;
+        // Den Timing-Jitter zuruecksetzen, und das ist keine Kosmetik:
+        // _next_interval() rechnet mit _spawn_jitter, und wer ihn beim
+        // Fallenlassen STEHEN laesst, wiederholt bei einem negativen Wert
+        // dasselbe zu kurze Intervall, bis endlich ein Spawn durchkommt. Aus
+        // einem symmetrisch gezogenen Jitter wird so eine einseitige
+        // Beschleunigung -- gemessen +3.5 % ueber der nominellen Spawnrate,
+        // was "F-01: the spawn rate matches nominal even with timing jitter"
+        // prompt gefangen hat. Dieselbe Falle wie beim Clamp in
+        // _update_control, nur an der anderen Stelle.
+        //
+        // Auf 0 und NICHT neu gezogen, obwohl ein frischer Zug die
+        // natuerlichere Antwort waere: ein Zug hier verbraucht einen
+        // Rng-Wert, und weil ein gefallener Spawn sonst gar keinen
+        // verbraucht, verschiebt das ab dem ersten Drop die gesamte
+        // Zugfolge -- der gelockte Golden Vector ("Rng draw order and SOURCE
+        // mapping are locked") bricht dann ab Spawn 9. 0 ist erwartungstreu
+        // (E[Intervall] = _spawn_every, genau wie ueber die gejitterte
+        // Verteilung), kostet keinen Zufall, und die dokumentierte
+        // Zugreihenfolge unten bleibt Zug fuer Zug dieselbe: ein gefallener
+        // Spawn ueberspringt sie vollstaendig, statt sie zu verschieben.
+        _spawn_jitter = 0.f;
+        return;
+    }
     // Fill-follows: SOURCE maps into the CURRENT content length, so while a
     // recording runs the cloud granulates only what is already captured.
     const float content = static_cast<float>(_buf.rec_size());
@@ -580,7 +626,25 @@ void SamplerEngine::_spawn_one() {
     // see the "lowering overlap only loosens the pool ceiling" test in
     // test_sampler_engine.cpp. Writing the bound unconditionally also keeps
     // it true if a future pair ever sets kGrains <= kOverlapMax.
-    const float len_ceil = _spawn_every * static_cast<float>(kGrains);
+    // Gegen `ceiling` und nicht mehr gegen kGrains, seit der Dichtedeckel
+    // oben existiert: die erreichbare Poolgroesse IST jetzt ceiling, und die
+    // beiden Schranken muessen dieselbe Zahl meinen. Taten sie es nicht,
+    // dimensionierte diese Zeile die Grainlaenge auf 16 gleichzeitig
+    // klingende Grains, waehrend der Deckel nur 9 zulaesst -- und dann fiel
+    // im Tape-Eck bei max SIZE und tiefer Transposition jeder Spawn ueber
+    // dem Deckel, sogar bei MOTION 0, wo es gar keinen Jitter zu absorbieren
+    // gibt. Genau das hat "sampler: tape mode at max SIZE and min pitch
+    // keeps the cloud spawning" gefangen (8 Drops statt 0).
+    //
+    // Was das hoerbar kostet, und es gehoert benannt statt weggerechnet: die
+    // Tape-Zusage "low notes smear long" wird kuerzer. Bei DENS max deckelt
+    // sie jetzt auf ~1.1 statt 2 Grainlaengen, bei DENS min auf 2 statt 16.
+    // Das ist kein Nebeneffekt, den man wegdesignen koennte -- ein langes
+    // Tape-Grain IST Dichte, und beides gleichzeitig zu deckeln und laufen
+    // zu lassen ist dieselbe Resource zweimal vergeben. Die alte Fassung
+    // liess im Tape-Eck genau die 2x-Dichtespitze zu, gegen die der Deckel
+    // gebaut ist.
+    const float len_ceil = _spawn_every * static_cast<float>(ceiling);
     if (lenf > len_ceil) lenf = len_ceil;
 
     // Zweite, absolute Decke. Die Pool-Decke oben skaliert mit 1 / _overlap
