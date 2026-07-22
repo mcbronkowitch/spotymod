@@ -1,14 +1,16 @@
 {
-  "_comment": "Slice-groove listening aid: field material. Identical timeline to sampler_slice_drums.json, but the source (in_drone.wav) is transientless -- sustained, no attacks, below the detector's threshold -- so the SliceMap finds fewer than kMinSlices and STEP falls back to the tempo grid. The point of this scenario is that grid fallback, not the slice walk. Record 1-9s, STEP from 10s. MOTION on a sampler deck is driven by MOD (set_depth), not the LANE_MOTION base (see part.cpp sampler MOTION note) -- opens 14/22/30. DENS max from 26s lets the offs roll. Action note: the plan draft named 'set_sampler_overlap', which is not in scenario.cpp's action table -- the nearest existing action is 'sampler_overlap' (inst.sampler_overlap(part, value)), used below.",
+  "_comment": "Slice-groove listening aid: the GRID FALLBACK, which is this scenario's only reason to exist. Identical timeline to sampler_slice_drums.json, but the source is in_pad.wav -- sustained, low crest factor, no attacks -- so the SliceMap stays under kMinSlices (4) and STEP walks the tempo grid instead of transient markers. VERIFY, do not assume: the a_slices/b_slices column in the render CSV is the marker count, and it must read under 4 for the whole run. This scenario pointed at in_drone.wav until 2026-07-23, and the detector finds 24 onsets in that file inside this 1-9 s record window -- it ran in marker mode, identically to the drums scenario, and the fallback it claimed to demonstrate had no coverage at all. Record 1-9s, STEP from 10s. MOTION on a sampler deck is driven by MOD (set_depth), not the LANE_MOTION base (see part.cpp sampler MOTION note) -- opens 14/22/30; LANE_MOTION itself is pinned to 0 and made inactive in init (as sampler_solo.json does) so the ordered grid walk is actually ordered at the start -- Part's default base is 0.5, and leaving it there had the opening section half-scrambled while this comment promised order. DENS max from 26s lets the offs roll. Action note: the plan draft named 'set_sampler_overlap', which is not in scenario.cpp's action table -- the nearest existing action is 'sampler_overlap' (inst.sampler_overlap(part, value)), used below.",
   "sample_rate": 48000,
   "bpm": 120,
   "duration_s": 40.0,
-  "input_wav": "host/render/scenarios/assets/in_drone.wav",
+  "input_wav": "host/render/scenarios/assets/in_pad.wav",
   "init": [
     { "action": "set_engine", "part": 1, "value": "sampler" },
     { "action": "set_target_base", "part": 0, "slot": 4, "value": 0.0 },
     { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
     { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
+    { "action": "set_target_base", "part": 1, "slot": 3, "value": 0.0 },
+    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
     { "action": "set_depth", "part": 1, "value": 0.0 }
   ],
   "events": [
