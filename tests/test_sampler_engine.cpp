@@ -2359,3 +2359,45 @@ TEST_CASE("sampler: tape keeps its smear when SIZE is trimmed") {
     CHECK(halved < untouched);
     CHECK(halved > 0.25f * static_cast<float>(untouched));
 }
+
+// Click-train content for the slice tests: n clicks evenly spaced, 5 ms decay.
+static void feed_clicks(Rig& g, size_t content, int n) {
+    std::vector<float> l(content, 0.f), r;
+    const size_t gap = content / size_t(n);
+    for (int c = 0; c < n; ++c)
+        for (size_t i = 0; i < 240 && size_t(c) * gap + i < content; ++i)
+            l[size_t(c) * gap + i] = std::exp(-float(i) / 60.f);
+    r = l;
+    g.e.load_sample(l.data(), r.data(), content);
+}
+
+TEST_CASE("sampler: load_sample scans the material into slices") {
+    Rig g(0);                        // no preloaded content
+    feed_clicks(g, 48000, 8);
+    CHECK(g.e.slice_count() == 8);
+}
+
+TEST_CASE("sampler: recording detects slices as it writes") {
+    Rig g(0);
+    g.e.set_recording(true);
+    // 1 s of input with 4 clicks, fed through process_in like a host would
+    for (int i = 0; i < 48000; ++i) {
+        float x = 0.f;
+        for (int c = 0; c < 4; ++c) {
+            const int at = c * 12000;
+            if (i >= at && i < at + 240) x = std::exp(-float(i - at) / 60.f);
+        }
+        g.e.process_in(x, x);
+        float a, b; g.e.process(a, b);
+    }
+    g.e.set_recording(false);
+    CHECK(g.e.slice_count() == 4);
+}
+
+TEST_CASE("sampler: clear drops the slices with the content") {
+    Rig g(0);
+    feed_clicks(g, 48000, 8);
+    REQUIRE(g.e.slice_count() == 8);
+    g.e.clear();
+    CHECK(g.e.slice_count() == 0);
+}

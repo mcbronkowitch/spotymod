@@ -91,6 +91,7 @@ float test_scan_rate(float n) { return scan_rate(n); }
 void SamplerEngine::init(float sample_rate) {
     _sr = sample_rate;
     _buf.init(_mem, _mem_frames, sample_rate);
+    _slices.init(sample_rate);
     // MUST differ from the constant Part::init XORs in (0x5A11E20Du). With
     // the same constant on both sides the XOR cancels and the sampler is
     // seeded with seed_base exactly -- which is also what SuperModulator
@@ -164,7 +165,15 @@ void SamplerEngine::set_gate(bool on) {
 void SamplerEngine::process_in(float inL, float inR) {
     _in_l = inL;
     _in_r = inR;
+    const bool rec = _buf.is_recording();
+    const size_t head = _buf.write_head();
     _buf.write(inL, inR);              // no-op unless recording
+    // Detect on what actually LANDED (post overdub mix), not on the input --
+    // read back the frame the head just covered.
+    if (rec && _buf.valid()) {
+        const SampleBuffer::Frame& f = _buf.raw()[head];
+        _slices.on_write(head, f.l, f.r);
+    }
 }
 
 void SamplerEngine::set_recording(bool on) { _buf.set_recording(on); }
@@ -180,6 +189,7 @@ void SamplerEngine::load_sample(const float* l, const float* r, size_t frames) {
         dst[i].r = r ? r[i] : l[i];    // mono normals to both channels
     }
     _buf.set_rec_size(n);
+    _slices.scan(dst, n);
 }
 
 void SamplerEngine::trigger(float pitch_norm) {

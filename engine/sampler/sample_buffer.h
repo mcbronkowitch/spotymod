@@ -54,6 +54,10 @@ public:
     bool   valid() const { return _buffer != nullptr && _buffer_size > 0; }
     size_t capacity() const { return _buffer_size; }
     Frame* raw() const { return _buffer; }
+    // Where the next write() lands. The slice detector (SamplerEngine::
+    // process_in) snapshots this before write() to know which frame the
+    // written value landed on.
+    size_t write_head() const { return _write_head; }
 
 private:
     enum class State : uint8_t { idle, fadein, sustain, fadeout };

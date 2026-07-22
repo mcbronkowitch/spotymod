@@ -5,6 +5,7 @@
 #include "sampler/grain.h"
 #include "sampler/sample_buffer.h"
 #include "sampler/sampler_config.h"
+#include "sampler/slice_map.h"
 #include "util/onepole.h"
 #include "util/svf_lp.h"     // low-pass-only SVF; see the header for why
 
@@ -119,7 +120,7 @@ public:
     float  buffer_fill() const  { return _buf.fill(); }
     bool   is_empty() const     { return _buf.is_empty(); }
     size_t rec_size() const     { return _buf.rec_size(); }
-    void   clear()              { _kill_all(); _buf.clear(); }
+    void   clear()              { _kill_all(); _buf.clear(); _slices.clear(); }
     void   set_monitor(bool on) { _monitor = on; }
     void   load_sample(const float* l, const float* r, size_t frames);
 
@@ -187,6 +188,7 @@ public:
 
     // --- observation (CSV, tests) ---
     int   active_grains() const;
+    int   slice_count() const { return _slices.count(); }
     float grain_len_samples() const { return _grain_len; }
     float overlap() const               { return _overlap; }
     float spawn_interval_samples() const { return _spawn_every; }
@@ -228,6 +230,7 @@ private:
     float _next_ratio();         // chord round-robin + octave scatter
 
     SampleBuffer _buf;
+    SliceMap _slices;
     SampleBuffer::Frame* _mem = nullptr;
     size_t _mem_frames = 0;
 
