@@ -492,6 +492,20 @@ void SamplerEngine::_spawn_one() {
     // minimum alone (ratio 0.0625, lenf 32,256,000): spawn_count froze at 16
     // and 8 of 24 attempts were dropped over 125 s.
     //
+    // Wo die Decke WIRKLICH bindet, und das ist nicht der Extremfall oben:
+    // bei DENS max ist _spawn_every = _grain_len / 8, also len_ceil =
+    // 2 * _grain_len. Tape gibt lenf = _grain_len / ratio, und das erreicht
+    // die Decke schon bei ratio = 0.5 -- bei JEDER Transposition ueber eine
+    // Oktave abwaerts, bei ganz normalem SIZE. Die Tape-Zusage "low notes
+    // smear long" endet dort still: ab einer Oktave abwaerts wird das Grain
+    // nicht laenger, sondern gekappt (gepinnt von "F-10: the tape ceiling
+    // binds at one octave down" in tests/test_sampler_engine.cpp).
+    //
+    // Bewusst so belassen. Was es loesen wuerde, ist Voice-Stealing -- das
+    // aelteste Grain verdraengen statt den Spawn fallenzulassen -- und das
+    // ist eine breite Verhaltensaenderung am haeufigen dichten Pfad fuer
+    // einen Gewinn am duennen Rand. Siehe den Absatz zum sparse case unten.
+    //
     // The bound is self-adjusting to any kOverlap / kGrains and needs no new
     // tuning constant. It is not free, though, and the comment should own
     // that: in a SPARSE spawn pattern -- a short STEP burst, or FLOW switched

@@ -2120,3 +2120,52 @@ TEST_CASE("F-09: a stalled grain would emit DC -- the guard keeps it moving") {
          << " signal range at ~19e6 samples in: " << lo << " .. " << hi);
     CHECK((retired || (hi - lo > 1e-4f)));
 }
+
+TEST_CASE("F-10: the tape ceiling binds at one octave down, not at an extreme") {
+    // Kein Verhaltensfix, sondern die Zahl, die der Kommentar am Cap nennen
+    // muss. Bei DENS max ist len_ceil = 2 * _grain_len, und Tape gibt
+    // lenf = _grain_len / ratio -- die Decke greift also schon ab ratio =
+    // 0.5, bei ganz normalem SIZE. Deshalb hier bewusst KEIN feed()-Aufruf,
+    // der SIZE aendert -- der Rig-Default (0.5) ist Teil des Befunds, nicht
+    // ein Extremwert wie SIZE 1.0 in F-09.
+    //
+    // Die PITCH-Spur von feed() erreicht das Sampler-Ratio nicht (siehe
+    // ratio_for's Kommentar und F-09's set_chord-Aufrufe): _next_ratio()
+    // liest _chord_ratio, gefuettert ueber set_chord(). Die pitch_norm-Werte
+    // unten sind also fuer set_chord, nicht die feed()-PITCH-Spur, und
+    // test_ratio_for() macht das resultierende Ratio direkt nachpruefbar,
+    // statt es aus 8^(p-0.5) zu erraten -- unterhalb von kPitchKneeLo gilt
+    // diese Formel ohnehin nicht mehr.
+    Rig g;
+    g.e.set_tape_mode(true);
+    g.e.set_overlap(1.f);                   // DENS max -> overlap 8
+    g.e.set_flow(true);
+
+    // Diesseits der Decke: unter einer Oktave abwaerts.
+    const float p_shy = 0.375f;
+    const float ratio_shy = spky::test_ratio_for(p_shy);
+    REQUIRE(ratio_shy > 0.5f);
+    g.e.set_chord(&p_shy, 1);
+    g.render(48000);
+    const float len_shy = float(g.e.last_spawn_len());
+    const float base    = g.e.grain_len_samples();
+    INFO("ratio=" << ratio_shy << " len=" << len_shy << " base=" << base);
+    CHECK(len_shy > 1.2f * base);           // Tape streckt noch, ungekappt
+
+    // Jenseits der Decke: eine Oktave abwaerts oder mehr -- nicht die alten
+    // vier Oktaven / 45 Minuten aus dem urspruenglichen Kommentar, sondern
+    // der naechstliegende Punkt, an dem die Decke schon bindet.
+    Rig g2;
+    g2.e.set_tape_mode(true);
+    g2.e.set_overlap(1.f);
+    g2.e.set_flow(true);
+    const float p_deep = 0.2f;
+    const float ratio_deep = spky::test_ratio_for(p_deep);
+    REQUIRE(ratio_deep < 0.5f);
+    g2.e.set_chord(&p_deep, 1);
+    g2.render(48000);
+    const float len_deep = float(g2.e.last_spawn_len());
+    const float base2    = g2.e.grain_len_samples();
+    INFO("ratio=" << ratio_deep << " len=" << len_deep << " base=" << base2);
+    CHECK(len_deep == doctest::Approx(2.f * base2).epsilon(0.01));
+}
