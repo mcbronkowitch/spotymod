@@ -743,9 +743,8 @@ void SamplerEngine::_fire_slice() {
 
     const float motion = clampf(_targets[LANE_MOTION], 0.f, 1.f);
     const float wdraw = _rng.next_bipolar();     // 1st: walk
-    const float rdraw = _rng.next_unipolar();    // 2nd: roll (applied Task 7)
+    const float rdraw = _rng.next_unipolar();    // 2nd: roll
     const float pan   = _rng.next_bipolar() * motion;  // 3rd: pan
-    (void)rdraw;                                 // applied in Task 7
 
     const int pool = _pool_size();
     // Walk: cubed like pg_contour_walk (neighbour steps common, leaps rare),
@@ -771,12 +770,23 @@ void SamplerEngine::_fire_slice() {
     }
     if (k < 0) k += pool;
 
-    // The walk value the roll retriggers measure from: they add only what the
-    // walk accumulates AFTER this spawn, since this much is already in k.
-    _walk_ref = _walk;
-    _spawn_slice(k, pan);
+    _spawn_slice(k, pan);            // snapshots _walk_ref with _last_slice
     ++_cursor;
-    _retrig_period = 0;              // rolls land in Task 7
+
+    // Rolls: DENS caps the subdivision AND scales the odds; the metric
+    // weight biases them -- downbeats (weight 1) structurally never roll
+    // (p multiplies to 0, the kColorGate idiom again), deep offs gladly.
+    const float dens_n = (_overlap - kOverlapMin) / (kOverlapMax - kOverlapMin);
+    const int max_subdiv = static_cast<int>(_overlap + 0.5f);
+    const float p_roll = (1.f - _phrase_weight) * dens_n;
+    if (max_subdiv >= 2 && rdraw < p_roll) {
+        int period = static_cast<int>(_step_samples / static_cast<float>(max_subdiv));
+        const int floor_s = static_cast<int>(kSpawnMinSamples);
+        _retrig_period = period < floor_s ? floor_s : period;
+        _retrig_ctr    = _retrig_period;
+    } else {
+        _retrig_period = 0;
+    }
 }
 
 void SamplerEngine::_spawn_slice(int k, float pan) {
@@ -836,6 +846,15 @@ void SamplerEngine::_spawn_slice(int k, float pan) {
     _dec_ref[slot]  = static_cast<float>(dec);
 
     _last_slice = k;
+    // The walk value the roll retriggers measure from. It MUST advance in
+    // lockstep with _last_slice: taking it in _fire_slice left it current
+    // while _last_slice stayed one fire stale whenever the spawn dropped
+    // (empty buffer / density ceiling), so the next roll's (_walk - _walk_ref)
+    // omitted the walk that ran in between and landed at the wrong index.
+    // Re-snapshotting here also makes the retrigger's offset incremental --
+    // k already carries every earlier step, so only what accumulates AFTER
+    // this spawn may move the next one.
+    _walk_ref   = _walk;
     _last_ratio = ratio;
     _last_pan   = pan;
     _last_pos   = pos;
@@ -877,8 +896,8 @@ void SamplerEngine::process(float& outL, float& outR) {
             // above happen either way, so skipping the spawn costs no Rng
             // determinism.
             if (_last_slice >= 0) {
-                // Only the walk accumulated SINCE the note's first spawn moves
-                // the retrigger -- the rest is already folded into _last_slice.
+                // Only the walk accumulated SINCE the last spawn moves the
+                // retrigger -- the rest is already folded into _last_slice.
                 // At MOTION 0 the walk never moves, so the roll stutters one
                 // slice: the spec's ratchet semantics.
                 int k = (_last_slice + static_cast<int>(_walk - _walk_ref)) % _pool_size();

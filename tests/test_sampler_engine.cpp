@@ -2647,6 +2647,7 @@ TEST_CASE("sampler STEP: MOTION 0 is structurally still -- no walk, centered pan
         g.fire(slot);
         g.render(64);
         CHECK(g.e.last_spawn_pan() == 0.f);
+        CHECK(g.e.last_slice() == slot);
         g.note_off();
         g.render(64);
     }
@@ -2691,4 +2692,51 @@ TEST_CASE("sampler STEP: transientless material falls back to the tempo grid") {
     // consecutive fires step exactly one step-clock through the material
     CHECK(std::fabs(pos[1] - pos[0] - 6000.f) < 1.f);
     CHECK(std::fabs(pos[2] - pos[1] - 6000.f) < 1.f);
+}
+
+// --- Task 7: rolls --------------------------------------------------------
+
+TEST_CASE("sampler STEP: an off-beat at DENS max rolls at exactly step/subdiv") {
+    StepRig g;
+    g.e.set_overlap(1.f);              // DENS max -> subdiv cap 8
+    g.render(96);
+    // weight 0 = deepest off-beat -> roll probability 1 at DENS max
+    g.fire(1, 8, 0.f);
+    const int period = int(6000.f / 8.f);
+    REQUIRE(g.e.retrig_period() == period);
+    const int start = g.e.spawn_count();
+    g.render(period * 4 + 8);
+    CHECK(g.e.spawn_count() == start + 4);   // 4 retriggers, sample-exact
+    g.note_off();
+    g.render(period * 2);
+    CHECK(g.e.spawn_count() == start + 4);   // gate fall stops the roll dead
+}
+
+TEST_CASE("sampler STEP: DENS min never rolls, whatever the dice say") {
+    StepRig g;
+    g.e.set_overlap(0.f);              // DENS min -> subdiv cap 1
+    g.render(96);
+    for (int i = 0; i < 16; ++i) {
+        g.fire(i % 8, 8, 0.f);
+        CHECK(g.e.retrig_period() == 0);
+        g.note_off();
+        g.render(128);
+    }
+}
+
+TEST_CASE("sampler STEP: downbeats mostly hit once, offs roll -- the bias is real") {
+    StepRig g;
+    g.e.set_overlap(1.f);
+    g.render(96);
+    int down_rolls = 0, off_rolls = 0;
+    for (int i = 0; i < 64; ++i) {
+        g.fire(0, 8, 1.f);             // weight 1: downbeat
+        if (g.e.retrig_period() > 0) ++down_rolls;
+        g.note_off(); g.render(128);
+        g.fire(1, 8, 0.2f);            // weight 0.2: off
+        if (g.e.retrig_period() > 0) ++off_rolls;
+        g.note_off(); g.render(128);
+    }
+    CHECK(down_rolls == 0);            // p = (1 - 1.0) * dens = 0, structural
+    CHECK(off_rolls > 30);             // p = 0.8 at DENS max
 }
