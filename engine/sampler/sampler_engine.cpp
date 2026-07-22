@@ -732,8 +732,8 @@ void SamplerEngine::_slice_pos(int k, float& pos, float& slice_len) const {
 
 // One fire = one slice grain (spec 2026-07-22).
 // --- Rng draw order is contract: walk, roll, pan. All three ALWAYS drawn. ---
-// Walk applies from Task 6, roll from Task 7; drawing them from day one means
-// the draw contract never shifts once tests pin it.
+// Roll applies from Task 7; drawing it from day one means the draw contract
+// never shifts once tests pin it.
 void SamplerEngine::_fire_slice() {
     if (_buf.is_empty()) return;
 
@@ -742,12 +742,18 @@ void SamplerEngine::_fire_slice() {
     _last_slot = _phrase_slot;
 
     const float motion = clampf(_targets[LANE_MOTION], 0.f, 1.f);
-    const float wdraw = _rng.next_bipolar();     // 1st: walk (applied Task 6)
+    const float wdraw = _rng.next_bipolar();     // 1st: walk
     const float rdraw = _rng.next_unipolar();    // 2nd: roll (applied Task 7)
     const float pan   = _rng.next_bipolar() * motion;  // 3rd: pan
-    (void)wdraw; (void)rdraw;                    // applied in Tasks 6/7
+    (void)rdraw;                                 // applied in Task 7
 
     const int pool = _pool_size();
+    // Walk: cubed like pg_contour_walk (neighbour steps common, leaps rare),
+    // scaled by MOTION x pool. MOTION 0 multiplies to exactly 0 -- the
+    // kColorGate idiom, structurally silent, no branch.
+    _walk += wdraw * wdraw * wdraw * motion * static_cast<float>(pool);
+    const int wo = static_cast<int>(_walk);
+
     int k;
     if (_slices.count() >= kMinSlices) {
         // Marker mode: base slice from SOURCE + SCAN, cursor on top.
@@ -758,13 +764,16 @@ void SamplerEngine::_fire_slice() {
         while (centre >= c) centre -= c;
         while (centre < 0.f) centre += c;
         const int base = _slices.index_at(centre);
-        k = (base + _cursor) % pool;
+        k = (base + _cursor + wo) % pool;
     } else {
         // Grid mode: _slice_pos folds base + k steps itself.
-        k = _cursor % pool;
+        k = (_cursor + wo) % pool;
     }
     if (k < 0) k += pool;
 
+    // The walk value the roll retriggers measure from: they add only what the
+    // walk accumulates AFTER this spawn, since this much is already in k.
+    _walk_ref = _walk;
     _spawn_slice(k, pan);
     ++_cursor;
     _retrig_period = 0;              // rolls land in Task 7
@@ -859,15 +868,23 @@ void SamplerEngine::process(float& outL, float& outR) {
         if (--_retrig_ctr <= 0) {
             _retrig_ctr = _retrig_period;
             const float motion = clampf(_targets[LANE_MOTION], 0.f, 1.f);
-            const float wdraw = _rng.next_bipolar();          // walk (Task 6)
+            const float wdraw = _rng.next_bipolar();          // walk
             const float pan   = _rng.next_bipolar() * motion; // pan
-            (void)wdraw;
+            _walk += wdraw * wdraw * wdraw * motion * static_cast<float>(_pool_size());
             // _last_slice is -1 until the first successful spawn, and
             // SliceMap::start(int) is unguarded -- a roll that fires before any
             // slice has landed would index the marker array at -1. The draws
             // above happen either way, so skipping the spawn costs no Rng
             // determinism.
-            if (_last_slice >= 0) _spawn_slice(_last_slice, pan);
+            if (_last_slice >= 0) {
+                // Only the walk accumulated SINCE the note's first spawn moves
+                // the retrigger -- the rest is already folded into _last_slice.
+                // At MOTION 0 the walk never moves, so the roll stutters one
+                // slice: the spec's ratchet semantics.
+                int k = (_last_slice + static_cast<int>(_walk - _walk_ref)) % _pool_size();
+                if (k < 0) k += _pool_size();
+                _spawn_slice(k, pan);
+            }
         }
     }
 
@@ -987,6 +1004,10 @@ void SamplerEngine::punch() {
     // starts the walk over from the base slice.
     _cursor    = 0;
     _walk      = 0.f;
+    // Keep the roll's reference on the same clock: a punch under a held note
+    // would otherwise leave _walk_ref stranded at the old accumulation and
+    // throw every retrigger by that stale difference.
+    _walk_ref  = 0.f;
 }
 
 }  // namespace spky

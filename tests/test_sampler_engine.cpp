@@ -2639,6 +2639,40 @@ TEST_CASE("sampler STEP: a dropped fire still consumes its Rng draws") {
     CHECK(g.e.last_spawn_pan() == doctest::Approx(-0.2129190f).epsilon(1e-4));
 }
 
+// --- Task 6: the MOTION walk ---------------------------------------------
+
+TEST_CASE("sampler STEP: MOTION 0 is structurally still -- no walk, centered pan") {
+    StepRig g;
+    for (int slot = 0; slot < 8; ++slot) {
+        g.fire(slot);
+        g.render(64);
+        CHECK(g.e.last_spawn_pan() == 0.f);
+        g.note_off();
+        g.render(64);
+    }
+}
+
+TEST_CASE("sampler STEP: MOTION 1 leaves the ordered path") {
+    StepRig g;
+    g.feed(0.5f, 0.f, 0.5f, 1.f);      // MOTION 1
+    g.render(96);
+    int deviations = 0;
+    int prev = -1;
+    for (int cycle = 0; cycle < 4; ++cycle)
+        for (int slot = 0; slot < 8; ++slot) {
+            g.fire(slot);
+            g.render(64);
+            const int s = g.e.last_slice();
+            if (prev >= 0 && s != (prev + 1) % 8) ++deviations;
+            prev = s;
+            g.note_off();
+            g.render(64);
+        }
+    // The cubed walk leaves small steps common: some fires still land in
+    // order, but across 32 fires a fully-ordered run is out of the question.
+    CHECK(deviations > 4);
+}
+
 TEST_CASE("sampler STEP: transientless material falls back to the tempo grid") {
     Rig g;                              // default rig: 441 Hz sine, no clicks
     g.e.set_flow(false);

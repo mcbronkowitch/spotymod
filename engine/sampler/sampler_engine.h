@@ -328,6 +328,9 @@ private:
     float _phrase_weight = 1.f;
     int   _cursor = 0;                // slices advanced since the phrase wrap
     float _walk   = 0.f;             // MOTION walk offset, in slice units
+    // _walk as it stood at the last fire's spawn: roll retriggers add only the
+    // walk accumulated since, because the rest is already inside _last_slice.
+    float _walk_ref = 0.f;
     int   _retrig_period = 0;        // samples between roll retriggers; 0 = none
     int   _retrig_ctr    = 0;
     int   _last_slot  = -1;          // wrap detection: slot went backwards
