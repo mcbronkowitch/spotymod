@@ -53,6 +53,16 @@ public:
     // 1 in FLOW. The grid servo scales its transport target by this so a
     // synced bank locks its S-step cycle across S/8 divisions.
     float clock_scale() const { return _step_mode ? 8.f / static_cast<float>(_steps) : 1.f; }
+    // Slice-groove side channel (spec 2026-07-22): the sampler needs to know
+    // where in the phrase a fire sits and how long a step is in samples.
+    int   cur_step() const { return _cur_step; }
+    int   steps()    const { return _steps; }
+    // Samples per STEP slot at the current rate: one slot is 1/_steps of the
+    // cycle and _phase_inc is cycle fraction per sample. 0 when stopped.
+    float step_samples() const {
+        return _phase_inc > 0.f
+            ? 1.f / (_phase_inc * static_cast<float>(_steps)) : 0.f;
+    }
     float phase_eff() const;                  // audible phase = (_phase + EVOLVE offset), wrapped
     float target() const { return _target; }  // pre-smooth, pre-range held value
 

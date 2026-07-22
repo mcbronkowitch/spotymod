@@ -78,3 +78,20 @@ TEST_CASE("lane shape_offset: shifts the effective shape; offset 0 is bit-identi
     for (int i = 0; i < 48000; ++i) if (c.process() != d.process()) same = false;
     CHECK(same);
 }
+
+TEST_CASE("lane: step clock accessors expose slot and step duration") {
+    ModLane l;
+    l.init(48000.f, 77);
+    l.set_melodic(true);
+    l.set_rate_hz(1.f);            // 1 Hz cycle
+    l.set_step(true, 8);
+    // step_samples: phase covers one cycle per 1/(rate*clock_scale) seconds;
+    // with 8 steps at clock_scale 8/8 = 1 a step is sr / (rate * 8) = 6000.
+    CHECK(l.steps() == 8);
+    CHECK(l.step_samples() == doctest::Approx(6000.f).epsilon(0.001));
+    CHECK(l.cur_step() == -1);     // no boundary yet
+    // run one full step: the slot counter must have advanced into range
+    for (int i = 0; i < 6001; ++i) l.process();
+    CHECK(l.cur_step() >= 0);
+    CHECK(l.cur_step() < 8);
+}

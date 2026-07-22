@@ -30,6 +30,10 @@ public:
     void new_phrase() { _lanes[LANE_PITCH].new_phrase(); }
     bool pitch_gate() const { return _lanes[LANE_PITCH].gate_state(); }
     bool pitch_sustain() const { return _lanes[LANE_PITCH].note_sustain(); }
+    // Slice-groove side channel (spec 2026-07-22), master/PITCH lane only.
+    int   pitch_cur_step()     const { return _lanes[LANE_PITCH].cur_step(); }
+    int   pitch_steps()        const { return _lanes[LANE_PITCH].steps(); }
+    float pitch_step_samples() const { return _lanes[LANE_PITCH].step_samples(); }
 
     void process();                // advance all lanes one sample
 
