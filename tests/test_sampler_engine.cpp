@@ -2020,13 +2020,15 @@ TEST_CASE("F-02: a gate edge does not re-phase the FLOW scheduler") {
     const float every = g.e.spawn_interval_samples();
     REQUIRE(every > 48000.f * 20.f);            // ~42 s Grundintervall
 
-    // Eine Gate-Flanke alle 2 s ueber 10 s, wie ein PITCH-Zyklus sie liefert.
+    // Fuenf Gate-Flanken, eine alle 9600 Samples (0.2 s), wie ein PITCH-Zyklus
+    // sie liefert -- zusammen 1 s, also ein Vierzigstel des 42-s-Intervalls.
+    // Jede Flanke, die durchkaeme, waere ein Spawn, den DENS nicht bestellt hat.
     for (int k = 0; k < 5; ++k) {
         g.e.set_gate(true);  g.render(240);
         g.e.set_gate(false); g.render(9360);
     }
     const int total = g.e.spawn_count() + g.e.dropped_spawns();
-    INFO("spawn_every=" << every << " total spawns in 10 s=" << total);
+    INFO("spawn_every=" << every << " total spawns in 1 s=" << total);
     CHECK(total <= 2);                          // der Anfangsspawn, sonst nichts
 }
 
