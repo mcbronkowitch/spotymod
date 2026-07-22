@@ -127,15 +127,18 @@ TEST_CASE("slice map: a ring wrap clears the region the head re-passes") {
     for (size_t i = 0; i < take1.size(); ++i) m.on_write(i, take1[i].l, take1[i].r);
     REQUIRE(m.count() == 2);
     // Write head wraps back to frame 0 and continues for 10000 frames, with a
-    // fresh click at 3000. The wrap passes over 4800's marker (must go) but
-    // never reaches 24000 (must survive), same discontinuity branch as a
-    // punch-in but re-aimed at frame 0 instead of mid-buffer.
-    auto wrap = clicks(10000, { 3000 });
+    // fresh click at 6000 -- AFTER 4800's marker (~4704 with preroll) so the
+    // sweep must actually pass over that stale marker before reaching the
+    // click, rather than having _insert's post-detect re-aim skip past it for
+    // free. The wrap passes over 4800's marker (must go) but never reaches
+    // 24000 (must survive), same discontinuity branch as a punch-in but
+    // re-aimed at frame 0 instead of mid-buffer.
+    auto wrap = clicks(10000, { 6000 });
     for (size_t i = 0; i < wrap.size(); ++i) m.on_write(i, wrap[i].l, wrap[i].r);
     REQUIRE(m.count() == 2);
     const int pre = int(sampler_cfg::kOnsetPreRollS * 48000.f);
-    CHECK(m.start(0) >= 3000 - size_t(pre));
-    CHECK(m.start(0) <= 3000 + 144);
+    CHECK(m.start(0) >= 6000 - size_t(pre));
+    CHECK(m.start(0) <= 6000 + 144);
     CHECK(m.start(1) >= 24000 - size_t(pre));
     CHECK(m.start(1) <= 24000);
 }
