@@ -681,8 +681,8 @@ Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>"
 - [ ] **Step 7: Hörprobe für den Entscheidungspunkt**
 
 ```bash
-source env.sh && cmake --build build --target spky_render
-./build/spky_render.exe host/render/scenarios/sampler_scan.json /tmp/scan_after.wav
+source env.sh && cmake --build build --target render
+./build/render.exe host/render/scenarios/sampler_scan.json /tmp/scan_after.wav
 ```
 
 `/tmp/scan_after.wav` anhören und gegen die Erinnerung an das alte Verhalten stellen. Die Frage an Bastian: reicht Variante (a), oder soll der Scatter ganz weg (b)? Antwort im Plan unter diesem Step notieren, dann weiter.
@@ -1821,8 +1821,8 @@ Begründung für den Umsetzer: `_spawn_one` liest `_targets[LANE_SOURCE]` inklus
 - [ ] **Step 4: Das Szenario rendern und hören**
 
 ```bash
-source env.sh && cmake --build build --target spky_render
-./build/spky_render.exe host/render/scenarios/sampler_scan.json /tmp/scan_fixed.wav
+source env.sh && cmake --build build --target render
+./build/render.exe host/render/scenarios/sampler_scan.json /tmp/scan_fixed.wav
 ```
 
 Erwartet: kein Fehler, eine Datei entsteht. Anhören: die Leseposition soll erkennbar SCAN folgen statt zu mäandern.
@@ -2009,9 +2009,9 @@ Erwartet: alle grün, insbesondere die Rate innerhalb ±3 % bei MOTION = 1.
 - [ ] **Step 2: Die Listening-Szenarien rendern**
 
 ```bash
-cmake --build build --target spky_render
-./build/spky_render.exe host/render/scenarios/sampler_scan.json    /tmp/final_scan.wav
-./build/spky_render.exe host/render/scenarios/sampler_overlap.json /tmp/final_overlap.wav
+cmake --build build --target render
+./build/render.exe host/render/scenarios/sampler_scan.json    /tmp/final_scan.wav
+./build/render.exe host/render/scenarios/sampler_overlap.json /tmp/final_overlap.wav
 ```
 
 Beide anhören. Erwartet: ORGANIZE und SCAN bewegen die Leseposition hörbar, DENS ändert die Dichte über den ganzen Knopfweg (vor Task 2 tat die untere Hälfte nichts), keine Knackser.
