@@ -42,6 +42,10 @@ struct Rig {
     }
 };
 
+// Defined with the slice tests further down; forward-declared because two of
+// the STEP cases up here need real transient material too.
+static void feed_clicks(Rig& g, size_t content, int n);
+
 static float rms(const std::vector<float>& v, size_t from, size_t n) {
     double acc = 0.0;
     for (size_t i = from; i < from + n && i < v.size(); ++i) acc += double(v[i]) * v[i];
@@ -70,29 +74,64 @@ TEST_CASE("sampler: FLOW is a standing cloud -- RMS never drops out") {
     CHECK(lowest > 0.2f * highest);        // ...and never gaps
 }
 
-// SLICE-GROOVE AUDIT (Task 9): the burst release (kBurstReleaseS) this
-// asserts on was removed in Task 5 -- a STEP note is now one slice grain
-// released over its own DEC, with no spawning tail past the gate. The
-// silence-before-the-gate and retired-a-second-later halves still describe
-// wanted behaviour; the tail half does not. Task 9 rewrites it.
-TEST_CASE("sampler: STEP is silent until the gate opens, and tails off after"
-          * doctest::skip(true)) {
-    Rig g;
-    g.e.set_flow(false);
-    auto pre = g.render(4800);
-    for (float s : pre) CHECK(s == doctest::Approx(0.f).epsilon(0.0001));
+// Task 9 rewrite of "sampler: STEP is silent until the gate opens, and tails
+// off after". Two of its three halves survived the slice-groove rewrite and
+// are kept verbatim in spirit: STEP makes no sound before a note, and a note
+// is fully retired a beat after it ends. The third half asserted a release of
+// a FIXED length (kBurstReleaseS, hard-coded as 0.06f once the constant was
+// deleted) -- that length is gone with the burst scheduler, and the literal is
+// deliberately NOT resurrected. What replaces it is the property that actually
+// holds now: the release runs over the GRAIN'S OWN decay window, so DEC --
+// which used to have no say at all over how a STEP note ended -- now sets the
+// tail length. A build that went back to a fixed release, or that killed
+// grains outright on the gate fall, collapses the two measurements below onto
+// each other and fails.
+//
+// The gate is opened BEFORE the trigger on purpose: it separates "the gate
+// alone spawns nothing" (the F-02 STEP direction, see near the end of this
+// file) from "the fire spawns", inside the silence half.
+TEST_CASE("sampler: STEP is silent until a note fires, and releases over its own DEC") {
+    // Returns how many samples the note takes to retire after the gate falls.
+    auto tail_samples = [](float dec_n) {
+        Rig g;
+        g.e.set_flow(false);
+        g.e.set_window_decay(dec_n);
+        // SIZE well above slice unity so the grain would still have seconds of
+        // window left when the gate falls -- otherwise a long DEC would be
+        // masked by the grain simply reaching its own end first, and the two
+        // measurements would converge for a reason unrelated to the release.
+        g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.8f);
+        g.render(96);                       // let the control tick see SIZE
 
-    g.e.trigger(0.5f);
-    g.e.set_gate(true);
-    auto on = g.render(9600);
-    CHECK(rms(on, 2400, 4800) > 0.02f);
+        g.e.set_gate(true);                 // gate up, nothing composed yet
+        auto pre = g.render(4800);
+        for (float s : pre) CHECK(s == doctest::Approx(0.f).epsilon(0.0001));
+        REQUIRE(g.e.active_grains() == 0);  // the gate armed nothing
 
-    g.e.set_gate(false);
-    auto off = g.render(48000);
-    const int rel = int(0.06f * 48000.f);
-    CHECK(rms(off, 0, size_t(rel / 2)) > 0.005f);   // the release still sounds
-    CHECK(rms(off, 40000, 4800) < 0.001f);          // a second later, retired
-    CHECK(g.e.active_grains() == 0);
+        g.e.trigger(0.5f);                  // the fire itself spawns
+        auto on = g.render(4800);
+        REQUIRE(g.e.active_grains() == 1);
+        CHECK(rms(on, 0, 4800) > 0.02f);    // it sounds under the note
+
+        g.e.set_gate(false);
+        int n = 0;
+        while (g.e.active_grains() > 0 && n < 48000 * 4) {
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+            ++n;
+        }
+        CHECK(g.e.active_grains() == 0);    // retired, not sustained
+        auto after = g.render(48000);
+        CHECK(rms(after, 0, 48000) < 0.001f);   // and nothing respawns behind it
+        return n;
+    };
+
+    const int shortest = tail_samples(0.f);
+    const int longest  = tail_samples(1.f);
+    INFO("release tail: DEC 0 -> " << shortest << " samples, DEC 1 -> "
+         << longest);
+    CHECK(shortest > 0);                    // a release, not a hard cut
+    CHECK(longest > 4 * shortest);          // ...whose length is DEC's, not fixed
 }
 
 TEST_CASE("sampler: an empty buffer is silent under FLOW, STEP and gate") {
@@ -779,14 +818,16 @@ TEST_CASE("sampler: detune_factor matches std::pow over the full DTUN range") {
 // single-note STEP burst holds its ratio while PITCH drifts underneath it"
 // covers the separate _burst_ratio cache.
 
-// SLICE-GROOVE AUDIT (Task 9): this needs 12 grains out of ONE trigger, which
-// only the free-running STEP burst removed in Task 5 could produce. The
-// property itself (a latched single note keeps its trigger-time ratio while
-// set_chord drifts underneath) is still real and still worth pinning -- from
-// Task 7 the roll retriggers give a single fire more than one grain again,
-// which is the natural place to re-express it. Task 9 settles it.
-TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH drifts underneath it"
-          * doctest::skip(true)) {
+// Task 9 rewrite of "...a latched single-note STEP burst holds its ratio while
+// PITCH drifts underneath it". The property is unchanged and still real; only
+// its VEHICLE moved. The old form collected 12 grains out of one trigger by
+// letting the free-running STEP burst spawn under a held gate, and that
+// scheduler is gone. Since Task 7 a single fire produces more than one grain
+// again -- the roll retriggers -- and those go through the same _next_ratio(),
+// so the test now rides a roll instead of a burst. Note the retrigger path
+// (sampler_engine.cpp, process()) never re-latches: it must keep reading the
+// _burst_ratio frozen at the fire, not the live _chord[0] this test drifts.
+TEST_CASE("sampler: a latched single-note STEP roll holds its ratio while PITCH drifts underneath it") {
     // Property under test: _next_ratio's latched branch (latched &&
     // _chord_n <= 1) must read _burst_ratio, frozen at the trigger() that
     // set _burst_pitch -- NOT _chord_ratio[0], which tracks _chord[0] live.
@@ -798,10 +839,23 @@ TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH
     // way -- every other test sets it once via feed()/set_chord() and holds
     // it steady -- so this is the one case that would have silently caught
     // (or missed) the Task 1 hoist reading the wrong cache.
-    Rig g;
+    //
+    // StepRig is declared further down this file, so this rig is built by hand
+    // -- clicky material for real slices, STEP, a 6000-sample step clock, DENS
+    // at maximum (subdivision cap 8) and a phrase slot whose metric weight is
+    // 0, which makes the roll probability exactly 1: the fire below ALWAYS
+    // arms a roll, no dice involved.
+    Rig g(0);
+    feed_clicks(g, 48000, 8);
     g.e.set_flow(false);            // STEP mode
+    g.e.set_step_clock(6000.f);
+    g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.2f);   // short grains: the
+    g.e.set_overlap(1.f);                                  // pool never fills
+    g.render(96);                   // let the control tick see SIZE/DENS
+    g.e.set_phrase_pos(/*slot*/1, /*steps*/8, /*weight*/0.f);
     g.e.trigger(0.3f);              // single note: _chord_n == 1, now latched
-    g.e.set_gate(true);
+    g.e.set_gate(true);             // rolls only retrigger under the gate
+    REQUIRE(g.e.retrig_period() > 0);   // the roll really armed
 
     std::vector<float> ratios;
     int last = g.e.spawn_count();
@@ -813,7 +867,7 @@ TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH
         ++sample;
         if (sample % sampler_cfg::kCtrlInterval == 0) {
             // Simulate Part::_control_tick refreshing the live chord surface
-            // underneath the still-latched burst -- what a PITCH-lane LFO
+            // underneath the still-latched note -- what a PITCH-lane LFO
             // would do, without ever calling trigger()/trigger_chord() again.
             const float drifted = 0.3f + 0.02f * float(sample % 20);
             g.e.set_chord(&drifted, 1);
@@ -824,9 +878,13 @@ TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH
         }
     }
     REQUIRE(ratios.size() == 12);
-    // Every grain in the burst spawns at the SAME ratio: the one latched at
+    // Every grain of the roll spawns at the SAME ratio: the one latched at
     // trigger() time, unmoved by the live PITCH drift injected above.
     for (float r : ratios) CHECK(r == ratios[0]);
+    // ...and that one ratio is the TRIGGER'S, not the drift's. Without this
+    // the loop above would pass just as happily on a build that read
+    // _chord_ratio[0] but happened to see a constant chord.
+    CHECK(ratios[0] == doctest::Approx(spky::test_ratio_for(0.3f)).epsilon(1e-6));
 }
 
 // --- golden vector: the Rng draw order is a hard contract -----------------
@@ -2068,29 +2126,47 @@ TEST_CASE("F-02: a gate edge does not re-phase the FLOW scheduler") {
     CHECK(total <= 2);                          // der Anfangsspawn, sonst nichts
 }
 
-// SLICE-GROOVE AUDIT (Task 9): the behaviour under test -- the gate edge
-// arming an immediate spawn via _spawn_ctr = 0 -- was removed in Task 5. The
-// underlying REQUIREMENT (STEP fires on the composed rhythm, not up to an
-// interval late) is now met by trigger()/trigger_chord() spawning directly,
-// which "sampler STEP: a fire spawns exactly one grain at a slice start"
-// covers. Task 9 decides whether this case is rewritten or retired.
-TEST_CASE("F-02: a gate edge still starts a STEP burst immediately"
-          * doctest::skip(true)) {
-    // Die Gegenrichtung, und der Grund, warum _spawn_ctr = 0 ueberhaupt da
-    // ist: ausserhalb des FLOW muss die Flanke sofort feuern, damit STEP die
-    // komponierte Rhythmik trifft statt bis zu ein Intervall spaeter.
+// DELETED (Task 9): "F-02: a gate edge still starts a STEP burst
+// immediately". It pinned `_spawn_ctr = 0` on the rising gate edge -- the arm
+// that made the old free-running STEP burst fire on the beat instead of up to
+// one spawn interval late. Task 5 removed both the arm and the burst: a STEP
+// grain now comes from trigger()/trigger_chord() calling _fire_slice directly,
+// so it is on the composed beat by construction, with no scheduler left to
+// re-phase. Nothing remains for that test to observe.
+//
+// What replaces it, in two halves:
+//   - the timing requirement it stood for -- "STEP fires on the composed
+//     rhythm, not late" -- is now carried by "sampler STEP: a fire spawns
+//     exactly one grain at a slice start", which sees the fire land within 64
+//     samples of trigger().
+//   - the INVERSE, which only became a live risk once the arm was gone, is
+//     the case below.
+TEST_CASE("F-02: in STEP the gate arms nothing -- only a fire spawns") {
+    // The STEP counterpart to "a gate edge does not re-phase the FLOW
+    // scheduler" above. In STEP the gate is now purely a note-length signal:
+    // it releases what is sounding on its falling edge and it lets rolls
+    // retrigger, but it must never put a grain into the pool by itself.
+    // Re-introducing any spawn-on-edge arm -- the obvious "fix" for anyone who
+    // reads the deleted test's title without its history -- would double the
+    // first grain of every composed note.
     Rig g;
     g.feed(0.5f, 0.f, 0.5f, 0.f, 1.f);
-    g.e.set_overlap(0.f);                       // langes Intervall
     g.e.set_flow(false);
-    g.render(4800);                             // Scheduler steht (kein Gate)
+    g.render(4800);
     const int before = g.e.spawn_count() + g.e.dropped_spawns();
 
-    g.e.set_gate(true);
-    g.render(4);                                // wenige Samples nach der Flanke
+    for (int k = 0; k < 5; ++k) {               // five clean gate edges
+        g.e.set_gate(true);  g.render(2400);
+        g.e.set_gate(false); g.render(2400);
+    }
     const int after = g.e.spawn_count() + g.e.dropped_spawns();
     INFO("before=" << before << " after=" << after);
-    CHECK(after > before);
+    CHECK(after == before);                     // no edge ever spawned anything
+
+    // ...and the rig is not simply dead: the same engine fires on a trigger.
+    g.e.trigger(0.5f);
+    g.render(64);
+    CHECK(g.e.spawn_count() + g.e.dropped_spawns() == after + 1);
 }
 
 TEST_CASE("F-09: grain length stays under the _off stall bound at any DENS") {
@@ -2739,4 +2815,152 @@ TEST_CASE("sampler STEP: downbeats mostly hit once, offs roll -- the bias is rea
     }
     CHECK(down_rolls == 0);            // p = (1 - 1.0) * dens = 0, structural
     CHECK(off_rolls > 30);             // p = 0.8 at DENS max
+}
+
+// --- Task 9: the STEP golden vector ---------------------------------------
+//
+// --- STEP golden vector: the slice-groove Rng draw order is a hard contract:
+// per fire: walk, roll, pan. Per roll retrigger: walk, pan. A fire that hits
+// a full pool still draws all three (the drop happens in _spawn_slice, after
+// the draws). Any change to this order re-pins this table AND the spec's
+// Determinism section -- never regenerate silently.
+//
+// The FLOW golden vector further up this file ("sampler: golden vector -- Rng
+// draw order and SOURCE mapping are locked") makes the same argument for the
+// FLOW cloud, and everything its file-level comment says about marginal
+// distributions applies here word for word: every other STEP test in this
+// suite checks a MARGIN (the walk deviates, pan is centred at MOTION 0,
+// downbeats do not roll, the roll period is step/subdiv). Successive xorshift32
+// outputs are all uniform, so swapping walk and pan, or moving the roll draw
+// to either side of them, leaves every one of those margins intact and the
+// suite green. Only the SEQUENCE of drawn values catches it.
+//
+// This table is a GOLDEN VECTOR: captured once from a known-good build, not
+// derived from first principles. If it fails after a change that looks
+// unrelated -- a draw reordered, added or removed in _fire_slice() or the roll
+// branch of process(), the seed decorrelation constant moved, the walk cubing
+// or its pool scaling changed, SliceMap's marker placement shifted -- STOP.
+// Ask WHY the numbers changed before touching them. Updating them to get back
+// to green silently re-opens exactly the hole this test exists to close.
+TEST_CASE("sampler STEP: golden vector -- the slice-groove draw order is locked") {
+    StepRig g;                         // seed 4242, 8 clicks -> 8 slices,
+                                       // step clock 6000
+    // MOTION 0.5 makes all three draws OBSERVABLE at once: the walk scales by
+    // MOTION (0 would multiply it away and freeze the slice order), pan scales
+    // by MOTION (0 would make every pan literally 0.f and pin nothing), and
+    // half-scale keeps the walk from saturating so the slice column stays
+    // informative. SIZE 0.35 keeps the grains short enough that a rolling note
+    // does not sit on the density ceiling for the whole table.
+    g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.35f, /*motion*/0.5f);
+    g.e.set_overlap(1.f);              // DENS max: subdiv cap 8, rolls live
+    g.render(96);                       // let the control tick see SIZE/DENS
+
+    // pg_metric_weight's shape over an 8-step phrase, spelled out rather than
+    // included: this test pins the SAMPLER's draw order, and hard-wiring the
+    // weights keeps a future edit to the phrase generator's accent profile
+    // from re-pinning a table that has nothing to do with it.
+    static const float weight[8] = { 1.f, 0.2f, 0.5f, 0.2f,
+                                     0.35f, 0.2f, 0.5f, 0.2f };
+
+    struct Sp { int slice; float pos, pan; int len; };
+    std::vector<Sp> got;
+    int last = g.e.spawn_count();
+    auto pump = [&](int n) {
+        for (int i = 0; i < n; ++i) {
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+            if (g.e.spawn_count() != last) {
+                last = g.e.spawn_count();
+                got.push_back({ g.e.last_slice(), g.e.last_spawn_pos(),
+                                g.e.last_spawn_pan(), g.e.last_spawn_len() });
+            }
+        }
+    };
+    // 12 fires across two phrase cycles: slots 0..7 then 0..3. The wrap at
+    // fire 8 (slot 3 -> slot 0) is deliberate -- it drives _fire_slice's
+    // "phrase went backwards, cursor goes home" branch inside the table.
+    for (int fire = 0; fire < 12; ++fire) {
+        const int slot = fire % 8;
+        g.e.set_phrase_pos(slot, 8, weight[slot]);
+        g.e.trigger(0.5f);
+        g.e.set_gate(true);
+        pump(6000);                     // one step of held note (rolls run)
+        g.e.set_gate(false);
+        pump(600);                      // release gap (rolls stop dead)
+    }
+
+    // Golden vector: seed 4242, StepRig (8 clicks over 48000 frames -> 8
+    // slices, step clock 6000), SOURCE 0 / SIZE 0.35 / MOTION 0.5, DENS max,
+    // the 12 fires above. One row per SPAWN, so fires and their roll
+    // retriggers are interleaved: 12 fires produced 44 grains here, and that
+    // COUNT is pinned too -- a roll that stopped arming, or one that ran at a
+    // different subdivision, changes the LENGTH of this table before it
+    // changes any single row.
+    //
+    // Reading the columns: `slice` is the walk's output (marker index), `pos`
+    // the marker start minus SliceMap's pre-roll, `pan` the third draw of a
+    // fire and the second of a retrigger, `len` the slice length scaled by
+    // SIZE. `len` varies between 2569/2611/2653 because the click train's
+    // detected markers are not perfectly equidistant -- that is the SliceMap
+    // talking, and it is what makes `len` worth pinning at all.
+    static const Sp golden[] = {
+        { 1, 5904.f, -0.133075f, 2611 },
+        { 2, 11904.f, -0.220712f, 2611 },
+        { 5, 29904.f, -0.317578f, 2611 },
+        { 5, 29904.f, -0.171948f, 2611 },
+        { 5, 29904.f, -0.198368f, 2611 },
+        { 7, 41904.f, 0.0372394f, 2653 },
+        { 7, 41904.f, 0.139564f, 2653 },
+        { 6, 35904.f, -0.475667f, 2611 },
+        { 6, 35904.f, 0.483503f, 2611 },
+        { 4, 23904.f, 0.216215f, 2611 },
+        { 0, 0.f, 0.323182f, 2569 },
+        { 1, 5904.f, 0.0905479f, 2611 },
+        { 0, 0.f, 0.307441f, 2569 },
+        { 1, 5904.f, -0.411203f, 2611 },
+        { 1, 5904.f, 0.468652f, 2611 },
+        { 6, 35904.f, -0.401812f, 2611 },
+        { 5, 29904.f, -0.35603f, 2611 },
+        { 2, 11904.f, 0.492735f, 2611 },
+        { 1, 5904.f, 0.379274f, 2611 },
+        { 1, 5904.f, 0.359537f, 2611 },
+        { 1, 5904.f, -0.025275f, 2611 },
+        { 4, 23904.f, 0.255384f, 2611 },
+        { 4, 23904.f, -0.297428f, 2611 },
+        { 6, 35904.f, -0.440616f, 2611 },
+        { 6, 35904.f, -0.454998f, 2611 },
+        { 6, 35904.f, -0.353762f, 2611 },
+        { 6, 35904.f, -0.478825f, 2611 },
+        { 3, 17904.f, 0.437026f, 2611 },
+        { 3, 17904.f, 0.463213f, 2611 },
+        { 0, 0.f, 0.457436f, 2569 },
+        { 5, 29904.f, 0.337979f, 2611 },
+        { 5, 29904.f, -0.421374f, 2611 },
+        { 1, 5904.f, -0.291568f, 2611 },
+        { 3, 17904.f, -0.0496832f, 2611 },
+        { 3, 17904.f, 0.155703f, 2611 },
+        { 3, 17904.f, 0.347724f, 2611 },
+        { 4, 23904.f, 0.2745f, 2611 },
+        { 4, 23904.f, -0.306532f, 2611 },
+        { 4, 23904.f, 0.183447f, 2611 },
+        { 3, 17904.f, 0.173856f, 2611 },
+        { 3, 17904.f, -0.168819f, 2611 },
+        { 3, 17904.f, -0.163568f, 2611 },
+        { 2, 11904.f, 0.251479f, 2611 },
+        { 3, 17904.f, -0.347649f, 2611 },
+    };
+    const size_t n = sizeof(golden) / sizeof(golden[0]);
+    REQUIRE(got.size() == n);
+
+    // Absolute, not relative, tolerances, for the reason spelled out at the
+    // FLOW golden vector: pos lives in the tens of thousands, and a relative
+    // epsilon would swallow the sub-sample shifts this table exists to catch.
+    // slice and len are integers and are compared exactly.
+    for (size_t i = 0; i < n; ++i) {
+        INFO("spawn #", i);
+        CHECK(got[i].slice == golden[i].slice);
+        CHECK(std::fabs(got[i].pos - golden[i].pos) < 0.01f);
+        CHECK(std::fabs(got[i].pan - golden[i].pan) < 0.00002f);
+        CHECK(got[i].len == golden[i].len);
+    }
 }

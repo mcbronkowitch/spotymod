@@ -226,6 +226,13 @@ public:
     int   last_slice() const    { return _last_slice; }
     float step_clock() const    { return _step_samples; }
     int   retrig_period() const { return _retrig_period; }
+    // The composed gate as this engine last received it. Pure observer, added
+    // in Task 9: with the STEP burst gone, _gate has exactly one remaining
+    // externally visible effect (it lets rolls retrigger), and that effect is
+    // conditional on a roll having been armed -- far too indirect to pin
+    // Part's "re-push the held gate at an engine swap" contract on. See
+    // "part: an engine swap re-pushes the held gate to the sampler".
+    bool  gate() const          { return _gate; }
 
 private:
     void  _update_control();     // recompute derived values on the raster

@@ -193,56 +193,60 @@ TEST_CASE("part: the composed gate reaches the sampler in STEP") {
     CHECK(lo < 0.4f * hi);       // ...and it is chopped, not a standing cloud
 }
 
-// SLICE-GROOVE AUDIT (Task 9). Split out of "part: the composed gate reaches
-// the sampler in STEP" above, whose first half still holds. This half asserts
-// that re-pushing the CURRENT gate at an engine swap makes the sampler sound
-// -- true only while a gate EDGE spawned a grain, which Task 5 removed: a
-// STEP grain now comes from trigger()/trigger_chord(), never from the gate.
-// The Part-side requirement (the swap must re-push gate/flow/hold/cycle to
-// the freshly active engine) is unchanged and still worth a test; it just
-// needs an observable that survives the new STEP core. Task 9 settles it.
-TEST_CASE("part: an engine swap re-pushes the held gate to the sampler"
-          * doctest::skip(true)) {
+// Task 9 rewrite. Split out of "part: the composed gate reaches the sampler in
+// STEP" above, whose first half still holds. The Part-side requirement is
+// unchanged -- an engine swap must re-push the CURRENT gate to the freshly
+// active engine (part.cpp's swap block), the same way it already re-pushes
+// flow/hold/cycle -- but its OBSERVABLE had to move.
+//
+// The old observable was active_grains() a few hundred samples after the swap:
+// with the pre-Task-5 scheduler a live gate spawned a grain, so a sampler that
+// missed the gate stayed empty. Task 5 removed that: a STEP grain now comes
+// from trigger()/trigger_chord(), never from the gate, so active_grains() says
+// nothing about _gate either way and the old assertion is now vacuous in both
+// directions.
+//
+// What _gate still does in the new STEP core is exactly one thing -- it lets
+// rolls retrigger (sampler_engine.cpp, process(): `!_hold && _gate &&
+// _retrig_period > 0`) -- and that is conditional on a roll having been armed
+// by a fire with a sub-unity metric weight, which needs several phrase cycles
+// of luck to land inside the same unbroken gate window as the swap. Far too
+// indirect. So the observable is now SamplerEngine::gate(), a const observer
+// added in Task 9 for this test, which reads the pushed state directly.
+TEST_CASE("part: an engine swap re-pushes the held gate to the sampler") {
+    // The scenario, unchanged from the original: a fresh Part on ENGINE_SYNTH
+    // (the boot default), never yet switched to the sampler. A manual gate
+    // pulse (5 ms = 240 samples) is opened while the SYNTH is still active, so
+    // Part's per-sample edge detector forwards the rising edge to the SYNTH
+    // and the sampler never sees it. The part is then switched while that
+    // pulse is still open, and the swap completes ~192 samples (4 ms fade-out)
+    // later -- still inside the pulse. The gate never CHANGES value across the
+    // swap, so the edge detector has nothing to forward either way: the
+    // swap-block re-push is the only path that can inform the freshly active
+    // engine. Delete `_engine->set_gate(_last_gate)` from part.cpp and the
+    // final CHECK fails.
     std::vector<float> tone(24000);
     for (size_t i = 0; i < tone.size(); ++i)
         tone[i] = std::sin(6.2831853f * 300.f * float(i) / 48000.f);
 
-    // Swap re-sync: forcing an engine swap while a note is held must
-    // re-push the CURRENT gate to the freshly active engine (part.cpp's
-    // swap block), the same way it already re-pushes flow/hold/cycle.
-    // Without that push the sampler is left believing the gate is still
-    // low, so it silently swallows the next edge too -- its own set_gate
-    // no-ops on "already at this value" (engine_iface.h) -- and stays
-    // silent until the NEXT natural STEP fire.
-    //
-    // A fresh rig, on ENGINE_SYNTH (the boot default) and never yet
-    // switched to the sampler, so there is no leftover grain tail from the
-    // render above to confound the read. Material is loaded and STEP armed
-    // up front so the sampler is ready to sound the instant it activates.
-    // A manual gate pulse (5 ms = 240 samples) is opened on the SYNTH,
-    // outliving the swap's ~4 ms (192-sample) fade-out, then the part is
-    // switched to the sampler while that pulse is still open: the gate
-    // never actually CHANGES value across the swap, so the per-sample edge
-    // detector (unlike the swap block) has nothing to forward either way --
-    // the re-push is the only path that can inform the freshly active
-    // engine. The fade-out zeroes the synth's own note before the swap
-    // completes (part.cpp's `fade` factor), so any sound from sample 192
-    // on can only be the sampler's.
-    //
-    // The observable is active_grains(), not the audio itself: the swap's
-    // fade-in is still near-zero gain this close to the swap point, and the
-    // reverb tail from the synth's own pre-swap note dwarfs a single quiet
-    // grain in the raw signal -- active_grains() observes the scheduler
-    // directly, with neither confound.
-    InstRig g2;
-    g2.inst.set_target_active(PART_B, LANE_LEVEL, false);
-    g2.inst.set_target_base(PART_B, LANE_LEVEL, 0.f);
-    g2.inst.load_sample(PART_A, tone.data(), tone.data(), tone.size());
-    g2.inst.set_step(PART_A, true, 8);
-    g2.inst.trigger_manual(PART_A);
-    g2.inst.set_engine(PART_A, ENGINE_SAMPLER);
-    g2.render(250);   // covers the ~192-sample fade-out/swap plus slack
-    CHECK(g2.inst.sampler_grains(PART_A) > 0);
+    Part p;
+    std::vector<SampleBuffer::Frame> mem(48000);
+    p.init(48000.f, 1234, nullptr, nullptr, mem.data(), mem.size());
+    p.sampler().load_sample(tone.data(), tone.data(), tone.size());
+    p.set_step(true, 8);
+    REQUIRE(p.engine_id() == ENGINE_SYNTH);
+    REQUIRE(p.sampler().gate() == false);
+
+    p.trigger_manual();                 // 5 ms pulse, on the SYNTH
+    { float a, b; p.process(a, b); }    // one sample: the rising edge forwards
+    REQUIRE(p.gate());                  // ...the composed gate is up
+    REQUIRE(p.sampler().gate() == false);   // ...and it went to the synth only
+
+    p.set_engine(ENGINE_SAMPLER);
+    for (int i = 0; i < 200; ++i) { float a, b; p.process(a, b); }
+    REQUIRE(p.engine_id() == ENGINE_SAMPLER);   // the swap completed...
+    REQUIRE(p.gate());                          // ...inside the same pulse
+    CHECK(p.sampler().gate() == true);          // only the re-push can do this
 }
 
 TEST_CASE("part: engine switch synth <-> sampler is click-free") {

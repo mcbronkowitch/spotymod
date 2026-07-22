@@ -734,6 +734,26 @@ void SamplerEngine::_slice_pos(int k, float& pos, float& slice_len) const {
 // --- Rng draw order is contract: walk, roll, pan. All three ALWAYS drawn. ---
 // Roll applies from Task 7; drawing it from day one means the draw contract
 // never shifts once tests pin it.
+//
+// _hold is deliberately NOT consulted here (decided in Task 9, after the Task
+// 5 review flagged the asymmetry rather than letting it stand by omission).
+// The old STEP scheduler had `spawning = !_hold && ...` and the FLOW branch in
+// process() still has `if (!_hold)`, so the omission looks like an oversight;
+// it is not. Everywhere _hold appears it gates a SELF-SUSTAINING stream -- the
+// FLOW drone, the old free-running burst, the roll retrigger loop below --
+// because that is what CHOKE (Instrument's other-part duck, instrument.cpp)
+// has to be able to silence. A fire is not a stream, it is one discrete note.
+//
+// And composed notes cannot reach this function under CHOKE anyway: Part
+// suppresses them upstream (part.cpp, `_note_suppressed = _inhibit` guarding
+// the trigger_chord call), so the only caller that gets here while _hold is
+// true is trigger_manual -- the PLAY tap, which part.h documents as
+// deliberately not inhibited, being a live user gesture rather than a machine
+// one. SynthEngine::trigger_chord does not consult its own _hold either
+// (synth_engine.cpp: every _hold check there is on the drone path), so a PLAY
+// tap sounds on a choked deck whichever engine is loaded. Adding `if (_hold)
+// return;` here would break that symmetry and silence the tap on the sampler
+// only.
 void SamplerEngine::_fire_slice() {
     if (_buf.is_empty()) return;
 
