@@ -118,3 +118,24 @@ TEST_CASE("slice map: a punch-in mid-buffer only clears what it passes") {
     REQUIRE(m.count() == 1);
     CHECK(m.start(0) <= 4800);
 }
+
+TEST_CASE("slice map: a ring wrap clears the region the head re-passes") {
+    // First pass covers the whole buffer: two markers, at 4800 and 24000.
+    auto take1 = clicks(30000, { 4800, 24000 });
+    SliceMap m;
+    m.init(48000.f);
+    for (size_t i = 0; i < take1.size(); ++i) m.on_write(i, take1[i].l, take1[i].r);
+    REQUIRE(m.count() == 2);
+    // Write head wraps back to frame 0 and continues for 10000 frames, with a
+    // fresh click at 3000. The wrap passes over 4800's marker (must go) but
+    // never reaches 24000 (must survive), same discontinuity branch as a
+    // punch-in but re-aimed at frame 0 instead of mid-buffer.
+    auto wrap = clicks(10000, { 3000 });
+    for (size_t i = 0; i < wrap.size(); ++i) m.on_write(i, wrap[i].l, wrap[i].r);
+    REQUIRE(m.count() == 2);
+    const int pre = int(sampler_cfg::kOnsetPreRollS * 48000.f);
+    CHECK(m.start(0) >= 3000 - size_t(pre));
+    CHECK(m.start(0) <= 3000 + 144);
+    CHECK(m.start(1) >= 24000 - size_t(pre));
+    CHECK(m.start(1) <= 24000);
+}
