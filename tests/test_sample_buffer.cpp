@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <cmath>
+#include <limits>
 #include <vector>
 #include "sampler/sample_buffer.h"
 #include "sampler/sampler_config.h"
@@ -663,6 +664,27 @@ TEST_CASE("F-08: a completed fade-out still cuts the loop") {
     INFO("rec_size=" << b.rec_size() << " recording=" << b.is_recording());
     CHECK_FALSE(b.is_recording());
     CHECK(b.rec_size() == 1000u);
+}
+
+TEST_CASE("K-02: a NaN in the input does not poison the buffer") {
+    // read_linear prueft die POSITION auf Endlichkeit, nie die Samples. Ein
+    // einziges NaN blieb fuer immer, weil der Overdub es wieder einliest.
+    constexpr size_t kSz = 4800;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+    b.set_feedback(0.9f);
+    b.set_recording(true);
+
+    const float nan_v = std::numeric_limits<float>::quiet_NaN();
+    for (int i = 0; i < 500; ++i) b.write(nan_v, nan_v);
+    for (int i = 0; i < 20000; ++i) b.write(0.2f, 0.2f);   // sauberer Overdub
+
+    float o0 = 0.f, o1 = 0.f;
+    b.read_linear(10.f, o0, o1);
+    INFO("read after NaN then clean overdub: " << o0);
+    CHECK(o0 == o0);            // kein NaN
+    CHECK(std::isfinite(o0));
 }
 
 

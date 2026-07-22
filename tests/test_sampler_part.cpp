@@ -659,3 +659,64 @@ TEST_CASE("F-04: MOD brings the sampler's scatter back") {
     INFO("spawn position range " << lo << " .. " << hi);
     CHECK(hi - lo > 0.2f * float(kSFrames));
 }
+
+TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
+    // trigger_manual ruft trigger_chord ohne _flatten_for_sampler. Bei
+    // COLOR > 0 landen bis zu vier Toene in der SamplerEngine, bis der
+    // naechste _control_tick korrigiert -- bis zu zwoelf Spawns weit.
+    //
+    // Zwei Anpassungen gegenueber dem Brief-Entwurf, beide durch Messung
+    // erzwungen (Schritt 2 des Briefs sieht das ausdruecklich vor):
+    //
+    // 1) Die PITCH-Lane wird hier explizit abgeschaltet, genau wie im
+    // Nachbartest "part: the sampler granulates at ONE pitch whatever COLOR
+    // says" (Zeile 514 oben): target_raw() gibt der PITCH-Lane ihre eigene,
+    // von set_depth() unabhaengige Modulationstiefe (d = 1.f fuer
+    // LANE_PITCH, part.cpp:47, "the PITCH lane is the anchor"), also
+    // scattert MOTION die Tonhoehe weiterhin selbst bei depth = 0. Ohne die
+    // Abschaltung ueberlagert dieses (gewollte) Scatter das Messsignal: die
+    // erste Messung zeigte den Ratio-Sprung bei Sample 190 -- weit nach dem
+    // naechsten Control-Tick (<= 96 Samples) -- unveraendert VOR und NACH dem
+    // Fix, also vom Scatter, nicht vom fehlenden Flatten.
+    //
+    // 2) SIZE auf das Minimum (kuerzeste Koerner, ~1 ms = 48 Samples). Bei
+    // der Default-Koernerlaenge liegt der natuerliche spawn_every bei
+    // ~190-200 Samples -- laenger als das <= 96-Sample-Zeitfenster, in dem
+    // _chord_n > 1 ueberhaupt steht (Part::_control_tick ruft set_chord
+    // jeden Tick, unabhaengig von diesem Fix). Ohne einen zweiten Spawn
+    // INNERHALB dieses Fensters bleibt _rr bei 0 stehen und der Bug ist
+    // unsichtbar, egal wie lang das Beobachtungsfenster ist -- das war
+    // exakt der zweite Fehlschlag der ersten Testversion. Bei kOverlap = 8
+    // (Default, sampler_engine.h) und Koernerlaenge 48 Samples liegt
+    // spawn_interval bei 48/8 = 6, geklemmt auf kSpawnMinSamples = 8 --
+    // genug fuer ueber ein Dutzend Spawns in einem 96-Sample-Fenster, exakt
+    // die Groessenordnung, die der Hintergrund-Absatz des Briefs nennt.
+    InstRig g;
+    const int p = 0;
+    g.inst.set_engine(p, ENGINE_SAMPLER);
+    g.inst.set_target_active(p, LANE_PITCH, false);
+    g.inst.set_target_base(p, LANE_SIZE, 0.f);   // kuerzeste Koerner
+    g.inst.set_color(p, 1.f);                   // maximaler Chord
+    g.inst.set_depth(p, 0.f);
+
+    std::vector<float> l(kSFrames), r(kSFrames);
+    for (size_t i = 0; i < kSFrames; ++i) {
+        l[i] = std::sin(6.2831853f * 220.f * float(i) / 48000.f);
+        r[i] = l[i];
+    }
+    g.inst.load_sample(p, l.data(), r.data(), kSFrames);
+    g.render(4800);
+
+    g.inst.trigger_manual(p);
+    // Direkt nach dem Trigger, vor dem naechsten Control-Tick, muessen alle
+    // Spawns auf demselben Verhaeltnis landen.
+    float first = 0.f;
+    bool  have  = false;
+    for (int i = 0; i < 90; ++i) {
+        g.render(1);
+        const float ratio = g.inst.sampler_last_spawn_ratio(p);
+        if (!have) { first = ratio; have = true; }
+        INFO("i=" << i << " ratio=" << ratio << " first=" << first);
+        CHECK(ratio == doctest::Approx(first).epsilon(1e-4));
+    }
+}

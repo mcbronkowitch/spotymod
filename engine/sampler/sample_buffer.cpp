@@ -159,6 +159,13 @@ void SampleBuffer::write(float in0, float in1) {
     }
     f.l = in0 * fade + f.l * fb_fade;
     f.r = in1 * fade + f.r * fb_fade;
+    // Ein einziges nicht-endliches Sample bliebe sonst fuer immer: der
+    // Overdub liest es zurueck, multipliziert und schreibt es wieder, und nur
+    // clear() heilt das. In VCV kann es vom Nachbarmodul kommen. Zwei
+    // Vergleiche pro Sample, und sie fangen NaN wie Inf (jeder Vergleich mit
+    // NaN ist falsch, also greift die Negation).
+    if (!(f.l > -1e6f && f.l < 1e6f)) f.l = 0.f;
+    if (!(f.r > -1e6f && f.r < 1e6f)) f.r = 0.f;
     _buffer[_write_head] = f;
 
     ++_write_head;
