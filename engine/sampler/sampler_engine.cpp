@@ -691,6 +691,11 @@ void SamplerEngine::_spawn_one() {
     // both ceilings, and rescaling by SIZE alone reproduces all of them.
     _size_ref[slot] = _grain_len;
     _len_ref[slot]  = static_cast<float>(len);
+    // Also the DEC the gate-fall release reads (set_gate(false)). FLOW grains
+    // can still be sounding when the engine switches to STEP, and without this
+    // they would release over a stale-or-zero _dec_ref -- floored to
+    // kRecordFade, ~4 ms -- instead of over their own window half.
+    _dec_ref[slot]  = static_cast<float>(dec);
 
     _last_ratio = ratio;
     _last_pan   = pan;
@@ -857,7 +862,12 @@ void SamplerEngine::process(float& outL, float& outR) {
             const float wdraw = _rng.next_bipolar();          // walk (Task 6)
             const float pan   = _rng.next_bipolar() * motion; // pan
             (void)wdraw;
-            _spawn_slice(_last_slice, pan);
+            // _last_slice is -1 until the first successful spawn, and
+            // SliceMap::start(int) is unguarded -- a roll that fires before any
+            // slice has landed would index the marker array at -1. The draws
+            // above happen either way, so skipping the spawn costs no Rng
+            // determinism.
+            if (_last_slice >= 0) _spawn_slice(_last_slice, pan);
         }
     }
 

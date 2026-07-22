@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <vector>
 #include "sampler/sampler_engine.h"
 #include "sampler/sampler_config.h"
@@ -2556,14 +2557,86 @@ TEST_CASE("sampler STEP: the gate falling releases the grain, no burst tail") {
     // window (1000..1500): rms exactly 0 with a live 94464-sample grain
     // sitting at pos 0 -- the window, not the engine. Sample 6000 is the
     // second click, still far inside the grain, and reads 0.058.
+    // 6000..6500 was the original window and it passed only by straddling
+    // exactly one click; the whole 0..8000 span holds two clicks either way,
+    // so it survives a change to the ratio, the marker pre-roll or the attack.
     auto v = g.render(8000);
-    CHECK(rms(v, 6000, 500) > 0.001f); // sounding under the gate
+    CHECK(rms(v, 0, 8000) > 0.001f);   // sounding under the gate
     g.note_off();
     g.render(48000);                    // far past any release fade
     CHECK(g.e.active_grains() == 0);   // released, not sustained
     const int n = g.e.spawn_count();
     g.render(12000);
     CHECK(g.e.spawn_count() == n);     // and nothing respawns after the gate
+}
+
+// The Rng draw order inside a STEP fire is a CONTRACT: walk, roll, pan, all
+// three drawn every fire, in that order. Walk only starts being applied in
+// Task 6 and roll in Task 7, so nothing else in the suite would notice if
+// those lines were reordered or made conditional -- and the sharpest way to
+// make one conditional is to skip the draws when the fire is going to be
+// dropped at the grain density ceiling. The drop happens INSIDE _spawn_slice,
+// strictly after the three draws, and it has to stay that way.
+//
+// The proof: run the same fire sequence twice, once where the middle fires
+// hit the ceiling and drop, once where they all spawn. If the dropped fires
+// consumed their draws, the Rng is at the identical position by the last
+// fire, and that last fire's pan -- the only draw-derived value the engine
+// exposes -- is bit-identical between the runs.
+TEST_CASE("sampler STEP: a dropped fire still consumes its Rng draws") {
+    // MOTION well off 0 is load-bearing: pan is `draw * motion`, so at the
+    // rig's default MOTION 0 every pan is 0.f and this test would pass
+    // vacuously no matter which draw (or none) fed it.
+    const float kMotion = 0.8f;
+    const int   kFires  = 6;
+
+    // `drop`: hold every note, so grains pile up and the later fires hit the
+    // ceiling. Otherwise: release after each fire so every one of them spawns.
+    auto last_pan_after = [&](bool drop) {
+        StepRig g;
+        g.e.set_overlap(0.f);              // DENS min -> ceiling 1 + headroom
+        g.feed(0.5f, 0.f, 1.f, kMotion);   // SIZE 1: grains outlive the fires
+        g.render(96);                       // let the control tick see it
+        for (int i = 0; i < kFires; ++i) {
+            g.fire(i);
+            g.render(64);
+            if (!drop) { g.note_off(); g.render(48000); }
+        }
+        const int dropped = g.e.dropped_spawns();
+        // Clear the pool, then one final fire that succeeds in BOTH runs.
+        g.note_off();
+        g.render(48000);
+        REQUIRE(g.e.active_grains() == 0);
+        const int before = g.e.spawn_count();
+        g.fire(kFires);
+        g.render(64);
+        REQUIRE(g.e.spawn_count() == before + 1);   // it really landed
+        // Report the drop count alongside so the caller can assert the two
+        // runs actually differed in outcome.
+        return std::make_pair(g.e.last_spawn_pan(), dropped);
+    };
+
+    const auto with_drops = last_pan_after(true);
+    const auto no_drops   = last_pan_after(false);
+
+    REQUIRE(with_drops.second > 0);          // the ceiling really bit
+    REQUIRE(no_drops.second == 0);           // ...and only in the first run
+    REQUIRE(std::fabs(no_drops.first) > 0.01f);   // pan is not vacuously 0
+    // Same number of fires -> same number of draws -> same pan, regardless of
+    // how many of those fires survived the ceiling.
+    CHECK(with_drops.first == doctest::Approx(no_drops.first).epsilon(1e-6));
+
+    // The pair above pins the draw COUNT, not the ORDER: swapping walk and pan
+    // shifts both runs identically and slips straight through it. So pin the
+    // POSITION too, with a golden value -- the first fire of a fresh rig at
+    // seed 4242, where pan is the THIRD draw of the stream. Reorder the three
+    // and pan reads a different draw and this literal moves.
+    StepRig g;
+    g.feed(0.5f, 0.f, 0.5f, kMotion);
+    g.render(96);
+    g.fire(0);
+    g.render(64);
+    CHECK(g.e.last_spawn_pan() == doctest::Approx(-0.2129190f).epsilon(1e-4));
 }
 
 TEST_CASE("sampler STEP: transientless material falls back to the tempo grid") {

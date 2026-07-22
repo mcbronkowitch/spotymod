@@ -203,9 +203,6 @@ TEST_CASE("part: the composed gate reaches the sampler in STEP") {
 // needs an observable that survives the new STEP core. Task 9 settles it.
 TEST_CASE("part: an engine swap re-pushes the held gate to the sampler"
           * doctest::skip(true)) {
-    InstRig g;
-    g.inst.set_target_active(PART_B, LANE_LEVEL, false);
-    g.inst.set_target_base(PART_B, LANE_LEVEL, 0.f);
     std::vector<float> tone(24000);
     for (size_t i = 0; i < tone.size(); ++i)
         tone[i] = std::sin(6.2831853f * 300.f * float(i) / 48000.f);
