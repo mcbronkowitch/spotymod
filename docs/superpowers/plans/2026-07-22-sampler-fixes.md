@@ -722,13 +722,32 @@ TEST_CASE("F-05: read_linear stays in range at the negative fold seam") {
         b.init(mem.data(), sz, 48000.f);
         b.set_rec_size(sz);
 
+        const float fsz = static_cast<float>(sz);
         float worst = 0.f, worst_at = 0.f;
-        for (int k = 1; k <= 4000; ++k) {
-            const float frame = -float(k) * 0.0001f;
+        auto probe = [&](float frame) {
             float o0 = 0.f, o1 = 0.f;
             b.read_linear(frame, o0, o1);
             if (std::fabs(o0) > std::fabs(worst)) { worst = o0; worst_at = frame; }
-        }
+        };
+
+        // Die negative Naht: das ist der Weg, auf dem der Fehler real
+        // auftrat (REVERSE-Grain laeuft unter 0).
+        for (int k = 1; k <= 4000; ++k) probe(-float(k) * 0.0001f);
+
+        // Die positive Naht, obwohl dort heute nichts schiefgeht. Die
+        // Faltung ist auf dieser Seite eine Subtraktion nahezu gleich
+        // grosser Zahlen und nach Sterbenz exakt, waehrend sie auf der
+        // negativen Seite eine verlustbehaftete Addition ist -- der Fehler
+        // ist also von Natur aus einseitig. Der Guard deckt trotzdem beide
+        // Kanten ab, und ohne diese Proben wuerde niemand merken, wenn
+        // jemand ihn spaeter auf `if (frame < 0.f)` zurueck vereinfacht:
+        // die negativen Proben blieben gruen, und der alte Knall waere
+        // fuer jeden kuenftigen Aufrufer wieder offen.
+        probe(fsz);
+        probe(2.f * fsz);
+        probe(std::nextafter(fsz, 0.f));
+        probe(fsz - 0.5f);
+
         INFO("size=" << sz << " worst=" << worst << " at frame=" << worst_at);
         // Lineare Interpolation zwischen Werten aus [-0.3, 0.3] kann diesen
         // Bereich nicht verlassen. Kleine Toleranz fuer Float-Rundung.
