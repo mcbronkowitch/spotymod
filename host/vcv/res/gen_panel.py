@@ -73,11 +73,19 @@ WKMAP = {BIGKNOB:"WK_BIGKNOB", KNOBC:"WK_KNOBC", SMKNOB:"WK_SMKNOB",
 LBL_DY = {BIGKNOB: 7.2, KNOBC: 7.2, SMKNOB: 5.6, KNOBI: 5.6, SW2: 6.6,
           LATCH: 5.4, SMBTN: 5.4, IN: 6.4, OUT: 6.4, LIGHT: 0.0}
 
+def default_label_of(c):
+    """The centred-below-the-glyph placement, ignoring any override.
+
+    Split out from label_of so a caller that OVERWRITES c.lbl can still ask
+    what the default was -- sampler_texts() derives the inline LEN / ORG pair
+    from it and would otherwise read back its own result on a second call."""
+    return (c.x, c.y + LBL_DY[c.kind], "middle", 1.9, INK)
+
 def label_of(c):
     """(x, y, anchor, size, colour) for a control's caption."""
     if c.lbl is not None:
         return c.lbl
-    return (c.x, c.y + LBL_DY[c.kind], "middle", 1.9, INK)
+    return default_label_of(c)
 
 class Ctl:
     def __init__(self, enum, kind, x, y, label):
@@ -390,16 +398,36 @@ SAMPLER_LBL = [("MELODY", "SCAN"), ("SUB", "LEN"), ("DETUNE", "ORG")]
 SAMPLER_SIZE = 1.5     # mm; the main captions are 1.9
 SAMPLER_DY   = 3.0     # mm below the main caption's baseline -- see sampler_texts()
 
+# Two of the three sit INLINE, on the same baseline as the caption they
+# qualify, with the pair centred on the knob (2026-07-22, Bastian: "org und
+# len sitzen unguenstig unter der box, da ist noch Platz neben den normalen
+# Labels"). He is right about the room -- the VOICE row is three captions on
+# a 13 mm pitch and even the widest pair, DTUN ORG at 8.1 mm, leaves 1.5 mm
+# to the box border and 5.5 mm to its neighbour.
+#
+# SCAN is deliberately NOT in this set. Its parent is a radial orbit caption
+# sitting at the plate edge; there is no free plate outboard of it, and
+# putting the word inboard would drop it between the knob and the LED ring,
+# which is the one place the original spec rules out.
+SAMPLER_INLINE = {"SUB", "DETUNE"}
+SAMPLER_GAP    = 0.8   # mm of air between a caption and its sampler word
+# Advance width of the monospace face, in ems. Only ever used to CENTRE a
+# pair, never to butt two texts together -- see the anchor note in
+# sampler_texts() for why an error in this number cannot make them collide.
+MONO_ADV       = 0.6
+
+def text_w(s, size_mm):
+    return len(s) * MONO_ADV * size_mm
+
 def sampler_texts():
     """The second caption line, derived from the main one -- never typed out.
 
-    label_of() already resolves both placement rules in play here: the radial
-    orbit_label() for MELODY and the centred default for the VOICE-row SUB /
-    DETUNE. Reading it back means the sampler line follows whatever the layout
-    does next, which is the whole reason this block computes instead of listing
-    coordinates.
+    label_of() already resolves the placement rule in play here: the radial
+    orbit_label() for MELODY. Reading it back means the sampler line follows
+    whatever the layout does next, which is the whole reason this block
+    computes instead of listing coordinates.
 
-    The line is stacked straight below its parent (same x, same anchor) rather
+    SCAN is stacked straight below its parent (same x, same anchor) rather
     than pushed 2.2 mm further along the outward radial as first sketched. Two
     measurements killed the radial variant: at MELODY's 240 deg only cos(240)
     of the offset is vertical, so 2.2 mm radial buys 1.1 mm of baseline
@@ -410,14 +438,40 @@ def sampler_texts():
     hairline at y 96.9 -- at 2.2 mm the LEN / ORG letters sit at 96.1..97.2 and
     the border strikes through them; at 3.0 mm they land at 96.95..98.0, inside
     the 1.7 mm gap between the VOICE and PLAY boxes with room on both sides.
+
+    LEN / ORG do not follow that reasoning any more -- it applied while they
+    hung under the VOICE box, and since 2026-07-22 they sit inline instead
+    (see SAMPLER_INLINE). The paragraph above still governs SCAN, which is
+    the case the reasoning was actually about.
+
+    NOTE: this function MUTATES c.lbl for the inline pair -- the caption has
+    to give up its centred anchor for the pair to be centred instead of the
+    caption alone. It reads default_label_of, not label_of, so a second call
+    recomputes from the same starting point rather than from its own output.
     """
     out = []
     for suffix, colour in (("_A", GREEN), ("_B", COPPER)):
         for base, word in SAMPLER_LBL:
             c = next(c for c in PARAMS if c.enum == base + suffix)
-            lx, ly, anchor, _size, _col = label_of(c)
-            out.append((lx, ly + SAMPLER_DY, SAMPLER_SIZE, 0.0, colour,
-                        anchor, word))
+            if base not in SAMPLER_INLINE:
+                lx, ly, anchor, _size, _col = label_of(c)
+                out.append((lx, ly + SAMPLER_DY, SAMPLER_SIZE, 0.0, colour,
+                            anchor, word))
+                continue
+
+            _lx, ly, _anchor, size, col = default_label_of(c)
+            # Centre the PAIR on the knob, then anchor each half AWAY from
+            # the gap: the caption ends where the gap starts, the sampler
+            # word starts where it ends. Anchoring outward is what makes the
+            # layout tolerant of MONO_ADV being wrong -- if Rack's monospace
+            # face is wider than the estimate, each word grows away from the
+            # other, so the pair drifts off-centre by half the error but can
+            # never close the gap or overlap. Anchoring both from the left
+            # would put the error straight into the gap instead.
+            mid = (text_w(c.label, size) - text_w(word, SAMPLER_SIZE)) / 2.0
+            c.lbl = (c.x + mid - SAMPLER_GAP / 2.0, ly, "end", size, col)
+            out.append((c.x + mid + SAMPLER_GAP / 2.0, ly, SAMPLER_SIZE,
+                        0.0, colour, "start", word))
     return out
 
 # --- shared panel lettering (drawn by SVG for preview, by C++ at runtime) -----

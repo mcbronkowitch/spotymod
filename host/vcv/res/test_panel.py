@@ -483,12 +483,17 @@ def test_sampler_captions_exist():
           "DENSITY lost its DENS label")
 
 
-def test_sampler_captions_sit_outside_their_labels():
-    """The sampler line goes further out than the main caption -- never between
-    the knob and the LED ring, and never on top of the caption it belongs to."""
+def test_sampler_stacked_caption_sits_outside_its_label():
+    """The STACKED sampler line (SCAN only, since 2026-07-22) goes further out
+    than the main caption -- never between the knob and the LED ring, and never
+    on top of the caption it belongs to. LEN and ORG moved inline and are
+    checked by test_sampler_inline_pairs instead."""
+    stacked = [(b, w) for b, w in SAMPLER_CAPTIONS if b not in g.SAMPLER_INLINE]
+    check(len(stacked) == 1 and stacked[0][1] == 'SCAN',
+          f"expected SCAN alone to stay stacked, got {stacked}")
     for suffix, cx, colour in (('_A', g.RING_CX_A, g.GREEN),
                                ('_B', g.W - g.RING_CX_A, g.COPPER)):
-        for base, word in SAMPLER_CAPTIONS:
+        for base, word in stacked:
             c = ctl(base + suffix)
             lx, ly, anchor, _s, _col = g.label_of(c)
             t = sampler_text(word, c)
@@ -515,19 +520,76 @@ def test_sampler_captions_sit_outside_their_labels():
                   f"{c.enum}: {word} only {t[1] - ly:.2f} mm below {c.label}")
 
 
-def test_sampler_captions_clear_the_voice_box():
-    """LEN/ORG hang below the VOICE box. They must clear its bottom hairline
-    instead of being struck through by it, and stay off the PLAY box above."""
-    voice = next(gr for gr in g.GROUPS if gr[4] == 'VOICE')
-    play = next(gr for gr in g.GROUPS if gr[4] == 'PLAY')
-    bottom, top = voice[1] + voice[3], play[1]
-    for word in ('LEN', 'ORG'):
-        for t in (x for x in g.TEXTS if x[-1] == word):
-            cap_top = t[1] - 0.7 * t[2]     # monospace cap height ~0.7 em
-            check(cap_top >= bottom,
-                  f"{word} at y {t[1]:.2f} is struck by the VOICE border ({bottom})")
-            check(t[1] <= top - 0.3,
-                  f"{word} at y {t[1]:.2f} runs into the PLAY box ({top})")
+# The inline pair's extent on the caption baseline: (left, right) in mm.
+# Mirrors the generator's own anchoring -- caption end-anchored, word
+# start-anchored -- so the test measures the drawn block, not the intent.
+def inline_span(c, word):
+    lx, ly, anchor, size, _col = g.label_of(c)
+    t = sampler_text(word, c)
+    return (lx - g.text_w(c.label, size), t[0] + g.text_w(word, t[2]))
+
+
+def test_sampler_inline_pairs():
+    """LEN and ORG sit BESIDE their caption on one baseline, and the pair --
+    not the caption alone -- is centred on the knob (2026-07-22)."""
+    for suffix, colour in (('_A', g.GREEN), ('_B', g.COPPER)):
+        for base, word in ((b, w) for b, w in SAMPLER_CAPTIONS
+                           if b in g.SAMPLER_INLINE):
+            c = ctl(base + suffix)
+            lx, ly, anchor, size, _col = g.label_of(c)
+            t = sampler_text(word, c)
+            check(t is not None, f"{c.enum}: no {word} caption at all")
+            if t is None:
+                continue
+            check(approx(t[1], ly),
+                  f"{c.enum}: {word} baseline {t[1]:.2f} != {c.label}'s {ly:.2f}")
+            check(approx(t[2], 1.5), f"{c.enum}: {word} size {t[2]}, want 1.5")
+            check(t[4] == colour,
+                  f"{c.enum}: {word} colour {t[4]}, want {colour}")
+            # The caption gives up its centred anchor: it ends where the gap
+            # begins, the word starts where the gap ends. Both anchored from
+            # the same side would push a width-estimate error into the gap.
+            check(anchor == 'end',
+                  f"{c.enum}: caption anchored {anchor!r}, want 'end'")
+            check(t[5] == 'start',
+                  f"{c.enum}: {word} anchored {t[5]!r}, want 'start'")
+            check(approx(t[0] - lx, g.SAMPLER_GAP),
+                  f"{c.enum}: gap {t[0] - lx:.2f} mm, want {g.SAMPLER_GAP}")
+            left, right = inline_span(c, word)
+            check(approx((left + right) / 2.0, c.x),
+                  f"{c.enum}: pair centred at {(left + right) / 2.0:.2f}, "
+                  f"knob at {c.x:.2f}")
+
+
+def test_sampler_inline_pairs_fit_the_voice_row():
+    """The pair is wider than the caption was, so it has to be shown to still
+    fit: inside the VOICE box on both sides, and clear of the neighbouring
+    VOICE-row captions it grew towards."""
+    voice_a = next(gr for gr in g.GROUPS if gr[4] == 'VOICE' and gr[0] < g.CX)
+    voice_b = next(gr for gr in g.GROUPS if gr[4] == 'VOICE' and gr[0] > g.CX)
+    blocks = []
+    for suffix, box in (('_A', voice_a), ('_B', voice_b)):
+        for base, word in ((b, w) for b, w in SAMPLER_CAPTIONS
+                           if b in g.SAMPLER_INLINE):
+            c = ctl(base + suffix)
+            left, right = inline_span(c, word)
+            check(left >= box[0] + 0.5 and right <= box[0] + box[2] - 0.5,
+                  f"{c.enum}: pair {left:.2f}..{right:.2f} leaves the VOICE box "
+                  f"{box[0]:.2f}..{box[0] + box[2]:.2f}")
+            blocks.append((c.enum, left, right))
+    # ...and against every OTHER caption on that row, inline or not.
+    plain = []
+    for enum in ('RES_A', 'RES_B'):
+        c = ctl(enum)
+        lx, _ly, _a, size, _col = g.label_of(c)
+        half = g.text_w(c.label, size) / 2.0
+        plain.append((enum, lx - half, lx + half))
+    for name, l0, r0 in blocks:
+        for other, l1, r1 in blocks + plain:
+            if other == name:
+                continue
+            check(r0 <= l1 - 0.8 or l0 >= r1 + 0.8,
+                  f"{name} ({l0:.2f}..{r0:.2f}) crowds {other} ({l1:.2f}..{r1:.2f})")
 
 
 def test_panel_texts_stay_on_the_plate():

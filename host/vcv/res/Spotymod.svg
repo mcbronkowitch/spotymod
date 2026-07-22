@@ -153,10 +153,10 @@
 <text x="9.500" y="95.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RES</text>
 <circle cx="22.500" cy="89.400" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="22.500" y1="89.400" x2="22.500" y2="87.100" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="22.500" y="95.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SUB</text>
+<text x="22.460" y="95.000" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">SUB</text>
 <circle cx="35.500" cy="89.400" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="35.500" y1="89.400" x2="35.500" y2="87.100" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="35.500" y="95.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DTUN</text>
+<text x="36.030" y="95.000" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">DTUN</text>
 <circle cx="62.750" cy="77.300" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="62.750" y1="77.300" x2="62.750" y2="75.000" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="62.750" y="82.900" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FLUX</text>
@@ -224,10 +224,10 @@
 <text x="203.860" y="95.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">RES</text>
 <circle cx="190.860" cy="89.400" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="190.860" y1="89.400" x2="190.860" y2="87.100" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="190.860" y="95.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">SUB</text>
+<text x="190.820" y="95.000" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">SUB</text>
 <circle cx="177.860" cy="89.400" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="177.860" y1="89.400" x2="177.860" y2="87.100" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
-<text x="177.860" y="95.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">DTUN</text>
+<text x="178.390" y="95.000" fill="#171713" text-anchor="end" font-family="monospace" font-size="1.9">DTUN</text>
 <circle cx="150.610" cy="77.300" r="3.000" fill="url(#knobCap)" stroke="#252721" stroke-width="0.3"/>
 <line x1="150.610" y1="77.300" x2="150.610" y2="75.000" stroke="#fffdf7" stroke-width="0.5" stroke-linecap="round"/>
 <text x="150.610" y="82.900" fill="#171713" text-anchor="middle" font-family="monospace" font-size="1.9">FLUX</text>
@@ -407,9 +407,9 @@
 <text x="145.860" y="113.350" fill="#656056" text-anchor="middle" font-family="monospace" font-size="1.8" letter-spacing="0.35" font-weight="bold">OUT</text>
 <text x="188.160" y="113.350" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.8" letter-spacing="0.35" font-weight="bold">CV B</text>
 <text x="12.728" y="59.100" fill="#1d6f5f" text-anchor="end" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">SCAN</text>
-<text x="22.500" y="98.000" fill="#1d6f5f" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">LEN</text>
-<text x="35.500" y="98.000" fill="#1d6f5f" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">ORG</text>
+<text x="23.260" y="95.000" fill="#1d6f5f" text-anchor="start" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">LEN</text>
+<text x="36.830" y="95.000" fill="#1d6f5f" text-anchor="start" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">ORG</text>
 <text x="200.632" y="59.100" fill="#b96532" text-anchor="start" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">SCAN</text>
-<text x="190.860" y="98.000" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">LEN</text>
-<text x="177.860" y="98.000" fill="#b96532" text-anchor="middle" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">ORG</text>
+<text x="191.620" y="95.000" fill="#b96532" text-anchor="start" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">LEN</text>
+<text x="179.190" y="95.000" fill="#b96532" text-anchor="start" font-family="monospace" font-size="1.5" letter-spacing="0.0" font-weight="bold">ORG</text>
 </svg>
