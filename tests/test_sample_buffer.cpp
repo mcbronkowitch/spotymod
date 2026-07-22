@@ -524,3 +524,85 @@ TEST_CASE("F-05: read_linear stays in range at the negative fold seam") {
         CHECK(std::fabs(worst) <= 0.31f);
     }
 }
+
+// --- Review 2026-07-22: Feedback-Saettigung ---
+
+TEST_CASE("F-06: no feedback setting lets the buffer grow without bound") {
+    // Die Saettigung hing an _feedback > 1. Direkt darunter war der Overdub
+    // ein unbegrenzter Integrator mit Fixpunkt in/(1-fb): Knob 0.9705 gab
+    // nach 60 s Peak 234, waehrend Knob 1.0 bei 2.31 blieb -- das lauteste
+    // Verhalten lag in einem 0.001 breiten Fenster UNTER dem Anschlag.
+    using namespace spky::sampler_cfg;
+    constexpr size_t kSz  = 4800;
+    constexpr float  kIn  = 0.5f;
+
+    // Die Schranke ist aus kFbSatKnee abgeleitet, nicht gewaehlt: unterhalb
+    // der Schwelle laeuft der Overdub ungesaettigt auf seinen Fixpunkt
+    // kIn / (1 - fb), und das groesste fb, das die Schwelle noch passieren
+    // laesst, ist kFbSatKnee selbst. Wer die Schwelle verschiebt, verschiebt
+    // damit auch diese Zahl -- sie darf nicht als runder Wert hier stehen.
+    const float ceiling = kIn / (1.f - kFbSatKnee);
+
+    float peak_at_top = 0.f, worst = 0.f, worst_knob = 0.f;
+    for (int step = 0; step <= 40; ++step) {
+        const float knob = 0.90f + 0.0025f * float(step);   // 0.90 .. 1.00
+        std::vector<SampleBuffer::Frame> mem(kSz);
+        SampleBuffer b;
+        b.init(mem.data(), kSz, 48000.f);
+        b.set_feedback(knob);
+        b.set_recording(true);
+        for (int i = 0; i < 48000 * 60; ++i) b.write(kIn, kIn);
+
+        float peak = 0.f;
+        for (size_t i = 0; i < kSz; ++i) {
+            const float a = std::fabs(mem[i].l);
+            if (a > peak) peak = a;
+        }
+        INFO("knob=" << knob << " peak=" << peak << " ceiling=" << ceiling);
+        CHECK(peak <= ceiling);
+        if (peak > worst) { worst = peak; worst_knob = knob; }
+        peak_at_top = peak;                 // die letzte Runde ist knob 1.0
+    }
+
+    // Und der eigentliche Befund, der mit einer blossen Obergrenze nicht
+    // gefasst waere: das Geraet darf unterhalb des Anschlags nicht drastisch
+    // lauter sein als am Anschlag. Genau das war der Fehler -- 234 gegen
+    // 2.31, ein Faktor von 101, und der Knopf wurde beim Weiterdrehen ueber
+    // Unity hinaus schlagartig leiser statt lauter.
+    //
+    // Faktor 3 ist keine runde Zahl aus dem Nichts: gemessen liegt das
+    // Verhaeltnis bei kFbSatKnee = 0.90 bei 3.53 / 1.76 = 2.0, mit Reserve
+    // fuer Rundung und fuer eine spaetere kleine Verschiebung der Schwelle.
+    // Eine Restunstetigkeit bleibt bewusst zugelassen (siehe den Kommentar
+    // an kFbSatKnee); sie ganz zu beseitigen verlangt unbedingtes tanh und
+    // kostet den Auslieferungs-Default 57 % Pegel -- eine Hoerentscheidung.
+    INFO("worst peak " << worst << " at knob " << worst_knob
+         << ", peak at full travel " << peak_at_top);
+    CHECK(worst <= 3.f * peak_at_top);
+}
+
+TEST_CASE("F-06: the shipped feedback default is untouched by the saturation knee") {
+    // kDefaultFeedback = 0.95 ist ein by-ear-Wert. Der Test haelt fest, dass
+    // die Schwelle ihn nicht erreicht -- wer sie spaeter verschiebt, sieht
+    // hier sofort, ob er in gehoerte Einstellungen greift.
+    using namespace spky::sampler_cfg;
+    constexpr size_t kSz = 4800;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+    b.set_feedback(kDefaultFeedback);
+    b.set_recording(true);
+    for (int i = 0; i < 48000 * 10; ++i) b.write(0.5f, 0.5f);
+
+    float peak = 0.f;
+    for (size_t i = 0; i < kSz; ++i) {
+        const float a = std::fabs(mem[i].l);
+        if (a > peak) peak = a;
+    }
+    // Ohne Saettigung: Fixpunkt 0.5/(1-0.817) = 2.73. Die Schwelle darf
+    // diesen Wert nicht nach unten druecken.
+    INFO("default feedback peak=" << peak);
+    CHECK(peak > 2.f);
+    CHECK(peak < 5.f);
+}
+

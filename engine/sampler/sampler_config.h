@@ -26,6 +26,43 @@ constexpr float  kDefaultFeedback = 0.95f;
 constexpr float  kFbKnee   = 0.9f;
 constexpr float  kFbMaxDb  = 2.5f;
 
+// Ab welchem KOEFFIZIENTEN (nicht Knopfwert) der Overdub in fast_tanh
+// laeuft. Frueher war das implizit 1.0, und genau dort lag der Fehler: der
+// Overdub ist ein Integrator mit Fixpunkt in/(1-fb), der knapp UNTER Unity
+// unbegrenzt waechst, waehrend er ueber Unity von tanh gefangen wird. Nach
+// 60 s Overdub eines 0.5-Signals gemessen: Knob 0.9700 -> Peak 87,
+// 0.9705 -> 234 (asymptotisch ~579), 0.9710 -> 2.3, 1.0 -> 2.31. Das
+// lauteste Verhalten des Geraets lag damit in einem ~0.001 breiten Fenster
+// unterhalb des Anschlags.
+//
+// Der Wert ist gemessen, nicht geraten. Peak nach 30 s Overdub eines
+// 0.5-Signals, ueber den Knopfweg 0.88 .. 1.00, fuer drei Kandidaten:
+//
+//              Default (Knopf 0.95)   hoechste Spitze   Anschlag 1.0
+//   ohne       2.74                   234 @ 0.9705      2.31
+//   0.98       2.74                   9.40 @ 0.965      1.76
+//   0.90       2.74                   3.53 @ 0.955      1.76
+//   unbedingt  1.18                   keine             1.76
+//
+// 0.90 gewinnt gegen 0.98 ohne Gegenleistung: gleiche Bauart, halb so hohe
+// Spitze, und der Auslieferungs-Default bleibt bei beiden unberuehrt --
+// kDefaultFeedback = 0.95 bildet ueber die kFbKnee-Kennlinie auf ~0.817 ab
+// und damit unter jede der beiden Schwellen. Gefaerbt wird nur der oberste
+// Zipfel des Knopfwegs (ab ~0.96), also genau die Zone, die der Kommentar
+// bei kFbKnee ohnehin als Selbstsaettigung beschreibt.
+//
+// Ehrlich bleibt: eine Restunstetigkeit an der Schwelle. Direkt darunter
+// steht der unsaturierte Fixpunkt in/(1-fb) = 5, direkt darueber faengt
+// tanh bei ~1.3 -- ein Sprung um Faktor 2.8, gegen Faktor 101 vorher. Ganz
+// verschwindet sie nur mit unbedingtem tanh, und das kostet den Default
+// 57 % seines Pegels. Das ist eine Hoerentscheidung und keine technische,
+// deshalb steht sie hier als Option und nicht als Code.
+//
+// Ear-tunable, aber nach oben gebunden: ueber ~0.95 waechst die Spitze
+// wieder schnell (bei 0.98 schon auf 9.4), unter ~0.8 beginnt die Faerbung
+// in gehoerte Einstellungen zu greifen.
+constexpr float  kFbSatKnee = 0.90f;
+
 // --- the cloud ---
 constexpr int    kGrains        = 16;        // per part
 constexpr int    kCtrlInterval  = 96;        // must equal SynthEngine::kCtrlInterval

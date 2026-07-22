@@ -132,10 +132,14 @@ void SampleBuffer::write(float in0, float in1) {
     // Saturate what was read back BEFORE the feedback multiply -- the order
     // that keeps EchoDelay::Process stable at its 1.2 coefficient
     // (engine/fx/flux.h:129-141). Saturating after the multiply would not
-    // bound the write. Only above unity: fast_tanh compresses audibly from
-    // about half scale up, so running it unconditionally would give every
-    // overdub a tape character it does not have today.
-    if (_feedback > 1.f) {
+    // bound the write. Nicht unbedingt: fast_tanh komprimiert ab etwa halber
+    // Aussteuerung hoerbar, und jeder Overdub bekaeme sonst einen
+    // Tape-Charakter, den er heute nicht hat.
+    //
+    // Die Schwelle liegt bei kFbSatKnee und NICHT bei 1.0. An 1.0 gebunden
+    // war der Bereich knapp darunter voellig unbegrenzt -- ein Integrator
+    // mit Fixpunkt in/(1-fb) -- und lauter als jede Einstellung darueber.
+    if (_feedback > sampler_cfg::kFbSatKnee) {
         f.l = fast_tanh(f.l);
         f.r = fast_tanh(f.r);
     }

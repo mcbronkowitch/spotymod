@@ -846,8 +846,19 @@ Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>"
 - Consumes: nichts.
 - Produces: `spky::sampler_cfg::kFbSatKnee` — die Koeffizientenschwelle, ab der `fast_tanh` greift.
 
-> **ENTSCHEIDUNGSPUNKT — berührt einen by-ear-Bereich.**
-> Die Sättigung färbt. Sie ab 0.98 statt ab 1.0 einzuschalten, verändert den Klang im Fenster 0.98…1.0 hörbar (mehr Tape-Charakter, weniger Pegel). Der Auslieferungs-Default `kDefaultFeedback = 0.95` bildet auf einen Koeffizienten von ~0.817 ab und ist von der Änderung **nicht** betroffen — nachrechnen in Step 1 des Tests. Wird nach dem Hörtest eine andere Schwelle bevorzugt, ist nur die Konstante zu ändern; der Test sweept den ganzen Knopfbereich und gilt für jede Schwelle.
+> **ENTSCHEIDUNGSPUNKT — berührt einen by-ear-Bereich. Gemessen entschieden, siehe unten.**
+> Die Sättigung färbt, und wo sie einsetzt ist eine Klangfrage. Gemessen wurde der Pufferpeak nach 30 s Overdub eines 0.5-Signals über den Knopfweg 0.88…1.00:
+>
+> | Knopf | ohne Fix | Knee 0.98 | Knee 0.90 | tanh unbedingt |
+> |---|---|---|---|---|
+> | 0.95 = Auslieferungs-Default | 2.74 | 2.74 | 2.74 | **1.18** |
+> | höchste Spitze | 234 @ 0.9705 | 9.40 @ 0.965 | 3.53 @ 0.955 | keine |
+> | Anschlag 1.0 | 2.31 | 1.76 | 1.76 | 1.76 |
+> | Inversionsfaktor | 101 | 5.3 | 2.0 | 1.0 |
+>
+> **Umgesetzt ist Knee 0.90.** Es schlägt 0.98 ohne Gegenleistung — halb so hohe Spitze bei gleicher Bauart, und der Default bleibt bei beiden unberührt (0.95 bildet auf ~0.817 ab, unter jeder der beiden Schwellen). Es macht außerdem die Testschranke ableitbar statt willkürlich: `0.5/(1−0.9) = 5`.
+>
+> **Offen für Bastians Ohr:** eine Restunstetigkeit bleibt. Direkt unter der Schwelle steht der ungesättigte Fixpunkt bei 5, direkt darüber fängt tanh bei ~1.3 — ein Sprung um Faktor 2.8 gegen Faktor 101 vorher. Ganz verschwindet sie nur mit unbedingtem tanh, und das kostet den Auslieferungs-Default 57 % seines Pegels. Das ist eine Hörentscheidung, keine technische.
 
 **Hintergrund für den Umsetzer:** `fast_tanh` greift nur bei `_feedback > 1.f`. Direkt darunter ist der Overdub ein unbegrenzter Integrator mit Fixpunkt `in/(1-fb)`. Gemessen nach 60 s Overdub eines 0.5-Signals: Knob 0.9700 → Peak ~87, Knob 0.9705 → 234 (asymptotisch ~579), Knob 0.9710 → 2.3 (tanh greift), Knob 1.0 → 2.31. Das lauteste erreichbare Verhalten liegt also in einem ~0.001 breiten Fenster **unterhalb** des Anschlags, und das Überschreiten von Unity macht den Puffer um Faktor ~100 leiser. `sampler_config.h:22-25` verspricht dort „ein Loop, der ewig steht" — er wächst.
 
@@ -919,7 +930,7 @@ Erwartet: `F-06: no feedback setting lets the buffer grow without bound` FAIL be
 
 - [ ] **Step 3: Die Konstante anlegen**
 
-In `engine/sampler/sampler_config.h`, direkt unter `constexpr float kFbMaxDb = 2.5f;`:
+In `engine/sampler/sampler_config.h`, direkt unter `constexpr float kFbMaxDb = 2.5f;` (der Kommentar trägt die vollständige Messreihe — siehe die Datei im Repo für den finalen Wortlaut):
 
 ```cpp
 // Ab welchem KOEFFIZIENTEN (nicht Knopfwert) der Overdub in fast_tanh
@@ -936,7 +947,7 @@ In `engine/sampler/sampler_config.h`, direkt unter `constexpr float kFbMaxDb = 2
 // Klang aendert sich nur im Fenster 0.98 .. 1.0, das vorher der Ausreisser
 // war. Ear-tunable, aber nach oben durch 1.0 gebunden -- darueber ist der
 // Befund wieder offen.
-constexpr float  kFbSatKnee = 0.98f;
+constexpr float  kFbSatKnee = 0.90f;
 ```
 
 - [ ] **Step 4: Den Fix schreiben**
