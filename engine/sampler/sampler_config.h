@@ -9,7 +9,10 @@ namespace sampler_cfg {
 
 // --- record core (carried over from src/core/config.h:57,73) ---
 // 192 samples == 4 ms @ 48 kHz, and == the hann table size in fx_util.h, so
-// the fade counter indexes the curve 1:1. Both facts are load-bearing.
+// the fade counter indexes the curve 1:1. TRAGEND ist die zweite Gleichung:
+// die Tabellengroesse. Die 4 ms gelten nur bei 48 kHz -- dies ist eine
+// Sample-Zahl, waehrend _cut (SoftSwitch) ueber init(sample_rate) echte 4 ms
+// haelt, sodass die beiden bei anderen Raten auseinanderlaufen.
 constexpr size_t kRecordFade      = 192;
 // Knob position. NOTE: this sits ABOVE kFbKnee, so it means something
 // slightly different than it did in M5a -- about -1.8 dB rather than -3 dB.
@@ -92,13 +95,19 @@ constexpr float  kSizeFloorS    = 0.001f;   // 1 ms: a pitched buzz, not a textu
 // this the modulo fold in read_linear would only repeat material the same
 // grain already covered.
 //
-// That justification is RATE-SPECIFIC, and the constant is a duration, not a
-// frame count. At 96 kHz this asks for twice the capacity the buffer has, so
-// the top of SIZE spans two loops rather than one and the "exactly once
-// under a single window" argument no longer holds -- the fold simply repeats
-// the first pass. Not a crash and not a range to narrow: read_linear folds
-// safely and the result is a slower swell over repeated material, which is
-// still musical. Recorded so nobody re-derives the 42 as rate-independent.
+// Die Rechtfertigung ist ratenspezifisch, die Konstante aber eine DAUER und
+// die Kapazitaet folgt ihr: beide Hosts allozieren sekundenbasiert
+// (host/render/main.cpp:23,48 und host/vcv/src/Spotymod.cpp:105,304 rechnen
+// 42.0 * sample_rate). Der Puffer fasst damit bei jeder Rate 42 s, und das
+// "genau einmal unter einem Fenster"-Argument oben bleibt gueltig.
+//
+// (Eine frueherer Fassung dieses Absatzes behauptete das Gegenteil -- bei
+// 96 kHz reiche die Kapazitaet nur fuer die Haelfte. Das war falsch und lud
+// dazu ein, eine gesunde Konstante zu reparieren.)
+//
+// Was bei 96 kHz tatsaechlich auseinanderlaeuft, steht bei kRecordFade: das
+// ist eine Sample-Zahl (4 ms bei 48 kHz, 2 ms bei 96 kHz), waehrend _cut
+// (SoftSwitch) ueber init(sample_rate) echte 4 ms haelt.
 constexpr float  kSizeCeilS     = 42.f;
 
 // Pitch: piecewise, unity at 0.5. The middle half of travel [0.25, 0.75] is
