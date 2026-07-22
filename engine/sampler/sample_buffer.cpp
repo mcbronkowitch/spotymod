@@ -218,10 +218,18 @@ void SampleBuffer::read_linear(float frame, float& out0, float& out1) const {
     // VRINTM on the Daisy's Cortex-M7 FPv5 -- not a libm call, and cheaper
     // than the loop even in the common case.
     frame -= fsz * std::floor(frame / fsz);
-    if (frame < 0.f) frame = 0.f;         // -0.0 and rounding at the seam
+    // BEIDE Kanten hier, vor i0 und frac, und nicht nur i0 spaeter: bei
+    // grossem fsz rundet fsz - epsilon in float32 auf exakt fsz, was ein
+    // knapp negatives frame genau hierher bringt. Wurde nur i0 korrigiert,
+    // blieb frac = fsz stehen und die Interpolation lief mit dem Faktor der
+    // Puffergroesse -- an einem Puffer mit nur +-0.3 Inhalt gemessene
+    // Ausgaenge von 14 400 (24 000 Frames) bis 1 209 600 (2 016 000 Frames).
+    // Erreichbar ueber REVERSE-Grains, sobald _start + _off unter 0 laeuft
+    // (grain.h:111). frame und i0 muessen dieselbe Zahl beschreiben.
+    if (!(frame >= 0.f) || frame >= fsz) frame = 0.f;
 
     size_t i0 = static_cast<size_t>(frame);
-    if (i0 >= _size) i0 = 0;                     // float edge at fsz - epsilon
+    if (i0 >= _size) i0 = 0;                     // Guertel zum Hosentraeger
     size_t i1 = i0 + 1;
     if (i1 >= _size) i1 = 0;
 

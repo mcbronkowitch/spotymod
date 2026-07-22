@@ -474,3 +474,34 @@ TEST_CASE("sample buffer: frame 0 survives every way a recording can end") {
         CHECK(std::fabs(mem[0].l - mem[1].l) < 0.05f);
     }
 }
+
+// --- Review 2026-07-22: Faltkante ---
+
+TEST_CASE("F-05: read_linear stays in range at the negative fold seam") {
+    // frac wurde aus dem ungeclampten frame gebildet: ein knapp negatives
+    // frame faltet in float32 auf exakt fsz, dann ist i0 = 0 aber frac = fsz
+    // -- eine Interpolation mit dem Faktor der Puffergroesse. Erreichbar
+    // ueber REVERSE-Grains, sobald _start + _off unter 0 laeuft.
+    for (size_t sz : {size_t(4800), size_t(24000), size_t(2016000)}) {
+        std::vector<SampleBuffer::Frame> mem(sz);
+        for (size_t i = 0; i < sz; ++i) {
+            mem[i].l = (i % 2) ? 0.3f : -0.3f;
+            mem[i].r = mem[i].l;
+        }
+        SampleBuffer b;
+        b.init(mem.data(), sz, 48000.f);
+        b.set_rec_size(sz);
+
+        float worst = 0.f, worst_at = 0.f;
+        for (int k = 1; k <= 4000; ++k) {
+            const float frame = -float(k) * 0.0001f;
+            float o0 = 0.f, o1 = 0.f;
+            b.read_linear(frame, o0, o1);
+            if (std::fabs(o0) > std::fabs(worst)) { worst = o0; worst_at = frame; }
+        }
+        INFO("size=" << sz << " worst=" << worst << " at frame=" << worst_at);
+        // Lineare Interpolation zwischen Werten aus [-0.3, 0.3] kann diesen
+        // Bereich nicht verlassen. Kleine Toleranz fuer Float-Rundung.
+        CHECK(std::fabs(worst) <= 0.31f);
+    }
+}
