@@ -146,11 +146,19 @@ void SamplerEngine::set_gate(bool on) {
         // after the composed note ends (spec, voice-row table).
         const float rel = kBurstReleaseS * (0.5f + 1.5f * _dec_n);
         _release_ctr = static_cast<int>(rel * _sr);
-    } else {
+    } else if (!_flow) {
         // Start the burst on the edge, not up to _spawn_every samples late:
         // leaving FLOW mid-cycle (or a prior STEP burst) can leave _spawn_ctr
         // anywhere in [0, _spawn_every), and STEP is supposed to reproduce
         // the phrase generator's composed rhythm exactly.
+        //
+        // Nur ausserhalb des FLOW. Im FLOW laeuft der Scheduler bereits, und
+        // Part liefert dort trotzdem eine steigende Flanke pro PITCH-Zyklus
+        // (part.cpp:226-229 setzt _gate_ctr ohne STEP-Pruefung). Jede davon
+        // erzwang einen Sofort-Spawn und haengte die Wolkendichte an den
+        // Phrasenrhythmus statt an DENS: bei SIZE 1.0 / DENS min sind das 50
+        // Spawns in 10 s gegen den einen, den das 42-s-Intervall vorsieht.
+        // Die untere DENS-Haelfte war dadurch praktisch wirkungslos.
         _spawn_ctr = 0.f;
     }
 }

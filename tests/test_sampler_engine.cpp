@@ -2006,3 +2006,44 @@ TEST_CASE("F-01: a shrinking SIZE still cancels a long pending countdown") {
     g.render(int(short_every) * 2 + 96);
     CHECK(g.e.spawn_count() > before);
 }
+
+TEST_CASE("F-02: a gate edge does not re-phase the FLOW scheduler") {
+    // Im FLOW laeuft der Scheduler ohnehin. _spawn_ctr = 0 auf der Flanke
+    // erzwingt dort einen Sofort-Spawn, und Part liefert eine Flanke pro
+    // PITCH-Zyklus auch im FLOW -- bei langem SIZE und kleinem DENS spawnt
+    // die Wolke dadurch im Phrasenrhythmus statt nach DENS.
+    Rig g;
+    g.feed(0.5f, 0.f, 1.0f, 0.f, 1.f);          // SIZE max
+    g.e.set_overlap(0.f);                       // DENS min -> overlap 1
+    g.e.set_flow(true);
+    g.render(96);
+    const float every = g.e.spawn_interval_samples();
+    REQUIRE(every > 48000.f * 20.f);            // ~42 s Grundintervall
+
+    // Eine Gate-Flanke alle 2 s ueber 10 s, wie ein PITCH-Zyklus sie liefert.
+    for (int k = 0; k < 5; ++k) {
+        g.e.set_gate(true);  g.render(240);
+        g.e.set_gate(false); g.render(9360);
+    }
+    const int total = g.e.spawn_count() + g.e.dropped_spawns();
+    INFO("spawn_every=" << every << " total spawns in 10 s=" << total);
+    CHECK(total <= 2);                          // der Anfangsspawn, sonst nichts
+}
+
+TEST_CASE("F-02: a gate edge still starts a STEP burst immediately") {
+    // Die Gegenrichtung, und der Grund, warum _spawn_ctr = 0 ueberhaupt da
+    // ist: ausserhalb des FLOW muss die Flanke sofort feuern, damit STEP die
+    // komponierte Rhythmik trifft statt bis zu ein Intervall spaeter.
+    Rig g;
+    g.feed(0.5f, 0.f, 0.5f, 0.f, 1.f);
+    g.e.set_overlap(0.f);                       // langes Intervall
+    g.e.set_flow(false);
+    g.render(4800);                             // Scheduler steht (kein Gate)
+    const int before = g.e.spawn_count() + g.e.dropped_spawns();
+
+    g.e.set_gate(true);
+    g.render(4);                                // wenige Samples nach der Flanke
+    const int after = g.e.spawn_count() + g.e.dropped_spawns();
+    INFO("before=" << before << " after=" << after);
+    CHECK(after > before);
+}
