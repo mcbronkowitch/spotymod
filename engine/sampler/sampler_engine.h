@@ -189,6 +189,7 @@ public:
     // --- observation (CSV, tests) ---
     int   active_grains() const;
     int   slice_count() const { return _slices.count(); }
+    uint32_t slice_start(int i) const { return _slices.start(i); }
     float grain_len_samples() const { return _grain_len; }
     float overlap() const               { return _overlap; }
     float spawn_interval_samples() const { return _spawn_every; }

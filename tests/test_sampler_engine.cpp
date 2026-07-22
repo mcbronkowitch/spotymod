@@ -2391,7 +2391,53 @@ TEST_CASE("sampler: recording detects slices as it writes") {
         float a, b; g.e.process(a, b);
     }
     g.e.set_recording(false);
-    CHECK(g.e.slice_count() == 4);
+    REQUIRE(g.e.slice_count() == 4);
+    // Not just the count -- the markers must land at the RIGHT frames, or a
+    // systematic off-by-one in the `head` snapshot (process_in) would pass
+    // silently. Same tolerance test_slice_map.cpp uses for its own scan
+    // tests: within [click - preroll, click + a few ms detector lag].
+    const int pre = int(sampler_cfg::kOnsetPreRollS * 48000.f);
+    for (int c = 0; c < 4; ++c) {
+        const uint32_t at = static_cast<uint32_t>(c * 12000);
+        const uint32_t lo = at > static_cast<uint32_t>(pre) ? at - static_cast<uint32_t>(pre) : 0;
+        CHECK(g.e.slice_start(c) >= lo);
+        CHECK(g.e.slice_start(c) <= at + 144);
+    }
+}
+
+// Proves Finding 1's guard is load-bearing: set_recording(true) immediately
+// followed by set_recording(false), with no write in between, leaves
+// SampleBuffer in State::fadeout with _fade_ctr == 0 -- idle->fadein just set
+// it to 0, and the immediate fadein->fadeout transition (set_recording's
+// default branch) never touches _fade_ctr. The next write() then hits the
+// early return documented at sample_buffer.cpp:131-150 ("two REC toggles
+// inside one audio block") and flips to idle WITHOUT writing or moving the
+// head. A flag-based is_recording()-before-the-call check cannot see that:
+// is_recording() is still true entering the call, so it would still call
+// SliceMap::on_write(0, ...) even though frame 0 was never touched. Measured
+// effect with the flag-based guard reverted: on_write's own "new take" path
+// (_last_frame == SIZE_MAX on this SliceMap's very first live call) re-aims
+// its sweep at frame 0 and wipes the marker load_sample legitimately placed
+// there -- slice_count() drops from 1 to 0, not up. Either direction is the
+// same defect: a write() call that never happened must not reach SliceMap
+// at all. The head-advance guard (process_in) must suppress it.
+TEST_CASE("sampler: a same-block REC on/off does not plant a phantom marker") {
+    Rig g(0);
+    // Loud pre-existing content at frame 0, so the spurious on_write() (if
+    // the guard fails) has real content to corrupt, not silence.
+    std::vector<float> l(4800), r;
+    for (size_t i = 0; i < l.size(); ++i) l[i] = std::sin(6.2831853f * 441.f * float(i) / 48000.f);
+    r = l;
+    g.e.load_sample(l.data(), r.data(), l.size());
+    const int before = g.e.slice_count();
+
+    g.e.set_recording(true);
+    g.e.set_recording(false);           // fadein -> fadeout, _fade_ctr == 0, nothing written yet
+    float a, b;
+    g.e.process_in(0.f, 0.f);           // drives write()'s _fade_ctr == 0 early return
+    g.e.process(a, b);
+
+    CHECK(g.e.slice_count() == before); // untouched frame 0 must not reach SliceMap at all
 }
 
 TEST_CASE("sampler: clear drops the slices with the content") {

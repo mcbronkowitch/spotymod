@@ -165,12 +165,18 @@ void SamplerEngine::set_gate(bool on) {
 void SamplerEngine::process_in(float inL, float inR) {
     _in_l = inL;
     _in_r = inR;
-    const bool rec = _buf.is_recording();
     const size_t head = _buf.write_head();
     _buf.write(inL, inR);              // no-op unless recording
+    // is_recording() before the call is NOT proof a frame landed at `head`:
+    // write()'s fadeout early-return (sample_buffer.cpp, _fade_ctr == 0 on
+    // entry -- two REC toggles inside one block) can leave is_recording()
+    // true on entry yet write nothing. Check instead whether the head
+    // actually moved off the snapshot across the call -- that IS landing.
+    // "!=" and not ">": a ring wrap moves the head from the last frame back
+    // to 0, which a naive `>` would miss.
     // Detect on what actually LANDED (post overdub mix), not on the input --
     // read back the frame the head just covered.
-    if (rec && _buf.valid()) {
+    if (_buf.valid() && _buf.write_head() != head) {
         const SampleBuffer::Frame& f = _buf.raw()[head];
         _slices.on_write(head, f.l, f.r);
     }
