@@ -224,6 +224,13 @@ public:
     float last_spawn_pos() const    { return _last_pos; }
     int   last_spawn_len() const    { return _last_len; }
     int   last_slice() const    { return _last_slice; }
+    // The offset a roll retrigger adds to _last_slice: the walk accumulated
+    // since the last landed spawn. Exposed because it is the one piece of
+    // slice-groove state with no audible signature of its own -- every reset
+    // path (punch, the phrase wrap) has to zero BOTH halves of this
+    // difference, and a stale half is silent until a fire happens to drop.
+    // See "the phrase wrap resets the roll's walk reference too".
+    float walk_offset() const   { return _walk - _walk_ref; }
     float step_clock() const    { return _step_samples; }
     int   retrig_period() const { return _retrig_period; }
     // The composed gate as this engine last received it. Pure observer, added
@@ -254,8 +261,17 @@ private:
     float _next_ratio();         // chord round-robin + octave scatter
 
     void _fire_slice();               // STEP: one fire = one slice grain
-    void _spawn_slice(int k, float pan);
+    // true when a grain landed; false when it was dropped (empty buffer or
+    // density ceiling). _fire_slice gates its roll arming on this.
+    bool _spawn_slice(int k, float pan);
     int  _pool_size() const;          // live slices, or grid count in fallback
+    // Enough transients to walk markers, or grid fallback? Asked in three
+    // places; spelled out once, so the three cannot drift apart.
+    bool _marker_mode() const;
+    // SOURCE + SCAN folded into the content: the read base BOTH modes start
+    // from. Shared by _slice_pos's grid branch and _fire_slice's marker
+    // branch, which used to carry byte-identical copies of it.
+    float _base_pos() const;
     // Resolve pool index k (cursor + walk, already folded) to a start
     // position and natural slice length. Marker mode reads the SliceMap;
     // grid mode computes from SOURCE/SCAN base + k * _step_samples.
