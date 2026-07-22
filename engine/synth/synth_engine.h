@@ -79,6 +79,10 @@ public:
     // reaching into private state. Not used on the audio path.
     float sub_level() const     { return _sub_level; }
     float detune_max_ct() const { return _detune_max_ct; }
+    // How many notes the last set_chord() pushed. Lets a test pin that
+    // Part::_flatten_for_sampler collapses the chord for the SAMPLER only and
+    // leaves the synth's chord surface intact. Not used on the audio path.
+    int chord_n() const { return _chord_n; }
 
 private:
     void _do_trigger(float pitch_norm, float vel, int chord_slot);

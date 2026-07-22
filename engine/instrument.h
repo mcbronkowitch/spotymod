@@ -127,6 +127,14 @@ public:
     // Observer for tests/scenarios: the knob plus MOTION's swing, as last
     // pushed to the engine on the most recent control tick (Part::overlap_eff).
     float sampler_overlap_eff(int p) const { return _parts[p].overlap_eff(); }
+    // Observer only: the pitch ratio the most recent grain spawned at. Lets a
+    // test pin that a sampler deck grants every grain ONE pitch.
+    float sampler_last_spawn_ratio(int p) const {
+        return _parts[p].sampler().last_spawn_ratio();
+    }
+    // Observer only: how many notes the SYNTH leg last received, so a test can
+    // pin that the sampler's chord flattening does not reach the synth.
+    int synth_chord_n(int p) const { return _parts[p].synth().chord_n(); }
     void  load_sample(int p, const float* l, const float* r, size_t frames) {
         _parts[p].sampler().load_sample(l, r, frames);
     }

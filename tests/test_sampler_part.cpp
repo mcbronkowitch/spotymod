@@ -493,3 +493,59 @@ TEST_CASE("part: the sampler does not quantize its pitch, the synth still does")
     CHECK(g.inst.pitch_cv(PART_B) != doctest::Approx(0.5f));
     CHECK(g.inst.pitch_cv(PART_B) == doctest::Approx(17.f / 36.f));
 }
+
+TEST_CASE("part: the sampler granulates at ONE pitch whatever COLOR says") {
+    // COLOR builds a chord, and the sampler's cloud spreads a chord round-robin
+    // across grains -- one grain per note, cycling. On a synth that is a chord.
+    // On a granulated recording it is the same material replayed at several
+    // transpositions at once: a harmoniser, heard as grains jumping octaves.
+    //
+    // COLOR_A ships at 0.647 ("pad blooms into a seventh/ninth stack"), a synth
+    // decision, so a freshly flipped deck A granulated at four ratios spanning
+    // nearly two octaves without the user touching anything. COLOR is not part
+    // of the sampler's control surface -- it reached pitch through the chord
+    // surface the way MOTION reached it through the octave scatter.
+    //
+    // The deck now plays exactly one pitch: the PITCH target, which with the
+    // lane off is TUNE alone.
+    for (float color : {0.f, 0.35f, 0.647f, 1.f}) {
+        InstRig g;
+        g.inst.set_engine(PART_A, ENGINE_SAMPLER);
+        g.inst.set_target_active(PART_A, LANE_PITCH, false);
+        g.inst.set_depth(PART_A, 0.f);
+        g.inst.set_tune(PART_A, 0.5f);
+        g.inst.set_color(PART_A, color);
+        g.render(2000);                       // past the click-free engine swap
+
+        // Give it material, then let the cloud run and watch every spawn.
+        std::vector<float> buf(24000);
+        for (size_t i = 0; i < buf.size(); ++i)
+            buf[i] = std::sin(6.2831853f * 441.f * float(i) / 48000.f);
+        g.inst.load_sample(PART_A, buf.data(), buf.data(), buf.size());
+
+        std::vector<float> seen;
+        float prev = -1.f;
+        for (int i = 0; i < 48000 * 8; ++i) {
+            g.render(1);
+            const float cur = g.inst.sampler_last_spawn_ratio(PART_A);
+            if (cur != prev) {
+                prev = cur;
+                bool known = false;
+                for (float s : seen) if (s == cur) known = true;
+                if (!known) seen.push_back(cur);
+            }
+        }
+        INFO("COLOR = ", color);
+        // One ratio, and it is unity: TUNE sits at its centre detent.
+        REQUIRE(seen.size() == 1);
+        CHECK(seen[0] == doctest::Approx(1.f));
+    }
+
+    // The synth must keep its chord. Without this, flattening unconditionally
+    // -- which would pass every CHECK above -- goes unnoticed.
+    InstRig g;
+    g.inst.set_engine(PART_B, ENGINE_SYNTH);
+    g.inst.set_color(PART_B, 1.f);
+    g.render(2000);
+    CHECK(g.inst.synth_chord_n(PART_B) > 1);
+}

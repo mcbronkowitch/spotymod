@@ -160,6 +160,32 @@ private:
         }
     }
 
+    // The sampler deck plays ONE pitch: the PITCH target, which with the lane
+    // switched off is TUNE alone. Collapse any composed chord to that single
+    // note before it reaches the engine.
+    //
+    // The sampler's grain cloud spreads a chord round-robin across grains --
+    // one grain per note, cycling. On a synth that is a chord; on a granulated
+    // recording it is the same material replayed at several transpositions at
+    // once, which is a harmonizer, not a texture. With COLOR at its factory
+    // 0.647 a freshly-flipped deck A granulated at four ratios spanning nearly
+    // two octaves (+1.80, -3.20, +4.80, +21.13 semitones, measured), heard as
+    // grains jumping octaves. COLOR is not part of the sampler's control
+    // surface in the morphagene-controls spec -- it was simply never
+    // considered, and it reached pitch through the chord surface the way
+    // MOTION reached it through the octave scatter.
+    //
+    // Done HERE rather than in SamplerEngine on purpose: the engine stays a
+    // general granular engine that can spread a chord (its own tests still
+    // cover that), and the INSTRUMENT decides a sampler deck has no melody.
+    // Same layer, and the same reasoning, as switching LANE_PITCH off and
+    // keeping SUB/DTUN on the synth.
+    int _flatten_for_sampler(float* chord, int nch) const {
+        if (_engine_id != ENGINE_SAMPLER) return nch;
+        chord[0] = _tg[LANE_PITCH];
+        return 1;
+    }
+
     // Everything the engine and FX consume at their own control rate -- see
     // the doc comment on the definition in part.cpp for the full contract
     // (what it does, why it is not idempotent, and how it stays

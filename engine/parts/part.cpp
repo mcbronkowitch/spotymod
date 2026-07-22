@@ -169,8 +169,14 @@ void Part::_control_tick() {
     _overlap_eff = clampf(_overlap + omod, 0.f, 1.f);
     _sampler.set_overlap(_overlap_eff);
     float chord[ChordBuilder::kMaxNotes];
-    const int nch = _chord.apply(_tg[LANE_PITCH], _chord_mask(),
-                                 _quant.root_semis(), chord);
+    // apply() runs unconditionally even when the sampler discards its result:
+    // ChordBuilder carries zone hysteresis and voice-leading state across
+    // calls, and skipping it on a sampler part would freeze that state and
+    // make the first synth tick after an engine switch depend on how long the
+    // part had been a sampler. Same reasoning as the quantizer call above.
+    int nch = _chord.apply(_tg[LANE_PITCH], _chord_mask(),
+                           _quant.root_semis(), chord);
+    nch = _flatten_for_sampler(chord, nch);
     _engine->set_chord(chord, nch);
 
     // Raster-rate push is safe because both receivers smooth on their own
@@ -256,8 +262,11 @@ void Part::process(float inL, float inR, float& outL, float& outR,
 
     if (fired && !_note_suppressed) {
         float chord[ChordBuilder::kMaxNotes];
-        const int nch = _chord.build(_tg[LANE_PITCH], _chord_mask(),
-                                     _quant.root_semis(), chord);
+        // build() unconditionally, for the same state reason as apply() in
+        // _control_tick.
+        int nch = _chord.build(_tg[LANE_PITCH], _chord_mask(),
+                               _quant.root_semis(), chord);
+        nch = _flatten_for_sampler(chord, nch);
         _engine->trigger_chord(chord, nch);
     }
 
