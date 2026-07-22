@@ -210,6 +210,17 @@ public:
 
 private:
     void  _update_control();     // recompute derived values on the raster
+    // Das effektive Intervall bis zum naechsten Spawn: Grundintervall mal
+    // Timing-Jitter, danach auf kSpawnMinSamples gebodet. Zwei Aufrufer, und
+    // dass es DIESELBE Zahl ist, ist der ganze Punkt -- process() zaehlt
+    // damit herunter, _update_control clamped dagegen. Rechnete der Clamp mit
+    // dem ungejitterten _spawn_every, kappte er jedes zu LANGE Intervall
+    // weg und liess jedes zu kurze stehen, womit ein symmetrisch gezogener
+    // Jitter die Wolke systematisch beschleunigte (bis +21 % bei MOTION 1).
+    // Der Boden gehoert hierher und nicht in spawn_interval(): dort steht er
+    // vor dem Jitter, und der Jitter unterlief ihn anschliessend bis auf 2
+    // Samples -- das Vierfache der in sampler_config.h zugesagten 6 kHz.
+    float _next_interval() const;
     void  _spawn_one();          // spawn into a free slot, if any
     void  _kill_all();
     void  _release_all();

@@ -287,6 +287,11 @@ float SamplerEngine::_next_ratio() {
     return ratio;
 }
 
+float SamplerEngine::_next_interval() const {
+    const float n = _spawn_every * (1.f + _spawn_jitter);
+    return n < kSpawnMinSamples ? kSpawnMinSamples : n;
+}
+
 void SamplerEngine::_update_control() {
     // --- SIZE: piecewise exponential, 1 ms .. 42 s ---
     // No clamp to content length. read_linear folds modulo the recorded
@@ -306,7 +311,16 @@ void SamplerEngine::_update_control() {
     // A shrinking interval must not leave a stale long countdown pending:
     // sweeping SIZE down would otherwise gap the carpet for up to the old
     // interval while grains retire at the new, much shorter length.
-    if (_spawn_ctr > _spawn_every) _spawn_ctr = _spawn_every;
+    //
+    // Gegen _next_interval() und NICHT gegen _spawn_every: der laufende
+    // Countdown traegt den Timing-Jitter, und ein Clamp auf das ungejitterte
+    // Grundintervall schneidet jedes zu lange Intervall weg, waehrend jedes
+    // zu kurze stehenbleibt. Aus einem symmetrischen Jitter wird so eine
+    // einseitige Beschleunigung. _next_interval() folgt SIZE- und
+    // DENS-Aenderungen ueber _spawn_every weiterhin sofort, der Zweck dieser
+    // Zeile bleibt also erhalten.
+    const float ceiling = _next_interval();
+    if (_spawn_ctr > ceiling) _spawn_ctr = ceiling;
 
     // Overlap normalization: 1/sqrt(active), the COLOR loudness law. Computed
     // globally here, once per control tick, from the currently-sounding
@@ -538,9 +552,12 @@ void SamplerEngine::process(float& outL, float& outR) {
     if (spawning) {
         _spawn_ctr -= 1.f;
         if (_spawn_ctr <= 0.f) {
-            _spawn_one();
-            _spawn_ctr += _spawn_every * (1.f + _spawn_jitter);
-            if (_spawn_ctr < 1.f) _spawn_ctr = 1.f;
+            _spawn_one();                    // zieht _spawn_jitter neu
+            // _next_interval() bodet bereits auf kSpawnMinSamples, und
+            // _spawn_ctr ist an dieser Stelle > -1, also bleibt die Summe
+            // sicher positiv -- die alte `if (_spawn_ctr < 1.f)`-Klemme war
+            // genau die Stelle, an der der Jitter den CPU-Boden unterlief.
+            _spawn_ctr += _next_interval();
         }
     }
 

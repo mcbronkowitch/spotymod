@@ -1923,3 +1923,86 @@ TEST_CASE("sampler: the lag clamp never sends the playhead negative early in a r
     }
     g.e.set_recording(false);
 }
+
+// --- Review 2026-07-22: Spawn-Rate und CPU-Boden ---
+
+TEST_CASE("F-01: the spawn rate matches nominal even with timing jitter") {
+    // Der Timing-Jitter ist symmetrisch gezogen (Rng::next_bipolar), also
+    // muss er die MITTLERE Rate unangetastet lassen. Vor dem Fix kappte der
+    // Clamp in _update_control nur die zu LANGEN Intervalle, womit die Rate
+    // bei MOTION = 1 um rund 20 % zu hoch lag.
+    //
+    // MOTION wird hier ausdruecklich gesetzt statt auf dem Lane-Default zu
+    // ruhen: F-04 aendert diesen Default, und dieser Test misst den
+    // Scheduler, nicht die Lane.
+    for (float size : {0.2f, 0.5f, 0.8f}) {
+        Rig g;
+        g.feed(0.5f, 0.f, size, 1.f, 1.f);      // MOTION = 1: maximaler Jitter
+        g.e.set_overlap(1.f);
+        g.e.set_flow(true);
+
+        const int kSamples = 48000 * 10;
+        g.render(kSamples);
+
+        const float every   = g.e.spawn_interval_samples();
+        const float nominal = float(kSamples) / every;
+        // Verlorene Spawns zaehlen mit: gemessen wird die RATE des
+        // Schedulers, nicht wie viele Slots gerade frei waren.
+        const float actual  = float(g.e.spawn_count() + g.e.dropped_spawns());
+
+        INFO("SIZE=" << size << " spawn_every=" << every
+             << " nominal=" << nominal << " actual=" << actual);
+        CHECK(actual == doctest::Approx(nominal).epsilon(0.03));
+    }
+}
+
+TEST_CASE("F-03: the CPU floor bounds the spawn rate WITH jitter applied") {
+    // sampler_config.h:73 sagt zu, kSpawnMinSamples deckle die Spawn-Rate
+    // bei 6 kHz pro Part. Vor dem Fix multiplizierte der Jitter erst NACH
+    // dem Boden, sodass real 2-Sample-Intervalle auftraten (24 kHz).
+    using namespace spky::sampler_cfg;
+    for (float motion : {0.5f, 1.f}) {
+        Rig g;
+        g.feed(0.5f, 0.f, 0.f, motion, 1.f);    // SIZE 0 -> kuerzestes Grain
+        g.e.set_overlap(1.f);                   // overlap 8 -> 48/8 = 6 < Boden
+        g.e.set_flow(true);
+
+        int prev = g.e.spawn_count() + g.e.dropped_spawns();
+        int last_i = 0, shortest = 1 << 30;
+        for (int i = 0; i < 48000 * 5; ++i) {
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+            const int now = g.e.spawn_count() + g.e.dropped_spawns();
+            if (now != prev) {
+                if (last_i != 0 && i - last_i < shortest) shortest = i - last_i;
+                last_i = i;
+                prev = now;
+            }
+        }
+        INFO("MOTION=" << motion << " shortest interval=" << shortest);
+        CHECK(float(shortest) >= kSpawnMinSamples);
+    }
+}
+
+TEST_CASE("F-01: a shrinking SIZE still cancels a long pending countdown") {
+    // Das ist der Zweck, den der Clamp urspruenglich hatte, und er muss den
+    // Fix ueberleben: faehrt SIZE herunter, darf kein Countdown des ALTEN,
+    // langen Intervalls stehenbleiben und die Wolke verstummen lassen.
+    Rig g;
+    g.feed(0.5f, 0.f, 0.9f, 0.f, 1.f);          // langes Grain, kein Jitter
+    g.e.set_overlap(0.f);                       // overlap 1 -> Intervall = Grain
+    g.e.set_flow(true);
+    g.render(96);                               // ein Control-Tick: Spawn laeuft
+    const float long_every = g.e.spawn_interval_samples();
+    REQUIRE(long_every > 100000.f);
+
+    g.feed(0.5f, 0.f, 0.3f, 0.f, 1.f);          // SIZE faellt drastisch
+    g.render(96);
+    const float short_every = g.e.spawn_interval_samples();
+    REQUIRE(short_every < long_every / 10.f);
+
+    // Innerhalb zweier neuer Intervalle muss wieder gespawnt werden.
+    const int before = g.e.spawn_count();
+    g.render(int(short_every) * 2 + 96);
+    CHECK(g.e.spawn_count() > before);
+}
