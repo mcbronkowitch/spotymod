@@ -95,7 +95,7 @@ void Part::trigger_manual() {
     const int n = _chord.build(target_value(LANE_PITCH), _chord_mask(),
                                _quant.root_semis(), chord);
     // Durch _flatten_for_sampler, genau wie der Fire-Pfad in process()
-    // (part.cpp:270). Ohne das landeten bei COLOR > 0 bis zu vier Toene in
+    // (part.cpp:306). Ohne das landeten bei COLOR > 0 bis zu vier Toene in
     // der SamplerEngine, bis der naechste _control_tick (<= 96 Samples) ueber
     // set_chord korrigiert -- weit genug fuer rund ein Dutzend Spawns mit
     // Oktavspruengen beim TRIG-Druck, auf einem Deck, das ausdruecklich EINE

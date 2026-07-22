@@ -2150,6 +2150,11 @@ TEST_CASE("F-10: the tape ceiling binds at one octave down, not at an extreme") 
     const float len_shy = float(g.e.last_spawn_len());
     const float base    = g.e.grain_len_samples();
     INFO("ratio=" << ratio_shy << " len=" << len_shy << " base=" << base);
+    // 1.2 ist die Mitte zwischen den beiden Faellen, die der Test trennen
+    // muss: ungekappt streckt Tape hier auf 1/0.771 = 1.297 * base, gekappt
+    // waere es genau 1.0 * base. Jede Grenze dazwischen taete es; 1.2 laesst
+    // zu beiden Seiten Luft fuer Rundung und die Integer-Trunkierung in
+    // _spawn_one.
     CHECK(len_shy > 1.2f * base);           // Tape streckt noch, ungekappt
 
     // Jenseits der Decke: eine Oktave abwaerts oder mehr -- nicht die alten

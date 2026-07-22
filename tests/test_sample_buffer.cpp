@@ -686,5 +686,3 @@ TEST_CASE("K-02: a NaN in the input does not poison the buffer") {
     CHECK(o0 == o0);            // kein NaN
     CHECK(std::isfinite(o0));
 }
-
-
