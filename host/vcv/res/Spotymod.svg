@@ -108,8 +108,6 @@
 <rect x="8.600" y="114.200" width="20.200" height="11.200" rx="1.2" fill="#1d1f1a"/>
 <rect x="142.260" y="114.200" width="20.200" height="11.200" rx="1.2" fill="#1d1f1a"/>
 <rect x="184.560" y="114.200" width="20.200" height="11.200" rx="1.2" fill="#1d1f1a"/>
-<line x1="28.700" y1="100.6" x2="28.700" y2="109.2" stroke="#d7cdbb" stroke-width="0.35"/>
-<line x1="184.660" y1="100.6" x2="184.660" y2="109.2" stroke="#d7cdbb" stroke-width="0.35"/>
 <circle cx="91.680" cy="5.9" r="0.9" fill="#1d6f5f"/>
 <circle cx="121.680" cy="5.9" r="0.9" fill="#b96532"/>
 <circle cx="42.000" cy="10.500" r="5.050" fill="none" stroke="#1d6f5f" stroke-width="0.5"/>
@@ -382,8 +380,8 @@
 <text x="188.910" y="124.800" fill="#fffdf7" text-anchor="middle" font-family="monospace" font-size="1.8">GATE</text>
 <circle cx="42.000" cy="37.000" r="1.700" fill="#1a1206" stroke="#3a2c12" stroke-width="0.25"/>
 <circle cx="171.360" cy="37.000" r="1.700" fill="#1a1206" stroke="#3a2c12" stroke-width="0.25"/>
-<circle cx="30.000" cy="103.600" r="1.700" fill="#1a1206" stroke="#3a2c12" stroke-width="0.25"/>
-<circle cx="183.360" cy="103.600" r="1.700" fill="#1a1206" stroke="#3a2c12" stroke-width="0.25"/>
+<circle cx="31.000" cy="103.600" r="1.700" fill="#1a1206" stroke="#3a2c12" stroke-width="0.25"/>
+<circle cx="182.360" cy="103.600" r="1.700" fill="#1a1206" stroke="#3a2c12" stroke-width="0.25"/>
 <text x="42.000" y="38.600" fill="#2e6355" text-anchor="middle" font-family="monospace" font-size="5.0" letter-spacing="0.0" font-weight="bold">A</text>
 <text x="171.360" y="38.600" fill="#8a5230" text-anchor="middle" font-family="monospace" font-size="5.0" letter-spacing="0.0" font-weight="bold">B</text>
 <text x="106.680" y="7.000" fill="#171713" text-anchor="middle" font-family="monospace" font-size="3.6" letter-spacing="0.9" font-weight="bold">SPOTYMOD</text>

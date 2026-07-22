@@ -213,8 +213,8 @@ static const PanelCtl kOutputCtls[] = {
 static const PanelCtl kLightCtls[] = {
     {GATE_A_L, WK_LIGHT, {42.000f, 37.000f}, "", {42.000f, 37.000f}, 0, 1.90f, 0x171713, ""},
     {GATE_B_L, WK_LIGHT, {171.360f, 37.000f}, "", {171.360f, 37.000f}, 0, 1.90f, 0x171713, ""},
-    {REC_A_L, WK_LIGHT, {30.000f, 103.600f}, "", {30.000f, 103.600f}, 0, 1.90f, 0x171713, ""},
-    {REC_B_L, WK_LIGHT, {183.360f, 103.600f}, "", {183.360f, 103.600f}, 0, 1.90f, 0x171713, ""},
+    {REC_A_L, WK_LIGHT, {31.000f, 103.600f}, "", {31.000f, 103.600f}, 0, 1.90f, 0x171713, ""},
+    {REC_B_L, WK_LIGHT, {182.360f, 103.600f}, "", {182.360f, 103.600f}, 0, 1.90f, 0x171713, ""},
 };
 static const PanelTxt kPanelTexts[] = {
     {{42.000f, 38.600f}, 5.00f, 0.00f, 0x2E6355, 0, "A"},

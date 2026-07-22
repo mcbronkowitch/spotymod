@@ -166,7 +166,12 @@ PLAY_Y   = 103.6
 PAD_X    = [10.0, 17.5, 46.0, 56.5, 67.0, 77.5]   # ENG GRIT | STEP PRIN NEW TRIG
 STEPS_X  = 37.0                     # sequencer knob, between the two pad blocks
 REC_X    = 25.0                     # REC pad (appended param, not templated)
-REC_LED_X = 30.0                    # its state LED, right of the pad
+# Its state LED, centred in the gap between the REC pad and the STEPS knob.
+# It used to sit at 30.0, hard against a hairline at 28.7 that separated the
+# mode pads from the sequencer block; with that hairline gone (2026-07-22,
+# Bastian: the LED and the rule crowded each other and read as one smudged
+# element) the LED has the whole gap and is centred in it.
+REC_LED_X = (REC_X + STEPS_X) / 2.0
 
 # --- per-part control template (ORDER defines enum order; identical A/B) ------
 # Returns Ctl list with per-part coordinates (mirrored for B when mir=True).
@@ -533,10 +538,11 @@ def svg():
             P.append(f'<rect x="{mm(bx + 1.4)}" y="{mm(JACK_BOX_Y + 1.6)}" '
                      f'width="{mm(JACK_BOX_W - 2.8)}" '
                      f'height="{mm(JACK_BOX_H - 3.2)}" rx="1.2" fill="{WELL}"/>')
-    # PLAY: hairline between the two mode pads and the sequencer block
-    for dx in (28.7, W - 28.7):
-        P.append(f'<line x1="{mm(dx)}" y1="100.6" x2="{mm(dx)}" y2="109.2" '
-                 f'stroke="{LINE}" stroke-width="0.35"/>')
+    # The PLAY row used to carry a hairline at 28.7 dividing the mode pads
+    # from the sequencer block. Removed 2026-07-22: the REC LED landed 1.3 mm
+    # to its right and the two read as a single smudged element rather than a
+    # rule and an indicator. The gap between REC and STEPS separates the two
+    # blocks on its own, which is what the rest of the row already relies on.
     # brand flanking dots -- one per colour, flanking the top SPOTYMOD logo
     P.append(f'<circle cx="{mm(CX-15)}" cy="5.9" r="0.9" fill="{GREEN}"/>')
     P.append(f'<circle cx="{mm(CX+15)}" cy="5.9" r="0.9" fill="{COPPER}"/>')
