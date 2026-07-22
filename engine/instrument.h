@@ -132,6 +132,14 @@ public:
     float sampler_last_spawn_ratio(int p) const {
         return _parts[p].sampler().last_spawn_ratio();
     }
+    // Observer only, for tests: the engine's own cumulative spawn counter
+    // (SamplerEngine::spawn_count()). last_spawn_pos()/last_spawn_ratio() hold
+    // their value BETWEEN spawns, so a test that only watches those two can
+    // pass vacuously if no spawn actually lands in its observation window --
+    // this lets it assert a real count of spawns happened instead (K-01,
+    // review 2026-07-22, mirroring the guard F-04's "ORGANIZE reaches the
+    // spawn position" test already uses via the bare Part).
+    int sampler_spawn_count(int p) const { return _parts[p].sampler().spawn_count(); }
     // Observer only: how many notes the SYNTH leg last received, so a test can
     // pin that the sampler's chord flattening does not reach the synth.
     int synth_chord_n(int p) const { return _parts[p].synth().chord_n(); }

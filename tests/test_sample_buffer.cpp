@@ -648,6 +648,45 @@ TEST_CASE("F-08: a punch-in during the record fade-out resumes the recording") {
     CHECK(b.rec_size() > 1000u);
 }
 
+TEST_CASE("F-08: a punch-in during the record fade-out does not splice the take") {
+    // Die beiden CHECKs oben (is_recording(), rec_size() > 1000) sind mit dem
+    // selben Wert (0.5, 0.5) auf beiden Seiten der Unterbrechung gebaut worden
+    // und daher blind fuer eine Splice: der Bug rewindete _write_head auf 0
+    // fuer den Punch-in, statt an der Stelle weiterzuschreiben, an der die
+    // erste Aufnahme stand -- und mit fb = 1 (der Feedback-Uebergang steht
+    // noch auf aus, solange _cut nicht an ist) summiert write() dort, statt zu
+    // ersetzen. Zwei UNTERSCHIEDLICHE Werte machen das sichtbar:
+    //
+    // 1000 Frames +0.5, Stopp, 5 Frames in den Fade-out, Punch-in, 20000
+    // Frames -0.9. Vor dem Fix (Reviewer-Probe): Frame 500 landet bei -0.400
+    // (beide Takes aufsummiert -- 0.5 + -0.9, da der Fade laengst im Sustain
+    // ist, also fb_fade == 1 und write() schreibt in0*1 + alt*1), Frame 1500
+    // bei -0.900 (unveraendert, weil dort vorher nichts stand -- 0 + -0.9).
+    // Nach dem Fix setzt die zweite Aufnahme bei Frame 1000 fort statt bei 0:
+    // Frame 500 gehoert dann NUR der ersten Aufnahme (+0.500, nie
+    // ueberschrieben), Frame 1500 bleibt bei -0.900 wie zuvor -- die einzige
+    // Zahl, die den Unterschied zeigt, ist Frame 500.
+    //
+    // Verifiziert von Hand: mit dem Fix zurueckgenommen (kein Restore von
+    // _write_head beim Punch-in) meldet Frame 500 -0.400 und dieser Test
+    // schlaegt fehl; mit dem Fix steht dort +0.500 und der Test ist gruen.
+    constexpr size_t kSz = 48000;
+    std::vector<SampleBuffer::Frame> mem(kSz);
+    SampleBuffer b;
+    b.init(mem.data(), kSz, 48000.f);
+
+    b.set_recording(true);
+    for (int i = 0; i < 1000; ++i) b.write(0.5f, 0.5f);   // take 1: +0.5
+    b.set_recording(false);
+    for (int i = 0; i < 5; ++i) b.write(0.5f, 0.5f);       // mitten im Fade-out
+    b.set_recording(true);                                  // Punch-in
+    for (int i = 0; i < 20000; ++i) b.write(-0.9f, -0.9f);  // take 2: -0.9
+
+    INFO("mem[500].l=" << mem[500].l << " mem[1500].l=" << mem[1500].l);
+    CHECK(mem[500].l  == doctest::Approx(0.5f).epsilon(1e-3));   // take 1, untouched
+    CHECK(mem[1500].l == doctest::Approx(-0.9f).epsilon(1e-3));  // take 2
+}
+
 TEST_CASE("F-08: a completed fade-out still cuts the loop") {
     // Die Gegenprobe: wird der Fade-out NICHT unterbrochen, muss er wie
     // bisher zu Ende laufen und die Laenge festnageln.

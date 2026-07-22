@@ -19,13 +19,15 @@
     { "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },
     { "t": 9.0,  "action": "sampler_record", "part": 1, "flag": false },
 
-    { "_comment": "10-25s: MOTION opens to full. THE FOG QUESTION -- scatter now spans the whole buffer instead of a quarter.",
-      "t": 10.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.0 },
-    { "t": 15.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.5 },
-    { "t": 20.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 1.0 },
+    { "_comment": "10-25s: MOTION closed, half, full. THE FOG QUESTION -- scatter now spans the whole buffer instead of a quarter. Post F-04 (review 2026-07-22), the sampler ignores MOTION's lane BASE outright (part.cpp: set_target_base(part, LANE_MOTION, ...) is deliberately inert on a sampler deck) -- MOD (set_depth) is the control that reaches it now, so slot 3 is switched active here and driven through set_depth instead of set_target_base.",
+      "t": 10.0, "action": "set_target_active", "part": 1, "slot": 3, "flag": true },
+    { "t": 10.0, "action": "set_depth", "part": 1, "value": 0.0 },
+    { "t": 15.0, "action": "set_depth", "part": 1, "value": 0.5 },
+    { "t": 20.0, "action": "set_depth", "part": 1, "value": 1.0 },
 
-    { "_comment": "25-40s: SIZE to the new top. One grain covers the whole loop under one window.",
-      "t": 25.0, "action": "set_target_base", "part": 1, "slot": 3, "value": 0.3 },
+    { "_comment": "25-40s: SIZE to the new top. One grain covers the whole loop under one window. MOTION switched back off (depth restored to its default 1.0, slot 3 deactivated again) so it doesn't keep swinging COLOR/DENS through the rest of the render -- both read the same LANE_MOTION output and are gated by the same _active flag (part.cpp:190-206). The old base-parking line here (slot 3 = 0.3) is gone: with slot 3 inactive, base is never read at all post-F-04, so it did nothing.",
+      "t": 25.0, "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
+    { "t": 25.0, "action": "set_depth", "part": 1, "value": 1.0 },
     { "t": 25.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 0.9 },
     { "t": 33.0, "action": "set_target_base", "part": 1, "slot": 1, "value": 1.0 },
 

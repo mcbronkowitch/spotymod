@@ -15,8 +15,15 @@ namespace sampler_cfg {
 // haelt, sodass die beiden bei anderen Raten auseinanderlaufen.
 constexpr size_t kRecordFade      = 192;
 // Knob position. NOTE: this sits ABOVE kFbKnee, so it means something
-// slightly different than it did in M5a -- about -1.8 dB rather than -3 dB.
-// The boot state gets marginally hotter and still stops short of unity.
+// slightly different than it did in M5a -- about -1.8 dB (linear ~0.817)
+// rather than -3 dB, but ONLY once something calls set_feedback(0.95) and
+// runs it through the post-knee curve above. SampleBuffer::init() does not:
+// it computes _feedback directly with the pre-knee formula
+// (60*(kDefaultFeedback - 1) dB, i.e. -3 dB / ~0.708 linear) and never calls
+// set_feedback() itself, so the actual boot state -- before any host pushes
+// the knob -- is still the M5a -3 dB, unchanged. -1.8 dB / 0.817 is what the
+// knob reads once a host (or a test, see F-06 below) explicitly sets it to
+// this position; it is not what plays on power-up.
 constexpr float  kDefaultFeedback = 0.95f;
 
 // Record-feedback knee. Below this the mapping is the M5a one exactly:
@@ -57,10 +64,15 @@ constexpr float  kFbMaxDb  = 2.5f;
 //
 // 0.90 gewinnt gegen 0.98 ohne Gegenleistung: gleiche Bauart, halb so hohe
 // Spitze, und der Auslieferungs-Default bleibt bei beiden unberuehrt --
-// kDefaultFeedback = 0.95 bildet ueber die kFbKnee-Kennlinie auf ~0.817 ab
-// und damit unter jede der beiden Schwellen. Gefaerbt wird nur der oberste
-// Zipfel des Knopfwegs (ab ~0.96), also genau die Zone, die der Kommentar
-// bei kFbKnee ohnehin als Selbstsaettigung beschreibt.
+// kDefaultFeedback = 0.95 bildet ueber die kFbKnee-Kennlinie (set_feedback())
+// auf ~0.817 ab und damit unter jede der beiden Schwellen. Das gilt fuer den
+// Wert, den ein Host ueber set_feedback(0.95) tatsaechlich einstellt (und
+// den der F-06-Test unten so nachstellt) -- der reine Boot-Zustand VOR jedem
+// set_feedback()-Aufruf ist etwas anderes: SampleBuffer::init() setzt
+// _feedback direkt ueber die Vor-Knie-Formel und landet bei -3 dB / ~0.708
+// (siehe kDefaultFeedback oben). Gefaerbt wird in beiden Faellen nur der
+// oberste Zipfel des Knopfwegs (ab ~0.96), also genau die Zone, die der
+// Kommentar bei kFbKnee ohnehin als Selbstsaettigung beschreibt.
 //
 // Ehrlich bleibt: eine Restunstetigkeit an der Schwelle. Direkt darunter
 // steht der unsaturierte Fixpunkt in/(1-fb) = 5, direkt darueber faengt

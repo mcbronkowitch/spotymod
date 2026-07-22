@@ -14,8 +14,9 @@
     { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
     { "action": "set_target_base", "part": 1, "slot": 1, "value": 0.5 },
     { "action": "set_target_active", "part": 1, "slot": 1, "flag": false },
-    { "action": "set_target_base", "part": 1, "slot": 3, "value": 0.3 },
-    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false }
+
+    { "_comment": "slot 3 (MOTION) parked inactive: this render is about the feedback knee, not scatter. Its old 'set_target_base slot 3 = 0.3' line is dropped here (review 2026-07-22, F-04 follow-up) -- post F-04, set_target_base(..., LANE_MOTION, ...) is deliberately inert on a sampler deck while the lane is inactive (part.cpp), so that line stopped doing anything the moment the fix landed. MOD (set_depth) is the control that would reach MOTION now, and this scenario deliberately leaves it untouched (default depth 1.0, but MOTION inactive means it never applies) so the bloom is the only thing moving.",
+      "action": "set_target_active", "part": 1, "slot": 3, "flag": false }
   ],
   "events": [
     { "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },

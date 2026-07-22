@@ -66,6 +66,14 @@ struct Anchor {
     bool        must_be_present;   // false == diese Zeichenfolge darf NICHT mehr da sein
 };
 
+// Meisterliste aller 15 IDs, unabhaengig von der Gruppierung oben -- die
+// Grundlage fuer die Pruefung "every finding is in exactly one group"
+// weiter unten (Minor 4, review 2026-07-22).
+const char* kAllIds[] = {
+    "F-01", "F-02", "F-03", "F-04", "F-05", "F-06", "F-07", "F-08", "F-09",
+    "F-10", "K-01", "K-02", "K-03", "K-04", "K-05",
+};
+
 const Anchor kAnchors[] = {
     // K-04: der Kommentar behauptete, bei 96 kHz verlange kSizeCeilS doppelt
     // so viel Kapazitaet wie vorhanden. Beide Hosts allozieren sekundenbasiert,
@@ -75,8 +83,12 @@ const Anchor kAnchors[] = {
     // K-05: sampler_scan.json liess die SOURCE-Lane aktiv, deren Modulation die
     // Leseposition wandern liess -- im einen Szenario, das SCANs eigene
     // Wanderung isolieren soll. Nur set_target_active legt sie still.
+    // The needle used to stop at "slot": 0, so flipping the flag back to
+    // true would still find the (action, part, slot) triple and report the
+    // finding fixed while it had actually reopened. Including "flag": false
+    // in the needle closes that.
     { "K-05", "host/render/scenarios/sampler_scan.json",
-      "\"action\": \"set_target_active\", \"part\": 1, \"slot\": 0", true },
+      "\"action\": \"set_target_active\", \"part\": 1, \"slot\": 0, \"flag\": false", true },
 };
 
 std::string slurp(const std::string& path) {
@@ -152,13 +164,27 @@ TEST_CASE("review register: the documentation findings kept their anchors") {
 }
 
 TEST_CASE("review register: every finding is in exactly one group") {
-    // Die Pruefung, die die urspruengliche Luecke gefunden haette. Ohne sie
-    // faellt eine ID einfach aus allen Listen heraus und niemand merkt es --
-    // was genau einmal passiert ist (K-03 stand in keiner).
-    const int in_tests   = int(sizeof(kIdsNeedingATest) / sizeof(kIdsNeedingATest[0]));
-    const int in_readme  = int(sizeof(kIdsNeedingReadme) / sizeof(kIdsNeedingReadme[0]));
-    const int in_anchors = int(sizeof(kAnchors) / sizeof(kAnchors[0]));
-    INFO("tests " << in_tests << " + readme " << in_readme
-         << " + anchors " << in_anchors);
-    CHECK(in_tests + in_readme + in_anchors == 15);
+    // Minor 4 (review 2026-07-22): die drei sizeof-Verhaeltnisse gegen 15 zu
+    // vergleichen ist gamebar -- eine ID gegen eine erfundene auszutauschen,
+    // oder eine ID doppelt zu listen, aendert die drei Summen nicht und die
+    // Pruefung bleibt gruen. Stattdessen wird jede der 15 Master-IDs (oben,
+    // kAllIds) einzeln gegen alle drei Gruppen gezaehlt: genau ein Treffer
+    // ist richtig, null heisst herausgefallen (die urspruengliche Luecke, die
+    // diese Datei ueberhaupt hat -- K-03 stand in keiner), zwei oder mehr
+    // heisst doppelt gelistet.
+    //
+    // Die alte Summen-Pruefung ist damit redundant (jeder Fall, den sie
+    // faengt, faengt die Pro-ID-Schleife ebenfalls, praeziser) und wurde
+    // entfernt statt als zweite, schwaechere Fassung derselben Aussage stehen
+    // zu bleiben.
+    for (const char* id : kAllIds) {
+        int hits = 0;
+        for (const char* t : kIdsNeedingATest)  if (std::string(t) == id) ++hits;
+        for (const char* t : kIdsNeedingReadme) if (std::string(t) == id) ++hits;
+        for (const Anchor& a : kAnchors)        if (std::string(a.id) == id) ++hits;
+        INFO(std::string(id) << " appears in " << hits
+             << " of the three groups (kIdsNeedingATest / kIdsNeedingReadme / "
+                "kAnchors) -- want exactly 1");
+        CHECK(hits == 1);
+    }
 }

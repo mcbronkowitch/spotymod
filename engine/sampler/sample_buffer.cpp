@@ -78,11 +78,32 @@ void SampleBuffer::set_recording(bool on) {
             // stattdessen ein Overdub des gekuerzten Loops begann: ein
             // REC-Doppelklick innerhalb von 4 ms kuerzte die Aufnahme
             // dauerhaft.
-            if (on) _state = State::fadein;
+            //
+            // _write_head zusaetzlich zurueck auf _fadeout_resume_head: ohne
+            // das blieb er auf der 0, auf die der Stopp-Zweig unten ihn fuer
+            // die Kopf-Ueberblendung gerade erst gezogen hatte, und die neue
+            // Aufnahme schrieb von vorn -- eine Splice statt einer Fortsetzung.
+            // Mit fb = 1 (Feedback-Uebergang steht noch auf aus, _cut ist
+            // nicht an) summiert write() dort obendrein, statt zu ersetzen, so
+            // dass der Anfang der ersten Aufnahme mit dem Anfang der zweiten
+            // verschmolz (review 2026-07-22, F-08 Nachtrag). Der gestashte
+            // Wert ist unabhaengig davon immer korrekt: lief der Stopp-Zweig
+            // NICHT zurueck (schon im Loop, _cut.is_on()), ist er identisch
+            // mit dem aktuellen _write_head, die Zeile also ein No-op.
+            if (on) {
+                _state      = State::fadein;
+                _write_head = _fadeout_resume_head;
+            }
             break;
         default:
             if (!on) {
                 _state = State::fadeout;
+                // Stash BEFORE the rewind below can zero it -- the only
+                // record of where this take actually was, needed if a
+                // punch-in interrupts the fade-out (see the fadeout case
+                // above). Unconditional: when the rewind does not fire
+                // (_cut.is_on()) this just captures the same value again.
+                _fadeout_resume_head = _write_head;
                 // Wrap around and fade out OVER the fade-in, so the loop
                 // point is a real crossfade rather than two dips with a
                 // seam between them. This matters MORE here than in the
@@ -213,10 +234,11 @@ void SampleBuffer::clear() {
     // that DID hold content (_size != 0) still gets the full memset.
     if (_buffer && _buffer_size && _size != 0)
         std::memset(_buffer, 0, sizeof(Frame) * _buffer_size);
-    _write_head = 0;
-    _size       = 0;
-    _fade_ctr   = 0;
-    _state      = State::idle;
+    _write_head          = 0;
+    _size                = 0;
+    _fade_ctr            = 0;
+    _fadeout_resume_head = 0;
+    _state               = State::idle;
     _cut.set_on(false, true);
 }
 

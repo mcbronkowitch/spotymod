@@ -174,6 +174,29 @@ void Part::_control_tick() {
     //
     // Bewusst an _tg und nicht an _base: COLOR (cmod) und DENS (omod) unten
     // lesen _mod.lane_output(LANE_MOTION) direkt und bleiben davon unberuehrt.
+    //
+    // Fuer Szenario-Autoren (review 2026-07-22, F-04-Nachtrag): auf einem
+    // Sampler-Deck ist set_target_base(part, LANE_MOTION, …) damit absichtlich
+    // wirkungslos, egal welchen Wert man ihm gibt -- der Regler, der MOTION
+    // hier tatsaechlich bewegt, ist MOD (set_depth), nicht die Lane-Basis. Ein
+    // Szenario, das stattdessen die Basis walkt, rendert an allen Punkten
+    // dieselbe Audio (traf host/render/scenarios/sampler_extremes.json genau
+    // so, bevor es korrigiert wurde).
+    //
+    // Die Lane selbst bleibt bipolar: _mod.lane_output(LANE_MOTION) liefert
+    // [-1, 1] (_range bleibt 1, siehe oben), und clampf(mmod, 0.f, 1.f) unten
+    // kappt die untere Haelfte komplett weg, statt sie -- wie die alte
+    // 0.5+mod-Formel -- symmetrisch um einen Mittelpunkt zu falten. Hoerbar
+    // heisst das: der Scatter PULSIERT (steht die halbe Modulationsperiode
+    // lang exakt bei 0 und schiesst dann in einen positiven Ausschlag),
+    // statt gleichmaessig zu ATMEN. Zwei Alternativen, falls das nicht die
+    // gewuenschte Form ist: fabsf(mmod) fuer eine kontinuierliche
+    // Vollratenversion (beide Halbwellen tragen bei, nie ein Stillstand),
+    // oder eine reskalierte bipolare Abbildung (0.5f + 0.5f*mmod), die wieder
+    // atmet statt zu pulsen. Der harte Clamp hier ist die aktuell gehoerte
+    // und vorlaeufig akzeptierte Fassung (Variante a) -- welche der drei am
+    // Ende bleibt, ist eine Hoerentscheidung, keine, die dieser Kommentar
+    // trifft.
     if (_engine_id == ENGINE_SAMPLER) {
         const float mmod = _active[LANE_MOTION]
             ? _mod.lane_output(LANE_MOTION) * _depth * _tdepth[LANE_MOTION]

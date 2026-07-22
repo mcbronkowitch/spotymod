@@ -10,7 +10,9 @@
     { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
     { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
     { "action": "set_target_active", "part": 1, "slot": 2, "flag": false },
-    { "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
+
+    { "_comment": "slot 3 (MOTION) parked inactive: this render is about DENS/overlap and punch(), not scatter. No explicit base override here -- Part's default MOTION base (0.5, part.h _base) is never read anyway while the lane is inactive on a sampler deck (post F-04, review 2026-07-22: set_target_base(..., LANE_MOTION, ...) is inert there; only MOD/set_depth reaches it, left untouched on purpose so nothing else moves).",
+      "action": "set_target_active", "part": 1, "slot": 3, "flag": false },
     { "action": "set_target_base", "part": 1, "slot": 0, "value": 0.2 },
     { "action": "set_target_base", "part": 1, "slot": 1, "value": 0.5 }
   ],

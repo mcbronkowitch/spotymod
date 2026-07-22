@@ -710,6 +710,7 @@ TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
     g.inst.trigger_manual(p);
     // Direkt nach dem Trigger, vor dem naechsten Control-Tick, muessen alle
     // Spawns auf demselben Verhaeltnis landen.
+    const int spawns_before = g.inst.sampler_spawn_count(p);
     float first = 0.f;
     bool  have  = false;
     for (int i = 0; i < 90; ++i) {
@@ -719,4 +720,19 @@ TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
         INFO("i=" << i << " ratio=" << ratio << " first=" << first);
         CHECK(ratio == doctest::Approx(first).epsilon(1e-4));
     }
+
+    // Guard against passing vacuously (Minor 5, review 2026-07-22): every
+    // CHECK above only ever compares sampler_last_spawn_ratio() against ITS
+    // OWN first reading, so if no spawn landed in this 90-sample window at
+    // all, the value never changes and every comparison trivially holds.
+    // Today that cannot happen only because SIZE = 0 (see comment 2 above)
+    // clamps spawn_interval to kSpawnMinSamples = 8, forcing over a dozen
+    // spawns into this exact window -- a coincidence of this test's own
+    // setup, not something the assertions above check for themselves. Same
+    // pattern as the F-04 "ORGANIZE reaches the spawn position" test: use the
+    // engine's own cumulative counter, which increments once per spawn
+    // regardless of whether the observed value moved.
+    const int spawns = g.inst.sampler_spawn_count(p) - spawns_before;
+    INFO("spawns in window=" << spawns);
+    REQUIRE(spawns > 5);
 }
