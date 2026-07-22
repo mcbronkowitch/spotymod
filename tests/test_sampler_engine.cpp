@@ -2049,3 +2049,74 @@ TEST_CASE("F-02: a gate edge still starts a STEP burst immediately") {
     INFO("before=" << before << " after=" << after);
     CHECK(after > before);
 }
+
+TEST_CASE("F-09: grain length stays under the _off stall bound at any DENS") {
+    // grain.h begruendet die Stall-Freiheit mit der Pool-Decke bei kOverlap
+    // = 8 (4 032 000). Seit DENS zur Laufzeit auf overlap 1 gehen kann, ist
+    // die Decke 32 256 000 -- weit ueber 2^23, wo _off in float32 einfriert
+    // und das Grain fuer den Rest seiner Lebensdauer DC ausgibt.
+    using namespace spky::sampler_cfg;
+    Rig g;
+    g.feed(0.f, 0.f, 1.0f, 0.f, 1.f);       // SIZE max (PITCH lane does not
+                                             // reach the sampler ratio --
+                                             // set_chord below does)
+    g.e.set_tape_mode(true);                // Tape: lenf = _grain_len / ratio
+    g.e.set_overlap(0.f);                   // DENS min -> overlap 1
+    const float lowest = 0.f;               // TUNE 0 -> ratio 2^-4 = 0.0625
+    g.e.set_chord(&lowest, 1);
+    g.e.set_flow(true);
+    g.render(48000);
+
+    REQUIRE(g.e.spawn_count() > 0);
+    INFO("last_spawn_len=" << g.e.last_spawn_len()
+         << " ceil=" << kGrainLenCeil);
+    CHECK(float(g.e.last_spawn_len()) <= kGrainLenCeil);
+}
+
+TEST_CASE("F-09: a stalled grain would emit DC -- the guard keeps it moving") {
+    // Der Verhaltenstest hinter der Zahl. Ein isoliertes Grain statt der
+    // FLOW-Wolke: bei FLOW ueberlappen bis zu kGrains phasenversetzte Kopien
+    // desselben Ratios, und ein frisch gespawnter Nachbar maskiert im
+    // Summensignal jedes einzelne eingefrorene Grain -- probeweise blieb die
+    // FLOW-Wolke bei diesem Setup ueber 40e6 Samples hoerbar in Bewegung,
+    // obwohl das aelteste Grain laengst haette einfrieren muessen. Isoliert
+    // (FLOW aus, ein Gate-Puls) zeigt sich der Stall unmaskiert.
+    //
+    // Die Pruefung selbst ist eine Disjunktion, nicht "bewegt sich noch":
+    // ein Grain, das laengst uebliche zuende gegangen ist, ist gesund, egal
+    // ob das Fenster in dem Moment gerade zufaellig ausklingt. Der Bug ist
+    // ausschliesslich "noch aktiv UND eingefroren". Das macht die Pruefung
+    // robust gegen den Mechanismus des jeweiligen Fixes: der hier gewaehlte
+    // (eine harte Laengendecke) beendet das Grain, bevor es je in die
+    // Stall-Zone kaeme, und beweist damit nicht per se, dass die
+    // Leseposition dort noch fein genug schreitet -- nur, dass niemand mehr
+    // zuhoert, wenn sie es nicht mehr taete.
+    Rig g;
+    g.feed(0.f, 0.f, 1.0f, 0.f, 1.f);        // SIZE max (see set_chord below
+                                              // for why PITCH is set there)
+    g.e.set_tape_mode(true);
+    g.e.set_overlap(0.f);                    // DENS min -> overlap 1
+    const float lowest = 0.f;                // TUNE 0 -> ratio 2^-4 = 0.0625
+    g.e.set_chord(&lowest, 1);
+    g.e.set_flow(false);
+    g.e.set_gate(true);
+    g.render(96);                            // die Flanke: ein Spawn
+    g.e.set_gate(false);
+    REQUIRE(g.e.spawn_count() == 1);
+
+    // 19 Mio. Samples vorspulen -- weit jenseits der empirisch gemessenen
+    // Einfrier-Schwelle dieses Setups (~17-18e6, siehe grain.h) und weit
+    // jenseits von kGrainLenCeil (4 194 304 = 87 s) -- und dann ein enges,
+    // 1-Sekunden-Fenster (statt "die zweite Haelfte" eines riesigen Renders)
+    // messen: ein grobes Fenster ueber Millionen Samples faengt sowohl die
+    // noch bewegte Fruehphase als auch eine spaeter eingefrorene Spaetphase
+    // ein und mittelt den Stall damit weg.
+    g.render(19000000);
+    auto v = g.render(48000);
+    float lo = 1e9f, hi = -1e9f;
+    for (float x : v) { if (x < lo) lo = x; if (x > hi) hi = x; }
+    const bool retired = g.e.active_grains() == 0;
+    INFO("active_grains=" << g.e.active_grains()
+         << " signal range at ~19e6 samples in: " << lo << " .. " << hi);
+    CHECK((retired || (hi - lo > 1e-4f)));
+}

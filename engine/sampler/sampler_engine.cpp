@@ -525,6 +525,13 @@ void SamplerEngine::_spawn_one() {
     const float len_ceil = _spawn_every * static_cast<float>(kGrains);
     if (lenf > len_ceil) lenf = len_ceil;
 
+    // Zweite, absolute Decke. Die Pool-Decke oben skaliert mit 1 / _overlap
+    // und wird bei DENS min viermal so gross wie die float32-Schranke, ab
+    // der Grain::_off einfriert (kGrainLenCeil). Die Pool-Decke allein
+    // reicht also nicht mehr, seit der Overlap zur Laufzeit veraenderlich
+    // ist -- was grain.h's Stall-Argument voraussetzt.
+    if (lenf > kGrainLenCeil) lenf = kGrainLenCeil;
+
     if (lenf < 2.f) lenf = 2.f;
     const int len = static_cast<int>(lenf);
 

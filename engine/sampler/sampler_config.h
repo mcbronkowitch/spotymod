@@ -117,6 +117,24 @@ constexpr float  kPitchOctaves = 4.f;
 // 8 samples caps the rate at 6 kHz per part. NOT ear-tunable.
 constexpr float  kSpawnMinSamples = 8.f;
 
+// Harte Obergrenze fuer die Grain-Laenge in Ausgangssamples.
+//
+// Grain haelt die Leseposition als Startframe plus relativen Offset, und
+// dieser Offset friert ein, sobald die lokale float32-ulp die Schrittweite
+// _ratio erreicht (grain.h). Ab _len >= 2^23 = 8 388 608 ist das fuer die
+// erreichbaren Ratios der Fall, und das Grain gibt fuer den Rest seines
+// Fensters DC aus.
+//
+// grain.h hielt das fuer unerreichbar und rechnete dafuer mit der
+// Pool-Decke bei kOverlap = 8 (kGrains * _spawn_every = 4 032 000). Seit
+// DENS den Overlap zur Laufzeit auf 1 stellen kann, ist dieselbe Decke
+// _grain_len * kGrains / 1 = 32 256 000 -- viermal ueber der Schranke.
+// Erreichbar mit ENG Sampler, GENE SIZE 1.0, TAPE an, TUNE 0, DENS 0.
+//
+// 2^22 laesst eine Oktave Reserve zur Stall-Schranke. NICHT ear-tunable:
+// das ist eine Float-Grenze, kein Klangwert.
+constexpr float  kGrainLenCeil = 4194304.f;   // 2^22
+
 // Overlap range for the DENS knob in the sampler (spec 2026-07-21
 // morphagene-controls). The ceiling stays at kGrains / 2 = 8 and does NOT
 // rise to kGrains: above 8 the pool-throughput bound

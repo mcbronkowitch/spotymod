@@ -132,14 +132,23 @@ private:
     // MOTION now scatters spawns across the whole buffer, so on a full 42 s
     // recording most spawns land in the coarse region.
     //
+    // ACHTUNG: Die Rechnung unten stammt aus der Zeit, als kOverlap eine
+    // Compile-Time-Konstante von 8 war, und die dort genannte Pool-Decke
+    // (kGrains * _spawn_every = 4 032 000) gilt nur fuer diesen Overlap.
+    // Seit DENS ihn zur Laufzeit auf 1 stellen kann, waere dieselbe Decke
+    // 32 256 000 und der Stall wieder erreichbar. Was ihn heute ausschliesst,
+    // ist die zusaetzliche absolute Grenze kGrainLenCeil = 2^22 in
+    // SamplerEngine::_spawn_one, nicht die Pool-Decke.
+    //
     // _off stays small and therefore finely spaced. Its magnitude never
     // exceeds _len * _ratio, so the stall condition _ratio <= ulp(_off) --
     // i.e. _ratio <= _len * _ratio * 2^-23 -- reduces to _len >= 2^23
     // (8,388,608 samples), which SamplerEngine::_spawn_one's pool-throughput
-    // ceiling (kGrains * _spawn_every = 4,032,000 at the top of SIZE) keeps
-    // out of reach. The two fixes are load-bearing together: without that
-    // ceiling, tape mode could ask for a 1.31e8-sample grain and stall this
-    // accumulator too.
+    // ceiling (kGrains * _spawn_every = 4,032,000 at the top of SIZE,
+    // kOverlap = 8 fixed) used to keep out of reach on its own -- see the
+    // note above for what actually does today. The fixes are load-bearing
+    // together: without kGrainLenCeil, tape mode could ask for a
+    // 1.31e8-sample grain and stall this accumulator.
     //
     // What this does NOT fix, stated plainly: `_start + _off` is still a
     // float, so the value handed to read_linear is still rounded to the
