@@ -31,6 +31,15 @@ public:
     void set_times(float attack_s, float decay_s) {      // control rate
         if (attack_s < 1e-4f) attack_s = 1e-4f;
         if (decay_s  < 1e-3f) decay_s  = 1e-3f;
+        // SynthEngine::_update_control pushes these at every control tick for
+        // every voice, from values that only move when the master cycle length
+        // or the ATK/DEC knobs do -- i.e. almost never. That was 16 libm expf
+        // per 96-sample block on the two-part instrument, computing the
+        // coefficients they already held. The guard is exact: identical inputs
+        // give identical coefficients, so nothing downstream can tell.
+        if (attack_s == _a_time && decay_s == _d_time) return;
+        _a_time = attack_s;
+        _d_time = decay_s;
         _a_coef = 1.f - std::exp(-1.7918f / (attack_s * _sr));   // ln 6
         _d_coef = 1.f - std::exp(-6.9078f / (decay_s * _sr));    // ln 1000
     }
@@ -70,6 +79,8 @@ private:
     float _sr = 48000.f;
     float _level = 0.f;
     float _sustain = 0.f;
+    float _a_time = -1.f;
+    float _d_time = -1.f;
     float _a_coef = 0.01f;
     float _d_coef = 0.001f;
     Stage _stage = Stage::Idle;

@@ -31,6 +31,13 @@ public:
     }
 
     void set_detune_cents(float ct) {                    // control rate
+        // Voice::_apply_freq pushes this twice per voice per control tick, i.e.
+        // 32 libm powf per 96-sample block on the two-part instrument. The
+        // argument only moves when TIMBRE moves or when the per-voice drift LFO
+        // is running (DRIFT/MOTION width > 0), so on a still patch every one of
+        // those recomputed the ratio it already had. Exact guard, no approximation.
+        if (ct == _ct) return;
+        _ct = ct;
         _ratio = std::pow(2.f, ct * (1.f / 1200.f));
         _inc = _freq * _ratio / _sr;
     }
@@ -86,6 +93,7 @@ private:
     float _phase = 0.f;
     float _freq = 220.f;
     float _ratio = 1.f;
+    float _ct = 0.f;             // last set_detune_cents argument (change guard)
     float _inc = 0.f;
     float _morph = 0.f;
 };
