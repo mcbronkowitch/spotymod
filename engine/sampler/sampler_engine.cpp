@@ -232,6 +232,46 @@ void SamplerEngine::_kill_all() {
     _scan_pos = 0.f;
 }
 
+// SIZE is asymmetrically live: down cuts, up does not stretch.
+//
+// Why this exists at all: Grain latches its length at spawn, so before this
+// a grain spawned at SIZE 1.0 sounded for its full 42 s (kSizeCeilS) however
+// far the knob came back down -- 84 s under the tape pool ceiling, 87 s at
+// kGrainLenCeil -- and no control on the deck could stop it. _release_all is
+// reachable only from set_hold, which only the OTHER part's CHOKE window
+// drives (instrument.cpp:110); leaving FLOW deliberately does not release
+// (grain.h). SIZE therefore had a settling time of up to 42 s during which
+// the knob and what you heard disagreed.
+//
+// The rule: rescale each running grain to the length it WOULD have been given
+// at today's SIZE -- its spawn length times (SIZE now / SIZE then) -- and cap
+// it there. Three consequences worth stating:
+//
+//   * Only shortening. trim_total ignores a cap looser than what is left, so
+//     SIZE up is a no-op on running grains and the cloud still drags behind
+//     a rising lane.
+//   * Tape keeps its smear. The quotient is taken against _grain_len, not
+//     the knob, and a tape grain's len already contains 1 / ratio, so the
+//     proportion survives the rescale instead of being clipped to SIZE.
+//   * Idempotent, so a lane modulating SIZE does not compound. Scaling the
+//     REMAINING life by (new / previous) each tick would telescope over an
+//     LFO cycle and collapse the cloud in seconds; scaling the TOTAL against
+//     the spawn-time size depends only on where SIZE is now.
+//
+// Runs on the control raster, kGrains iterations of a compare -- the loop is
+// skipped entirely for slots that are not sounding.
+void SamplerEngine::_trim_running() {
+    const int min_fade = static_cast<int>(kRecordFade);
+    for (int i = 0; i < kGrains; ++i) {
+        if (!_grains[i].active()) continue;
+        const float ref = _size_ref[i];
+        if (!(ref > 0.f) || _grain_len >= ref) continue;   // SIZE did not fall
+        const float scaled = _len_ref[i] * (_grain_len / ref);
+        int total = scaled > 1.f ? static_cast<int>(scaled) : 1;
+        _grains[i].trim_total(total, min_fade);
+    }
+}
+
 void SamplerEngine::_release_all() {
     const int fade = static_cast<int>(kRecordFade);
     for (int i = 0; i < kGrains; ++i)
@@ -309,6 +349,10 @@ void SamplerEngine::_update_control() {
     float len = size_seconds(_targets[LANE_SIZE]) * _sr;
     if (len < 2.f) len = 2.f;             // Grain::spawn's own safety minimum
     _grain_len = len;
+
+    // Before anything derived is recomputed: what is already sounding gets
+    // rescaled to the new SIZE, downward only. See _trim_running.
+    _trim_running();
 
     // The CPU floor lives HERE, on the interval, not on _grain_len. The cost
     // this guards is per spawn, and kOverlap decouples the two: a length
@@ -562,6 +606,12 @@ void SamplerEngine::_spawn_one() {
     if (dec < 1) dec = 1;
 
     _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse);
+    // The pair _trim_running rescales against. Recording _grain_len rather
+    // than the SIZE knob keeps tape mode honest: lenf there is _grain_len /
+    // ratio, so the QUOTIENT len / _size_ref carries the mode, the pitch and
+    // both ceilings, and rescaling by SIZE alone reproduces all of them.
+    _size_ref[slot] = _grain_len;
+    _len_ref[slot]  = static_cast<float>(len);
 
     _last_ratio = ratio;
     _last_pan   = pan;

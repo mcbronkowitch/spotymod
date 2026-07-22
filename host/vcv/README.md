@@ -106,6 +106,20 @@ Without this gesture, the long end of LEN wouldn't be a playable state at
 all; the deck would just stop answering every knob for that stretch. On
 TRIG this comes on top of the ordinary trigger, not instead of it.
 
+**LEN is live downward, latched upward.** Turning LEN *down* immediately
+rescales every grain that's already sounding to the length it would have got
+at the new setting, fading it out click-free; turning LEN *up* leaves running
+grains exactly as they are. The asymmetry is the point. Length is latched at
+spawn (see NEW/TRIG above), and that used to apply in both directions: a grain
+spawned at the top of LEN sounded for its full 42 s however far the knob came
+back down — 84 s in Tape with a pitch an octave under — and nothing on the
+deck could stop it, since the only thing that releases a running grain is the
+*other* part's CHOKE window. LEN effectively had a settling time of up to 42 s
+during which the knob and what you heard disagreed. Downward-live fixes that
+without touching the deliberate lag on the way up, so the cloud still drags
+behind a rising lane. In Tape the rescale is proportional, so "low notes smear
+long" survives it rather than being clipped to LEN.
+
 **The tape head shows up on the LED ring** as a bright travelling dot,
 as soon as a part is in Sampler and has material in its buffer.
 

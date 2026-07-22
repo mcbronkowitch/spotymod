@@ -2174,3 +2174,144 @@ TEST_CASE("F-10: the tape ceiling binds at one octave down, not at an extreme") 
     INFO("ratio=" << ratio_deep << " len=" << len_deep << " base=" << base2);
     CHECK(len_deep == doctest::Approx(2.f * base2).epsilon(0.01));
 }
+
+// --- SIZE is asymmetrically live -------------------------------------------
+//
+// Bastian, 2026-07-22: "wenn ich len aufdrehe dann laeuft die Geschichte ja
+// sehr lange, wenn ich len dann wieder runter drehe aktualisiert er nicht die
+// Laenge der laufenden Grains. Unter Umstaenden laeuft da was minutenlang und
+// ich kann es nicht abbrechen."
+//
+// He was right, and it was not a small window: at SIZE 1.0 a grain is 42 s
+// (kSizeCeilS), in tape mode the pool ceiling allows 84 s and kGrainLenCeil
+// 87 s. Nothing on the deck could stop it -- _release_all has exactly one
+// caller, set_hold, and that is driven only by the OTHER part's CHOKE window
+// (instrument.cpp:110). Leaving FLOW deliberately does not release either
+// (grain.h's release() comment).
+//
+// The fix is deliberately one-directional. Turning SIZE DOWN re-scales every
+// running grain as if it had been spawned at the new size; turning it UP
+// changes nothing, so the "cloud drags behind a moving lane" character the
+// Grain class was built around survives on the way up.
+//
+// These tests switch FLOW off after priming so that no new grains muddy the
+// measurement -- FLOW off stops spawning but, by design, does not touch what
+// is already running, which is exactly the isolation wanted here.
+
+// Samples until the render goes and stays quiet, or -1 if it never does.
+static int silence_after(const std::vector<float>& v, float thresh = 1e-4f) {
+    for (size_t i = v.size(); i-- > 0; )
+        if (std::fabs(v[i]) > thresh) return static_cast<int>(i) + 1;
+    return 0;
+}
+
+TEST_CASE("sampler: SIZE turned down cuts the cloud that is already sounding") {
+    // SIZE 0.8 sits on the exponential segment: 0.02 * 100^0.8 = 0.796 s,
+    // 38,218 samples. SIZE 0.2 is 0.05 s, 2,411 -- a factor of ~16 down.
+    // 3,000 and not more: the spawn interval at SIZE 0.8 is 38,218 / 8 =
+    // 4,777, so exactly ONE grain is running and the tail below measures it
+    // alone. Priming past the interval leaves a second, younger grain whose
+    // own rescaled length is what the render then shows.
+    Rig g;
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.8f);
+    g.render(3000);                       // a long grain is running
+    g.e.set_flow(false);                  // no new spawns from here on
+
+    // Control: left alone, it keeps sounding for the rest of its 38,218.
+    {
+        Rig h;
+        h.e.set_flow(true);
+        h.feed(0.5f, 0.f, 0.8f);
+        h.render(3000);
+        h.e.set_flow(false);
+        auto tail = h.render(20000);
+        REQUIRE(silence_after(tail) > 19000);
+    }
+
+    g.feed(0.5f, 0.f, 0.2f);              // SIZE down
+    auto tail = g.render(20000);
+    // 38,218 * (2,411 / 38,218) = 2,411 total, and 3,000 are already played,
+    // so the cap is in the past: the grain gets the click-free floor and is
+    // gone within a few hundred samples, not twenty thousand.
+    CHECK(silence_after(tail) < 500);
+}
+
+TEST_CASE("sampler: SIZE turned up does not stretch what is already sounding") {
+    Rig g;
+    g.e.set_flow(true);
+    g.feed(0.5f, 0.f, 0.2f);              // short grains, 2,411 samples
+    g.render(500);
+    g.e.set_flow(false);
+
+    g.feed(0.5f, 0.f, 0.8f);              // SIZE up -- must change nothing
+    auto tail = g.render(8000);
+    // The grain still ends on its own 2,411 (minus the 500 already rendered),
+    // not stretched to 38,218.
+    const int end = silence_after(tail);
+    CHECK(end > 1500);
+    CHECK(end < 2500);
+}
+
+TEST_CASE("sampler: a SIZE wobble that returns does not compound") {
+    // The rejected design multiplied the remaining life by (new / previous)
+    // on every control tick where SIZE fell. That telescopes: a lane
+    // modulating SIZE would shorten the cloud by the full ratio once per LFO
+    // cycle and the cloud would collapse over a few seconds. Scaling against
+    // the size the grain was SPAWNED at instead is idempotent -- the result
+    // depends only on where SIZE is now, not on how it got there.
+    // Both variants render the SAME number of samples and differ only in how
+    // many of the eight blocks dip SIZE. Comparing two runs of unequal length
+    // would just measure the extra rendering (the first draft did, and read
+    // as a 2,800-sample "compounding" that was nothing but elapsed time).
+    auto lifetime = [](int dips) {
+        Rig g;
+        g.e.set_flow(true);
+        g.feed(0.5f, 0.f, 0.8f);
+        g.render(500);
+        g.e.set_flow(false);
+
+        std::vector<float> all;
+        auto add = [&all](std::vector<float> v) {
+            all.insert(all.end(), v.begin(), v.end());
+        };
+        for (int i = 0; i < 8; ++i) {
+            g.feed(0.5f, 0.f, i < dips ? 0.5f : 0.8f);   // down to 0.2 s
+            add(g.render(200));           // > kCtrlInterval, so it lands
+            g.feed(0.5f, 0.f, 0.8f);      // and back up
+            add(g.render(200));
+        }
+        add(g.render(30000));
+        return silence_after(all);
+    };
+    const int none = lifetime(0);
+    const int once = lifetime(1);
+    const int many = lifetime(8);
+    REQUIRE(none > once + 1000);          // the trim did something...
+    CHECK(many > once - 200);             // ...and doing it 8x does no more
+    CHECK(many < once + 200);
+}
+
+TEST_CASE("sampler: tape keeps its smear when SIZE is trimmed") {
+    // Tape length is _grain_len / ratio, so a tape grain is legitimately
+    // LONGER than the current SIZE. Capping at SIZE itself would silently
+    // end the "low notes smear long" promise the moment the knob moved; the
+    // scaling rule keeps the proportion.
+    auto tape_life = [](float size_now) {
+        Rig g;
+        g.e.set_tape_mode(true);
+        g.e.set_flow(true);
+        g.feed(0.25f, 0.f, 0.5f);         // pitched down -> a long tape grain
+        g.render(500);
+        g.e.set_flow(false);
+        g.feed(0.25f, 0.f, size_now);
+        return silence_after(g.render(120000));
+    };
+    const int untouched = tape_life(0.5f);
+    const int halved    = tape_life(0.35f);   // 0.02*100^0.35 / 0.2 = 0.502
+    REQUIRE(untouched > 5000);
+    // Still a long grain, just proportionally shorter -- not clipped to the
+    // 0.1 s that SIZE 0.35 alone would give.
+    CHECK(halved < untouched);
+    CHECK(halved > 0.25f * static_cast<float>(untouched));
+}

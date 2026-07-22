@@ -222,6 +222,7 @@ private:
     // Samples -- das Vierfache der in sampler_config.h zugesagten 6 kHz.
     float _next_interval() const;
     void  _spawn_one();          // spawn into a free slot, if any
+    void  _trim_running();       // SIZE turned down: shorten what is sounding
     void  _kill_all();
     void  _release_all();
     float _next_ratio();         // chord round-robin + octave scatter
@@ -231,6 +232,13 @@ private:
     size_t _mem_frames = 0;
 
     Grain _grains[kGrains];
+    // _grain_len at the instant slot i was spawned, and the length it was
+    // given. _trim_running needs both to rescale a running grain to "what it
+    // would have been at today's SIZE" without asking Grain to know anything
+    // about SIZE, tape mode or ratios -- the policy stays here, where SIZE
+    // lives, and Grain stays a playback object. Zero means "no live grain".
+    float _size_ref[kGrains]  = {};
+    float _len_ref[kGrains]   = {};
     Rng   _rng;
     uint32_t _seed = 0xC0FFEEu;
 

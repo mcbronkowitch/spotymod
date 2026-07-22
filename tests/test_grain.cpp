@@ -330,3 +330,101 @@ TEST_CASE("grain: a low ratio still advances near the end of a long buffer") {
     fresh.spawn(kStart, kMinRatio, 0.f, 20000, 100, 100, false);
     CHECK(fresh.read_pos() == kStart);
 }
+
+// --- SIZE is asymmetrically live: turning it down trims what is sounding ---
+//
+// Grain latches its length at spawn() and process() reads no parameter at
+// all, which is the whole design (see the class comment). That made SIZE a
+// one-way street: a 42 s grain kept sounding for its full 42 s no matter
+// where the knob went, and nothing short of CHOKE could stop it. trim_total
+// is the deliberate exception -- it caps a grain's TOTAL life, counted from
+// spawn, and can only ever shorten.
+
+// How many process() calls until the grain retires, capped at `limit`.
+static int life_left(Grain& g, const SampleBuffer& buf, int limit = 200000) {
+    float l = 0.f, r = 0.f;
+    int n = 0;
+    while (g.active() && n < limit) { g.process(buf, l, r); ++n; }
+    return n;
+}
+
+TEST_CASE("grain: trim_total caps the remaining life, counted from spawn") {
+    FlatBuf f;
+    float l = 0.f, r = 0.f;
+
+    Grain g;
+    g.spawn(0.f, 1.f, 0.f, 10000, 100, 100, false);
+    for (int i = 0; i < 1000; ++i) g.process(f.buf, l, r);   // 1000 played
+
+    g.trim_total(3000, 192);
+    // 3000 total minus the 1000 already played leaves 2000, and the grain
+    // must retire on exactly that -- not on 3000, which would count the
+    // played samples twice.
+    CHECK(life_left(g, f.buf) == 2000);
+}
+
+TEST_CASE("grain: trim_total never extends a grain") {
+    FlatBuf f;
+    float l = 0.f, r = 0.f;
+
+    // A cap beyond the grain's own length is a no-op: it runs its full 5000.
+    Grain up;
+    up.spawn(0.f, 1.f, 0.f, 5000, 100, 100, false);
+    up.trim_total(50000, 192);
+    CHECK(life_left(up, f.buf) == 5000);
+
+    // And a second, LOOSER trim after a tight one does not undo it. This is
+    // the case a knob sweep produces: down to a small SIZE, back up.
+    Grain back;
+    back.spawn(0.f, 1.f, 0.f, 10000, 100, 100, false);
+    for (int i = 0; i < 500; ++i) back.process(f.buf, l, r);
+    back.trim_total(1500, 192);
+    back.trim_total(9000, 192);
+    CHECK(life_left(back, f.buf) == 1000);
+}
+
+TEST_CASE("grain: a cap already in the past still fades, it does not cut") {
+    FlatBuf f;
+    float l = 0.f, r = 0.f;
+
+    Grain g;
+    g.spawn(0.f, 1.f, 0.f, 40000, 100, 100, false);
+    for (int i = 0; i < 20000; ++i) g.process(f.buf, l, r);
+    // Sitting on the window plateau: the window is 1.0 there, and 0.7071 is
+    // the centre-pan gain FlatBuf's constant 1.0 gets multiplied by.
+    const float before = l;
+    REQUIRE(before > 0.7f);
+
+    // SIZE dropped so far that this grain should already have ended. It gets
+    // the floor, not a hard stop -- a truncated plateau is a click.
+    g.trim_total(100, 192);
+    CHECK(life_left(g, f.buf) == 192);
+
+    // ...and the first sample of that fade continues from where the window
+    // was, rather than jumping.
+    Grain h;
+    h.spawn(0.f, 1.f, 0.f, 40000, 100, 100, false);
+    for (int i = 0; i < 20000; ++i) h.process(f.buf, l, r);
+    const float last_before = l;
+    h.trim_total(100, 192);
+    h.process(f.buf, l, r);
+    CHECK(std::fabs(l - last_before) < 0.02f);
+}
+
+TEST_CASE("grain: trimming mid-fade shortens it, and stays continuous") {
+    FlatBuf f;
+    float l = 0.f, r = 0.f;
+
+    Grain g;
+    g.spawn(0.f, 1.f, 0.f, 40000, 100, 100, false);
+    for (int i = 0; i < 10000; ++i) g.process(f.buf, l, r);
+    g.trim_total(14000, 192);              // 4000 of fade left
+    for (int i = 0; i < 1000; ++i) g.process(f.buf, l, r);
+    const float mid = l;
+    REQUIRE(mid > 0.2f);                   // well inside the fade
+
+    g.trim_total(11500, 192);              // shorten it to 500 from now
+    g.process(f.buf, l, r);
+    CHECK(std::fabs(l - mid) < 0.02f);     // no jump at the re-arm
+    CHECK(life_left(g, f.buf) == 499);     // 500 total, one already consumed
+}

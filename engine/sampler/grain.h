@@ -13,6 +13,12 @@ namespace spky {
 // behind rather than smearing every running grain. process() is then pure
 // playback with no parameter reads at all.
 //
+// One deliberate exception, added 2026-07-22: trim_total() lets the engine
+// SHORTEN a running grain from outside. Latching length turned SIZE into a
+// one-way street -- a 42 s grain kept sounding for its full 42 s however far
+// the knob came back down, and nothing on the deck could stop it. Only
+// shortening is allowed, so the drag-behind character survives on the way up.
+//
 // The window is two halves of the shared rising Hann table (fx_util.h):
 // attack over `atk` samples, decay over `dec`, unity in between. An unequal
 // split IS the skew control, so ATK/DEC alone shape soft vs percussive.
@@ -75,9 +81,51 @@ public:
     // call this -- running grains simply finish their own window.
     void release(int fade_len) {
         if (!_active || _rel_len > 0) return;
+        // BEFORE _rel_len is written, not after: _level() branches on
+        // _rel_len, so arming first makes it read the release path with a
+        // stale (zero) _rel_from and the fade starts from silence instead of
+        // from the window -- a full-scale step, which is precisely the click
+        // this function exists to avoid. Caught by "release fades out from
+        // the current level, click-free" (test_grain.cpp).
+        _rel_from = _level();       // freeze the level we are fading from
         _rel_len = fade_len < 1 ? 1 : fade_len;
         _rel_ctr = _rel_len;
-        _rel_from = _window();      // freeze the level we are fading from
+    }
+
+    // Cap the grain's TOTAL life at `total` output samples counted from
+    // spawn, fading out click-free over at least `min_fade`. This is the one
+    // deliberate exception to "everything is latched at spawn": it exists so
+    // that turning SIZE DOWN cuts a cloud that is already sounding.
+    //
+    // Two properties the callers rely on, both load-bearing:
+    //
+    //   * It can only SHORTEN. A `total` that is longer than what the grain
+    //     has left is ignored, so turning SIZE back up never stretches a
+    //     running grain and the cloud keeps dragging behind a rising lane
+    //     the way this class was built to.
+    //   * It is idempotent in `total`, not incremental. Unlike release() it
+    //     may be called on a grain that is already fading and will shorten
+    //     that fade -- but the result depends only on the `total` handed in,
+    //     never on how many times it was called. A lane modulating SIZE
+    //     therefore does not compound: the alternative, scaling the
+    //     REMAINING life by (new size / previous size) on each control tick,
+    //     telescopes over an LFO cycle and collapses the cloud within
+    //     seconds (pinned by "a SIZE wobble that returns does not compound"
+    //     in tests/test_sampler_engine.cpp).
+    //
+    // A cap that already lies in the past does not cut: the grain gets
+    // `min_fade`, because truncating a window sitting on its plateau is
+    // exactly the click the release path exists to avoid.
+    void trim_total(int total, int min_fade) {
+        if (!_active) return;
+        if (min_fade < 1) min_fade = 1;
+        int want = total - _i;
+        if (want < min_fade) want = min_fade;
+        const int left = _rel_len > 0 ? _rel_ctr : _len - _i;
+        if (want >= left) return;          // never extend, never loosen
+        _rel_from = _level();
+        _rel_len  = want;
+        _rel_ctr  = want;
     }
 
     void process(const SampleBuffer& buf, float& outL, float& outR) {
@@ -109,10 +157,29 @@ public:
         outR = r * w * _gr;
 
         _off += _reverse ? -_ratio : _ratio;
-        if (_rel_len == 0 && ++_i >= _len) _active = false;
+        // _i counts elapsed samples since spawn UNCONDITIONALLY -- it used to
+        // stop the moment a fade was armed, because only _window() read it
+        // and _window() is not called during a fade. trim_total's "total,
+        // counted from spawn" made it load-bearing again: with a frozen _i,
+        // a second trim on an already-fading grain computes its remaining
+        // life from a stale elapsed count and leaves the grain longer than
+        // asked. Retirement still keys off the fade when one is running, so
+        // _i is free to run past _len.
+        ++_i;
+        if (_rel_len == 0 && _i >= _len) _active = false;
     }
 
 private:
+    // The window level the grain is emitting right now, whether it is in its
+    // normal window or already fading. Both release() and trim_total() freeze
+    // this value to fade from, which is what makes re-arming a fade mid-flight
+    // continuous rather than a step.
+    float _level() const {
+        if (_rel_len <= 0) return _window();
+        return _rel_from * hann_value_at(static_cast<float>(_rel_ctr)
+                                         / static_cast<float>(_rel_len));
+    }
+
     float _window() const {
         if (_i < _atk)
             return hann_value_at(static_cast<float>(_i) / static_cast<float>(_atk));
