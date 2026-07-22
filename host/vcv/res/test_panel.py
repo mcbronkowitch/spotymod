@@ -483,58 +483,22 @@ def test_sampler_captions_exist():
           "DENSITY lost its DENS label")
 
 
-def test_sampler_stacked_caption_sits_outside_its_label():
-    """The STACKED sampler line (SCAN only, since 2026-07-22) goes further out
-    than the main caption -- never between the knob and the LED ring, and never
-    on top of the caption it belongs to. LEN and ORG moved inline and are
-    checked by test_sampler_inline_pairs instead."""
-    stacked = [(b, w) for b, w in SAMPLER_CAPTIONS if b not in g.SAMPLER_INLINE]
-    check(len(stacked) == 1 and stacked[0][1] == 'SCAN',
-          f"expected SCAN alone to stay stacked, got {stacked}")
-    for suffix, cx, colour in (('_A', g.RING_CX_A, g.GREEN),
-                               ('_B', g.W - g.RING_CX_A, g.COPPER)):
-        for base, word in stacked:
-            c = ctl(base + suffix)
-            lx, ly, anchor, _s, _col = g.label_of(c)
-            t = sampler_text(word, c)
-            check(t is not None, f"{c.enum}: no {word} caption at all")
-            if t is None:
-                continue
-            main_d = math.hypot(lx - cx, ly - g.RING_CY)
-            d = math.hypot(t[0] - cx, t[1] - g.RING_CY)
-            check(d > main_d,
-                  f"{c.enum}: {word} sits inside {c.label} (d={d:.2f} <= {main_d:.2f})")
-            check(math.hypot(t[0] - c.x, t[1] - c.y) > g.GLYPH_R[c.kind],
-                  f"{c.enum}: {word} sits on the knob glyph")
-            # A left/right-aligned parent needs a left/right-aligned second
-            # line, or the two captions stagger. This is why PanelTxt grew an
-            # anchor column.
-            check(t[5] == anchor,
-                  f"{c.enum}: {word} anchored {t[5]!r}, parent is {anchor!r}")
-            check(approx(t[2], 1.5), f"{c.enum}: {word} size {t[2]}, want 1.5")
-            check(t[4] == colour,
-                  f"{c.enum}: {word} colour {t[4]}, want {colour}")
-            # Enough baseline separation that the glyph boxes cannot touch:
-            # the parent caption is 1.9 mm tall.
-            check(t[1] - ly >= 2.4,
-                  f"{c.enum}: {word} only {t[1] - ly:.2f} mm below {c.label}")
-
-
-# The inline pair's extent on the caption baseline: (left, right) in mm.
-# Mirrors the generator's own anchoring -- caption end-anchored, word
-# start-anchored -- so the test measures the drawn block, not the intent.
+# The pair's extent on the caption baseline: (left, right) in mm. Derived
+# from the drawn anchors, not from the generator's intent, so it measures
+# what actually lands on the plate.
 def inline_span(c, word):
-    lx, ly, anchor, size, _col = g.label_of(c)
+    lx, _ly, anchor, size, _col = g.label_of(c)
     t = sampler_text(word, c)
-    return (lx - g.text_w(c.label, size), t[0] + g.text_w(word, t[2]))
+    cap_l = lx - g.text_w(c.label, size) if anchor == 'end' else lx
+    return (cap_l, t[0] + g.text_w(word, t[2]))
 
 
-def test_sampler_inline_pairs():
-    """LEN and ORG sit BESIDE their caption on one baseline, and the pair --
-    not the caption alone -- is centred on the knob (2026-07-22)."""
+def test_sampler_words_sit_inline_behind_their_caption():
+    """Every sampler word shares its caption's baseline and follows it one gap
+    behind, in reading order on both halves (2026-07-22). They used to hang
+    3 mm below, which read as orphaned from the knob."""
     for suffix, colour in (('_A', g.GREEN), ('_B', g.COPPER)):
-        for base, word in ((b, w) for b, w in SAMPLER_CAPTIONS
-                           if b in g.SAMPLER_INLINE):
+        for base, word in SAMPLER_CAPTIONS:
             c = ctl(base + suffix)
             lx, ly, anchor, size, _col = g.label_of(c)
             t = sampler_text(word, c)
@@ -546,19 +510,54 @@ def test_sampler_inline_pairs():
             check(approx(t[2], 1.5), f"{c.enum}: {word} size {t[2]}, want 1.5")
             check(t[4] == colour,
                   f"{c.enum}: {word} colour {t[4]}, want {colour}")
-            # The caption gives up its centred anchor: it ends where the gap
-            # begins, the word starts where the gap ends. Both anchored from
-            # the same side would push a width-estimate error into the gap.
-            check(anchor == 'end',
-                  f"{c.enum}: caption anchored {anchor!r}, want 'end'")
+            # Start-anchored regardless of how the parent is anchored: the two
+            # grow AWAY from the gap, so a wrong MONO_ADV cannot close it.
             check(t[5] == 'start',
                   f"{c.enum}: {word} anchored {t[5]!r}, want 'start'")
-            check(approx(t[0] - lx, g.SAMPLER_GAP),
-                  f"{c.enum}: gap {t[0] - lx:.2f} mm, want {g.SAMPLER_GAP}")
+            cap_end = lx if anchor == 'end' else lx + g.text_w(c.label, size)
+            check(approx(t[0] - cap_end, g.SAMPLER_GAP),
+                  f"{c.enum}: gap {t[0] - cap_end:.2f} mm, want {g.SAMPLER_GAP}")
+            # The word must clear the knob it belongs to -- nearest corner of
+            # its glyph box against the knob's radius, not just its anchor.
+            left, right = t[0], t[0] + g.text_w(word, t[2])
+            near_x = min(max(c.x, left), right)
+            near_y = min(max(c.y, t[1] - 0.7 * t[2]), t[1])
+            check(math.hypot(near_x - c.x, near_y - c.y) > g.GLYPH_R[c.kind],
+                  f"{c.enum}: {word} overlaps the knob glyph")
+
+
+def test_sampler_centred_captions_hand_their_centring_to_the_pair():
+    """SUB and DTUN are centred below their knob, so the PAIR takes over that
+    centring -- otherwise adding a word would shove the caption off its knob.
+    MELODY is excluded: its caption is placed radially and keeps its anchor."""
+    for suffix in ('_A', '_B'):
+        for base, word in SAMPLER_CAPTIONS:
+            if base in g.SAMPLER_RADIAL:
+                continue
+            c = ctl(base + suffix)
+            _lx, _ly, anchor, _size, _col = g.label_of(c)
+            check(anchor == 'end',
+                  f"{c.enum}: caption anchored {anchor!r}, want 'end'")
             left, right = inline_span(c, word)
             check(approx((left + right) / 2.0, c.x),
                   f"{c.enum}: pair centred at {(left + right) / 2.0:.2f}, "
                   f"knob at {c.x:.2f}")
+
+
+def test_sampler_radial_caption_did_not_move():
+    """MELODY's caption position is measured, not free -- orbit_label puts it
+    outside the knob so nothing lands between knob and LED ring, and pushing a
+    second line further out ended at the plate edge. Adding SCAN beside it must
+    therefore leave MELO exactly where orbit_label puts it."""
+    for base in g.SAMPLER_RADIAL:
+        for suffix, mir in (('_A', False), ('_B', True)):
+            c = ctl(base + suffix)
+            cx = g.W - g.RING_CX_A if mir else g.RING_CX_A
+            want = g.orbit_label(cx, g.RING_CY, g.ORBIT_ANG[base], mir)
+            got = g.label_of(c)
+            check(all(approx(a, b) if isinstance(a, float) else a == b
+                      for a, b in zip(got, want)),
+                  f"{c.enum}: caption moved to {got}, orbit_label says {want}")
 
 
 def test_sampler_inline_pairs_fit_the_voice_row():
@@ -570,7 +569,7 @@ def test_sampler_inline_pairs_fit_the_voice_row():
     blocks = []
     for suffix, box in (('_A', voice_a), ('_B', voice_b)):
         for base, word in ((b, w) for b, w in SAMPLER_CAPTIONS
-                           if b in g.SAMPLER_INLINE):
+                           if b not in g.SAMPLER_RADIAL):
             c = ctl(base + suffix)
             left, right = inline_span(c, word)
             check(left >= box[0] + 0.5 and right <= box[0] + box[2] - 0.5,

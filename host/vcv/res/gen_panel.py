@@ -396,23 +396,26 @@ LIGHTS = [
 # two things called MORPH on one plate would be a built-in operating error.
 SAMPLER_LBL = [("MELODY", "SCAN"), ("SUB", "LEN"), ("DETUNE", "ORG")]
 SAMPLER_SIZE = 1.5     # mm; the main captions are 1.9
-SAMPLER_DY   = 3.0     # mm below the main caption's baseline -- see sampler_texts()
 
-# Two of the three sit INLINE, on the same baseline as the caption they
-# qualify, with the pair centred on the knob (2026-07-22, Bastian: "org und
-# len sitzen unguenstig unter der box, da ist noch Platz neben den normalen
-# Labels"). He is right about the room -- the VOICE row is three captions on
-# a 13 mm pitch and even the widest pair, DTUN ORG at 8.1 mm, leaves 1.5 mm
-# to the box border and 5.5 mm to its neighbour.
+# All three sit INLINE, on the same baseline as the caption they qualify and
+# one gap behind it (2026-07-22, Bastian: "org und len sitzen unguenstig
+# unter der box, da ist noch Platz neben den normalen labels" and then "scan
+# passt auch noch hinter melo im gleichen style"). They used to hang
+# SAMPLER_DY = 3.0 mm below their parent, which read as orphaned -- the words
+# belonged to nothing in particular.
 #
-# SCAN is deliberately NOT in this set. Its parent is a radial orbit caption
-# sitting at the plate edge; there is no free plate outboard of it, and
-# putting the word inboard would drop it between the knob and the LED ring,
-# which is the one place the original spec rules out.
-SAMPLER_INLINE = {"SUB", "DETUNE"}
+# The word always follows in reading order, on both halves. The panel mirrors
+# geometry, but text does not: "SCAN MELO" on part B to match a mirrored
+# layout would be a different label, not a mirrored one.
 SAMPLER_GAP    = 0.8   # mm of air between a caption and its sampler word
-# Advance width of the monospace face, in ems. Only ever used to CENTRE a
-# pair, never to butt two texts together -- see the anchor note in
+# MELODY's caption is placed radially by orbit_label(); SUB and DETUNE use the
+# centred default. That difference decides which pair rule applies -- see
+# sampler_texts. Keyed by name rather than by "does c.lbl exist", because this
+# function overwrites c.lbl and such a test would answer differently on a
+# second call.
+SAMPLER_RADIAL = {"MELODY"}
+# Advance width of the monospace face, in ems. Only ever used to CENTRE or to
+# follow, never to butt two texts together -- see the anchor note in
 # sampler_texts() for why an error in this number cannot make them collide.
 MONO_ADV       = 0.6
 
@@ -420,57 +423,51 @@ def text_w(s, size_mm):
     return len(s) * MONO_ADV * size_mm
 
 def sampler_texts():
-    """The second caption line, derived from the main one -- never typed out.
+    """The sampler word beside its caption, derived from it -- never typed out.
 
-    label_of() already resolves the placement rule in play here: the radial
-    orbit_label() for MELODY. Reading it back means the sampler line follows
-    whatever the layout does next, which is the whole reason this block
-    computes instead of listing coordinates.
+    The word is always start-anchored one SAMPLER_GAP behind where the
+    caption ENDS. Anchoring it away from the gap rather than from the pair's
+    left edge is what makes the layout tolerant of MONO_ADV being wrong: if
+    Rack's monospace face is wider than the estimate, caption and word grow
+    away from each other, so the pair can drift but the gap can never close
+    and the two can never overlap.
 
-    SCAN is stacked straight below its parent (same x, same anchor) rather
-    than pushed 2.2 mm further along the outward radial as first sketched. Two
-    measurements killed the radial variant: at MELODY's 240 deg only cos(240)
-    of the offset is vertical, so 2.2 mm radial buys 1.1 mm of baseline
-    separation and the glyph boxes of MELO and SCAN touch; and scaling the
-    radial up until the vertical separation reads pushes SCAN out to x ~= 4 mm,
-    hard against the plate edge, visually orphaned from the knob it belongs to.
-    3.0 mm of straight baseline separation also clears the VOICE box's bottom
-    hairline at y 96.9 -- at 2.2 mm the LEN / ORG letters sit at 96.1..97.2 and
-    the border strikes through them; at 3.0 mm they land at 96.95..98.0, inside
-    the 1.7 mm gap between the VOICE and PLAY boxes with room on both sides.
+    Where the pair as a whole sits depends on how the parent was placed, and
+    the two rules are NOT interchangeable:
 
-    LEN / ORG do not follow that reasoning any more -- it applied while they
-    hung under the VOICE box, and since 2026-07-22 they sit inline instead
-    (see SAMPLER_INLINE). The paragraph above still governs SCAN, which is
-    the case the reasoning was actually about.
+    * Centred captions (SUB, DETUNE) hand their centring to the pair. The
+      caption gives up its "middle" anchor and ends half a gap left of the
+      knob's centre-of-pair, so "SUB LEN" straddles the knob the way "SUB"
+      used to.
+    * The radial caption (MELODY) keeps its anchor point EXACTLY. That
+      position is measured, not free: orbit_label puts it outside the knob so
+      nothing lands between knob and LED ring, and the earlier attempt to
+      push a second line further out ended at x ~= 4 mm, hard against the
+      plate edge and visually orphaned from its knob. Re-anchoring the pair
+      would move MELO there for the same reason, so the word follows the
+      caption instead and the caption does not move at all.
 
-    NOTE: this function MUTATES c.lbl for the inline pair -- the caption has
-    to give up its centred anchor for the pair to be centred instead of the
-    caption alone. It reads default_label_of, not label_of, so a second call
-    recomputes from the same starting point rather than from its own output.
+    NOTE: this MUTATES c.lbl. It reads SAMPLER_RADIAL and default_label_of
+    rather than inspecting c.lbl, so a second call recomputes from the same
+    starting point instead of from its own output.
     """
     out = []
     for suffix, colour in (("_A", GREEN), ("_B", COPPER)):
         for base, word in SAMPLER_LBL:
             c = next(c for c in PARAMS if c.enum == base + suffix)
-            if base not in SAMPLER_INLINE:
-                lx, ly, anchor, _size, _col = label_of(c)
-                out.append((lx, ly + SAMPLER_DY, SAMPLER_SIZE, 0.0, colour,
-                            anchor, word))
-                continue
-
-            _lx, ly, _anchor, size, col = default_label_of(c)
-            # Centre the PAIR on the knob, then anchor each half AWAY from
-            # the gap: the caption ends where the gap starts, the sampler
-            # word starts where it ends. Anchoring outward is what makes the
-            # layout tolerant of MONO_ADV being wrong -- if Rack's monospace
-            # face is wider than the estimate, each word grows away from the
-            # other, so the pair drifts off-centre by half the error but can
-            # never close the gap or overlap. Anchoring both from the left
-            # would put the error straight into the gap instead.
-            mid = (text_w(c.label, size) - text_w(word, SAMPLER_SIZE)) / 2.0
-            c.lbl = (c.x + mid - SAMPLER_GAP / 2.0, ly, "end", size, col)
-            out.append((c.x + mid + SAMPLER_GAP / 2.0, ly, SAMPLER_SIZE,
+            ws = text_w(word, SAMPLER_SIZE)
+            if base in SAMPLER_RADIAL:
+                lx, ly, anchor, size, col = c.lbl          # set by orbit_label
+                # Where the caption's own glyphs end, whichever side it is
+                # anchored from -- part A ends at its anchor, part B starts
+                # there and runs a caption-width to the right.
+                cap_end = lx if anchor == "end" else lx + text_w(c.label, size)
+            else:
+                _lx, ly, _anchor, size, col = default_label_of(c)
+                mid = (text_w(c.label, size) - ws) / 2.0
+                cap_end = c.x + mid - SAMPLER_GAP / 2.0
+                c.lbl = (cap_end, ly, "end", size, col)
+            out.append((cap_end + SAMPLER_GAP, ly, SAMPLER_SIZE,
                         0.0, colour, "start", word))
     return out
 
