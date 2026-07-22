@@ -2041,8 +2041,8 @@ Co-Authored-By: HAL 9000 <293417720+bea-ton-k@users.noreply.github.com>"
 
 ## Ergebnis
 
-Ausgeführt am 2026-07-22 auf `sampler-controls`, 22 Commits ab `a5400be`.
-Suite: 509 Cases vorher, **530 nachher, alle grün**.
+Ausgeführt am 2026-07-22 auf `sampler-controls`, 23 Commits ab `a5400be`.
+Suite: 509 Cases vorher, **531 nachher, alle grün**.
 
 | ID | Status | Spur |
 |---|---|---|
@@ -2115,6 +2115,29 @@ Und das Register selbst hatte die Lücke, die es verhindern soll: sein
 Kommentar behauptete, K-03 werde eingefordert, geprüft wurde nur F-07, und
 K-03 stand nirgends. Behoben in `6a8dda2`, zusammen mit einer Zählprüfung,
 die genau diesen Fall findet.
+
+### Was der Schluss-Review über den ganzen Branch noch fand
+
+Drei Dinge, die keine der zwölf Task-Reviews sehen konnte, weil jede nur
+ihren eigenen Diff sah — behoben in `f43a1ab`:
+
+1. **F-04 hatte `sampler_extremes.json` stillgelegt.** Das Szenario fährt die
+   MOTION-Lane über ihre *Basis*, und genau die macht der Fix wirkungslos.
+   Ausgerechnet der dort so benannte „FOG QUESTION"-Abschnitt renderte bei
+   allen drei Einstellungen identisch — die Szene, aus der die F-04-Entscheidung
+   erhört werden sollte. Jetzt über `set_depth` (MOD) gefahren.
+2. **MOTION ist auf einem Sampler-Deck halbwellen-gleichgerichtet.** Die Lane
+   ist bipolar; `clampf(mmod, 0, 1)` wirft die negative Hälfte weg, die
+   Streuung pulsiert also statt zu atmen. Verhalten bewusst belassen, aber im
+   Kommentar benannt — es ist eine andere Modulationsform, nicht nur ein
+   anderer Ruhepunkt, und das gehört in die Hörentscheidung.
+3. **F-08 setzte den Schreibkopf nicht zurück.** Der Punch-in schrieb über den
+   Anfang der Aufnahme und summierte dabei bei Unity (Frame 500 las −0.400
+   statt −0.900). Der Test prüfte nur die Loop-Länge. Kopf wird jetzt
+   gesichert und wiederhergestellt, der Test prüft den Inhalt.
+
+Dazu vier Kleinigkeiten, darunter zwei, die Tests betrafen, welche vakuum
+hätten bestehen können.
 
 ### Offen für Bastians Ohr
 
