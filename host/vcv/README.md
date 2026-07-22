@@ -90,6 +90,13 @@ wieder zurückgenommen — über Patch-Laden hinweg dicht zu bekommen verlangt
 persistenten Zustand, also genau das, was diese Zeile ausschließt. Die
 Entscheidung liegt beim Autor des Instruments, nicht in der Engine.
 
+Mit derselben Änderung ging eine stille Last weg (K-03): `sampler_scan()`
+wurde für **beide** Decks aufgerufen, auch für ein Synth-Deck, und
+`scan_rate()` enthält im Exponentialast ein `std::pow`. Bei `ctrlDiv = 16`
+waren das bis zu 6000 `pow`-Aufrufe pro Sekunde im Audio-Callback für eine
+Engine, die niemand hört. Der Aufruf hängt jetzt an `samplerPart`, wie SUB
+und DTUN es schon taten.
+
 **NEW and TRIG both fire "new grain now" in the Sampler:** the tape head
 snaps back to ORGANIZE's position and a fresh grain spawns immediately. This
 exists because a grain's position, pitch and length are frozen the instant
