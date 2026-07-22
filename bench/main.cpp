@@ -70,6 +70,13 @@ int main(void)
         const bench::Workload& w = bench::kTapsWorkloads[i];
         bench::report_row(w, bench::run_workload(w));
     }
+    // Last on purpose: the sampler rows use the 8 MB SDRAM arena as their
+    // load source and overwrite whatever family 3 and the taps rows left in
+    // it. Nothing downstream reads it.
+    for (int i = 0; i < bench::kSamplerCount; ++i) {
+        const bench::Workload& w = bench::kSamplerWorkloads[i];
+        bench::report_row(w, bench::run_workload(w));
+    }
 
     // Offline is optimistic: no cache/DMA contention from a live audio
     // engine sharing the bus. Three rows re-run inside a real callback to

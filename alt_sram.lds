@@ -110,6 +110,32 @@ SECTIONS
 
 	_sidata = LOADADDR(.data);
 
+	/* Additive, and empty in the shipping firmware: nothing in main.cpp /
+	 * app.cpp / src/** emits into .sram_exec_bss, so this section has zero
+	 * size there and no shipping symbol moves. It exists for bench/, whose
+	 * .bss outgrew the 256K SRAM half once Part started carrying a
+	 * SamplerEngine.
+	 *
+	 * SRAM_EXEC and SRAM are the SAME physical AXI SRAM (D1, 512K at
+	 * 0x24000000), split into a code half and a data half by the MEMORY
+	 * block above -- same bus, same latency, same MPU cache attributes. So
+	 * data parked here is AXI SRAM in every sense a cycle count can see;
+	 * it is only on the other side of a bookkeeping line. Placed after the
+	 * .data LMA so it starts past everything SRAM_EXEC already carries. */
+	.sram_exec_bss (NOLOAD) :
+	{
+		. = ALIGN(4);
+		_ssram_exec_bss = .;
+
+		PROVIDE(__sram_exec_bss_start = _ssram_exec_bss);
+		*(.sram_exec_bss)
+		*(.sram_exec_bss*)
+		. = ALIGN(4);
+		_esram_exec_bss = .;
+
+		PROVIDE(__sram_exec_bss_end = _esram_exec_bss);
+	} > SRAM_EXEC
+
 	.bss (NOLOAD) :
 	{
 		. = ALIGN(4);

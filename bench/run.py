@@ -223,12 +223,64 @@ def verdict(rows, anchors):
     out.write(
         "**SRAM vs SDRAM.** The grain-read proxy (8 scattered interpolated "
         "stereo reads per sample, identical window in both regions) costs "
-        "**%s** in SDRAM against SRAM — this is the M5 texture deck's exposure, "
-        "measured before the sampler exists. The Oliverb pair reads **%s**, "
-        "and the shortened echo-style streaming walk **%s**.\n\n"
+        "**%s** in SDRAM against SRAM. That is a bare access pattern, written "
+        "before the sampler existed to stand in for it; the `sampler_win_*` "
+        "pair below is the same contrast with the real engine around it. The "
+        "Oliverb pair reads **%s**, and the shortened echo-style streaming "
+        "walk **%s**.\n\n"
         % (sig2(ratio(rows, "grain_read_sdram", "grain_read_sram")),
            sig2(ratio(rows, "oliverb_sdram", "oliverb_solo_sram")),
            sig2(ratio(rows, "echo_walk_sdram", "echo_walk_sram"))))
+
+    sw = d.get("inst_sampler_worst")
+    if sw and sw["avg_cyc"] != "TIMEOUT":
+        try:
+            over = float(sw["pct_max"]) >= 100.0
+        except ValueError:
+            over = None
+        if over is True:
+            call = ("**Conclusion: the texture deck fits on average and "
+                    "overruns on peaks.** Its worst block is over the budget "
+                    "even though its mean block is under it, so what needs "
+                    "capping is the spawn burst, not the steady cloud.")
+        elif over is False:
+            call = ("**Conclusion: a two-part texture deck fits**, peaks "
+                    "included.")
+        else:
+            call = "**Conclusion: undetermined.**"
+        out.write(
+            "**The texture deck.** Both parts on the sampler at its worst "
+            "case — DENS 8, SIZE 0.05 (128-sample grains spawning every 16), "
+            "MOTION 1 scattering reads over the whole 42 s record buffer, "
+            "SCAN running, and instrument_worst's FX chain unchanged around "
+            "it — costs **%s %% of the block budget on the mean block and "
+            "%s %% on the worst**, against **%s %% / %s %%** for the same box "
+            "with both parts on the synth. The mean is the cheaper of the "
+            "two; the peak is not. %s\n\n"
+            % (pct1(sw["pct_avg"]), pct1(sw["pct_max"]),
+               pct1(worst["pct_avg"]) if worst else "n/a",
+               pct1(worst["pct_max"]) if worst else "n/a",
+               call))
+        out.write(
+            "Solo, the same cloud is **%s %%** mean / **%s %%** peak, a "
+            "musical setting (DENS 4, half-second grains, MOTION 0.5, "
+            "playhead parked) is **%s %%** mean, and running an overdub "
+            "underneath the worst-case cloud costs **%s** its mean. "
+            "SCAN driven at the VCV host's rate — every 16 samples, six "
+            "times the engine's own control tick, the `std::pow` "
+            "`SamplerEngine::set_scan`'s comment flags — reads **%s** against "
+            "the same cloud without it. With the whole engine around it the "
+            "record buffer's region costs **%s** (`sampler_win_sdram` over "
+            "`sampler_win_sram`, identical settings and identical 8192-frame "
+            "content), well under the bare proxy's figure above: the "
+            "scheduler, window, filter and normalization are all region-blind "
+            "and dilute it.\n\n"
+            % (pct1(d["sampler_flow_worst"]["pct_avg"]),
+               pct1(d["sampler_flow_worst"]["pct_max"]),
+               pct1(d["sampler_flow_typ"]["pct_avg"]),
+               sig2(ratio(rows, "sampler_overdub_worst", "sampler_flow_worst")),
+               sig2(ratio(rows, "sampler_scan_ctrl", "sampler_flow_worst")),
+               sig2(ratio(rows, "sampler_win_sdram", "sampler_win_sram"))))
 
     out.write(
         "*Figures in this section are quoted to whole percentage points and "

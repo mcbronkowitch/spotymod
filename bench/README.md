@@ -178,12 +178,66 @@ a genuine determinism regression could hide behind the same signature. The
 same trap is documented in `workloads_system.cpp` for `g_inst_ctr`. Append
 new `abl` rows at the end of the table when you can.
 
+## The sampler family, and the two things it changed
+
+`workloads_sampler.cpp` prices the M5 texture deck. Two structural
+consequences worth knowing before touching anything near it:
+
+**1. The bench's 64 KB arena left the SRAM region.** `Part` embeds a
+`SamplerEngine` (1 392 B), and the bench's globals hold four bare `Part`s and
+two `Instrument`s, so the sampler merge pushed `.bss` 6 168 bytes past the
+256 KB `SRAM` region and the bench stopped linking. `alt_sram.lds` gained a
+`.sram_exec_bss` section and `bench/mem.h` a `BENCH_SRAM_EXEC_BSS` macro;
+`g_sram` now lives there.
+
+This is **not** a change of measurement conditions. `SRAM_EXEC` and `SRAM` are
+the same physical AXI SRAM — one 512 KB block at `0x24000000`, split into a
+code half and a data half by the `MEMORY` block, same bus, same latency, same
+MPU cache attributes. `grain_read_sram` measures exactly what it measured
+before. The section is additive and empty in the shipping firmware (nothing
+under `src/**` emits into it), so no shipping symbol moved either.
+
+What it *is*: a warning. `SRAM_EXEC` now sits at **93 %** and `SRAM` at 82 %.
+The next thing that overflows will be code, not data, and there is no third
+half to move it to.
+
+**2. The sampler rows own the SDRAM arena.** They run **last** in `main.cpp`
+because `SamplerEngine::load_sample` takes two `float*`, so the 8 MB
+`sdram_arena()` doubles as the source material both channels are copied from
+(L from the front, R from an offset view — the offset is what makes both
+windows land inside it exactly). Family 3 and the taps rows are done with the
+arena by then, and every sampler `setup()` refills what it is about to read.
+Anything appended after the sampler family must not assume the arena still
+holds what family 3 put there.
+
+Also note `fx_mem()` now fills `sampler_buf[]` and `sampler_frames` for every
+`Instrument` the bench builds, not just the sampler rows. This costs the synth
+rows nothing in the measured window — `SampleBuffer::init` → `clear()` takes
+the `_size == 0` fast path on a buffer nothing has written to, and an
+unselected engine's `process()` is never called — so their numbers are
+unchanged. Only `setup()` touches it.
+
+**What the rows found.** `inst_sampler_worst` is the same box as
+`instrument_worst` with both parts swapped to the sampler, and it is *cheaper
+on the mean block and more expensive on the worst* — the peak clears 100 % of
+the budget while the mean stays under it. That shape is the grain scheduler:
+the steady cloud is affordable, a block that happens to catch several spawns
+is not. Anyone reading the sampler rows for a "does it fit" answer has to read
+the max column, not the avg column.
+
+One thing deliberately **not** a row: `SamplerEngine::init()` on a buffer
+holding content ends in `clear()`, which memsets 16 MB of SDRAM. That is real
+and it is expensive — far past 10x the block budget, so as a table row it
+would only ever print `TIMEOUT`. It belongs nowhere near an audio thread, and
+this paragraph is the record of it.
+
 ## Adding a workload
 
 Add one row to the relevant `kXxxWorkloads[]` table (`workloads_system.cpp`
 for family 1, `workloads_daisysp.cpp` for family 2, `workloads_memory.cpp`
 for family 3, `workloads_mod.cpp` for the modulation plane, `workloads_abl.cpp`
-for the ablation rows, `workloads_taps.cpp` for the FLUX tap bank) with a
+for the ablation rows, `workloads_taps.cpp` for the FLUX tap bank,
+`workloads_sampler.cpp` for the texture deck) with a
 family tag, a name, a setup function and a process function. A new *table*
 additionally needs its `extern` in `workload.h`, an entry in `runner.cpp`'s
 `find_workload` arrays (and its loop bound), a loop in `main.cpp`, and the

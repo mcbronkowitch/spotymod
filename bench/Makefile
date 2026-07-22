@@ -35,7 +35,10 @@ CPP_SOURCES = \
 	workloads_mod.cpp \
 	workloads_abl.cpp \
 	workloads_taps.cpp \
+	workloads_sampler.cpp \
 	../engine/mod/lane.cpp \
+	../engine/sampler/sampler_engine.cpp \
+	../engine/sampler/sample_buffer.cpp \
 	../engine/mod/super_modulator.cpp \
 	../engine/parts/part.cpp \
 	../engine/instrument.cpp \

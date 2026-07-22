@@ -6,8 +6,12 @@
 namespace bench {
 namespace {
 
-float  g_sram[kSramFloats];
+float  BENCH_SRAM_EXEC_BSS g_sram[kSramFloats];
 float  DSY_SDRAM_BSS g_sdram[kSdramFloats];
+
+// One per part, so the instrument-level sampler row has two independent
+// buffers exactly as the shipping allocation would.
+spky::SampleBuffer::Frame DSY_SDRAM_BSS g_sampler[spky::PART_COUNT][kSamplerFrames];
 
 spky::AmbientReverb g_rev_sram;
 
@@ -42,6 +46,8 @@ bool        g_mem_ready = false;
 float* sram_arena()  { return g_sram; }
 float* sdram_arena() { return g_sdram; }
 
+spky::SampleBuffer::Frame* sampler_arena(int part) { return g_sampler[part]; }
+
 spky::AmbientReverb& reverb_sram()  { return g_rev_sram; }
 spky::AmbientReverb& reverb_sdram()
 {
@@ -58,6 +64,15 @@ const spky::FxMem& fx_mem()
             g_mem.echo[p][1] = g_echo[p][1];
         }
         g_mem.reverb = &g_rev_sram;
+        // Injected for every Instrument the bench builds, not just the
+        // sampler rows. Costs the synth rows nothing in the measured window:
+        // SamplerEngine::init -> SampleBuffer::init -> clear() takes the
+        // _size == 0 fast path (no memset) on a buffer nothing has written
+        // to, and an unselected engine's process() is never called. Their
+        // numbers are unchanged; only setup() touches this.
+        for (int p = 0; p < spky::PART_COUNT; ++p)
+            g_mem.sampler_buf[p] = sampler_arena(p);
+        g_mem.sampler_frames = kSamplerFrames;
         g_mem_ready = true;
     }
     return g_mem;
