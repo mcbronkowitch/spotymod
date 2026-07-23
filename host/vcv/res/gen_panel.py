@@ -394,10 +394,10 @@ LIGHTS = [
 # on the plate. DENS is deliberately absent: the word already fits both engines
 # (groove density / grain density), and MORPH is taken by the global A/B knob --
 # two things called MORPH on one plate would be a built-in operating error.
-SAMPLER_LBL = [("MELODY", "SCAN"), ("SUB", "LEN"), ("DETUNE", "ORG"), ("COLOR", "FEEL")]
+SAMPLER_LBL = [("MELODY", "SCAN"), ("SUB", "LEN"), ("DETUNE", "ORG")]
 SAMPLER_SIZE = 1.5     # mm; the main captions are 1.9
 
-# All four sit INLINE, on the same baseline as the caption they qualify and
+# All three sit INLINE, on the same baseline as the caption they qualify and
 # one gap behind it (2026-07-22, Bastian: "org und len sitzen unguenstig
 # unter der box, da ist noch Platz neben den normalen labels" and then "scan
 # passt auch noch hinter melo im gleichen style"). They used to hang
@@ -408,13 +408,12 @@ SAMPLER_SIZE = 1.5     # mm; the main captions are 1.9
 # geometry, but text does not: "SCAN MELO" on part B to match a mirrored
 # layout would be a different label, not a mirrored one.
 SAMPLER_GAP    = 0.8   # mm of air between a caption and its sampler word
-# MELODY and COLOR are orbit knobs, so their captions are placed radially by
-# orbit_label(); SUB and DETUNE sit in the voice row and use the centred
-# default. That difference decides which pair rule applies -- see
+# MELODY's caption is placed radially by orbit_label(); SUB and DETUNE use the
+# centred default. That difference decides which pair rule applies -- see
 # sampler_texts. Keyed by name rather than by "does c.lbl exist", because this
 # function overwrites c.lbl and such a test would answer differently on a
 # second call.
-SAMPLER_RADIAL = {"MELODY", "COLOR"}
+SAMPLER_RADIAL = {"MELODY"}
 # Advance width of the monospace face, in ems. Only ever used to CENTRE or to
 # follow, never to butt two texts together -- see the anchor note in
 # sampler_texts() for why an error in this number cannot make them collide.
@@ -440,13 +439,13 @@ def sampler_texts():
       caption gives up its "middle" anchor and ends half a gap left of the
       knob's centre-of-pair, so "SUB LEN" straddles the knob the way "SUB"
       used to.
-    * Radial captions (MELODY, COLOR) keep their anchor point EXACTLY. That
+    * The radial caption (MELODY) keeps its anchor point EXACTLY. That
       position is measured, not free: orbit_label puts it outside the knob so
       nothing lands between knob and LED ring, and the earlier attempt to
       push a second line further out ended at x ~= 4 mm, hard against the
       plate edge and visually orphaned from its knob. Re-anchoring the pair
-      would move MELO/COLOR there for the same reason, so the word follows
-      the caption instead and the caption does not move at all.
+      would move MELO there for the same reason, so the word follows the
+      caption instead and the caption does not move at all.
 
     NOTE: this MUTATES c.lbl. It reads SAMPLER_RADIAL and default_label_of
     rather than inspecting c.lbl, so a second call recomputes from the same
