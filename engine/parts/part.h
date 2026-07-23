@@ -170,10 +170,18 @@ private:
     // once, which is a harmonizer, not a texture. With COLOR at its factory
     // 0.647 a freshly-flipped deck A granulated at four ratios spanning nearly
     // two octaves (+1.80, -3.20, +4.80, +21.13 semitones, measured), heard as
-    // grains jumping octaves. COLOR is not part of the sampler's control
-    // surface in the morphagene-controls spec -- it was simply never
-    // considered, and it reached pitch through the chord surface the way
-    // MOTION reached it through the octave scatter.
+    // grains jumping octaves. This is what the morphagene-controls spec
+    // found, and it still holds for the CHORD path described here: COLOR was
+    // not part of the sampler's control surface THERE -- it was simply never
+    // considered, and it reached pitch only through the chord surface the
+    // way MOTION reached it through the octave scatter. The flatten below is
+    // that spec's fix and is unchanged.
+    //
+    // COLOR is no longer inert on a sampler deck overall, though -- since
+    // spec 2026-07-23 (cloud-dispersion) it reaches the grain cloud by a
+    // different route, SamplerEngine::set_dispersion, pushed from
+    // Part::_control_tick alongside this flatten. That is a second, separate
+    // mechanism and does not reopen the chord path collapsed here.
     //
     // Done HERE rather than in SamplerEngine on purpose: the engine stays a
     // general granular engine that can spread a chord (its own tests still

@@ -197,11 +197,16 @@ public:
     // 0..1. At 0 every grain plays at unity -- the flat reference. Pushed
     // from Part at the control tick, from the RAW knob: COLOR's MOTION swing
     // (kColorMod) is right for the chord and wrong for accents, which must
-    // not breathe. Ignored in FLOW, where COLOR still means chord -- though
-    // on a sampler DECK that chord never arrives: Part::_flatten_for_sampler
-    // collapses it to the triggered tone for ENGINE_SAMPLER in every mode, so
-    // COLOR is inert in FLOW there. True of the engine on its own, which is
-    // still a general granular engine and does spread a chord.
+    // not breathe. Ignored in FLOW: _spawn_one never reads _feel, and that
+    // much has not changed.
+    //
+    // COLOR ITSELF is not inert in FLOW any more, though -- do not read the
+    // sentence above as still meaning that. Since this same spec, FLOW has
+    // its own COLOR push: set_dispersion() below, which reads the SWUNG
+    // value (_color_eff) rather than the raw knob this method reads, and is
+    // what _spawn_one actually consumes there. FEEL and dispersion are two
+    // separate fields fed by the same knob down two separate paths -- see
+    // set_dispersion's own comment for why the swing differs between them.
     void set_feel(float n);
 
     // COLOR auf einem Sampler-Deck in FLOW (spec 2026-07-23): die

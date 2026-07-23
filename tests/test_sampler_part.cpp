@@ -755,10 +755,11 @@ TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
     // erzwungen (Schritt 2 des Briefs sieht das ausdruecklich vor):
     //
     // 1) Die PITCH-Lane wird hier explizit abgeschaltet, genau wie im
-    // Nachbartest "part: the sampler granulates at ONE pitch whatever COLOR
-    // says" (Zeile 514 oben): target_raw() gibt der PITCH-Lane ihre eigene,
-    // von set_depth() unabhaengige Modulationstiefe (d = 1.f fuer
-    // LANE_PITCH, part.cpp:47, "the PITCH lane is the anchor"), also
+    // Nachbartest "part: the sampler's cloud disperses around TUNE, not the
+    // chord" (umbenannt aus "...granulates at ONE pitch whatever COLOR says",
+    // spec 2026-07-23-sampler-cloud-dispersion): target_raw() gibt der
+    // PITCH-Lane ihre eigene, von set_depth() unabhaengige Modulationstiefe
+    // (d = 1.f fuer LANE_PITCH, part.cpp:47, "the PITCH lane is the anchor"), also
     // scattert MOTION die Tonhoehe weiterhin selbst bei depth = 0. Ohne die
     // Abschaltung ueberlagert dieses (gewollte) Scatter das Messsignal: die
     // erste Messung zeigte den Ratio-Sprung bei Sample 190 -- weit nach dem
@@ -781,6 +782,13 @@ TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
     const int p = 0;
     g.inst.set_engine(p, ENGINE_SAMPLER);
     g.inst.set_target_active(p, LANE_PITCH, false);
+    // TUNE explizit auf 0.5 (Rig-Default, part.h) statt implizit vorausgesetzt:
+    // hi_theory/lo_theory unten nehmen ratio_base == 1.0 an, was nur beim
+    // zentrierten TUNE gilt. Der Nachbartest oben ("...disperses around TUNE,
+    // not the chord") setzt ihn aus demselben Grund explizit -- wandert der
+    // Rig-Default je, soll dieser Test hier laut scheitern statt still einen
+    // falschen Befund bei set_dispersion zu melden.
+    g.inst.set_tune(p, 0.5f);
     g.inst.set_target_base(p, LANE_SIZE, 0.f);   // kuerzeste Koerner
     g.inst.set_color(p, 1.f);                   // maximaler Chord
     g.inst.set_depth(p, 0.f);

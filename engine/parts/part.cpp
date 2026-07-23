@@ -231,12 +231,10 @@ void Part::_control_tick() {
     // Slice-groove side channel (spec 2026-07-22): the step clock rides the
     // same raster as every other engine push. Same idiom as set_overlap --
     // sampler-only, pushed at _sampler directly.
-    // FEEL (spec 2026-07-23) rides the same push: COLOR reaches the sampler
-    // RAW, not as _color_eff. The MOTION swing on COLOR (kColorMod, computed
-    // in the COLOR block above) is right for the chord -- a breathing chord
-    // size is the point there -- and wrong for accents: an accent depth that
-    // breathes would be exactly the hidden coupling this spec exists to
-    // remove.
+    // FEEL and dispersion (spec 2026-07-23) ride the same push, and between
+    // them read BOTH values COLOR produced above: two consumers, two
+    // different values of the same knob. Which gets which, and why, is
+    // explained at the two calls below.
     if (_engine_id == ENGINE_SAMPLER) {
         _sampler.set_step_clock(_mod.pitch_step_samples());
         // Die beiden COLOR-Pushes lesen ABSICHTLICH verschiedene Werte, und

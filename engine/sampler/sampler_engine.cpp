@@ -680,8 +680,11 @@ void SamplerEngine::_spawn_one() {
     // FLOW passes 1.f explicitly: COLOR means chord here, not accent, and the
     // spec (2026-07-23) keeps it that way. Named rather than defaulted so the
     // FLOW/STEP split is visible at the call site. On a sampler DECK there is
-    // no chord to mean, either: Part::_flatten_for_sampler collapses it in
-    // every mode, so COLOR does nothing at all in FLOW there.
+    // still no chord to mean: Part::_flatten_for_sampler collapses it in
+    // every mode. But COLOR is not silent in FLOW any more, since this same
+    // spec: it drives set_dispersion() -> _detune_n/_sub_n, read a few lines
+    // above (the SUB coin-flip and DTUN cents draw) and already folded into
+    // `ratio` by the time it reaches this call.
     _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse, 1.f);
     // The pair _trim_running rescales against. Recording _grain_len rather
     // than the SIZE knob keeps tape mode honest: lenf there is _grain_len /
