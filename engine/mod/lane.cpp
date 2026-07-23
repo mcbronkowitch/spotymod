@@ -71,12 +71,12 @@ void ModLane::set_step(bool on, int steps) {
         // must still fire step 0.
         // _cur_step is derived from the stored _phase (assigned first) so it
         // can never disagree with the next process()'s
-        // static_cast<int>(_phase * _steps) by an ulp; a same-tick SPOT
-        // kick() + STEPS turn is absorbed into this rescale (accepted trade).
+        // step_index(_phase, _steps) by an ulp; a same-tick SPOT kick() +
+        // STEPS turn is absorbed into this rescale (accepted trade).
         float pos = std::fmod(_phase * static_cast<float>(_steps),
                               static_cast<float>(new_steps));
         _phase = pos / static_cast<float>(new_steps);
-        _cur_step = static_cast<int>(_phase * static_cast<float>(new_steps));
+        _cur_step = step_index(_phase, new_steps);
     }
     _step_mode = on;
     _steps = new_steps;
