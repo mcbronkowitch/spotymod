@@ -886,3 +886,110 @@ TEST_CASE("instrument cross-feed: the OTHER leg -- B's taps are placed by A's rh
     // A's (valid) rhythm, since B's own rhythm never validates in this run.
     CHECK(rms > 1e-4);
 }
+
+// Owner's decision (spec 2026-07-23 sampler-performance-fixes, review commit
+// b1c3cac), pinned so a later change can't quietly walk it back: the
+// FLOW->STEP snap (SuperModulator::snap_pitch_phase) clears the onset-gap
+// ring on purpose. Left uncleared, the first onset after the phase jump
+// would measure a gap that never happened -- and that gap is exactly what
+// the cross-feed above (instrument.cpp:83-84) turns into the SIBLING deck's
+// FLUX tape-tap offsets (taps.cpp derive_offsets). An invented gap would be a
+// tap placed on a distance that was never played; a cleared ring is instead
+// "briefly muted, then correct again" (derive_offsets returns kMuted for
+// both taps while the view is invalid -- taps.cpp:16-17). RST
+// (Instrument::reset_transport -> SuperModulator::reset_phases) pays the
+// identical price the identical way, so this is not a side effect unique to
+// STEP entry. If this test starts failing, check which of the two changed:
+// the ring is no longer cleared (a real regression), or the owner's call on
+// keeping the mute has been revisited (then this test's contract, not just
+// its assertions, needs updating).
+TEST_CASE("instrument: a FLOW->STEP snap mutes the sibling's taps until the "
+          "switching deck earns a rhythm back") {
+    constexpr int kSteps = 8;
+
+    auto setup = [](Instrument& inst) {
+        inst.init(48000.f, pp_fx_mem());
+        inst.set_rate(PART_A, 1.f);          // fast: earns a rhythm quickly, twice over
+        inst.set_density(PART_A, 1.f);       // every step gates -- deterministic timing
+        inst.set_variation(PART_A, 0.f);     // LOOP: no drift to blur the windows below
+        inst.set_morph(1.f);                 // B audible (gain_a -> ~0 at morph 1)
+        inst.set_fx_on(PART_B, FxBlock::Flux, true);
+        inst.set_flux_mix(PART_B, 1.f);
+    };
+
+    // One full run: FLOW until A's own rhythm validates, then the real
+    // FLOW->STEP edge (Part::set_step -- the production trigger this
+    // decision is about, not a direct snap_pitch_phase() call), then onward
+    // until A earns a rhythm back. Records every sample plus the indices the
+    // windows below need. Deterministic (DENSE 1, VARIATION 0, fixed rate;
+    // TapBank carries no RNG -- Task 3), so `open_taps` cannot move the
+    // schedule -- checked explicitly after both calls below, not just assumed.
+    auto run = [&](bool open_taps, std::vector<float>& out,
+                   size_t& switch_idx, size_t& revalid_idx) {
+        Instrument inst;
+        setup(inst);
+        inst.set_dust(PART_B, open_taps ? 1.f : 0.f);
+        float l, r;
+        auto step = [&]() { inst.process(nullptr, nullptr, &l, &r, 1); out.push_back(l); };
+
+        int guard = 0;
+        while (!inst.rhythm(PART_A).valid) { step(); REQUIRE(++guard < 200000); }
+
+        inst.set_step(PART_A, true, kSteps);
+        inst.set_step(PART_A, false, kSteps);
+        inst.set_step(PART_A, true, kSteps);   // the rising edge -- the actual gesture
+
+        guard = 0;
+        while (inst.rhythm(PART_A).valid) {
+            step();
+            REQUIRE(++guard < Center::kCtrlInterval + 10);   // bullet 1: goes invalid
+        }                                                     // right after the edge
+        switch_idx = out.size() - 1;             // first sample observed invalid
+
+        guard = 0;
+        while (!inst.rhythm(PART_A).valid) { step(); REQUIRE(++guard < 200000); }
+        revalid_idx = out.size() - 1;            // bullet 2: valid again -- temporary,
+                                                  // not permanent
+
+        for (int i = 0; i < 4000; ++i) step();   // let the un-muted offsets reach the taps
+    };
+
+    std::vector<float> tapped, ref;
+    size_t switch_idx_t = 0, revalid_idx_t = 0;
+    size_t switch_idx_r = 0, revalid_idx_r = 0;
+    run(true,  tapped, switch_idx_t, revalid_idx_t);
+    run(false, ref,    switch_idx_r, revalid_idx_r);
+
+    REQUIRE(switch_idx_t == switch_idx_r);    // the schedule really is DUST-independent
+    REQUIRE(revalid_idx_t == revalid_idx_r);  // (else the windows below compare samples
+    REQUIRE(tapped.size() == ref.size());     // from two different moments)
+    REQUIRE(revalid_idx_t > switch_idx_t);
+
+    // Bullet 3: the sibling's taps really do read as muted while the view is
+    // invalid. Skip the dip fade (kDipSeconds*sr == Center::kCtrlInterval ==
+    // 96 samples, taps.h) plus slack, so the window starts once the mute has
+    // actually completed, not mid-fade; end at revalid_idx_t, where the ring
+    // is still guaranteed invalid (the new offsets aren't pushed to the tap
+    // bank until the NEXT control tick, so muting in fact outlasts this
+    // window rather than falling short of it).
+    const size_t mute_start = switch_idx_t + 200;
+    const size_t mute_end   = revalid_idx_t;
+    REQUIRE(mute_start < mute_end);
+    for (size_t i = mute_start; i < mute_end; ++i)
+        CHECK(tapped[i] == ref[i]);   // a muted tap contributes literal 0 -- bit-exact,
+                                      // not just "small"
+
+    // The mute is temporary, audibly so: real signal returns once A earns
+    // its rhythm back. Same margin reasoning as mute_start, plus room for the
+    // dip-in ramp to actually reach an audible level.
+    const size_t resume_start = revalid_idx_t + 300;
+    const size_t resume_end   = std::min(tapped.size(), resume_start + 3000);
+    REQUIRE(resume_start < resume_end);
+    double sum_sq = 0.0;
+    for (size_t i = resume_start; i < resume_end; ++i) {
+        const double diff = (double)tapped[i] - (double)ref[i];
+        sum_sq += diff * diff;
+    }
+    const double rms = std::sqrt(sum_sq / (double)(resume_end - resume_start));
+    CHECK(rms > 1e-4);
+}
