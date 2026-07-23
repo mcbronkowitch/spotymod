@@ -74,10 +74,16 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     _rebase_grid(a, 0);
     _rebase_grid(b, 1);
 
-    // NACH _rebase_grid, und das ist eine Zusicherung: der Moduswechsel
-    // aendert clock_scale (1 in FLOW, 8/S in STEP), loest also im selben Tick
-    // einen Rebase aus. Liefe der Snap davor, schriebe der Rebase den gerade
-    // genullten Offset sofort wieder voll.
+    // Dieser Block steht rein aus Lesbarkeitsgruenden NACH den beiden
+    // _rebase_grid-Aufrufen -- die Korrektheit haengt nicht an dieser
+    // Reihenfolge. Was den gerade genullten Offset tatsaechlich schuetzt,
+    // ist dass _snap_phase das neue clock_scale selbst in _grid_cs[i]
+    // vermerkt (siehe unten, _grid_cs[i] = m.clock_scale()): _rebase_grid
+    // vergleicht exakt gegen _grid_cs[i] und kehrt sofort zurueck, wenn
+    // beide uebereinstimmen -- das gilt fuer diesen Tick ebenso wie fuer
+    // den naechsten. Liefe der Snap vor dem Rebase, faende der Rebase sein
+    // Deck also bereits mit dem neuen clock_scale verbucht vor und liesse
+    // es unangetastet; die beiden Aufrufe kommutieren.
     //
     // Bank A ist die Phasenreferenz des Paars (siehe die Grid-Gravity unten).
     // In der freien Welt (SYNC aus) heisst das: schaltet nur ein Deck, snappt

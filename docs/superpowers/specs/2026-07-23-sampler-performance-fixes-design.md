@@ -80,10 +80,18 @@ ab dem ersten Sample 0. Kein Zerren, kein Tempo-Wobble — die Umkehrung von
 
 **Reihenfolge im Tick:** der Moduswechsel ändert `clock_scale` (1 in FLOW,
 8/S in STEP, `lane.h:55`) und löst damit im selben `Center::update` einen
-`_rebase_grid`-Aufruf aus (`center.cpp:74-75`, `:196-198`). Der Snap muss
-**nach** den beiden `_rebase_grid`-Aufrufen laufen, sonst überschreibt der
-Rebase den genullten Offset gleich wieder. Das ist eine Zusicherung, die der
-Plan festnageln muss, keine glückliche Fügung.
+`_rebase_grid`-Aufruf aus (`center.cpp:74-75`, `:196-198`). Der Block steht
+im Code **nach** den beiden `_rebase_grid`-Aufrufen, aber das ist reine
+Lesbarkeit, keine Zusicherung — das wurde erst in der Implementierung
+klar, als ein Mutationstest die Reihenfolge nicht als bruchrelevant
+markieren wollte. `_snap_phase` trägt das neue `clock_scale` selbst in
+`_grid_cs[i]` ein, bevor es zurückkehrt; `_rebase_grid` vergleicht exakt
+gegen `_grid_cs[i]` und kehrt sofort zurück, wenn beide übereinstimmen —
+das gilt für diesen Tick ebenso wie für den nächsten. Liefe der Snap vor
+dem Rebase, fände der Rebase sein Deck bereits mit dem neuen `clock_scale`
+verbucht vor und ließe es unangetastet; die beiden Aufrufe kommutieren.
+Die eigentliche Zusicherung, die der Plan festnageln muss, ist die
+`clock_scale`-Buchführung in `_snap_phase`, nicht die Aufrufreihenfolge.
 
 ### Freie Welt (SYNC aus)
 
