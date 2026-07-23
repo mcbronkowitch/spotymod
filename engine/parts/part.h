@@ -66,6 +66,20 @@ public:
     void set_step(bool on, int steps);
     bool flow() const { return !_step_on; }   // CHOKE: a FLOW drone is always "on"
 
+    // Liefert true GENAU EINMAL nach einer FLOW->STEP-Flanke und loescht das
+    // Flag dabei. Center konsumiert es im Control-Tick; Part selbst weiss
+    // nichts vom Transport (dieselbe Regel wie beim COLOR-Push: Part schiebt
+    // Werte, keine Politik).
+    bool take_step_snap() { const bool w = _step_snap; _step_snap = false; return w; }
+    // Reicht den Slot an die Sampler-Engine weiter, wenn dieses Deck auf
+    // Sampler steht. Waehrend eines Engine-Wechsels zaehlt die ZIEL-Engine --
+    // sonst verloere ein Wechsel "auf Sampler und auf STEP zugleich" die
+    // Ausrichtung.
+    void snap_sampler_cursor(int slot) {
+        const EngineId e = _switching ? _pending_engine : _engine_id;
+        if (e == ENGINE_SAMPLER) _sampler.snap_phrase_cursor(slot);
+    }
+
     // PLAY tap (M6 wires the gesture; the engine sees an ordinary trigger)
     void trigger_manual();
 
@@ -148,6 +162,13 @@ private:
     EngineId       _pending_engine = ENGINE_SYNTH;
     bool           _switching = false;
     bool           _step_on = false;
+    // STEP-Einstiegs-Snap (spec 2026-07-23 sampler-performance-fixes).
+    // _step_seen unterscheidet die erste Beobachtung des Schalters von einer
+    // echten Geste: Hosts pushen set_step jeden Tick, und _step_on bootet auf
+    // false -- ein mit STEP an geladenes Patch erzeugte sonst beim ersten
+    // Push eine Flanke und schnappte, ohne dass jemand etwas geschaltet haette.
+    bool           _step_seen = false;
+    bool           _step_snap = false;
     bool           _inhibit = false;
     bool           _note_suppressed = false;   // last fire was swallowed
     float          _last_master_hz = -1.f;

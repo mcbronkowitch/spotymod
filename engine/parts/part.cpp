@@ -84,6 +84,10 @@ void Part::set_engine(EngineId e) {
 }
 
 void Part::set_step(bool on, int steps) {
+    // Die steigende Flanke ist die Geste, nicht der Zustand: der Host pusht
+    // hier jeden Control-Tick denselben Wert.
+    if (_step_seen && on && !_step_on) _step_snap = true;
+    _step_seen = true;
     _step_on = on;
     _mod.set_step(on, steps);
     _engine->set_flow(!on);

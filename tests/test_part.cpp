@@ -738,3 +738,37 @@ TEST_CASE("part: LEVEL reaches the engine (set_targets push) only on the raster"
     // divergence here, not something this assertion is positioned to see.
     CHECK_FALSE(off_tick_exact_mismatch);
 }
+
+// --- STEP-Einstiegs-Snap: die Flanke (spec 2026-07-23) ---------------------
+//
+// Hosts pushen set_step in JEDEM Control-Tick mit dem Schalterzustand
+// (Spotymod.cpp:503), nicht nur beim Wechsel. Der Snap darf deshalb an der
+// FLANKE haengen und nicht am Zustand, sonst schnappt das Deck jeden Tick neu
+// und stuende dauerhaft still auf dem Raster.
+TEST_CASE("part: the FLOW->STEP edge raises the snap request exactly once") {
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, nullptr, 0);
+
+    // Erste Beobachtung des Schalters nach init(): KEIN Snap. Ein Patch, der
+    // mit STEP an geladen wird, erzeugt hier eine steigende Flanke, aber es
+    // gab keine Geste und keine Wolke, aus der man kaeme.
+    p.set_step(true, 8);
+    CHECK(p.take_step_snap() == false);
+
+    // Zurueck in die Wolke und wieder heraus: DAS ist die Geste.
+    p.set_step(false, 8);
+    CHECK(p.take_step_snap() == false);
+    p.set_step(true, 8);
+    CHECK(p.take_step_snap() == true);
+
+    // Genau einmal -- take_ loescht das Flag.
+    CHECK(p.take_step_snap() == false);
+
+    // Derselbe Zustand noch einmal gepusht ist keine Flanke.
+    p.set_step(true, 8);
+    CHECK(p.take_step_snap() == false);
+
+    // Und der Rueckweg in die Wolke schnappt nicht.
+    p.set_step(false, 8);
+    CHECK(p.take_step_snap() == false);
+}
