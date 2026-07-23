@@ -237,13 +237,27 @@ void Part::_control_tick() {
     // size is the point there -- and wrong for accents: an accent depth that
     // breathes would be exactly the hidden coupling this spec exists to
     // remove.
-    // In FLOW the engine ignores _feel and COLOR means chord instead -- but
-    // on THIS deck there is no chord either: _flatten_for_sampler (part.h)
-    // collapses it for ENGINE_SAMPLER in every mode, so COLOR does nothing
-    // at all in FLOW here. Pre-existing, not something the FEEL spec broke.
     if (_engine_id == ENGINE_SAMPLER) {
         _sampler.set_step_clock(_mod.pitch_step_samples());
+        // Die beiden COLOR-Pushes lesen ABSICHTLICH verschiedene Werte, und
+        // die Regel dahinter ist allgemeiner als dieser Regler:
+        // DISKRETE EREIGNISSE BEKOMMEN KEINEN VERSTECKTEN SWING,
+        // KONTINUIERLICHE TEXTUREN SCHON.
+        //
+        // FEEL ist Akzenttiefe auf einzelnen komponierten Noten -- eine
+        // atmende Akzenttiefe waere genau die versteckte Kopplung, die die
+        // FEEL-Spec abgeschafft hat. Also der rohe Knopf.
+        //
+        // Die Streuung ist eine Eigenschaft der WOLKE, und MOTION besitzt
+        // dort bereits jede andere Streuachse: Position, Pan, Spawn-Timing.
+        // Die Tonhoehe davon auszunehmen hiesse, eine Achse still stehen zu
+        // lassen, waehrend die anderen drei atmen. Also _color_eff.
+        //
+        // Gepusht wird in BEIDEN Modi. Die Felder sind in STEP schlicht
+        // wirkungslos (_spawn_slice liest sie nicht); ein Modus-Gate waere
+        // Zustand ohne Sicherheitsgewinn.
         _sampler.set_feel(_color);
+        _sampler.set_dispersion(_color_eff);
     }
 
     float chord[ChordBuilder::kMaxNotes];

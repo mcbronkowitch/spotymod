@@ -249,9 +249,16 @@ public:
     int   dropped_spawns() const    { return _dropped_spawns; }
     float last_spawn_ratio() const  { return _last_ratio; }
     float last_spawn_pan() const    { return _last_pan; }
-    // SUB and DTUN no longer reach the sampler (spec 2026-07-21
-    // morphagene-controls); these stay at their silent 0.f defaults. Exposed
-    // so tests can pin the disconnection down.
+    // Die REGLER SUB und DTUN erreichen den Sampler nach wie vor nicht (spec
+    // 2026-07-21 morphagene-controls) -- sie heissen auf einem Sampler-Deck
+    // LEN und ORG, und Part::set_voice_sub/set_voice_detune leiten nur noch
+    // an den Synth weiter.
+    //
+    // Die FELDER dahinter sind seit spec 2026-07-23 (cloud-dispersion) aber
+    // sehr wohl erreichbar: COLOR schreibt sie in FLOW ueber set_dispersion.
+    // Das ist kein Widerspruch, sondern der Unterschied zwischen Regler und
+    // Feld -- wer den ersten Satz als Zusage liest, dass hier immer 0 steht,
+    // liegt falsch.
     float sub() const    { return _sub_n; }
     float detune() const { return _detune_n; }
     float last_spawn_pos() const    { return _last_pos; }

@@ -439,7 +439,7 @@ TEST_CASE("sampler part: punch() produces a grain in the FLOW cloud") {
     CHECK(p.sampler().spawn_count() > before);
 }
 
-TEST_CASE("sampler part: SUB and DTUN no longer reach the sampler") {
+TEST_CASE("sampler part: the SUB and DTUN knobs reach the synth, not the sampler") {
     // They are GENE SIZE and ORGANIZE on the panel now (spec 2026-07-21
     // morphagene-controls). The sampler's own sub/detune stay at their
     // silent defaults, and the synth keeps both.
@@ -457,6 +457,11 @@ TEST_CASE("sampler part: SUB and DTUN no longer reach the sampler") {
     // does. The two CHECKs below pin that a future edit deleting both
     // forwarding calls at once (not just the sampler-silencing one) would
     // now be caught here.
+    //
+    // Cloud-dispersion (spec 2026-07-23): die sampler-seitigen FELDER sind
+    // inzwischen ueber COLOR schreibbar. Dieser Fall pinnt weiterhin die
+    // KNOEPFE -- er ruft nie process(), also feuert kein Control-Tick und
+    // set_dispersion laeuft nie. Genau deshalb misst er noch, was er soll.
     Part p;
     p.init(48000.f, 0);
     p.set_voice_sub(1.f);
@@ -927,4 +932,65 @@ TEST_CASE("sampler part: FEEL reaches the sampler unswung by MOTION") {
     CHECK(chi > clo + 0.02f);            // _color_eff really breathes...
     CHECK(flo == doctest::Approx(0.5f)); // ...and FEEL really does not
     CHECK(fhi == doctest::Approx(0.5f));
+}
+
+// COLOR erreicht den Sampler in FLOW als GESCHWUNGENER Wert (_color_eff),
+// waehrend FEEL den rohen Knopf bekommt. Die Regel dahinter: diskrete
+// Ereignisse bekommen keinen versteckten Swing, kontinuierliche Texturen
+// schon. Der Beweis ist ein Deck mit weit offener MOTION-Lane: der Streuwert
+// muss sich bewegen, der FEEL-Wert nicht.
+TEST_CASE("sampler part: COLOR reaches the cloud swung, FEEL raw") {
+    std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+    p.set_engine(ENGINE_SAMPLER);
+    p.set_color(0.5f);                  // Reglermitte: Swing hat nach beiden Seiten Platz
+    p.set_depth(1.f);
+    p.set_target_active(LANE_MOTION, true);
+
+    // Beide Observablen lesen ihre Konstruktions-Defaults (0), bis der erste
+    // Control-Tick landet -- set_engine tauscht die Engine erst nach einem
+    // 4-ms-Fade-out ein, davor sieht der Sampler ueberhaupt nichts. Ohne
+    // dieses Warmup zieht die erste Fensterprobe flo auf 0, unabhaengig vom
+    // Feature (siehe "sampler part: FEEL reaches the sampler unswung by
+    // MOTION" oben, derselbe Gotcha).
+    for (int i = 0; i < 2000; ++i) { float a = 0.f, b = 0.f; p.process(a, b); }
+    REQUIRE(p.sampler().feel() == doctest::Approx(0.5f));
+
+    float dlo = 2.f, dhi = -2.f, flo = 2.f, fhi = -2.f;
+    for (int i = 0; i < 48000; ++i) {
+        float a = 0.f, b = 0.f;
+        p.process(a, b);
+        const float d = p.sampler().detune();
+        if (d < dlo) dlo = d;
+        if (d > dhi) dhi = d;
+        const float f = p.sampler().feel();
+        if (f < flo) flo = f;
+        if (f > fhi) fhi = f;
+    }
+    CHECK(dhi > dlo + 0.02f);            // die Streuung atmet...
+    CHECK(flo == doctest::Approx(0.5f)); // ...und FEEL steht still
+    CHECK(fhi == doctest::Approx(0.5f));
+}
+
+// COLOR 0 muss FLOW strukturell unberuehrt lassen, AUCH bei weit offener
+// MOTION-Lane. Das haengt an kColorGate (part.cpp, part.h): unterhalb von
+// 0.01 Reglerweg wird der Swing ausgeblendet, sonst schoebe MOTION
+// _color_eff von der Null weg und die Bit-Identitaets-Zusage der Spec fiele.
+// Das Gate war fuer den Akkord da; ab jetzt traegt es auch fuer die Wolke.
+TEST_CASE("sampler part: COLOR 0 leaves the cloud unswung even at full MOTION") {
+    std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+    p.set_engine(ENGINE_SAMPLER);
+    p.set_color(0.f);
+    p.set_depth(1.f);
+    p.set_target_active(LANE_MOTION, true);
+
+    for (int i = 0; i < 48000; ++i) {
+        float a = 0.f, b = 0.f;
+        p.process(a, b);
+        REQUIRE(p.sampler().detune() == 0.f);
+        REQUIRE(p.sampler().sub()    == 0.f);
+    }
 }
