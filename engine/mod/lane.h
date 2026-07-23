@@ -57,6 +57,18 @@ public:
     // where in the phrase a fire sits and how long a step is in samples.
     int   cur_step() const { return _cur_step; }
     int   steps()    const { return _steps; }
+    // Die Phase-auf-Slot-Regel, an EINER Stelle. process() rechnet damit, und
+    // der STEP-Einstiegs-Snap (spec 2026-07-23 sampler-performance-fixes)
+    // braucht denselben Slot fuer eine Phase, die diese Lane noch nicht
+    // gesehen hat -- zurueckgelesen waere _cur_step dort noch -1, weil
+    // reset() es genau darauf setzt. Zwei Kopien dieser Rundung wuerden
+    // spaeter still auseinanderlaufen.
+    static int step_index(float phase, int steps) {
+        int s = static_cast<int>(phase * static_cast<float>(steps));
+        if (s >= steps) s = steps - 1;
+        if (s < 0)      s = 0;
+        return s;
+    }
     // Samples per STEP slot at the current rate: one slot is 1/_steps of the
     // cycle and the phase advances by _phase_inc * (1 + _ev_rate) per sample.
     // The EVOLVE rate walk is part of the answer, not a detail: lane.cpp

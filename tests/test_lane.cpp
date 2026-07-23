@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <cmath>
 #include "mod/lane.h"
+#include "mod/super_modulator.h"
 using namespace spky;
 
 static void configure_flow(ModLane& l, float hz) {
@@ -132,4 +133,49 @@ TEST_CASE("lane: step_samples() accounts for the EVOLVE rate walk") {
     // 1/(_phase_inc * steps) == 6000 is a materially different answer.
     REQUIRE(std::fabs(measured - 6000.f) > 60.f);
     CHECK(claimed == doctest::Approx(measured).epsilon(0.002));
+}
+
+// --- step_index: die Rundungsregel, die process() und der Snap teilen -------
+//
+// Der Snap (spec 2026-07-23 sampler-performance-fixes) muss den Slot aus einer
+// Phase berechnen, BEVOR die Lane sie verarbeitet hat -- zurueckgelesen waere
+// cur_step() noch -1, weil ModLane::reset() es genau darauf setzt. Diese
+// Funktion ist die eine Stelle, an der die Regel steht.
+TEST_CASE("lane: step_index folds a phase onto its slot") {
+    CHECK(ModLane::step_index(0.f,     8) == 0);
+    CHECK(ModLane::step_index(0.124f,  8) == 0);
+    CHECK(ModLane::step_index(0.125f,  8) == 1);
+    CHECK(ModLane::step_index(0.5f,    8) == 4);
+    CHECK(ModLane::step_index(0.999f,  8) == 7);
+
+    // Die obere Klemme ist der Grund, warum das eine Funktion ist und kein
+    // int-Cast: ohne sie liefert eine Phase von exakt 1.0 den Slot 8 und
+    // greift einen Schritt hinter das Ende der Phrase.
+    CHECK(ModLane::step_index(1.f,     8) == 7);
+    CHECK(ModLane::step_index(1.5f,    8) == 7);
+
+    // Ein einzelner Schritt hat nur den Slot 0, bei jeder Phase.
+    CHECK(ModLane::step_index(0.f,     1) == 0);
+    CHECK(ModLane::step_index(0.99f,   1) == 0);
+}
+
+// snap_pitch_phase setzt die PITCH-Lane und NUR sie -- die vier Texturlanes
+// laufen weiter, sonst waere es die RST-Geste (reset_phases) unter anderem
+// Namen. Der Onset-Gap-Ring wird mitgenullt: nach einem Phasensprung waere
+// der naechste gemessene Abstand einer, den es nie gab, und dieser
+// Rhythmus-Blick steuert die FX-Abgriffe des ANDEREN Decks.
+TEST_CASE("mod: snap_pitch_phase moves the pitch lane alone") {
+    SuperModulator m;
+    m.init(48000.f, 7u);
+    for (int i = 0; i < 5000; ++i) m.process();
+
+    const float tex_before = m.lane_phase(LANE_MOTION);
+    REQUIRE(m.pitch_phase() != doctest::Approx(0.25f).epsilon(1e-3));
+
+    m.snap_pitch_phase(0.25f);
+
+    CHECK(m.pitch_phase() == doctest::Approx(0.25f).epsilon(1e-6));
+    CHECK(m.lane_phase(LANE_MOTION) == doctest::Approx(tex_before).epsilon(1e-6));
+    CHECK(m.rhythm().gap[0] == 0);
+    CHECK(m.rhythm().gap[1] == 0);
 }

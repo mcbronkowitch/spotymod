@@ -75,6 +75,24 @@ public:
         _gap[0] = _gap[1] = 0;
         _rhythm = RhythmView{};
     }
+    // STEP-Einstiegs-Snap (spec 2026-07-23 sampler-performance-fixes): setzt
+    // NUR die PITCH-Lane auf eine gegebene Phase. Bewusst nicht reset_phases:
+    // das ist die RST-Geste und setzt alle fuenf Lanes -- ein Sprung in den
+    // Texturlanes waere ein hoerbarer Ruck in Filter und Pan, der dem
+    // Rhythmus nicht hilft.
+    //
+    // Der Onset-Gap-Ring wird mitgenullt, dieselbe Kopplung, auf der
+    // reset_phases oben besteht: nach einem Phasensprung misst der erste
+    // Onset sonst einen Abstand, den es nie gab, und dieser Rhythmus-Blick
+    // steuert ueber Instrument die FX-Abgriffe des ANDEREN Decks -- eines
+    // Decks, das von diesem Snap nichts merken soll.
+    void snap_pitch_phase(float ph) {
+        _lanes[LANE_PITCH].reset(ph);
+        _since_onset = 0;
+        _onsets = 0;
+        _gap[0] = _gap[1] = 0;
+        _rhythm = RhythmView{};
+    }
     float base_hz()   const { return _base_hz; }   // rate before COUPLE/DRIFT scale
     bool  synced()    const { return _synced; }
     int   division()  const { return division_index(_rate_norm); }

@@ -286,8 +286,7 @@ float ModLane::process() {
     if (wrapped) _wrap_events();
 
     if (_step_mode) {
-        int step = static_cast<int>(_phase * _steps);
-        if (step >= _steps) step = _steps - 1;
+        const int step = step_index(_phase, _steps);
         if (step != _cur_step) {
             _cur_step = step;
             _on_boundary();
@@ -342,8 +341,7 @@ float ModLane::tick() {
     // step than _cur_step remembers" symptom and this one branch catches
     // them all.
     if (_step_mode) {
-        int step = static_cast<int>(_phase * static_cast<float>(_steps));
-        if (step >= _steps) step = _steps - 1;
+        const int step = step_index(_phase, _steps);
         if (step != _cur_step) { _cur_step = step; _on_boundary(); }
     }
 
