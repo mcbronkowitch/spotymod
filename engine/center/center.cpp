@@ -79,12 +79,31 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     // einen Rebase aus. Liefe der Snap davor, schriebe der Rebase den gerade
     // genullten Offset sofort wieder voll.
     //
-    // Bank A ist die Phasenreferenz des Paars (siehe die Grid-Gravity unten),
-    // deshalb wird A zuerst konsumiert und B sieht As bereits gesnappte Phase.
-    // Schalten beide im selben Tick, bleibt A damit stehen und B landet auf A,
-    // statt dass die beiden nur ihre Vorher-Phasen tauschen.
-    if (pa.take_step_snap()) _snap_to_grid(a, pa, 0, b);
-    if (pb.take_step_snap()) _snap_to_grid(b, pb, 1, a);
+    // Bank A ist die Phasenreferenz des Paars (siehe die Grid-Gravity unten).
+    // In der freien Welt (SYNC aus) heisst das: schaltet nur ein Deck, snappt
+    // es aufs andere; schalten beide im selben Tick, hat A keine aeussere
+    // Referenz mehr, an der es sich ausrichten koennte -- also bleibt A
+    // stehen, und B landet auf A. Das ist eine explizite Fallunterscheidung,
+    // keine Konsequenz der Aufrufreihenfolge: wuerde A trotzdem zuerst
+    // konsumiert und snappen, saehe B nur As bereits gesnappte (= Bs alte)
+    // Phase, und beide laufen am Ende auf Bs alter Phase zusammen -- die
+    // beiden tauschen dann bloss ihre Vorher-Phasen, statt dass A Referenz
+    // bleibt. Beide Flags werden in jedem Fall konsumiert (take_step_snap
+    // loescht sie), auch wenn der Snap fuer A verworfen wird. Im GRID-Modus
+    // (SYNC an) snappt jedes Deck unabhaengig aufs Transport-Raster, da gibt
+    // es diese Wechselwirkung nicht.
+    const bool snap_a = pa.take_step_snap();
+    const bool snap_b = pb.take_step_snap();
+    if (_sync) {
+        if (snap_a) _snap_to_grid(a, pa, 0, b);
+        if (snap_b) _snap_to_grid(b, pb, 1, a);
+    } else if (snap_a && snap_b) {
+        _snap_to_grid(b, pb, 1, a);   // A bleibt Referenz, B landet auf A
+    } else if (snap_a) {
+        _snap_to_grid(a, pa, 0, b);
+    } else if (snap_b) {
+        _snap_to_grid(b, pb, 1, a);
+    }
 
     // --- MORPH (equal-power, smoothed at control rate) ---
     _morph = _morph_smooth.process(_morph_target);

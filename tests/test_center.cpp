@@ -482,28 +482,48 @@ TEST_CASE("center: the snap leaves no servo error behind") {
 }
 
 // Das andere Deck und der Transport bleiben unangetastet -- der ganze Grund,
-// warum das nicht reset_transport ruft.
+// warum das nicht reset_transport ruft. "Unangetastet" kann fuer den
+// Transport nicht "unveraendert" heissen: tick() laeuft in Center::update
+// bedingungslos zuerst und addiert pro Aufruf bpm/(60*cr) (transport.h:25).
+// Die eigentliche Zusage ist, dass der Snap den Downbeat NICHT nullt, wie
+// reset_transport() es taete -- der Snap tickt also normal weiter. Das wird
+// gemessen, indem zuerst ein einfacher update()-Aufruf als Eichmass dient:
+// sein Beat-Delta ist genau das, was jeder normale Tick bewirkt. Der
+// Snap-Tick muss um dasselbe Delta vorruecken, nicht um 0 (das waere ein
+// Reset) und nicht um irgendetwas anderes.
 TEST_CASE("center: the snap touches neither the transport nor the other deck") {
     Rig r; r.init();
     r.c.set_sync(true);
     run_synced(r, 40);
 
     const float b_before = r.b.pitch_phase();
-    const double beats_before = r.c.transport().beats();
 
+    // Eichmass: ein normaler update()-Tick ohne Snap.
+    const double beats_before_probe = r.c.transport().beats();
+    r.c.update(r.a, r.b, r.pa, r.pb);
+    const double plain_delta = r.c.transport().beats() - beats_before_probe;
+
+    const double beats_before_snap = r.c.transport().beats();
     r.pa.set_step(true, 8);
     r.pa.set_step(false, 8);
     r.pa.set_step(true, 8);
     r.c.update(r.a, r.b, r.pa, r.pb);
+    const double snap_delta = r.c.transport().beats() - beats_before_snap;
 
     CHECK(r.b.pitch_phase() == doctest::Approx(b_before).epsilon(1e-6));
-    CHECK(r.c.transport().beats() == doctest::Approx(beats_before).epsilon(1e-9));
+    CHECK(snap_delta == doctest::Approx(plain_delta).epsilon(1e-9));
 }
 
 // Freie Welt: ohne Transport ist das andere Deck die Referenz.
 TEST_CASE("center: without SYNC the snap lands on the other deck's phase") {
     Rig r; r.init();
     r.c.set_sync(false);
+    // Rig seeds both banks at the same rate norm (0.5), so left alone A and B
+    // run bit-identically and never diverge -- the precondition below could
+    // never hold. Give them clearly different free rates (COUPLE defaults to
+    // 0 in Center::init, so nothing pulls them back together) so the phases
+    // genuinely separate before the switch.
+    r.a.set_rate(0.2f); r.b.set_rate(0.8f);
     run_synced(r, 40);
     REQUIRE(r.a.pitch_phase() != doctest::Approx(r.b.pitch_phase()).epsilon(1e-3));
 
@@ -522,6 +542,9 @@ TEST_CASE("center: without SYNC the snap lands on the other deck's phase") {
 TEST_CASE("center: when both decks switch in one tick, A is the reference") {
     Rig r; r.init();
     r.c.set_sync(false);
+    // Same fix as above: without diverging rates A and B are bit-identical
+    // and this precondition can never hold.
+    r.a.set_rate(0.2f); r.b.set_rate(0.8f);
     run_synced(r, 40);
     const float a_before = r.a.pitch_phase();
     REQUIRE(r.b.pitch_phase() != doctest::Approx(a_before).epsilon(1e-3));
