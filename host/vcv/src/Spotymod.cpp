@@ -236,7 +236,8 @@ struct Spotymod : Module {
             case REV_DECAY:    return 0.851f;
             case REV_TONE:     return 0.803f;
             case REV_DIFF:     return 0.863f;
-            case REV_MIX:      return 0.410f;  // behind the parts — the chord already fills the width
+            case REV_MIX_A:
+            case REV_MIX_B:    return 0.410f;  // per-deck room send; was the shared REV_MIX
             case REV_SMEAR:    return 0.568f;  // diffuser LFO smear (wash)
             case REV_MOD:      return 0.237f;  // tail LFO wobble
             case TEMPO:        return 0.00f;   // as saved (40 BPM floor; parts run Synced)
@@ -544,7 +545,8 @@ struct Spotymod : Module {
         inst.set_reverb_decay(params[REV_DECAY].getValue());
         inst.set_reverb_tone(params[REV_TONE].getValue());
         inst.set_reverb_diffusion(params[REV_DIFF].getValue());
-        inst.set_reverb_mix(params[REV_MIX].getValue());
+        inst.set_reverb_mix(spky::PART_A, params[REV_MIX_A].getValue());
+        inst.set_reverb_mix(spky::PART_B, params[REV_MIX_B].getValue());
         inst.set_reverb_smear(params[REV_SMEAR].getValue());
         inst.set_reverb_mod(params[REV_MOD].getValue());
         inst.set_master_drive(params[MASTER_DRIVE].getValue());
