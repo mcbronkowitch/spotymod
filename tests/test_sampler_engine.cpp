@@ -3430,3 +3430,34 @@ TEST_CASE("sampler: snap_phrase_cursor aligns the slice cursor and survives the 
     g.e.set_phrase_pos(4, 8, 0.f);
     CHECK(g.e.test_last_slot() == 3);   // erst _fire_slice zieht nach
 }
+
+// Task 2's test above never reaches _fire_slice -- set_phrase_pos only writes
+// _phrase_slot, so the wrap-detection guard the design rests on was never
+// actually exercised. This one fires for real, and primes _last_slot HIGH
+// first (slot 7) so the snap's whole point is on the line: if
+// snap_phrase_cursor stopped setting _last_slot, the very next fire (phrase
+// slot 4, forward of the snap's 3 but backward of the stale 7) reads as a
+// phrase wrap and zeros the cursor right back to 0 -- the report this test
+// pins. MOTION stays at StepRig's default 0, so the walk offset is
+// structurally 0 and last_slice() reads the cursor directly.
+TEST_CASE("sampler: STEP entry snap survives the first fire after it") {
+    StepRig g;
+    g.fire(7);                          // deck already running STEP: primes _last_slot to 7
+    g.render(64);
+    g.note_off();
+    g.render(64);
+
+    g.e.snap_phrase_cursor(3);          // FLOW->STEP entry lands on beat 3 of the running bar
+    CHECK(g.e.test_cursor()    == 3);
+    CHECK(g.e.test_last_slot() == 3);
+
+    g.fire(4);                          // first fire after the snap
+    g.render(64);
+    CHECK(g.e.last_slice() == 3);       // the snap must survive -- not re-zeroed by the wrap guard
+    g.note_off();
+    g.render(64);
+
+    g.fire(5);                          // second fire: cursor advances normally
+    g.render(64);
+    CHECK(g.e.last_slice() == 4);
+}

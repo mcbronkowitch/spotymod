@@ -53,6 +53,11 @@ private:
     void _step_weather();
     void _rebase_grid(const SuperModulator& m, int i);
     float _grid_servo(const SuperModulator& m, float off) const;
+    // STEP-Einstiegs-Snap (spec 2026-07-23 sampler-performance-fixes): setzt
+    // die Pitch-Phase des Decks i AUF das Grid-Ziel, statt wie _rebase_grid
+    // das Ziel auf die Phase. Damit startet der Servofehler bei 0 -- kein
+    // Zerren, kein Tempo-Wobble.
+    void _snap_to_grid(SuperModulator& m, Part& p, int i, const SuperModulator& other);
 
     Transport _transport;
     bool      _sync = false;

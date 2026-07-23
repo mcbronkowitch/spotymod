@@ -74,6 +74,18 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     _rebase_grid(a, 0);
     _rebase_grid(b, 1);
 
+    // NACH _rebase_grid, und das ist eine Zusicherung: der Moduswechsel
+    // aendert clock_scale (1 in FLOW, 8/S in STEP), loest also im selben Tick
+    // einen Rebase aus. Liefe der Snap davor, schriebe der Rebase den gerade
+    // genullten Offset sofort wieder voll.
+    //
+    // Bank A ist die Phasenreferenz des Paars (siehe die Grid-Gravity unten),
+    // deshalb wird A zuerst konsumiert und B sieht As bereits gesnappte Phase.
+    // Schalten beide im selben Tick, bleibt A damit stehen und B landet auf A,
+    // statt dass die beiden nur ihre Vorher-Phasen tauschen.
+    if (pa.take_step_snap()) _snap_to_grid(a, pa, 0, b);
+    if (pb.take_step_snap()) _snap_to_grid(b, pb, 1, a);
+
     // --- MORPH (equal-power, smoothed at control rate) ---
     _morph = _morph_smooth.process(_morph_target);
     _g_a = std::cos(_morph * kQuarter);
@@ -201,6 +213,33 @@ void Center::_rebase_grid(const SuperModulator& m, int i) {
     float off = m.pitch_phase() - static_cast<float>(t - std::floor(t));
     off -= std::floor(off);                         // keep in [0,1)
     _grid_off[i] = off;
+}
+
+// Siehe die Deklaration in center.h. Der Offset wird ZUERST genullt: das Ziel
+// unten muss mit dem genullten Offset gerechnet werden, sonst landet der Snap
+// um genau den alten Offset daneben. In der freien Welt liest den Offset
+// niemand -- genullt wird er trotzdem, sonst zoege ein spaeter eingeschaltetes
+// SYNC einmal am Tempo.
+void Center::_snap_to_grid(SuperModulator& m, Part& p, int i,
+                           const SuperModulator& other) {
+    _grid_off[i] = 0.f;
+    _grid_cs[i]  = m.clock_scale();   // sonst rebased der naechste Tick sofort
+
+    float tgt;
+    if (_sync) {
+        const float cpb = kDivisions[m.division()].cpb * m.clock_scale();
+        const double t  = _transport.beats() * static_cast<double>(cpb);
+        tgt = static_cast<float>(t - std::floor(t));
+    } else {
+        // Ohne Transport gibt es kein Raster: das andere Deck ist die einzige
+        // sinnvolle Referenz. Roh auf roh -- die Kopplung und beide Servos
+        // rechnen mit pitch_phase(), und die Schrittgrenzen der Lane haengen
+        // an derselben Groesse.
+        tgt = other.pitch_phase();
+    }
+
+    m.snap_pitch_phase(tgt);
+    p.snap_sampler_cursor(ModLane::step_index(tgt, m.pitch_steps()));
 }
 
 float Center::_grid_servo(const SuperModulator& m, float off) const {

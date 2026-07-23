@@ -436,3 +436,102 @@ TEST_CASE("center grid: step-clock — a 16-step bank locks at half the division
     CHECK(std::fabs(wrap_err(tb - r.b.pitch_phase())) < 0.03f);
 }
 
+// --- STEP-Einstiegs-Snap (spec 2026-07-23 sampler-performance-fixes) -------
+//
+// Die Phase wird AUF das Servo-Ziel gesetzt statt umgekehrt. Der Servofehler
+// ist damit ab dem ersten Sample 0 -- das ist die Zusage gegenueber RST, das
+// den Downbeat nullt und beide Decks mitreisst.
+TEST_CASE("center: the FLOW->STEP snap lands the deck on the running grid") {
+    Rig r; r.init();
+    r.c.set_sync(true);
+    run_synced(r, 40);                       // Transport laeuft, Phasen wandern
+
+    // Ein Offset, wie ihn der Free-Run hinterlaesst.
+    r.pa.set_step(true, 8);                  // erste Beobachtung: kein Snap
+    r.pa.set_step(false, 8);
+    run_synced(r, 10);
+
+    r.pa.set_step(true, 8);                  // DAS ist die Flanke
+    r.c.update(r.a, r.b, r.pa, r.pb);
+
+    // Ziel exakt so gerechnet, wie _grid_servo es tut -- mit genulltem Offset.
+    const float cpb = kDivisions[r.a.division()].cpb * r.a.clock_scale();
+    const double t  = r.c.transport().beats() * static_cast<double>(cpb);
+    const float tgt = static_cast<float>(t - std::floor(t));
+    CHECK(r.a.pitch_phase() == doctest::Approx(tgt).epsilon(1e-4));
+}
+
+// Kein Zerren: nach dem Snap darf der Servo das Deck nicht mehr ziehen. Ohne
+// diese Zusicherung ginge auch ein naives "nur _grid_off nullen" durch -- und
+// genau das zerrt (Rack-Bericht 2026-07-17).
+TEST_CASE("center: the snap leaves no servo error behind") {
+    Rig r; r.init();
+    r.c.set_sync(true);
+    run_synced(r, 40);
+    r.pa.set_step(true, 8);
+    r.pa.set_step(false, 8);
+    run_synced(r, 10);
+
+    r.pa.set_step(true, 8);
+    r.c.update(r.a, r.b, r.pa, r.pb);
+
+    const float cpb = kDivisions[r.a.division()].cpb * r.a.clock_scale();
+    const double t  = r.c.transport().beats() * static_cast<double>(cpb);
+    const float err = wrap_err(static_cast<float>(t - std::floor(t)) - r.a.pitch_phase());
+    CHECK(std::fabs(err) < 1e-4f);
+}
+
+// Das andere Deck und der Transport bleiben unangetastet -- der ganze Grund,
+// warum das nicht reset_transport ruft.
+TEST_CASE("center: the snap touches neither the transport nor the other deck") {
+    Rig r; r.init();
+    r.c.set_sync(true);
+    run_synced(r, 40);
+
+    const float b_before = r.b.pitch_phase();
+    const double beats_before = r.c.transport().beats();
+
+    r.pa.set_step(true, 8);
+    r.pa.set_step(false, 8);
+    r.pa.set_step(true, 8);
+    r.c.update(r.a, r.b, r.pa, r.pb);
+
+    CHECK(r.b.pitch_phase() == doctest::Approx(b_before).epsilon(1e-6));
+    CHECK(r.c.transport().beats() == doctest::Approx(beats_before).epsilon(1e-9));
+}
+
+// Freie Welt: ohne Transport ist das andere Deck die Referenz.
+TEST_CASE("center: without SYNC the snap lands on the other deck's phase") {
+    Rig r; r.init();
+    r.c.set_sync(false);
+    run_synced(r, 40);
+    REQUIRE(r.a.pitch_phase() != doctest::Approx(r.b.pitch_phase()).epsilon(1e-3));
+
+    const float b_phase = r.b.pitch_phase();
+    r.pa.set_step(true, 8);
+    r.pa.set_step(false, 8);
+    r.pa.set_step(true, 8);
+    r.c.update(r.a, r.b, r.pa, r.pb);
+
+    CHECK(r.a.pitch_phase() == doctest::Approx(b_phase).epsilon(1e-4));
+}
+
+// Schalten beide im selben Tick, bleibt A stehen und B schnappt auf A. Ohne
+// diese Regel schnappten beide auf die jeweils andere Vorher-Phase und
+// tauschten sie nur.
+TEST_CASE("center: when both decks switch in one tick, A is the reference") {
+    Rig r; r.init();
+    r.c.set_sync(false);
+    run_synced(r, 40);
+    const float a_before = r.a.pitch_phase();
+    REQUIRE(r.b.pitch_phase() != doctest::Approx(a_before).epsilon(1e-3));
+
+    r.pa.set_step(true, 8); r.pb.set_step(true, 8);
+    r.pa.set_step(false, 8); r.pb.set_step(false, 8);
+    r.pa.set_step(true, 8); r.pb.set_step(true, 8);
+    r.c.update(r.a, r.b, r.pa, r.pb);
+
+    CHECK(r.a.pitch_phase() == doctest::Approx(a_before).epsilon(1e-4));
+    CHECK(r.b.pitch_phase() == doctest::Approx(a_before).epsilon(1e-4));
+}
+
