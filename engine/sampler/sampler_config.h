@@ -360,5 +360,27 @@ constexpr int    kStepGrainCeil = 10;
 // not how loud. The first hit after any gap scores 255 regardless of level.
 constexpr float  kAccentFloor   = 0.35f;
 
+// --- cloud dispersion (spec 2026-07-23 sampler-cloud-dispersion-design.md) ---
+// COLOR streut in FLOW die Tonhoehen der Wolke, in zwei Zonen ueber den
+// Reglerweg. Unterhalb des Knies laeuft die Verstimmungsbreite (DTUN) auf,
+// oberhalb kommt der Oktavanteil (SUB) dazu.
+//
+// Das Knie sitzt auf der Reglermitte, also auf einer findbaren Position --
+// dasselbe Prinzip wie SCANs 1.0x und SIZEs Slice-Unity. Ear-tunable: wenn
+// sich die Breite zu frueh erschoepft anfuehlt, wandert es nach oben.
+constexpr float  kDispersionKnee = 0.5f;
+// Groesster Oktavanteil am oberen Reglerende. NICHT 1.0: bei jedem Korn eine
+// Oktave tiefer waere es eine Transposition und keine Streuung -- die Wolke
+// klaenge geschlossen tiefer und spreizte gar nichts. Bei 0.5 ist die
+// Streuung maximal (die Varianz des Oktav-Indikators hat dort ihr Maximum).
+//
+// Musikalisch heisst das ausdruecklich SPALTUNG, nicht Grundierung: am
+// oberen Reglerende liegen zwei gleichwertige Lagen im Oktavabstand, die das
+// Ohr trennt -- naeher an Organum als an einem Subbass. Wer stattdessen eine
+// Grundierung will, braucht ~0.3, und dann traegt das Varianz-Argument
+// nicht mehr. Der Wert ist ear-tunable, die Begruendung darf aber nicht
+// ohne den Wert wechseln.
+constexpr float  kSubSpreadMax   = 0.5f;
+
 }  // namespace sampler_cfg
 }  // namespace spky

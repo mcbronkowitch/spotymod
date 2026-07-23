@@ -3306,3 +3306,55 @@ TEST_CASE("sampler FLOW: FEEL does not touch the cloud") {
     REQUIRE(off > 1e-4);
     CHECK(rms_at(1.f) == doctest::Approx(off).epsilon(1e-5));
 }
+
+// --- cloud dispersion (spec 2026-07-23) -----------------------------------
+//
+// Die Zonenkurve ist deterministische Arithmetik und wird auch so geprueft.
+// Statistische Anteilstests waeren hier das falsche Werkzeug: langsam,
+// rauschbehaftet, und sie pinnen die Knie nur indirekt. Die Mechanik DAHINTER
+// (dass _sub_n wirklich Koerner halbiert, dass _detune_n wirklich verstimmt)
+// ist bereits abgedeckt -- "sampler: SUB drops a share of grains an octave"
+// und "sampler: DTUN spreads the grain pitches" weiter oben in dieser Datei.
+TEST_CASE("sampler: the dispersion curve puts detune below the knee and sub above") {
+    Rig g;
+    using namespace sampler_cfg;
+
+    // COLOR 0: beides exakt 0. Strukturell, nicht ungefaehr -- das ist die
+    // Zusage, an der FLOWs Bit-Identitaet haengt.
+    g.e.set_dispersion(0.f);
+    CHECK(g.e.detune() == 0.f);
+    CHECK(g.e.sub()    == 0.f);
+
+    // Knapp unter dem Knie: Verstimmung fast voll, Oktavanteil noch bei null.
+    g.e.set_dispersion(kDispersionKnee * 0.98f);
+    CHECK(g.e.detune() == doctest::Approx(0.98f).epsilon(1e-4));
+    CHECK(g.e.sub()    == 0.f);
+
+    // Auf dem Knie: Verstimmung voll, Oktavanteil beginnt gerade.
+    g.e.set_dispersion(kDispersionKnee);
+    CHECK(g.e.detune() == doctest::Approx(1.f).epsilon(1e-4));
+    CHECK(g.e.sub()    == 0.f);
+
+    // Ganz oben: Verstimmung bleibt voll, Oktavanteil deckelt bei
+    // kSubSpreadMax -- die Haelfte der Koerner unten, nicht alle. Bei 1.0
+    // waere es eine Transposition und keine Streuung mehr.
+    g.e.set_dispersion(1.f);
+    CHECK(g.e.detune() == doctest::Approx(1.f).epsilon(1e-4));
+    CHECK(g.e.sub()    == doctest::Approx(kSubSpreadMax).epsilon(1e-4));
+}
+
+// Die Kurve rechnet VOR den internen Klemmen von set_sub/set_detune. Ein
+// Argument ausserhalb [0,1] wuerde also die Knie verschieben, bevor
+// irgendeine Klemme greift -- deshalb klemmt set_dispersion selbst zuerst.
+TEST_CASE("sampler: set_dispersion clamps its argument before the curve") {
+    Rig g;
+    using namespace sampler_cfg;
+
+    g.e.set_dispersion(-1.f);
+    CHECK(g.e.detune() == 0.f);
+    CHECK(g.e.sub()    == 0.f);
+
+    g.e.set_dispersion(4.f);
+    CHECK(g.e.detune() == doctest::Approx(1.f).epsilon(1e-4));
+    CHECK(g.e.sub()    == doctest::Approx(kSubSpreadMax).epsilon(1e-4));
+}

@@ -204,6 +204,21 @@ public:
     // still a general granular engine and does spread a chord.
     void set_feel(float n);
 
+    // COLOR auf einem Sampler-Deck in FLOW (spec 2026-07-23): die
+    // Tonhoehenstreuung der Wolke, 0..1. Setzt _detune_n und _sub_n ueber die
+    // Zweizonenkurve. Bei 0 sind beide exakt 0 und FLOW ist bit-identisch mit
+    // einer Version ohne diesen Regler.
+    //
+    // Gepusht wird der GESCHWUNGENE Reglerwert (_color_eff), anders als bei
+    // set_feel. Die Regel dahinter: diskrete Ereignisse bekommen keinen
+    // versteckten Swing, kontinuierliche Texturen schon. In STEP wirkt das
+    // hier nichts -- _spawn_slice liest weder _sub_n noch _detune_n.
+    //
+    // set_sub/set_detune bleiben daneben bestehen und sind KEIN Altbestand:
+    // der FLOW-Golden-Vector ruft beide selbst auf. Sie zugunsten dieser
+    // Methode zu entfernen bricht einen Vertrag.
+    void set_dispersion(float n);
+
     // --- voice row, remapped ---
     void set_window_attack(float n);
     void set_window_decay(float n);

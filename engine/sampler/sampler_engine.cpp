@@ -1016,6 +1016,20 @@ void SamplerEngine::set_overlap(float n) {
 
 void SamplerEngine::set_feel(float n) { _feel = clampf(n, 0.f, 1.f); }
 
+// Zweizonenkurve, siehe sampler_config.h. Klemmt zuerst: die Kurve rechnet vor
+// den internen Klemmen von set_sub/set_detune, ein Argument ausserhalb [0,1]
+// wuerde also die Knie verschieben, bevor irgendeine Klemme greift.
+void SamplerEngine::set_dispersion(float n) {
+    static_assert(kDispersionKnee > 0.f && kDispersionKnee < 1.f,
+                  "das Knie muss echt zwischen den Reglerenden liegen -- "
+                  "bei 0 oder 1 faellt eine der beiden Zonen weg und die "
+                  "Division unten wird singulaer");
+    const float a = clampf(n, 0.f, 1.f);
+    set_detune(clampf(a / kDispersionKnee, 0.f, 1.f));
+    set_sub(kSubSpreadMax
+            * clampf((a - kDispersionKnee) / (1.f - kDispersionKnee), 0.f, 1.f));
+}
+
 void SamplerEngine::set_scan(float bipolar) { _scan_rate = scan_rate(bipolar); }
 
 void SamplerEngine::set_step_clock(float samples_per_step) {
