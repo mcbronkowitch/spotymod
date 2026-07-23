@@ -57,7 +57,7 @@ private:
     // die Pitch-Phase des Decks i AUF das Grid-Ziel, statt wie _rebase_grid
     // das Ziel auf die Phase. Damit startet der Servofehler bei 0 -- kein
     // Zerren, kein Tempo-Wobble.
-    void _snap_to_grid(SuperModulator& m, Part& p, int i, const SuperModulator& other);
+    void _snap_phase(SuperModulator& m, Part& p, int i, const SuperModulator& other);
 
     Transport _transport;
     bool      _sync = false;

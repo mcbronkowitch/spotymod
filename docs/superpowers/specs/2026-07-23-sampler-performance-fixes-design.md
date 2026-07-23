@@ -104,9 +104,13 @@ Drei Randfälle, die entschieden sind:
   nicht an der Stellung eines anderen Reglers hängen; A bleibt auch ungekoppelt
   eine definierte Referenz.
 - **`_grid_off[i]` wird auch hier genullt**, obwohl es in der freien Welt
-  niemand liest. Sonst steht dort ein Offset, der zur neuen Phase nicht mehr
-  passt, und das spätere Einschalten von SYNC zöge einmal am Tempo. Damit
-  lautet die Regel schlicht: immer nullen, dann je nach Welt die Phase setzen.
+  niemand liest. `_grid_servo` rechnet `target = beats*cpb + off`, ein
+  genullter Offset ist deshalb die fehlerfreie Wahl (ein später
+  eingeschaltetes SYNC beginnt bei Fehler 0); ein rebase-artiger (nicht
+  genullter) Offset wäre die Variante, an der ein später eingeschaltetes SYNC
+  zöge. Genullt wird trotzdem, weil das zu `reset_transport()`s "auf den Takt
+  ausrichten"-Konvention passt (`center.h:33`). Damit lautet die Regel
+  schlicht: immer nullen, dann je nach Welt die Phase setzen.
 
 ### Nebenwirkungen von `ModLane::reset`
 

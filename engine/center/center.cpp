@@ -83,26 +83,37 @@ void Center::update(SuperModulator& a, SuperModulator& b, Part& pa, Part& pb) {
     // In der freien Welt (SYNC aus) heisst das: schaltet nur ein Deck, snappt
     // es aufs andere; schalten beide im selben Tick, hat A keine aeussere
     // Referenz mehr, an der es sich ausrichten koennte -- also bleibt A
-    // stehen, und B landet auf A. Das ist eine explizite Fallunterscheidung,
-    // keine Konsequenz der Aufrufreihenfolge: wuerde A trotzdem zuerst
-    // konsumiert und snappen, saehe B nur As bereits gesnappte (= Bs alte)
-    // Phase, und beide laufen am Ende auf Bs alter Phase zusammen -- die
-    // beiden tauschen dann bloss ihre Vorher-Phasen, statt dass A Referenz
-    // bleibt. Beide Flags werden in jedem Fall konsumiert (take_step_snap
-    // loescht sie), auch wenn der Snap fuer A verworfen wird. Im GRID-Modus
+    // stehen, und B landet auf A. "A bleibt stehen" heisst aber NICHT "A wird
+    // uebersprungen": A bekommt trotzdem seinen eigenen _snap_phase-Aufruf,
+    // nur mit sich selbst als Referenz (tgt = other.pitch_phase() mit
+    // other == a == As eigene, noch nicht veraenderte Phase). Der Phasen-Snap
+    // ist dadurch ein No-Op (Ziel == Ist), aber Cursor-Ausrichtung und
+    // Offset-Nullung laufen fuer A genauso wie fuer jedes andere snappende
+    // Deck -- sonst bekaeme A beim FLOW->STEP-Einstieg einen veralteten
+    // Slice-Cursor und ein ungenulltes _grid_off, obwohl es gerade denselben
+    // Einstieg vollzieht wie B. (snap_pitch_phase raeumt nebenbei auch As
+    // Onset-Gap-Ring leer -- gewollt: A steigt genau wie B gerade in STEP
+    // ein, und das Aufraeumen ist, was beide Decks dabei bekommen.) Das ist
+    // eine explizite Fallunterscheidung, keine Konsequenz der Aufrufreihenfolge:
+    // wuerde A trotzdem zuerst konsumiert und mit B als Referenz snappen,
+    // saehe B nur As bereits gesnappte (= Bs alte) Phase, und beide laufen am
+    // Ende auf Bs alter Phase zusammen -- die beiden tauschen dann bloss ihre
+    // Vorher-Phasen, statt dass A Referenz bleibt. Beide Flags werden in
+    // jedem Fall konsumiert (take_step_snap loescht sie). Im GRID-Modus
     // (SYNC an) snappt jedes Deck unabhaengig aufs Transport-Raster, da gibt
     // es diese Wechselwirkung nicht.
     const bool snap_a = pa.take_step_snap();
     const bool snap_b = pb.take_step_snap();
     if (_sync) {
-        if (snap_a) _snap_to_grid(a, pa, 0, b);
-        if (snap_b) _snap_to_grid(b, pb, 1, a);
+        if (snap_a) _snap_phase(a, pa, 0, b);
+        if (snap_b) _snap_phase(b, pb, 1, a);
     } else if (snap_a && snap_b) {
-        _snap_to_grid(b, pb, 1, a);   // A bleibt Referenz, B landet auf A
+        _snap_phase(a, pa, 0, a);   // A bleibt Referenz: eigene Phase als Ziel
+        _snap_phase(b, pb, 1, a);   // B landet auf A
     } else if (snap_a) {
-        _snap_to_grid(a, pa, 0, b);
+        _snap_phase(a, pa, 0, b);
     } else if (snap_b) {
-        _snap_to_grid(b, pb, 1, a);
+        _snap_phase(b, pb, 1, a);
     }
 
     // --- MORPH (equal-power, smoothed at control rate) ---
@@ -237,10 +248,14 @@ void Center::_rebase_grid(const SuperModulator& m, int i) {
 // Siehe die Deklaration in center.h. Der Offset wird ZUERST genullt: das Ziel
 // unten muss mit dem genullten Offset gerechnet werden, sonst landet der Snap
 // um genau den alten Offset daneben. In der freien Welt liest den Offset
-// niemand -- genullt wird er trotzdem, sonst zoege ein spaeter eingeschaltetes
-// SYNC einmal am Tempo.
-void Center::_snap_to_grid(SuperModulator& m, Part& p, int i,
-                           const SuperModulator& other) {
+// niemand -- genullt wird er trotzdem: _grid_servo rechnet
+// target = beats*cpb + off, ein genullter Offset ist deshalb die
+// fehlerfreie Wahl (ein spaeter eingeschaltetes SYNC beginnt bei Fehler 0);
+// ein rebase-artiger (nicht genullter) Offset waere die Variante, an der ein
+// spaeter eingeschaltetes SYNC zoege. Genullt wird trotzdem, weil das zu
+// reset_transport()'s "auf den Takt ausrichten"-Konvention passt (center.h:33).
+void Center::_snap_phase(SuperModulator& m, Part& p, int i,
+                          const SuperModulator& other) {
     _grid_off[i] = 0.f;
     _grid_cs[i]  = m.clock_scale();   // sonst rebased der naechste Tick sofort
 

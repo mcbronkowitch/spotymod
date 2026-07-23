@@ -558,3 +558,160 @@ TEST_CASE("center: when both decks switch in one tick, A is the reference") {
     CHECK(r.b.pitch_phase() == doctest::Approx(a_before).epsilon(1e-4));
 }
 
+// The Rig above proves the PHASE half of "A stays the reference" (its `a`/`b`
+// are not pa.mod()/pb.mod(), so this couldn't have caught a missing cursor
+// snap or a stale _grid_off -- see Finding 2). Wired-together rig so both
+// halves of the fix are pinned: A's own snap being dropped in the both-
+// flipped branch would leave A's sampler cursor at its boot default and
+// A's _grid_off non-zero, even though A "enters STEP" in lockstep with B.
+TEST_CASE("center: when both decks switch in one tick, A also gets its own cursor snap") {
+    Center c; Part pa, pb;
+    c.init(48000.f, 123u); pa.init(48000.f, 1u); pb.init(48000.f, 2u);
+    pa.set_engine(ENGINE_SAMPLER); pb.set_engine(ENGINE_SAMPLER);
+    auto run = [&](int n) {
+        for (int k = 0; k < n; ++k) {
+            c.update(pa.mod(), pb.mod(), pa, pb);
+            for (int s = 0; s < Center::kCtrlInterval; ++s) { pa.mod().process(); pb.mod().process(); }
+        }
+    };
+    c.set_sync(false);
+    // Diverge the two free rates first -- otherwise A and B never separate
+    // and "B lands on A" can't be told apart from "nothing moved".
+    pa.mod().set_rate(0.2f); pb.mod().set_rate(0.8f);
+    run(40);
+    const float a_before = pa.mod().pitch_phase();
+    REQUIRE(pb.mod().pitch_phase() != doctest::Approx(a_before).epsilon(1e-3));
+
+    pa.set_step(true, 8); pb.set_step(true, 8);
+    pa.set_step(false, 8); pb.set_step(false, 8);
+    pa.set_step(true, 8); pb.set_step(true, 8);   // both flip in the same tick
+    c.update(pa.mod(), pb.mod(), pa, pb);
+
+    // Phase half (same rule as the Rig test above): A stays put, B lands on A.
+    CHECK(pa.mod().pitch_phase() == doctest::Approx(a_before).epsilon(1e-4));
+    CHECK(pb.mod().pitch_phase() == doctest::Approx(a_before).epsilon(1e-4));
+
+    // Cursor half: A's own snap must still have run (self-referenced, so its
+    // phase target trivially equals a_before) -- both decks land on the same
+    // slice slot, computed from a_before.
+    const int expect_slot = ModLane::step_index(a_before, pa.mod().pitch_steps());
+    CHECK(pa.sampler().test_cursor()    == expect_slot);
+    CHECK(pa.sampler().test_last_slot() == expect_slot);
+    CHECK(pb.sampler().test_cursor()    == expect_slot);
+    CHECK(pb.sampler().test_last_slot() == expect_slot);
+}
+
+// Every OTHER Center test's Rig passes standalone SuperModulator a/b that are
+// NOT pa.mod()/pb.mod() -- so set_step() on the Part never changes the
+// clock_scale of the modulator Center actually reads, and _rebase_grid's own
+// "cs changed" branch never fires anywhere in the suite (steps=8 also keeps
+// clock_scale at 1, same as FLOW, so even the pre-existing "live STEPS turn"
+// tests using r.a directly never exercised a change THROUGH _snap_phase's
+// neighbourhood). Wired-together rig here (pa.mod() IS the modulator Center
+// sees, matching instrument.cpp:74) with steps=12 (clock_scale 8/12 != 1) so
+// clock_scale genuinely moves in the same tick a snap fires.
+TEST_CASE("center: FLOW->STEP snap with steps=12 makes clock_scale genuinely move") {
+    Center c; Part pa, pb;
+    c.init(48000.f, 123u); pa.init(48000.f, 1u); pb.init(48000.f, 2u);
+    auto run = [&](int n) {
+        for (int k = 0; k < n; ++k) {
+            c.update(pa.mod(), pb.mod(), pa, pb);
+            for (int s = 0; s < Center::kCtrlInterval; ++s) { pa.mod().process(); pb.mod().process(); }
+        }
+    };
+    c.set_tempo_bpm(120.f);
+    pa.mod().set_tempo_bpm(120.f); pb.mod().set_tempo_bpm(120.f);
+    pa.mod().set_synced(true);     pb.mod().set_synced(true);
+    pa.mod().set_rate(0.5f);       pb.mod().set_rate(0.5f);
+    c.set_sync(true);
+    run(40);
+
+    pa.set_step(true, 12);
+    pa.set_step(false, 12);
+    run(10);
+
+    pa.set_step(true, 12);           // the genuine edge, and clock_scale really moves
+    c.update(pa.mod(), pb.mod(), pa, pb);
+
+    const float cpb = kDivisions[pa.mod().division()].cpb * pa.mod().clock_scale();
+    const double t  = c.transport().beats() * static_cast<double>(cpb);
+    const float tgt = static_cast<float>(t - std::floor(t));
+    CHECK(pa.mod().pitch_phase() == doctest::Approx(tgt).epsilon(1e-6));
+
+    // Keep running: if the servo's bookkeeping (_grid_cs) is broken, the
+    // deck should visibly stop tracking the grid target over time.
+    run(2000);
+    const double t2 = c.transport().beats() * static_cast<double>(cpb);
+    const float tgt2 = static_cast<float>(t2 - std::floor(t2));
+    float err = tgt2 - pa.mod().pitch_phase();
+    err -= std::floor(err + 0.5f);
+    CHECK(std::fabs(err) < 0.05f);
+
+    // A SECOND, snap-FREE clock_scale change (a live STEPS turn while already
+    // in STEP -- no flip, no take_step_snap()): this is the scenario that
+    // depends ENTIRELY on _rebase_grid's own _grid_cs bookkeeping, with no
+    // snap around to paper over a stale cache. With NO perturbation source, a
+    // self-cancelling recompute-every-tick offset (the bug) is externally
+    // indistinguishable from a correctly-fixed one -- both read as "no
+    // drift", since there is nothing to correct either way. So give the deck
+    // a genuine EVOLVE/MELO wander (set_variation, same tap as the couple/
+    // MELO test above) that the grid servo must actively fight: a
+    // correctly-fixed offset keeps the servo's error meaningful and pulls
+    // the wander back onto the SAME fixed-offset target it rebased to. A
+    // never-updated _grid_cs makes _rebase_grid recompute a fresh offset
+    // every tick that always exactly cancels the CURRENT (already-wandered)
+    // phase, so the servo's error is trivially 0 forever and the wander is
+    // never corrected -- the deck free-wanders away from the rebased target.
+    pa.set_step(true, 16);           // still ON: no flip, but clock_scale moves again
+    c.update(pa.mod(), pb.mod(), pa, pb);   // the rebase tick: fixes (or should fix) _grid_cs
+    // The offset _rebase_grid computed (or should have locked in) on that
+    // tick, reconstructed the same way _rebase_grid itself computes it.
+    const float cpb3 = kDivisions[pa.mod().division()].cpb * pa.mod().clock_scale();
+    const double t_fix = c.transport().beats() * static_cast<double>(cpb3);
+    float off_fixed = pa.mod().pitch_phase() - static_cast<float>(t_fix - std::floor(t_fix));
+    off_fixed -= std::floor(off_fixed);
+
+    pa.mod().set_variation(0.9f);    // MELO hard, same tap as the couple/MELO test
+    for (int s = 0; s < Center::kCtrlInterval; ++s) { pa.mod().process(); pb.mod().process(); }
+    for (int k = 0; k < 3000; ++k) run(1);   // ~6 s of wander the servo must fight
+
+    const double t2b = c.transport().beats() * static_cast<double>(cpb3)
+                       + static_cast<double>(off_fixed);
+    const float tgt2b = static_cast<float>(t2b - std::floor(t2b));
+    float err2 = tgt2b - pa.mod().pitch_phase();
+    err2 -= std::floor(err2 + 0.5f);
+    CHECK(std::fabs(err2) < 0.05f);   // still locked onto the offset the turn rebased to
+}
+
+// The Rig's parts default to ENGINE_SYNTH, where snap_sampler_cursor is a
+// no-op -- so nothing in the suite pins the Center->Part->sampler wiring.
+// ENGINE_SAMPLER selected here so the snap actually reaches the cursor.
+TEST_CASE("center: the FLOW->STEP snap reaches the sampler's slice cursor") {
+    Center c; Part pa, pb;
+    c.init(48000.f, 123u); pa.init(48000.f, 1u); pb.init(48000.f, 2u);
+    pa.set_engine(ENGINE_SAMPLER);
+    auto run = [&](int n) {
+        for (int k = 0; k < n; ++k) {
+            c.update(pa.mod(), pb.mod(), pa, pb);
+            for (int s = 0; s < Center::kCtrlInterval; ++s) { pa.mod().process(); pb.mod().process(); }
+        }
+    };
+    c.set_sync(true);
+    run(40);
+
+    pa.set_step(true, 8);
+    pa.set_step(false, 8);
+    run(10);
+
+    pa.set_step(true, 8);
+    c.update(pa.mod(), pb.mod(), pa, pb);
+
+    const float cpb = kDivisions[pa.mod().division()].cpb * pa.mod().clock_scale();
+    const double t  = c.transport().beats() * static_cast<double>(cpb);
+    const float tgt = static_cast<float>(t - std::floor(t));
+    const int expect_slot = ModLane::step_index(tgt, pa.mod().pitch_steps());
+
+    CHECK(pa.sampler().test_cursor()    == expect_slot);
+    CHECK(pa.sampler().test_last_slot() == expect_slot);
+}
+
