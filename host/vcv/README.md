@@ -63,24 +63,26 @@ controls, not a new set of them — only what turning the knob does:
 
 | Control | Label | Sampler meaning | Range |
 |---|---|---|---|
-| MELODY | `MELO` / `SCAN` | tape-head advance | centre is a true dead zone; exponential out to real time at three-quarters of travel, then linear up to 8×; sign is direction |
+| MELODY | `MELO` / `SCAN` | tape-head advance | centre is a true dead zone; linear out to real time at three-quarters of travel, then linear up to 4×; sign is direction |
 | DENSITY | `DENS` | grain overlap | 1…8, continuous; the MOTION lane modulates around it |
 | SUB | `SUB` / `LEN` | grain length | 1 ms…42 s |
 | DETUNE | `DTUN` / `ORG` | read position in the material | full material length |
 
 SCAN's dead zone is exact and deliberate: a frozen tape head has to stay
 frozen even through knob noise, so nothing moves for the first couple of
-percent off centre. From there it ramps in gently, and real time lands on a
-fixed, refindable knob position three-quarters of the way out rather than
-somewhere you have to hunt for — the last quarter is the steepest stretch of
-the curve, carrying the head up to eight times real time in either direction.
+percent off centre. From there it ramps in gently and linearly, and real
+time lands on a fixed, refindable knob position three-quarters of the way
+out rather than somewhere you have to hunt for — the last quarter is the
+steepest stretch of the curve, carrying the head up to four times real time
+in either direction.
 
 **SCAN springt beim ENG-Flip sofort auf die Knopfposition — offene Frage
 (F-07, Review 2026-07-22).** MELO trägt im Synth VARIATION und im Sampler
 SCAN, und die Init-Werte stehen für VARIATION an den Extremen (−0.728 und
-−1.0). Als SCAN gelesen sind das −0.81× und −8× Realtime rückwärts: der
+−1.0). Als SCAN gelesen sind das −0.97× und −4× Realtime rückwärts: der
 erste Flip auf Sampler lädt die Factory-Drone und schickt den Lesekopf im
-selben Control-Tick rückwärts los, ohne dass jemand etwas angefasst hat.
+selben Control-Tick rückwärts los, praktisch schon bei Realtime, ohne dass
+jemand etwas angefasst hat.
 
 Das ist als Fehler gemeldet worden, ist aber genau das Verhalten, das
 "Known limitations" weiter unten bewusst wählt: Knopfposition gilt über den
@@ -92,10 +94,14 @@ Entscheidung liegt beim Autor des Instruments, nicht in der Engine.
 
 Mit derselben Änderung ging eine stille Last weg (K-03): `sampler_scan()`
 wurde für **beide** Decks aufgerufen, auch für ein Synth-Deck, und
-`scan_rate()` enthält im Exponentialast ein `std::pow`. Bei `ctrlDiv = 16`
+`scan_rate()` enthielt im unteren Zweig ein `std::pow`. Bei `ctrlDiv = 16`
 waren das bis zu 6000 `pow`-Aufrufe pro Sekunde im Audio-Callback für eine
-Engine, die niemand hört. Der Aufruf hängt jetzt an `samplerPart`, wie SUB
-und DTUN es schon taten.
+Engine, die niemand hört. Der Aufruf hängt seither an `samplerPart`, wie SUB
+und DTUN es schon taten. Die untere Zone ist inzwischen linear (spec
+2026-07-23 sampler-performance-fixes), also gibt es dieses `pow` gar nicht
+mehr — das Gate bleibt trotzdem, jetzt einfach aus Konsistenz mit SUB und
+DTUN: ein Synth-Deck liest `_scan_rate` nie, und hineinzuschreiben wäre nur
+Arbeit ohne Wirkung.
 
 **NEW and TRIG both fire "new grain now" in the Sampler:** the tape head
 snaps back to ORGANIZE's position and a fresh grain spawns immediately. This

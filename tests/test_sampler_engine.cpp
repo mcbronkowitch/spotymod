@@ -1696,7 +1696,7 @@ TEST_CASE("sampler: lowering overlap only loosens the pool ceiling, never tighte
 }
 
 
-TEST_CASE("sampler: the SCAN curve has a dead centre, hits 1.0x at the knee, tops at 8x") {
+TEST_CASE("sampler: the SCAN curve has a dead centre, hits 1.0x at the knee, tops at 4x") {
     using namespace sampler_cfg;
     // Dead zone: not "small", exactly zero. A creeping playhead at knob
     // centre would make the frozen state unreachable.
@@ -1912,7 +1912,7 @@ TEST_CASE("sampler: SCAN slower than realtime falls behind on its own during rec
     // close, so the clamp stays slack throughout.
     Rig g(0);
     g.e.set_flow(true);
-    // Comfortably inside the sub-knee exponential segment, so scan_rate() is
+    // Comfortably inside the sub-knee linear segment, so scan_rate() is
     // small and positive -- confirmed indirectly by the test itself finding a
     // growing gap; test_scan_rate() pins the curve shape separately.
     g.e.set_scan(sampler_cfg::kScanDead + 0.05f);
@@ -3460,4 +3460,30 @@ TEST_CASE("sampler: STEP entry snap survives the first fire after it") {
     g.fire(5);                          // second fire: cursor advances normally
     g.render(64);
     CHECK(g.e.last_slice() == 4);
+}
+
+// Die untere Zone ist seit spec 2026-07-23 (sampler-performance-fixes)
+// LINEAR, nicht mehr exponentiell: exponentiell verbrachte sie den halben
+// Reglerweg unter 0.1x (bei halb aufgedreht 0.09x -- der Kopf kroch), und der
+// Sprung ins oberste Viertel wirkte dadurch doppelt hart.
+//
+// Geprueft wird die Mittelwert-Eigenschaft, denn genau die unterscheidet eine
+// Gerade von jeder gebogenen Kurve: der Wert in der Mitte zweier Positionen
+// ist der Mittelwert ihrer Raten. Ohne diesen Fall haelt nichts die Linearitaet
+// fest, und die naechste Kurvenidee kippt sie unbemerkt zurueck.
+TEST_CASE("sampler: the SCAN curve is linear below the knee") {
+    using namespace sampler_cfg;
+    for (int i = 1; i < 8; ++i) {
+        const float lo = kScanDead + (kScanKnee - kScanDead) * (float(i) - 1.f) / 8.f;
+        const float hi = kScanDead + (kScanKnee - kScanDead) * (float(i) + 1.f) / 8.f;
+        const float mid = 0.5f * (lo + hi);
+        INFO("i=" << i << " lo=" << lo << " hi=" << hi);
+        CHECK(test_scan_rate(mid)
+              == doctest::Approx(0.5f * (test_scan_rate(lo) + test_scan_rate(hi)))
+                     .epsilon(1e-3));
+    }
+
+    // Bei halb aufgedreht laeuft der Kopf jetzt hoerbar -- die Zahl, um die es
+    // in der Spec geht. Frueher: 0.09x.
+    CHECK(test_scan_rate(0.5f) > 0.5f);
 }

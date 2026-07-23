@@ -51,7 +51,7 @@ inline float scan_rate(float n) {
     const float sign = n < 0.f ? -1.f : 1.f;
     if (a <= kScanKnee) {
         const float t = (a - kScanDead) / (kScanKnee - kScanDead);
-        return sign * kScanMinRate * std::pow(1.f / kScanMinRate, t);
+        return sign * lerpf(kScanMinRate, 1.f, t);
     }
     const float t = (a - kScanKnee) / (1.f - kScanKnee);
     return sign * lerpf(1.f, kScanMaxRate, t);

@@ -229,22 +229,33 @@ constexpr float  kGrainLenCeil = 4194304.f;   // 2^22
 constexpr float  kOverlapMin = 1.f;
 constexpr float  kOverlapMax = 8.f;
 
-// SCAN: the running playhead (spec 2026-07-21 morphagene-controls). The knob
-// is bipolar; the sign is the direction. The curve is piecewise, mirroring
-// the SIZE curve's shape:
+// SCAN: the running playhead (spec 2026-07-21 morphagene-controls, curve
+// updated 2026-07-23 sampler-performance-fixes). The knob is bipolar; the
+// sign is the direction. The curve is piecewise:
 //   |n| < kScanDead          -> exactly 0. A real dead zone, so a frozen head
 //                               stays frozen under knob noise.
-//   kScanDead .. kScanKnee   -> exponential, kScanMinRate .. 1.0x realtime.
+//   kScanDead .. kScanKnee   -> linear, kScanMinRate .. 1.0x realtime.
 //   above kScanKnee          -> linear, 1.0x .. kScanMaxRate.
 // Realtime (1.0x) therefore lands on a fixed, findable knob position instead
-// of somewhere in the sweep. The top quarter carries the factor 8 and is the
-// steepest stretch of the curve -- if it plays too nervously, the fix is an
-// exponential top segment, not a smaller range (spec "Nicht in diesem
-// Entwurf" / listening notes).
+// of somewhere in the sweep -- that part of the design is unchanged and
+// still earns its keep: three-quarters of travel is a knob position you can
+// find by feel, and a frozen head stays frozen right up against it.
+//
+// The lower zone starts its ramp at kScanMinRate, not at 0: starting at 0
+// would blur the dead zone's edge, because the head would sit at
+// practically-zero rate for a stretch right past it anyway, and the knob
+// would feel like it had two dead zones instead of one.
+//
+// kScanMaxRate was 8.f; this spec pulls it back to 4.f, a deliberate walkback
+// of that earlier decision, not a drift. Listening to the knob showed the
+// top quarter -- the steepest stretch under the old exponential lower zone
+// and still the fastest-moving stretch of the curve -- was the part of the
+// travel that felt worst to play; halving the ceiling is the fix, not a
+// smaller range having crept in by accident. Do not "restore" it to 8.f.
 constexpr float  kScanDead    = 0.02f;
 constexpr float  kScanKnee    = 0.75f;
 constexpr float  kScanMinRate = 0.001f;
-constexpr float  kScanMaxRate = 8.f;
+constexpr float  kScanMaxRate = 4.f;
 
 // SCAN's fixed lag behind the write head while a recording is running
 // (spec 2026-07-21 morphagene-controls). Folding the playhead modulo content

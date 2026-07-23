@@ -458,25 +458,34 @@ struct Spotymod : Module {
             const bool samplerPart = eng2 && !smp[p].testTone;
             inst.sampler_overlap(p, pp(DENSITY_A, p));
 
-            // SCAN nur fuer Sampler-Parts (K-03). Das ist nicht bloss
-            // Kosmetik: set_scan -> scan_rate enthaelt im Exponentialast ein
-            // std::pow, und bei ctrlDiv = 16 waren das bis zu 6000 Aufrufe/s
-            // im Audio-Callback fuer eine Engine, die niemand hoert.
+            // SCAN nur fuer Sampler-Parts (K-03). Der urspruengliche Grund --
+            // set_scan -> scan_rate enthielt im unteren Zweig ein std::pow,
+            // und bei ctrlDiv = 16 waren das bis zu 6000 Aufrufe/s im
+            // Audio-Callback fuer eine Engine, die niemand hoert -- ist mit
+            // der linearen Kurve (spec 2026-07-23 sampler-performance-fixes)
+            // weg: scan_rate() ruft kein pow mehr auf. Das Gate bleibt
+            // trotzdem, jetzt aus demselben Grund wie bei SUB/DTUN wenige
+            // Zeilen weiter unten: SCAN treibt ein sampler-eigenes Stueck
+            // Zustand (_scan_rate), das ein Synth-Deck nie liest, und es dort
+            // unbedingt zu schreiben waere nur Arbeit ohne Wirkung. Das ist
+            // ein Konsistenz-, kein Kosten-Argument mehr.
             //
             // Kein Soft-Takeover hier, und das ist eine Entscheidung, keine
             // Luecke. Der Review vom 2026-07-22 meldete als F-07, dass der
             // erste ENG-Flip den Lesekopf sofort losrasen laesst: MELO traegt
             // im Synth VARIATION, steht im Init-Patch an den Extremen
-            // (-0.728 und -1.0), und als SCAN gelesen sind das -0.81x und
-            // -8x Realtime rueckwaerts. Das stimmt -- aber es ist genau das
-            // Verhalten, das README.md unter "Known limitations" ausdruecklich
-            // waehlt: die Knopfposition gilt ueber den Engine-Wechsel hinweg,
-            // ohne getrenntes Gedaechtnis und ohne Soft-Takeover, weil die
-            // Hardware kein Soft-Takeover hat und beide Seiten dasselbe tun
-            // sollen. Eine Sperre einzubauen hiesse, diese Linie zu verlassen
-            // -- und sie ueber Patch-Laden hinweg dicht zu bekommen verlangt
-            // genau das persistente Gedaechtnis, das dort ausgeschlossen ist.
-            // Offen fuer den Autor des Instruments, nicht fuer die Engine.
+            // (-0.728 und -1.0), und als SCAN gelesen sind das jetzt -0.97x
+            // und -4x Realtime rueckwaerts -- mit dem neuen Maximum naeher an
+            // Realtime, nicht weiter davon weg. Das stimmt -- aber es ist
+            // genau das Verhalten, das README.md unter "Known limitations"
+            // ausdruecklich waehlt: die Knopfposition gilt ueber den
+            // Engine-Wechsel hinweg, ohne getrenntes Gedaechtnis und ohne
+            // Soft-Takeover, weil die Hardware kein Soft-Takeover hat und
+            // beide Seiten dasselbe tun sollen. Eine Sperre einzubauen hiesse,
+            // diese Linie zu verlassen -- und sie ueber Patch-Laden hinweg
+            // dicht zu bekommen verlangt genau das persistente Gedaechtnis,
+            // das dort ausgeschlossen ist. Offen fuer den Autor des
+            // Instruments, nicht fuer die Engine.
             if (samplerPart) inst.sampler_scan(p, pp(MELODY_A, p));
 
             // GENE SIZE and ORGANIZE ride the lane BASES, so they must be
