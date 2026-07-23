@@ -511,6 +511,39 @@ TEST_CASE("instrument M4.8: mix 0.5 sits at equal power (both gains cos(pi/4))")
     CHECK(std::sqrt(accD / acc0) == doctest::Approx(g).epsilon(0.02));
 }
 
+TEST_CASE("instrument: reverb mix is per-deck (A wet-kills-dry while B stays dry)") {
+    // Sends muted -> the shared room is silent, so we observe the DRY path only.
+    // With A mix 1 (dry gain 0) and B mix 0 (dry gain 1) held SIMULTANEOUSLY:
+    //   morph 0 (only A audible)  -> A's dry is killed  -> exact silence
+    //   morph 1 (only B audible)  -> B's dry survives   -> non-zero energy
+    // No single shared mix value could satisfy both at once (1 kills both, 0
+    // keeps both), so this fails on the old shared-mix engine and passes on the
+    // per-deck one.
+    auto dry_energy = [](float morph) {
+        Instrument fx;
+        fx.init(48000.f, test_fx_mem());
+        for (int p = 0; p < PART_COUNT; ++p)
+            fx.set_fx_target_base(p, FXT_REV_SEND, 0.f);   // room stays silent
+        fx.set_morph(morph);
+        fx.set_reverb_mix(PART_A, 1.f);   // A fully wet -> A dry gone
+        fx.set_reverb_mix(PART_B, 0.f);   // B fully dry
+        float l = 0.f, r = 0.f;
+        // Warm-up: Center's own MORPH smoother (30 ms, control-rate, untouched
+        // by this task) boots at 0.5 and glides to the target over ~200 ms;
+        // settle it before measuring so only the per-deck reverb-mix gains
+        // (which snap instantly, see _rev_primed) are under test.
+        for (int i = 0; i < 20000; ++i) fx.process(nullptr, nullptr, &l, &r, 1);
+        double acc = 0.0;
+        for (int i = 0; i < 48000; ++i) {
+            fx.process(nullptr, nullptr, &l, &r, 1);
+            acc += (double)l * l;
+        }
+        return acc;
+    };
+    CHECK(dry_energy(0.f) == 0.0);   // morph 0: A's dry killed by an exact-0 gain
+    CHECK(dry_energy(1.f) > 0.0);    // morph 1: B's dry survives untouched
+}
+
 TEST_CASE("instrument M4.8: hard MIX jumps are smoothed (no zipper)") {
     static float echoZ[PART_COUNT][2][Flux::kMaxSamples];
     static AmbientReverb rvZ;

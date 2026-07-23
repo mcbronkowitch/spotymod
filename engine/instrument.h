@@ -75,7 +75,10 @@ public:
     void set_reverb_diffusion(float n) { if (_reverb) _reverb->set_diffusion(n); }
     void set_reverb_smear(float n) { if (_reverb) _reverb->set_diffuser_mod_depth(n); }
     void set_reverb_mod(float n)   { if (_reverb) _reverb->set_mod_depth(n); }
-    void set_reverb_mix(float n);   // 0..1 equal-power dry/wet at the master join
+    // Per-deck equal-power reverb mix (spec 2026-07-23 per-deck-reverb-mix):
+    // one shared room, each deck's dry rides cos, its SEND rides sin.
+    void set_reverb_mix(int part, float n);   // 0..1, exact endpoints
+    void set_reverb_mix(float n);             // convenience: both decks
     void set_master_drive(float n) { _limiter.set_drive(n); }
     float fx_target_value(int p, int i) const { return _parts[p].fx_target_value(i); }
 
@@ -204,11 +207,13 @@ public:
 private:
     std::array<Part, PART_COUNT> _parts;
     AmbientReverb* _reverb = nullptr;
-    float   _rev_dry_target = 1.f;  // equal-power gain targets (exact endpoints)
-    float   _rev_wet_target = 0.f;
-    OnePole _rev_dry, _rev_wet;     // 10 ms glide at the master join
+    // Per-deck equal-power mix (spec 2026-07-23): dry rides cos, the wet SEND
+    // rides sin, one shared room. Indexed by PART_A / PART_B.
+    float   _rev_dry_target[PART_COUNT] = { 1.f, 1.f };  // exact endpoints
+    float   _rev_wet_target[PART_COUNT] = { 0.f, 0.f };
+    OnePole _rev_dry[PART_COUNT], _rev_wet[PART_COUNT];  // 10 ms glide per deck
     bool    _rev_primed = false;    // first process() snaps the mix gains
-    bool    _rev_asleep = false;    // MIX 0 gate: room cleared, process() skipped
+    bool    _rev_asleep = false;    // both decks dry: room cleared, process() skipped
     Limiter _limiter;
     Center _center;
     int    _ctrl_ctr = 0;    // counts down to the next control-rate Center::update

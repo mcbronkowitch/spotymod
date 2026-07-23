@@ -27,26 +27,33 @@ void Instrument::init(float sample_rate, const FxMem& mem) {
                         mem.echo[PART_B][0], mem.echo[PART_B][1],
                         mem.sampler_buf[PART_B], mem.sampler_frames);
     if (_reverb) _reverb->init(sample_rate);
-    _rev_dry.init(sample_rate, kMixSmoothS);
-    _rev_wet.init(sample_rate, kMixSmoothS);
+    for (int p = 0; p < PART_COUNT; ++p) {
+        _rev_dry[p].init(sample_rate, kMixSmoothS);
+        _rev_wet[p].init(sample_rate, kMixSmoothS);
+    }
     _rev_primed = false;
     _rev_asleep = false;
-    set_reverb_mix(kDefaultReverbMix);
+    set_reverb_mix(kDefaultReverbMix);   // convenience overload -> both decks
     _limiter.init();
     _center.init(sample_rate, 0x5ce47e12u);
     _ctrl_ctr = 0;
     set_tempo_bpm(_bpm);
 }
 
-void Instrument::set_reverb_mix(float n) {
+void Instrument::set_reverb_mix(int part, float n) {
     n = clampf(n, 0.f, 1.f);
-    if (n <= 0.f)      { _rev_dry_target = 1.f; _rev_wet_target = 0.f; }
-    else if (n >= 1.f) { _rev_dry_target = 0.f; _rev_wet_target = 1.f; }
+    if (n <= 0.f)      { _rev_dry_target[part] = 1.f; _rev_wet_target[part] = 0.f; }
+    else if (n >= 1.f) { _rev_dry_target[part] = 0.f; _rev_wet_target[part] = 1.f; }
     else {
-        _rev_dry_target = std::cos(n * kHalfPi);   // equal-power crossfade
-        _rev_wet_target = std::sin(n * kHalfPi);
+        _rev_dry_target[part] = std::cos(n * kHalfPi);   // equal-power crossfade
+        _rev_wet_target[part] = std::sin(n * kHalfPi);   // rides the SEND, not the return
     }
-    if (_rev_wet_target > 0.f) _rev_asleep = false;   // wake into the cleared room
+    if (_rev_wet_target[part] > 0.f) _rev_asleep = false;   // wake into the cleared room
+}
+
+void Instrument::set_reverb_mix(float n) {   // convenience: both decks together
+    set_reverb_mix(PART_A, n);
+    set_reverb_mix(PART_B, n);
 }
 
 void Instrument::set_tempo_bpm(float bpm) {
@@ -120,31 +127,43 @@ void Instrument::process(const float* inL, const float* inR,
 
         const float ga = _center.gain_a();
         const float gb = _center.gain_b();
-        float l = al * ga + bl * gb;          // MORPH: equal-power A<->B blend
+        float l = al * ga + bl * gb;          // MORPH blend (null-reverb path keeps this)
         float r = ar * ga + br * gb;
         if (_reverb) {
-            if (!_rev_primed) {              // snap a mix set before the first block
-                _rev_dry.reset(_rev_dry_target);
-                _rev_wet.reset(_rev_wet_target);
-                if (_rev_wet_target == 0.f) { _reverb->clear(); _rev_asleep = true; }
+            if (!_rev_primed) {              // snap the mix set before the first block
+                for (int p = 0; p < PART_COUNT; ++p) {
+                    _rev_dry[p].reset(_rev_dry_target[p]);
+                    _rev_wet[p].reset(_rev_wet_target[p]);
+                }
+                if (_rev_wet_target[PART_A] == 0.f && _rev_wet_target[PART_B] == 0.f) {
+                    _reverb->clear(); _rev_asleep = true;
+                }
                 _rev_primed = true;
             }
-            const float dg = _rev_dry.process(_rev_dry_target);
-            const float wg = _rev_wet.process(_rev_wet_target);
+            const float dga = _rev_dry[PART_A].process(_rev_dry_target[PART_A]);
+            const float dgb = _rev_dry[PART_B].process(_rev_dry_target[PART_B]);
+            const float wga = _rev_wet[PART_A].process(_rev_wet_target[PART_A]);
+            const float wgb = _rev_wet[PART_B].process(_rev_wet_target[PART_B]);
+            // Per-deck dry: each deck's dry gain rides its own cos before the
+            // MORPH sum, so one deck can be wet-only while the other stays dry.
+            l = al * ga * dga + bl * gb * dgb;
+            r = ar * ga * dga + br * gb * dgb;
             if (!_rev_asleep) {
-                // MORPH fades dry AND send together (M4 supersedes the M1.6
-                // pre-morph-send rule): a fully morphed-away part injects no new
-                // reverb; only its already-committed tail rings out.
+                // Per-deck send: the equal-power wet curve (sin) rides the SEND
+                // -- one shared room has only one return. MORPH fades the send
+                // too (M4 rule): a morphed-away deck injects no new reverb.
                 float wl, wr;
-                _reverb->process(asl * ga + bsl * gb, asr * ga + bsr * gb, wl, wr);
-                l = l * dg + wl * wg;
-                r = r * dg + wr * wg;
-                if (wg == 0.f && dg == 1.f && _rev_wet_target == 0.f) {
+                _reverb->process(asl * ga * wga + bsl * gb * wgb,
+                                 asr * ga * wga + bsr * gb * wgb, wl, wr);
+                l += wl;   // wl already carries kWetGain; the return joins at unity
+                r += wr;
+                if (wga == 0.f && wgb == 0.f &&
+                    _rev_wet_target[PART_A] == 0.f && _rev_wet_target[PART_B] == 0.f) {
                     _reverb->clear();        // clear-on-sleep: waking starts empty
-                    _rev_asleep = true;      // Oliverb CPU is off until MIX reopens
+                    _rev_asleep = true;      // Oliverb CPU is off until a MIX reopens
                 }
             }
-            // asleep: dry passes bit-exact (dg has snapped to 1), sends discarded
+            // asleep: dga/dgb have snapped to 1 (both decks mix 0), so l/r stay full dry
         }
         _limiter.process(l, r);   // master ceiling (M6 engine delta 3, delivered early)
         outL[i] = l;
