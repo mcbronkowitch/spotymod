@@ -161,7 +161,8 @@ def orbit_label(cx, cy, ang_deg, mir):
 # VOICE and FX sit side by side, PLAY spans the full part width below them.
 VOICE_X  = [9.5, 22.5, 35.5]        # ATK DEC FILT / RES SUB DTUN
 ROW_V1, ROW_V2 = 77.3, 89.4
-FX_TOP   = [49.5, 62.75, 76.0]      # FRATE FLUX FFB -- the delay cluster
+# 4-wide, aligned to FX_BOT so the FX box's two rows fluch: FRATE FLUX FFB ROOM.
+FX_TOP   = [49.5, 58.333, 67.167, 76.0]   # FRATE FLUX FFB | ROOM (per-deck reverb mix)
 # FX bottom row went from two slots to four (spec 2026-07-18 dust-grain-cloud):
 # GRIT COMP DUST ROT. Pitch 8.833 mm against a 3.0 mm knob radius, so the
 # 6.0 mm minimum in test_no_overlap still has room to spare.
@@ -315,7 +316,6 @@ SHARED = [
     # ROOM: three rows in its own box, bottom edge flush with the PLAY boxes.
     Ctl("REV_SIZE",  SMKNOB, L,  ROW_ROOM1, "SIZE"),
     Ctl("REV_DECAY", SMKNOB, R,  ROW_ROOM1, "DECAY"),
-    Ctl("REV_MIX",   SMKNOB, CX, ROW_ROOM1, "MIX"),
     Ctl("REV_TONE",  SMKNOB, L,  ROW_ROOM2, "TONE"),
     Ctl("REV_DIFF",  SMKNOB, R,  ROW_ROOM2, "DIFF"),
     Ctl("REV_SMEAR", SMKNOB, L,  ROW_ROOM3, "SMEAR"),
@@ -374,6 +374,15 @@ PARAMS = PART_A + PART_B + SHARED + [
     # already-saved .vcv keeps every param id it has.
     Ctl("REC_A", LATCH, REC_X,     PLAY_Y, "REC"),
     Ctl("REC_B", LATCH, W - REC_X, PLAY_Y, "REC"),
+    # Per-deck reverb mix (spec 2026-07-23 per-deck-reverb-mix). Appended LAST
+    # like FILT/FLUXRATE/COLOR/DUST/REC so PART_STRIDE stays 23 and no id before
+    # them moves. They fill the FX top row's 4th slot -- FRATE.FLUX.FFB.ROOM --
+    # aligned to the FX bottom row. Label "ROOM" (not "MIX": FLUX beside it is
+    # already the delay mix). The old shared centre REV_MIX is removed from
+    # SHARED; its id and every id after it shift by one (accepted: old .vcv
+    # patches load shifted reverb/CHOKE/tail params).
+    Ctl("REV_MIX_A", SMKNOB, FX_TOP[3],     ROW_V1, "ROOM"),
+    Ctl("REV_MIX_B", SMKNOB, W - FX_TOP[3], ROW_V1, "ROOM"),
 ]
 
 # --- lights --------------------------------------------------------------------

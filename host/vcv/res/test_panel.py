@@ -44,11 +44,11 @@ PARAM_ORDER = [
     'FLUX_B', 'GRIT_B', 'COMP_B', 'STEPS_B', 'ENGINE_B', 'GRITMODE_B',
     'STEP_B', 'PRINCIPLE_B', 'NEWPHRASE_B', 'TRIGGER_B',
     'MORPH', 'SYNC', 'TEMPO', 'COUPLE', 'SCALE', 'DRIFT', 'SPOT',
-    'MASTER_DRIVE', 'SETTLE', 'REV_SIZE', 'REV_DECAY', 'REV_MIX', 'REV_TONE',
+    'MASTER_DRIVE', 'SETTLE', 'REV_SIZE', 'REV_DECAY', 'REV_TONE',
     'REV_DIFF', 'REV_SMEAR', 'REV_MOD', 'CHOKE', 'FILT_A', 'FILT_B', 'TIDE',
     'FLUXRATE_A', 'FLUXRATE_B', 'FLUXFB_A', 'FLUXFB_B', 'COLOR_A', 'COLOR_B',
     'DUST_A', 'DUST_B', 'ROT_A', 'ROT_B',
-    'REC_A', 'REC_B',
+    'REC_A', 'REC_B', 'REV_MIX_A', 'REV_MIX_B',
 ]
 INPUT_ORDER = ['IN_L', 'IN_R', 'CLOCK', 'RESET']
 OUTPUT_ORDER = ['OUT_L', 'OUT_R', 'PITCH_A', 'GATE_A', 'PITCH_B', 'GATE_B']
@@ -107,6 +107,23 @@ def test_rec_params():
     for e in ("REC_A", "REC_B"):
         check(h.count(f"{{{e}, WK_LATCH,") == 1,
               f"{e} is not WK_LATCH in the generated header")
+
+
+def test_reverb_mix_params():
+    """REV_MIX_A/B are appended (not templated) so PART_STRIDE stays 23, and
+    they carry the 'ROOM' label as the FX top row's 4th slot -- the shared
+    centre REV_MIX is gone."""
+    check(g.PART_STRIDE == 23, "PART_STRIDE must stay 23")
+    ids = {c.enum: i for i, c in enumerate(g.PARAMS)}
+    check('REV_MIX' not in ids, "the shared centre REV_MIX must be removed")
+    for e in ("REV_MIX_A", "REV_MIX_B"):
+        check(e in ids, f"{e} missing")
+        check(ids[e] >= 2 * g.PART_STRIDE, f"{e} must be appended, not templated")
+        check(ctl(e).label == "ROOM", f"{e} label must be 'ROOM'")
+    h = g.header()
+    for e in ("REV_MIX_A", "REV_MIX_B"):
+        check(h.count(f"{{{e}, WK_SMKNOB,") == 1,
+              f"{e} is not WK_SMKNOB in the generated header")
 
 
 def test_no_overlap():
@@ -239,7 +256,8 @@ def test_small_knobs_have_no_collar():
 LOWER_A = {   # enum -> (x, y)   part A; part B is W - x
     'ATTACK_A': (9.50, 77.30), 'DECAY_A': (22.50, 77.30), 'FILT_A': (35.50, 77.30),
     'RES_A': (9.50, 89.40), 'SUB_A': (22.50, 89.40), 'DETUNE_A': (35.50, 89.40),
-    'FLUXRATE_A': (49.50, 77.30), 'FLUX_A': (62.75, 77.30), 'FLUXFB_A': (76.00, 77.30),
+    'FLUXRATE_A': (49.50, 77.30), 'FLUX_A': (58.333, 77.30), 'FLUXFB_A': (67.167, 77.30),
+    'REV_MIX_A': (76.00, 77.30),
     'GRIT_A': (49.50, 89.40), 'COMP_A': (58.333, 89.40),
     'DUST_A': (67.167, 89.40), 'ROT_A': (76.00, 89.40),
     'ENGINE_A': (10.00, 103.60), 'GRITMODE_A': (17.50, 103.60),
@@ -302,7 +320,7 @@ CENTER = {   # enum -> (x offset from CX, y)
     'SYNC': (-11.5, 41.0), 'TEMPO': (0.0, 41.0), 'COUPLE': (11.5, 41.0),
     'SCALE': (-11.5, 56.5), 'CHOKE': (0.0, 56.5), 'DRIFT': (11.5, 56.5),
     'SPOT': (-11.5, 66.0), 'MASTER_DRIVE': (0.0, 66.0), 'SETTLE': (11.5, 66.0),
-    'REV_SIZE': (-11.5, 82.5), 'REV_MIX': (0.0, 82.5), 'REV_DECAY': (11.5, 82.5),
+    'REV_SIZE': (-11.5, 82.5), 'REV_DECAY': (11.5, 82.5),
     'REV_TONE': (-11.5, 93.0), 'REV_DIFF': (11.5, 93.0),
     'REV_SMEAR': (-11.5, 103.5), 'REV_MOD': (11.5, 103.5),
 }

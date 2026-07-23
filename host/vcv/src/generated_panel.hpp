@@ -70,7 +70,6 @@ enum ParamId {
     SETTLE,
     REV_SIZE,
     REV_DECAY,
-    REV_MIX,
     REV_TONE,
     REV_DIFF,
     REV_SMEAR,
@@ -91,6 +90,8 @@ enum ParamId {
     ROT_B,
     REC_A,
     REC_B,
+    REV_MIX_A,
+    REV_MIX_B,
     NUM_PARAMS
 };
 enum InputId {
@@ -130,7 +131,7 @@ static const PanelCtl kParamCtls[] = {
     {RES_A, WK_SMKNOB, {9.500f, 89.400f}, "RES", {9.500f, 95.000f}, 0, 1.90f, 0x171713, "RES"},
     {SUB_A, WK_SMKNOB, {22.500f, 89.400f}, "SUB", {22.460f, 95.000f}, 2, 1.90f, 0x171713, "SUB"},
     {DETUNE_A, WK_SMKNOB, {35.500f, 89.400f}, "DTUN", {36.030f, 95.000f}, 2, 1.90f, 0x171713, "DTUN"},
-    {FLUX_A, WK_SMKNOB, {62.750f, 77.300f}, "FLUX", {62.750f, 82.900f}, 0, 1.90f, 0x171713, "FLUX"},
+    {FLUX_A, WK_SMKNOB, {58.333f, 77.300f}, "FLUX", {58.333f, 82.900f}, 0, 1.90f, 0x171713, "FLUX"},
     {GRIT_A, WK_SMKNOB, {49.500f, 89.400f}, "GRIT", {49.500f, 95.000f}, 0, 1.90f, 0x171713, "GRIT"},
     {COMP_A, WK_SMKNOB, {58.333f, 89.400f}, "COMP", {58.333f, 95.000f}, 0, 1.90f, 0x171713, "COMP"},
     {STEPS_A, WK_KNOBI, {37.000f, 103.600f}, "STPS", {37.000f, 109.200f}, 0, 1.90f, 0x171713, "STPS"},
@@ -153,7 +154,7 @@ static const PanelCtl kParamCtls[] = {
     {RES_B, WK_SMKNOB, {203.860f, 89.400f}, "RES", {203.860f, 95.000f}, 0, 1.90f, 0x171713, "RES"},
     {SUB_B, WK_SMKNOB, {190.860f, 89.400f}, "SUB", {190.820f, 95.000f}, 2, 1.90f, 0x171713, "SUB"},
     {DETUNE_B, WK_SMKNOB, {177.860f, 89.400f}, "DTUN", {178.390f, 95.000f}, 2, 1.90f, 0x171713, "DTUN"},
-    {FLUX_B, WK_SMKNOB, {150.610f, 77.300f}, "FLUX", {150.610f, 82.900f}, 0, 1.90f, 0x171713, "FLUX"},
+    {FLUX_B, WK_SMKNOB, {155.027f, 77.300f}, "FLUX", {155.027f, 82.900f}, 0, 1.90f, 0x171713, "FLUX"},
     {GRIT_B, WK_SMKNOB, {163.860f, 89.400f}, "GRIT", {163.860f, 95.000f}, 0, 1.90f, 0x171713, "GRIT"},
     {COMP_B, WK_SMKNOB, {155.027f, 89.400f}, "COMP", {155.027f, 95.000f}, 0, 1.90f, 0x171713, "COMP"},
     {STEPS_B, WK_KNOBI, {176.360f, 103.600f}, "STPS", {176.360f, 109.200f}, 0, 1.90f, 0x171713, "STPS"},
@@ -174,7 +175,6 @@ static const PanelCtl kParamCtls[] = {
     {SETTLE, WK_SMBTN, {118.180f, 66.000f}, "SETL", {118.180f, 71.400f}, 0, 1.90f, 0x171713, "SETL"},
     {REV_SIZE, WK_SMKNOB, {95.180f, 82.500f}, "SIZE", {95.180f, 88.100f}, 0, 1.90f, 0x171713, "SIZE"},
     {REV_DECAY, WK_SMKNOB, {118.180f, 82.500f}, "DECAY", {118.180f, 88.100f}, 0, 1.90f, 0x171713, "DECAY"},
-    {REV_MIX, WK_SMKNOB, {106.680f, 82.500f}, "MIX", {106.680f, 88.100f}, 0, 1.90f, 0x171713, "MIX"},
     {REV_TONE, WK_SMKNOB, {95.180f, 93.000f}, "TONE", {95.180f, 98.600f}, 0, 1.90f, 0x171713, "TONE"},
     {REV_DIFF, WK_SMKNOB, {118.180f, 93.000f}, "DIFF", {118.180f, 98.600f}, 0, 1.90f, 0x171713, "DIFF"},
     {REV_SMEAR, WK_SMKNOB, {95.180f, 103.500f}, "SMEAR", {95.180f, 109.100f}, 0, 1.90f, 0x171713, "SMEAR"},
@@ -185,8 +185,8 @@ static const PanelCtl kParamCtls[] = {
     {TIDE, WK_SMKNOB, {117.680f, 21.500f}, "TIDE", {117.680f, 27.100f}, 0, 1.90f, 0x171713, "TIDE"},
     {FLUXRATE_A, WK_SMKNOB, {49.500f, 77.300f}, "FRATE", {49.500f, 82.900f}, 0, 1.90f, 0x171713, "FRATE"},
     {FLUXRATE_B, WK_SMKNOB, {163.860f, 77.300f}, "FRATE", {163.860f, 82.900f}, 0, 1.90f, 0x171713, "FRATE"},
-    {FLUXFB_A, WK_SMKNOB, {76.000f, 77.300f}, "FFB", {76.000f, 82.900f}, 0, 1.90f, 0x171713, "FFB"},
-    {FLUXFB_B, WK_SMKNOB, {137.360f, 77.300f}, "FFB", {137.360f, 82.900f}, 0, 1.90f, 0x171713, "FFB"},
+    {FLUXFB_A, WK_SMKNOB, {67.167f, 77.300f}, "FFB", {67.167f, 82.900f}, 0, 1.90f, 0x171713, "FFB"},
+    {FLUXFB_B, WK_SMKNOB, {146.193f, 77.300f}, "FFB", {146.193f, 82.900f}, 0, 1.90f, 0x171713, "FFB"},
     {COLOR_A, WK_BIGKNOB, {24.966f, 16.700f}, "COLOR", {20.017f, 10.801f}, 2, 1.90f, 0x171713, "COLOR"},
     {COLOR_B, WK_BIGKNOB, {188.394f, 16.700f}, "COLOR", {193.343f, 10.801f}, 1, 1.90f, 0x171713, "COLOR"},
     {DUST_A, WK_SMKNOB, {67.167f, 89.400f}, "DUST", {67.167f, 95.000f}, 0, 1.90f, 0x171713, "DUST"},
@@ -195,6 +195,8 @@ static const PanelCtl kParamCtls[] = {
     {ROT_B, WK_SMKNOB, {137.360f, 89.400f}, "ROT", {137.360f, 95.000f}, 0, 1.90f, 0x171713, "ROT"},
     {REC_A, WK_LATCH, {25.000f, 103.600f}, "REC", {25.000f, 109.000f}, 0, 1.90f, 0x171713, "REC"},
     {REC_B, WK_LATCH, {188.360f, 103.600f}, "REC", {188.360f, 109.000f}, 0, 1.90f, 0x171713, "REC"},
+    {REV_MIX_A, WK_SMKNOB, {76.000f, 77.300f}, "ROOM", {76.000f, 82.900f}, 0, 1.90f, 0x171713, "ROOM"},
+    {REV_MIX_B, WK_SMKNOB, {137.360f, 77.300f}, "ROOM", {137.360f, 82.900f}, 0, 1.90f, 0x171713, "ROOM"},
 };
 static const PanelCtl kInputCtls[] = {
     {IN_L, WK_IN, {55.250f, 118.400f}, "L", {55.250f, 124.800f}, 0, 1.80f, 0x171713, "IN L"},
