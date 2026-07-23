@@ -2954,3 +2954,49 @@ TEST_CASE("sampler STEP: golden vector -- the slice-groove draw order is locked"
         CHECK(got[i].len == golden[i].len);
     }
 }
+
+// --- Task 4: STEP pins the chord to one tone -----------------------------
+
+// COLOR means FEEL in STEP, not chord size (spec 2026-07-23). The chord
+// round-robin must be unreachable there: every fire plays the tone latched
+// at its own trigger, whatever COLOR says. Restore the `_chord_n <= 1`
+// guard and the four fires below start walking a chord instead.
+TEST_CASE("sampler STEP: the chord is pinned to the triggered tone at every COLOR") {
+    const float notes[4] = { 0.30f, 0.45f, 0.60f, 0.75f };
+    StepRig g;
+    for (int i = 0; i < 4; ++i) {
+        g.e.set_phrase_pos(i, 8, 1.f);
+        g.e.trigger_chord(notes, 4);       // a four-note chord: COLOR wide open
+        g.e.set_gate(true);
+        g.render(64);
+        // Every fire reads the chord's ROOT (notes[0], what trigger_chord
+        // latches as _burst_pitch), never notes[1..3] in rotation.
+        INFO("fire ", i);
+        CHECK(g.e.last_spawn_ratio() == doctest::Approx(spky::test_ratio_for(notes[0])).epsilon(1e-5));
+        g.e.set_gate(false);
+        g.render(6000);
+    }
+}
+
+// FLOW is the other half of the same contract: there the round-robin is the
+// point, and COLOR still builds a chord cloud. Four spawns must NOT all read
+// the same ratio.
+TEST_CASE("sampler FLOW: a chord still rotates through its notes") {
+    const float notes[4] = { 0.30f, 0.45f, 0.60f, 0.75f };
+    StepRig g;
+    g.e.set_flow(true);
+    g.e.set_chord(notes, 4);
+    g.render(96);
+    std::vector<float> ratios;
+    int last = g.e.spawn_count();
+    for (int i = 0; i < 48000 && ratios.size() < 4; ++i) {
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        if (g.e.spawn_count() != last) { last = g.e.spawn_count(); ratios.push_back(g.e.last_spawn_ratio()); }
+    }
+    REQUIRE(ratios.size() == 4);
+    bool all_same = true;
+    for (size_t i = 1; i < ratios.size(); ++i)
+        if (std::fabs(ratios[i] - ratios[0]) > 1e-5f) all_same = false;
+    CHECK_FALSE(all_same);
+}

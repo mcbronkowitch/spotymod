@@ -312,23 +312,22 @@ private:
     float _chord_ratio[kMaxChord] = {};
     int   _chord_n = 1;
     float _burst_pitch   = 0.5f;
-    // ratio_for(_burst_pitch), cached at the trigger that sets _burst_pitch.
-    // This is a SEPARATE cache from _chord_ratio[] on purpose: _chord_ratio[]
-    // tracks _chord[] live (refreshed every control tick, per _update_control),
-    // but _next_ratio's latched single-note branch must NOT track live pitch
-    // -- that is exactly what "latched" means for that branch (see the
-    // comment in _next_ratio). Reading _chord_ratio[0] there instead would
-    // replace the frozen trigger-time pitch with whatever _chord[0] has
-    // drifted to since (e.g. PITCH vibrato under a held STEP gate), which is
-    // a real behaviour change, not a refactor. Default 1.0 == ratio_for(0.5f),
-    // matching what _burst_pitch's own 0.5f default would produce, so a spawn
-    // that somehow precedes any trigger reads unity, not silence or NaN.
+    // ratio_for(_burst_pitch), cached at the trigger that sets _burst_pitch
+    // and persisting until the next trigger -- that is what "trigger latches
+    // the pitch for the burst" means. In STEP, _next_ratio reads this value
+    // unconditionally: the chord round-robin is unreachable there (spec
+    // 2026-07-23 feel-accents). This is a SEPARATE cache from _chord_ratio[]
+    // on purpose: _chord_ratio[] tracks _chord[] live (refreshed every
+    // control tick, per _update_control), but _burst_ratio must NOT --
+    // reading _chord_ratio[0] instead would replace the frozen trigger-time
+    // pitch with whatever _chord[0] has drifted to since (e.g. PITCH vibrato
+    // under a held STEP gate), which is a real behaviour change, not a
+    // refactor. Part::process calls trigger_chord BEFORE forwarding the
+    // gate, so set_gate must not touch this. Default 1.0 == ratio_for(0.5f),
+    // matching what _burst_pitch's own 0.5f default would produce, so a
+    // spawn that somehow precedes any trigger reads unity, not silence or
+    // NaN.
     float _burst_ratio   = 1.f;
-    // Set by trigger/trigger_chord, persists until the next trigger -- that
-    // is what "trigger latches the pitch for the burst" means. Part::process
-    // calls trigger_chord BEFORE forwarding the gate, so set_gate must not
-    // clear this or the latch would be wiped every time.
-    bool  _burst_latched = false;
     float _last_pos = 0.f;
     int   _spawn_count = 0;
     int   _dropped_spawns = 0;

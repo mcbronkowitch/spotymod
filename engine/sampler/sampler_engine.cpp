@@ -194,7 +194,6 @@ void SamplerEngine::load_sample(const float* l, const float* r, size_t frames) {
 void SamplerEngine::trigger(float pitch_norm) {
     _burst_pitch   = pitch_norm;
     _burst_ratio   = ratio_for(_burst_pitch);   // control-rate: std::pow is fine here
-    _burst_latched = true;
     _chord[0] = pitch_norm;
     _chord_n  = 1;
     _rr = 0;
@@ -208,7 +207,6 @@ void SamplerEngine::trigger_chord(const float* p, int n) {
     _chord_n       = n;
     _burst_pitch   = p[0];
     _burst_ratio   = ratio_for(_burst_pitch);   // control-rate: std::pow is fine here
-    _burst_latched = true;
     _rr = 0;
     if (!_flow) _fire_slice();
 }
@@ -314,34 +312,27 @@ void SamplerEngine::_release_all() {
 // following draws (timing, sub, detune) -- the sampler has no bit-identity
 // promise to keep here, and its listening scenarios pin no hashes.
 float SamplerEngine::_next_ratio() {
-    const bool latched = (!_flow && _burst_latched);
+    // STEP pins the chord to one tone (spec 2026-07-23 feel-accents). A fire
+    // spawns exactly ONE grain, so a round-robin there is an arpeggio, not a
+    // cloud -- and COLOR has to mean FEEL in STEP and nothing else, or the
+    // DENS overload this spec removes just moves to another knob.
+    //
+    // _burst_ratio is frozen at the trigger that set it, not _chord_ratio[0]
+    // -- see the comment at _burst_ratio's declaration for why these are two
+    // caches and not one. Its 1.0 default (== ratio_for(0.5f)) makes a spawn
+    // that somehow precedes any trigger read unity, not silence or NaN.
+    //
+    // Side effect worth recording: the deviation this function used to carry
+    // -- chords were NOT frozen at the gate, contrary to the texture-deck
+    // spec -- is settled rather than fixed. The chord path is simply not
+    // reachable in STEP any more.
+    if (!_flow) return _burst_ratio;
 
-    float ratio;
-    if (latched && _chord_n <= 1) {
-        // Frozen at the trigger that set it, not _chord_ratio[0] -- see the
-        // comment at _burst_ratio's declaration for why these are two caches
-        // and not one.
-        ratio = _burst_ratio;
-    } else {
-        // COLOR > 0 (_chord_n > 1) takes this branch even during a latched
-        // STEP burst, and reads _chord_ratio[] live rather than a value
-        // frozen at trigger time. Part::_control_tick refreshes _chord[]
-        // (and _update_control refreshes _chord_ratio[] from it) every 96
-        // samples, so the note set a round-robin burst is drawing from can
-        // change mid-burst if the composed chord changes underneath it. The
-        // spec (sampler-texture-deck-design.md) says trigger "latches the
-        // pitch (or chord set) for the burst" -- for chords (COLOR > 0) the
-        // current code does not do that; only the single-note path above
-        // (_chord_n <= 1) is actually latched. This is a known deviation,
-        // not a bug to silently fix: whether a burst should freeze its whole
-        // chord set at the gate edge is a musical call for the instrument's
-        // author, not an engine-layer decision.
-        const int idx = _rr % _chord_n;   // capture before _rr advances
-        _rr = (_rr + 1) % _chord_n;
-        ratio = _chord_ratio[idx];
-    }
-
-    return ratio;
+    // FLOW: the round-robin IS the chord cloud, and COLOR still sizes it.
+    // Reads _chord_ratio[] live, refreshed every control tick.
+    const int idx = _rr % _chord_n;   // capture before _rr advances
+    _rr = (_rr + 1) % _chord_n;
+    return _chord_ratio[idx];
 }
 
 float SamplerEngine::_next_interval() const {
@@ -470,9 +461,10 @@ void SamplerEngine::_update_control() {
     // Chord ratios, precomputed at control rate. _chord[] is refreshed by
     // Part::_control_tick on this same 96-sample tick, so this cache is
     // never stale by more than one tick -- the same freshness the chord
-    // itself has. Feeds only _next_ratio's round-robin (COLOR > 0) branch;
-    // the latched single-note branch has its own cache, _burst_ratio, set at
-    // trigger time -- see the comment at _burst_ratio's declaration.
+    // itself has. Feeds only FLOW's read of _next_ratio's round-robin
+    // branch; STEP never reaches it -- STEP reads its own cache,
+    // _burst_ratio, set at trigger time and returned unconditionally -- see
+    // the comment at _burst_ratio's declaration.
     const int n_notes = _chord_n > 0 ? _chord_n : 1;
     for (int i = 0; i < n_notes; ++i) _chord_ratio[i] = ratio_for(_chord[i]);
 }
