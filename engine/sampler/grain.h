@@ -39,8 +39,16 @@ public:
     // overlap-normalization factor (1/sqrt(active), the COLOR loudness law)
     // is instead computed globally and smoothed in SamplerEngine, and
     // applied once to the summed cloud (see SamplerEngine::_norm).
+    //
+    // That argument is about the OVERLAP-NORMALIZATION factor specifically:
+    // 1/sqrt(active) has to track the live grain count, so latching it is
+    // wrong by construction. The `gain` parameter added 2026-07-23 (spec
+    // feel-accents) is the opposite case -- an accent read from the grain's
+    // own transient, constant for the grain's whole life. Latching it is not
+    // just safe there, it is the only correct reading. The two must not be
+    // confused: nothing may route _norm through this parameter.
     void spawn(float start, float ratio, float pan, int len,
-               int atk, int dec, bool reverse) {
+               int atk, int dec, bool reverse, float gain = 1.f) {
         _len     = len < 2 ? 2 : len;
         if (atk < 1) atk = 1;
         if (dec < 1) dec = 1;
@@ -65,9 +73,14 @@ public:
 
         // Equal-power pan, the Voice idiom (synth/voice.cpp:89-93):
         // angle 0..0.25 turns, gr = sin(a), gl = sin(a + quarter turn).
+        // The accent gain rides ON the pan gains rather than on the window:
+        // process() already multiplies by both, so this costs nothing per
+        // sample, and _level() stays the pure window -- which is what makes
+        // release()/trim_total() inherit the gain instead of squaring it.
         const float a = (clampf(pan, -1.f, 1.f) + 1.f) * 0.125f;
-        _gr = fast_sin(a);
-        _gl = fast_sin(a + 0.25f);
+        const float g = gain < 0.f ? 0.f : gain;
+        _gr = fast_sin(a) * g;
+        _gl = fast_sin(a + 0.25f) * g;
     }
 
     bool active() const { return _active; }

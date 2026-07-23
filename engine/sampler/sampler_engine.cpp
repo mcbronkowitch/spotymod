@@ -702,7 +702,10 @@ void SamplerEngine::_spawn_one() {
     if (atk < 1) atk = 1;
     if (dec < 1) dec = 1;
 
-    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse);
+    // FLOW passes 1.f explicitly: COLOR means chord here, not accent, and the
+    // spec (2026-07-23) keeps it that way. Named rather than defaulted so the
+    // FLOW/STEP split is visible at the call site.
+    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse, 1.f);
     // The pair _trim_running rescales against. Recording _grain_len rather
     // than the SIZE knob keeps tape mode honest: lenf there is _grain_len /
     // ratio, so the QUOTIENT len / _size_ref carries the mode, the pitch and
@@ -918,7 +921,7 @@ bool SamplerEngine::_spawn_slice(int k, float pan) {
     if (atk < 1) atk = 1;
     if (dec < 1) dec = 1;
 
-    _grains[slot].spawn(pos, ratio, pan, len, atk, dec, _reverse);
+    _grains[slot].spawn(pos, ratio, pan, len, atk, dec, _reverse, 1.f);
     // _size_ref = 0 keeps _trim_running's hands off slice grains: its rescale
     // maps SIZE-in-seconds to grain length, which no longer holds here, and
     // the note end (gate fall) already cuts them. 0 is its "no live grain"
