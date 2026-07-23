@@ -341,5 +341,14 @@ constexpr float  kOnsetPreRollS = 0.002f;   // marker sits this far BEFORE detec
 // following material). Ear-tunable.
 constexpr float  kSliceSizeOct  = 4.f;
 
+// --- feel accents (spec 2026-07-23 sampler-feel-accents-design.md) ---
+// STEP polyphony ceiling, fixed. DENS used to set it (ceil(_overlap) +
+// kSpawnHeadroom), which meant turning DENS down to thin the phrase ALSO
+// dropped composed notes -- silently, with nothing on the panel to show it.
+// 10 == the old ceiling at DENS maximum (kOverlapMax + kSpawnHeadroom), so
+// the worst case this was measured at is unchanged; it is an emergency stop,
+// not a control. NOT ear-tunable: it is a CPU budget.
+constexpr int    kStepGrainCeil = 10;
+
 }  // namespace sampler_cfg
 }  // namespace spky

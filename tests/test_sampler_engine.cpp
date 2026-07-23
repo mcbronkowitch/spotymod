@@ -2605,13 +2605,16 @@ TEST_CASE("sampler STEP: a dropped fire still consumes its Rng draws") {
     // rig's default MOTION 0 every pan is 0.f and this test would pass
     // vacuously no matter which draw (or none) fed it.
     const float kMotion = 0.8f;
-    const int   kFires  = 6;
+    // The ceiling is fixed at kStepGrainCeil (spec 2026-07-23) and no longer
+    // DENS-derived, so forcing a drop takes more held fires than the ceiling,
+    // not a lowered DENS.
+    const int   kFires  = 12;
 
     // `drop`: hold every note, so grains pile up and the later fires hit the
-    // ceiling. Otherwise: release after each fire so every one of them spawns.
+    // fixed STEP grain ceiling. Otherwise: release after each fire so every
+    // one of them spawns.
     auto last_pan_after = [&](bool drop) {
         StepRig g;
-        g.e.set_overlap(0.f);              // DENS min -> ceiling 1 + headroom
         g.feed(0.5f, 0.f, 1.f, kMotion);   // SIZE 1: grains outlive the fires
         g.render(96);                       // let the control tick see it
         for (int i = 0; i < kFires; ++i) {
@@ -2774,6 +2777,26 @@ TEST_CASE("sampler STEP: SCAN moves the base slice in marker mode") {
     CHECK(moved == 5);                  // every step past the first moved it
 }
 
+// The STEP grain ceiling is fixed (spec 2026-07-23): DENS must not be able
+// to swallow composed notes. At DENS minimum and long LEN the old ceiling
+// was ceil(1) + kSpawnHeadroom = 3, so the fourth held fire onwards was
+// dropped in silence. Every fire must land now.
+TEST_CASE("sampler STEP: DENS minimum no longer drops fires at long LEN") {
+    StepRig g;
+    g.e.set_overlap(0.f);                  // DENS min
+    g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/1.f, /*motion*/0.f);  // SIZE 1: grains outlive the fires
+    g.render(96);
+    const int dropped_before = g.e.dropped_spawns();
+    const int spawned_before = g.e.spawn_count();
+    const int kFires = 8;                  // more than the old ceiling of 3
+    for (int i = 0; i < kFires; ++i) {     // hold every note: they pile up
+        g.fire(i);
+        g.render(64);
+    }
+    CHECK(g.e.dropped_spawns() == dropped_before);
+    CHECK(g.e.spawn_count() == spawned_before + kFires);
+}
+
 // --- Task 9: the STEP golden vector ---------------------------------------
 //
 // --- STEP golden vector: the slice-groove Rng draw order is a hard contract:
@@ -2844,8 +2867,12 @@ TEST_CASE("sampler STEP: golden vector -- the slice-groove draw order is locked"
     // informative. SIZE 0.35 keeps the grains short enough that no fire sits
     // on the density ceiling.
     g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.35f, /*motion*/0.5f);
-    g.e.set_overlap(1.f);              // DENS max: the grain ceiling is still
-                                       // DENS-derived here (Task 3 fixes it)
+    g.e.set_overlap(1.f);              // DENS max: harmless now that the
+                                       // ceiling is fixed at kStepGrainCeil
+                                       // (Task 3) -- kept so this table stays
+                                       // pinned at the value it was captured
+                                       // against, not to still drive the
+                                       // ceiling
     g.render(96);                       // let the control tick see SIZE/DENS
 
     // pg_metric_weight's shape over an 8-step phrase, spelled out rather than

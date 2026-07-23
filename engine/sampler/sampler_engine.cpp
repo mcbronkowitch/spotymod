@@ -831,7 +831,10 @@ bool SamplerEngine::_spawn_slice(int k, float pan) {
         if (_grains[i].active())      ++live;
         else if (slot < 0)            slot = i;
     }
-    const int ceiling = static_cast<int>(std::ceil(_overlap)) + kSpawnHeadroom;
+    // Fixed, not DENS-derived (spec 2026-07-23): DENS must not be able to
+    // swallow composed notes. FLOW's _spawn_one keeps its DENS-derived
+    // ceiling -- there the density knob genuinely IS the cloud density.
+    const int ceiling = kStepGrainCeil;
     if (slot < 0 || live >= (ceiling < kGrains ? ceiling : kGrains)) {
         ++_dropped_spawns;
         return false;
