@@ -3041,8 +3041,15 @@ struct FeelProbe {
 // `overlap` < 0 (the default) leaves DENS wherever the rig booted it, which
 // is what every FEEL case wants. The decoupling case passes 0 and 1 to run
 // the same phrase at both ends of the knob.
-FeelProbe feel_probe(float feel, int nth, float overlap = -1.f) {
+//
+// `motion` defaults to 0.f, StepRig's own default, so the FEEL 0/1 cases
+// above are untouched by its existence. The DENS-decoupling case passes a
+// nonzero value (see its own comment) so pan and the walk are live too.
+FeelProbe feel_probe(float feel, int nth, float overlap = -1.f,
+                      float motion = 0.f) {
     StepRig g;
+    g.feed(0.5f, 0.f, 0.5f, motion);     // MOTION only; SOURCE/SIZE stay at
+                                          // the rig's own defaults
     g.e.set_feel(feel);
     if (overlap >= 0.f) g.e.set_overlap(overlap);
     g.render(96);                        // let the control tick see it
@@ -3145,18 +3152,33 @@ TEST_CASE("sampler STEP: the accent factor equals lerp(kAccentFloor, 1, s)") {
 // FEEL is held at 1 on purpose. At FEEL 0 the accent path returns a constant
 // and the peak comparison would be blind to a DENS-derived accent depth.
 //
-// The phrase is WALKED, not re-fired from scratch per note: StepRig has
-// MOTION 0, so the slice is base + _cursor and _cursor only advances by
-// firing. feel_probe does that walk internally -- see its comment.
+// MOTION is held at kMotion (0.5, the golden vector's own value) rather than
+// StepRig's default 0: at MOTION 0, `pan = draw * motion` is multiplied away
+// to a structural 0.f on both runs, so the pan column would only ever assert
+// 0 == 0, and the cubed walk term (`wdraw^3 * motion * pool`) that could
+// carry a DENS coupling into `pos` would be multiplied away with it. At
+// MOTION 0.5 both are live, so pan and pos genuinely guard what the header
+// above claims. Both runs get the identical MOTION -- DENS is the only
+// variable under test. Equality still holds at MOTION 0.5 because the STEP
+// draw contract is exactly two draws per fire (walk, then pan, see "a
+// dropped fire still consumes its Rng draws" above) and _spawn_slice's STEP
+// path has no _overlap reader left at all (fixed kStepGrainCeil, spec
+// 2026-07-23) -- DENS feeds neither draw, so the same seed in the same order
+// produces the same walk and the same pan regardless of DENS.
+//
+// The phrase is WALKED, not re-fired from scratch per note: cursor advances
+// by firing (`++_cursor` in _fire_slice) and, at MOTION > 0, by the walk
+// term on top. feel_probe does that walk internally -- see its comment.
 TEST_CASE("sampler STEP: DENS is decoupled -- a full ride changes no fire") {
     constexpr int kNotes = 6;
+    constexpr float kMotion = 0.5f;   // live pan and walk; see comment above
     std::vector<int>   slice_lo, slice_hi;
     std::vector<float> pos_lo, pos_hi, pan_lo, pan_hi, peak_lo, peak_hi;
     std::vector<int>   len_lo, len_hi;
 
     for (int nth = 0; nth < kNotes; ++nth) {
-        const FeelProbe lo = feel_probe(1.f, nth, 0.f);   // DENS min
-        const FeelProbe hi = feel_probe(1.f, nth, 1.f);   // DENS max
+        const FeelProbe lo = feel_probe(1.f, nth, 0.f, kMotion);   // DENS min
+        const FeelProbe hi = feel_probe(1.f, nth, 1.f, kMotion);   // DENS max
         INFO("note ", nth);
         // The peaks below belong to the note under test, not to a tail.
         REQUIRE(lo.peak > 0.f);
@@ -3172,6 +3194,8 @@ TEST_CASE("sampler STEP: DENS is decoupled -- a full ride changes no fire") {
 
     for (int i = 0; i < kNotes; ++i) {
         INFO("note ", i, " slice ", slice_lo[i], "/", slice_hi[i],
+             " pos ", pos_lo[i], "/", pos_hi[i],
+             " pan ", pan_lo[i], "/", pan_hi[i],
              " len ", len_lo[i], "/", len_hi[i],
              " peak ", peak_lo[i], "/", peak_hi[i]);
         CHECK(slice_lo[i] == slice_hi[i]);
@@ -3183,14 +3207,20 @@ TEST_CASE("sampler STEP: DENS is decoupled -- a full ride changes no fire") {
 
     // Anti-vacuity: a rig whose cursor froze would emit the same slice, the
     // same position and the same peak for every note, and every CHECK above
-    // would pass against it. The phrase has to actually walk.
-    bool slices_move = false, peaks_move = false;
+    // would pass against it. The phrase has to actually walk. Pan gets its
+    // own guard too: at MOTION 0 every pan is a structural 0.f and the pan
+    // CHECK above would pass no matter what fed it -- this is what makes
+    // sure a future rig change can't quietly zero MOTION again and leave
+    // the pan column inert without anything here noticing.
+    bool slices_move = false, peaks_move = false, pans_move = false;
     for (int i = 1; i < kNotes; ++i) {
         if (slice_lo[i] != slice_lo[0])                     slices_move = true;
         if (std::fabs(peak_lo[i] - peak_lo[0]) > 1e-4f)     peaks_move = true;
+        if (std::fabs(pan_lo[i] - pan_lo[0]) > 1e-4f)       pans_move = true;
     }
     CHECK(slices_move);
     CHECK(peaks_move);   // FEEL 1 over markers of differing strength
+    CHECK(pans_move);    // MOTION 0.5: pan is a live draw, not frozen at 0
 }
 
 // Grid fallback: below kMinSlices the engine slices on the tempo grid, and a
