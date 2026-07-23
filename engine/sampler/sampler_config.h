@@ -269,10 +269,6 @@ constexpr float  kWindowHalfMax = 0.5f;
 // ...and at least this fraction, so a closed knob is still click-free.
 constexpr float  kWindowHalfMin = 0.02f;
 
-// STEP burst: grains keep spawning this long past the gate falling, so a
-// chopped texture ends with a tail rather than a cut. Ear-tunable.
-constexpr float  kBurstReleaseS = 0.06f;
-
 // MOTION scatter, at MOTION = 1 (all ear-tunable):
 // +-the whole content length. Was 0.25 through M5a, which confined MOTION's
 // read position to a quarter of the buffer and is the likeliest reason the
@@ -319,6 +315,31 @@ constexpr float  kSubMaxShare   = 1.f;       // SUB 1 = every grain an octave do
 // its delta clearly worsens -- the "lags real density changes" failure mode
 // starting to show. Also matches _level's own 10 ms constant.
 constexpr float  kNormSmoothS   = 0.01f;
+
+// --- slice groove (spec 2026-07-22 sampler-slice-groove-design.md) ---
+// Marker capacity. 512 x 8 bytes = 4 KB SRAM. With kOnsetRefractS = 40 ms the
+// map covers ~20 s of continuous worst-case onset rate before it is full; a
+// full map ignores further onsets (oldest content keeps its markers). NOT
+// ear-tunable: it is a memory budget.
+constexpr int    kMaxSlices     = 512;
+// Below this many markers the engine treats the material as transientless and
+// slices on the tempo grid instead (SamplerEngine::_pool_size). Ear-tunable.
+constexpr int    kMinSlices     = 4;
+// Onset detector: fast/slow envelope pair on the written frame. All five are
+// ear-tunable EXCEPT the refractory time's floor role: it also bounds marker
+// density and therefore how fast the map fills (see kMaxSlices).
+constexpr float  kOnsetFastS    = 0.001f;   // fast envelope time constant
+constexpr float  kOnsetSlowS    = 0.080f;   // slow envelope time constant
+constexpr float  kOnsetThresh   = 2.0f;     // fast/slow ratio that fires
+constexpr float  kOnsetRearm    = 1.2f;     // ratio must fall below to re-arm
+constexpr float  kOnsetFloor    = 0.01f;    // absolute fast-env floor (noise gate)
+constexpr float  kOnsetRefractS = 0.040f;   // dead time after an onset
+constexpr float  kOnsetPreRollS = 0.002f;   // marker sits this far BEFORE detection
+// SIZE in STEP: window = slice length x 2^((SIZE - 0.5) * 2 * kSliceSizeOct),
+// so knob centre is exactly one slice (findable unity, the SCAN 1.0x idiom),
+// the bottom is 1/16th of the slice (attack tip), the top 16x (overrun into
+// following material). Ear-tunable.
+constexpr float  kSliceSizeOct  = 4.f;
 
 }  // namespace sampler_cfg
 }  // namespace spky

@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <vector>
 #include "sampler/sampler_engine.h"
 #include "sampler/sampler_config.h"
@@ -41,6 +42,10 @@ struct Rig {
     }
 };
 
+// Defined with the slice tests further down; forward-declared because two of
+// the STEP cases up here need real transient material too.
+static void feed_clicks(Rig& g, size_t content, int n);
+
 static float rms(const std::vector<float>& v, size_t from, size_t n) {
     double acc = 0.0;
     for (size_t i = from; i < from + n && i < v.size(); ++i) acc += double(v[i]) * v[i];
@@ -69,23 +74,64 @@ TEST_CASE("sampler: FLOW is a standing cloud -- RMS never drops out") {
     CHECK(lowest > 0.2f * highest);        // ...and never gaps
 }
 
-TEST_CASE("sampler: STEP is silent until the gate opens, and tails off after") {
-    Rig g;
-    g.e.set_flow(false);
-    auto pre = g.render(4800);
-    for (float s : pre) CHECK(s == doctest::Approx(0.f).epsilon(0.0001));
+// Task 9 rewrite of "sampler: STEP is silent until the gate opens, and tails
+// off after". Two of its three halves survived the slice-groove rewrite and
+// are kept verbatim in spirit: STEP makes no sound before a note, and a note
+// is fully retired a beat after it ends. The third half asserted a release of
+// a FIXED length (kBurstReleaseS, hard-coded as 0.06f once the constant was
+// deleted) -- that length is gone with the burst scheduler, and the literal is
+// deliberately NOT resurrected. What replaces it is the property that actually
+// holds now: the release runs over the GRAIN'S OWN decay window, so DEC --
+// which used to have no say at all over how a STEP note ended -- now sets the
+// tail length. A build that went back to a fixed release, or that killed
+// grains outright on the gate fall, collapses the two measurements below onto
+// each other and fails.
+//
+// The gate is opened BEFORE the trigger on purpose: it separates "the gate
+// alone spawns nothing" (the F-02 STEP direction, see near the end of this
+// file) from "the fire spawns", inside the silence half.
+TEST_CASE("sampler: STEP is silent until a note fires, and releases over its own DEC") {
+    // Returns how many samples the note takes to retire after the gate falls.
+    auto tail_samples = [](float dec_n) {
+        Rig g;
+        g.e.set_flow(false);
+        g.e.set_window_decay(dec_n);
+        // SIZE well above slice unity so the grain would still have seconds of
+        // window left when the gate falls -- otherwise a long DEC would be
+        // masked by the grain simply reaching its own end first, and the two
+        // measurements would converge for a reason unrelated to the release.
+        g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.8f);
+        g.render(96);                       // let the control tick see SIZE
 
-    g.e.trigger(0.5f);
-    g.e.set_gate(true);
-    auto on = g.render(9600);
-    CHECK(rms(on, 2400, 4800) > 0.02f);
+        g.e.set_gate(true);                 // gate up, nothing composed yet
+        auto pre = g.render(4800);
+        for (float s : pre) CHECK(s == doctest::Approx(0.f).epsilon(0.0001));
+        REQUIRE(g.e.active_grains() == 0);  // the gate armed nothing
 
-    g.e.set_gate(false);
-    auto off = g.render(48000);
-    const int rel = int(sampler_cfg::kBurstReleaseS * 48000.f);
-    CHECK(rms(off, 0, size_t(rel / 2)) > 0.005f);   // the release still sounds
-    CHECK(rms(off, 40000, 4800) < 0.001f);          // a second later, retired
-    CHECK(g.e.active_grains() == 0);
+        g.e.trigger(0.5f);                  // the fire itself spawns
+        auto on = g.render(4800);
+        REQUIRE(g.e.active_grains() == 1);
+        CHECK(rms(on, 0, 4800) > 0.02f);    // it sounds under the note
+
+        g.e.set_gate(false);
+        int n = 0;
+        while (g.e.active_grains() > 0 && n < 48000 * 4) {
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+            ++n;
+        }
+        CHECK(g.e.active_grains() == 0);    // retired, not sustained
+        auto after = g.render(48000);
+        CHECK(rms(after, 0, 48000) < 0.001f);   // and nothing respawns behind it
+        return n;
+    };
+
+    const int shortest = tail_samples(0.f);
+    const int longest  = tail_samples(1.f);
+    INFO("release tail: DEC 0 -> " << shortest << " samples, DEC 1 -> "
+         << longest);
+    CHECK(shortest > 0);                    // a release, not a hard cut
+    CHECK(longest > 4 * shortest);          // ...whose length is DEC's, not fixed
 }
 
 TEST_CASE("sampler: an empty buffer is silent under FLOW, STEP and gate") {
@@ -768,11 +814,23 @@ TEST_CASE("sampler: detune_factor matches std::pow over the full DTUN range") {
 // The property is genuinely owned elsewhere: "sampler: golden vector -- Rng
 // draw order and SOURCE mapping are locked" pins the exact ratio of each of
 // the first 20 spawns over a 3-note chord (0.20 / 0.55 / 1.53 ... -- visibly
-// per-note, so a constant or a wrong cache entry fails it), and "a latched
-// single-note STEP burst holds its ratio while PITCH drifts underneath it"
-// covers the separate _burst_ratio cache.
+// per-note, so a constant or a wrong cache entry fails it), and "sampler: a
+// latched single-note STEP roll holds its ratio while PITCH drifts underneath
+// it" covers the separate _burst_ratio cache. (That case was named "...STEP
+// burst..." until Task 9 moved its vehicle from the deleted free-running burst
+// to a roll; this cross-reference kept the dead name until the whole-branch
+// review caught it.)
 
-TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH drifts underneath it") {
+// Task 9 rewrite of "...a latched single-note STEP burst holds its ratio while
+// PITCH drifts underneath it". The property is unchanged and still real; only
+// its VEHICLE moved. The old form collected 12 grains out of one trigger by
+// letting the free-running STEP burst spawn under a held gate, and that
+// scheduler is gone. Since Task 7 a single fire produces more than one grain
+// again -- the roll retriggers -- and those go through the same _next_ratio(),
+// so the test now rides a roll instead of a burst. Note the retrigger path
+// (sampler_engine.cpp, process()) never re-latches: it must keep reading the
+// _burst_ratio frozen at the fire, not the live _chord[0] this test drifts.
+TEST_CASE("sampler: a latched single-note STEP roll holds its ratio while PITCH drifts underneath it") {
     // Property under test: _next_ratio's latched branch (latched &&
     // _chord_n <= 1) must read _burst_ratio, frozen at the trigger() that
     // set _burst_pitch -- NOT _chord_ratio[0], which tracks _chord[0] live.
@@ -784,10 +842,23 @@ TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH
     // way -- every other test sets it once via feed()/set_chord() and holds
     // it steady -- so this is the one case that would have silently caught
     // (or missed) the Task 1 hoist reading the wrong cache.
-    Rig g;
+    //
+    // StepRig is declared further down this file, so this rig is built by hand
+    // -- clicky material for real slices, STEP, a 6000-sample step clock, DENS
+    // at maximum (subdivision cap 8) and a phrase slot whose metric weight is
+    // 0, which makes the roll probability exactly 1: the fire below ALWAYS
+    // arms a roll, no dice involved.
+    Rig g(0);
+    feed_clicks(g, 48000, 8);
     g.e.set_flow(false);            // STEP mode
+    g.e.set_step_clock(6000.f);
+    g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.2f);   // short grains: the
+    g.e.set_overlap(1.f);                                  // pool never fills
+    g.render(96);                   // let the control tick see SIZE/DENS
+    g.e.set_phrase_pos(/*slot*/1, /*steps*/8, /*weight*/0.f);
     g.e.trigger(0.3f);              // single note: _chord_n == 1, now latched
-    g.e.set_gate(true);
+    g.e.set_gate(true);             // rolls only retrigger under the gate
+    REQUIRE(g.e.retrig_period() > 0);   // the roll really armed
 
     std::vector<float> ratios;
     int last = g.e.spawn_count();
@@ -799,7 +870,7 @@ TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH
         ++sample;
         if (sample % sampler_cfg::kCtrlInterval == 0) {
             // Simulate Part::_control_tick refreshing the live chord surface
-            // underneath the still-latched burst -- what a PITCH-lane LFO
+            // underneath the still-latched note -- what a PITCH-lane LFO
             // would do, without ever calling trigger()/trigger_chord() again.
             const float drifted = 0.3f + 0.02f * float(sample % 20);
             g.e.set_chord(&drifted, 1);
@@ -810,9 +881,13 @@ TEST_CASE("sampler: a latched single-note STEP burst holds its ratio while PITCH
         }
     }
     REQUIRE(ratios.size() == 12);
-    // Every grain in the burst spawns at the SAME ratio: the one latched at
+    // Every grain of the roll spawns at the SAME ratio: the one latched at
     // trigger() time, unmoved by the live PITCH drift injected above.
     for (float r : ratios) CHECK(r == ratios[0]);
+    // ...and that one ratio is the TRIGGER'S, not the drift's. Without this
+    // the loop above would pass just as happily on a build that read
+    // _chord_ratio[0] but happened to see a constant chord.
+    CHECK(ratios[0] == doctest::Approx(spky::test_ratio_for(0.3f)).epsilon(1e-6));
 }
 
 // --- golden vector: the Rng draw order is a hard contract -----------------
@@ -2054,22 +2129,47 @@ TEST_CASE("F-02: a gate edge does not re-phase the FLOW scheduler") {
     CHECK(total <= 2);                          // der Anfangsspawn, sonst nichts
 }
 
-TEST_CASE("F-02: a gate edge still starts a STEP burst immediately") {
-    // Die Gegenrichtung, und der Grund, warum _spawn_ctr = 0 ueberhaupt da
-    // ist: ausserhalb des FLOW muss die Flanke sofort feuern, damit STEP die
-    // komponierte Rhythmik trifft statt bis zu ein Intervall spaeter.
+// DELETED (Task 9): "F-02: a gate edge still starts a STEP burst
+// immediately". It pinned `_spawn_ctr = 0` on the rising gate edge -- the arm
+// that made the old free-running STEP burst fire on the beat instead of up to
+// one spawn interval late. Task 5 removed both the arm and the burst: a STEP
+// grain now comes from trigger()/trigger_chord() calling _fire_slice directly,
+// so it is on the composed beat by construction, with no scheduler left to
+// re-phase. Nothing remains for that test to observe.
+//
+// What replaces it, in two halves:
+//   - the timing requirement it stood for -- "STEP fires on the composed
+//     rhythm, not late" -- is now carried by "sampler STEP: a fire spawns
+//     exactly one grain at a slice start", which sees the fire land within 64
+//     samples of trigger().
+//   - the INVERSE, which only became a live risk once the arm was gone, is
+//     the case below.
+TEST_CASE("F-02: in STEP the gate arms nothing -- only a fire spawns") {
+    // The STEP counterpart to "a gate edge does not re-phase the FLOW
+    // scheduler" above. In STEP the gate is now purely a note-length signal:
+    // it releases what is sounding on its falling edge and it lets rolls
+    // retrigger, but it must never put a grain into the pool by itself.
+    // Re-introducing any spawn-on-edge arm -- the obvious "fix" for anyone who
+    // reads the deleted test's title without its history -- would double the
+    // first grain of every composed note.
     Rig g;
     g.feed(0.5f, 0.f, 0.5f, 0.f, 1.f);
-    g.e.set_overlap(0.f);                       // langes Intervall
     g.e.set_flow(false);
-    g.render(4800);                             // Scheduler steht (kein Gate)
+    g.render(4800);
     const int before = g.e.spawn_count() + g.e.dropped_spawns();
 
-    g.e.set_gate(true);
-    g.render(4);                                // wenige Samples nach der Flanke
+    for (int k = 0; k < 5; ++k) {               // five clean gate edges
+        g.e.set_gate(true);  g.render(2400);
+        g.e.set_gate(false); g.render(2400);
+    }
     const int after = g.e.spawn_count() + g.e.dropped_spawns();
     INFO("before=" << before << " after=" << after);
-    CHECK(after > before);
+    CHECK(after == before);                     // no edge ever spawned anything
+
+    // ...and the rig is not simply dead: the same engine fires on a trigger.
+    g.e.trigger(0.5f);
+    g.render(64);
+    CHECK(g.e.spawn_count() + g.e.dropped_spawns() == after + 1);
 }
 
 TEST_CASE("F-09: grain length stays under the _off stall bound at any DENS") {
@@ -2121,9 +2221,14 @@ TEST_CASE("F-09: a stalled grain would emit DC -- the guard keeps it moving") {
     const float lowest = 0.f;                // TUNE 0 -> ratio 2^-4 = 0.0625
     g.e.set_chord(&lowest, 1);
     g.e.set_flow(false);
-    g.e.set_gate(true);
-    g.render(96);                            // die Flanke: ein Spawn
-    g.e.set_gate(false);
+    // Seit Task 5 (slice groove) feuert nicht mehr die Gate-Flanke, sondern
+    // die komponierte Note selbst: ein trigger() == ein Slice-Grain. Das Gate
+    // wird hier gar nicht mehr gebraucht -- ohne freilaufende Spawns unter
+    // dem Gate gibt es nichts mehr abzuschalten, und ein set_gate(false)
+    // wuerde das eine Grain sofort releasen und den Stall-Test entwerten.
+    // trigger(0.f) latcht dasselbe Ratio 2^-4, das set_chord oben stellt.
+    g.e.trigger(0.f);                        // ein Fire: ein Spawn
+    g.render(96);
     REQUIRE(g.e.spawn_count() == 1);
 
     // 19 Mio. Samples vorspulen -- weit jenseits der empirisch gemessenen
@@ -2358,4 +2463,724 @@ TEST_CASE("sampler: tape keeps its smear when SIZE is trimmed") {
     // 0.1 s that SIZE 0.35 alone would give.
     CHECK(halved < untouched);
     CHECK(halved > 0.25f * static_cast<float>(untouched));
+}
+
+// Click-train content for the slice tests: n clicks evenly spaced, 5 ms decay.
+static void feed_clicks(Rig& g, size_t content, int n) {
+    std::vector<float> l(content, 0.f), r;
+    const size_t gap = content / size_t(n);
+    for (int c = 0; c < n; ++c)
+        for (size_t i = 0; i < 240 && size_t(c) * gap + i < content; ++i)
+            l[size_t(c) * gap + i] = std::exp(-float(i) / 60.f);
+    r = l;
+    g.e.load_sample(l.data(), r.data(), content);
+}
+
+TEST_CASE("sampler: load_sample scans the material into slices") {
+    Rig g(0);                        // no preloaded content
+    feed_clicks(g, 48000, 8);
+    CHECK(g.e.slice_count() == 8);
+}
+
+TEST_CASE("sampler: recording detects slices as it writes") {
+    Rig g(0);
+    g.e.set_recording(true);
+    // 1 s of input with 4 clicks, fed through process_in like a host would
+    for (int i = 0; i < 48000; ++i) {
+        float x = 0.f;
+        for (int c = 0; c < 4; ++c) {
+            const int at = c * 12000;
+            if (i >= at && i < at + 240) x = std::exp(-float(i - at) / 60.f);
+        }
+        g.e.process_in(x, x);
+        float a, b; g.e.process(a, b);
+    }
+    g.e.set_recording(false);
+    REQUIRE(g.e.slice_count() == 4);
+    // Not just the count -- the markers must land at the RIGHT frames, or a
+    // systematic off-by-one in the `head` snapshot (process_in) would pass
+    // silently. Same tolerance test_slice_map.cpp uses for its own scan
+    // tests: within [click - preroll, click + a few ms detector lag].
+    const int pre = int(sampler_cfg::kOnsetPreRollS * 48000.f);
+    for (int c = 0; c < 4; ++c) {
+        const uint32_t at = static_cast<uint32_t>(c * 12000);
+        const uint32_t lo = at > static_cast<uint32_t>(pre) ? at - static_cast<uint32_t>(pre) : 0;
+        CHECK(g.e.slice_start(c) >= lo);
+        CHECK(g.e.slice_start(c) <= at + 144);
+    }
+}
+
+// Proves Finding 1's guard is load-bearing: set_recording(true) immediately
+// followed by set_recording(false), with no write in between, leaves
+// SampleBuffer in State::fadeout with _fade_ctr == 0 -- idle->fadein just set
+// it to 0, and the immediate fadein->fadeout transition (set_recording's
+// default branch) never touches _fade_ctr. The next write() then hits the
+// early return documented at sample_buffer.cpp:131-150 ("two REC toggles
+// inside one audio block") and flips to idle WITHOUT writing or moving the
+// head. A flag-based is_recording()-before-the-call check cannot see that:
+// is_recording() is still true entering the call, so it would still call
+// SliceMap::on_write(0, ...) even though frame 0 was never touched. Measured
+// effect with the flag-based guard reverted: on_write's own "new take" path
+// (_last_frame == SIZE_MAX on this SliceMap's very first live call) re-aims
+// its sweep at frame 0 and wipes the marker load_sample legitimately placed
+// there -- slice_count() drops from 1 to 0, not up. Either direction is the
+// same defect: a write() call that never happened must not reach SliceMap
+// at all. The head-advance guard (process_in) must suppress it.
+TEST_CASE("sampler: a same-block REC on/off does not plant a phantom marker") {
+    Rig g(0);
+    // Loud pre-existing content at frame 0, so the spurious on_write() (if
+    // the guard fails) has real content to corrupt, not silence.
+    std::vector<float> l(4800), r;
+    for (size_t i = 0; i < l.size(); ++i) l[i] = std::sin(6.2831853f * 441.f * float(i) / 48000.f);
+    r = l;
+    g.e.load_sample(l.data(), r.data(), l.size());
+    const int before = g.e.slice_count();
+
+    g.e.set_recording(true);
+    g.e.set_recording(false);           // fadein -> fadeout, _fade_ctr == 0, nothing written yet
+    float a, b;
+    g.e.process_in(0.f, 0.f);           // drives write()'s _fade_ctr == 0 early return
+    g.e.process(a, b);
+
+    CHECK(g.e.slice_count() == before); // untouched frame 0 must not reach SliceMap at all
+}
+
+TEST_CASE("sampler: clear drops the slices with the content") {
+    Rig g(0);
+    feed_clicks(g, 48000, 8);
+    REQUIRE(g.e.slice_count() == 8);
+    g.e.clear();
+    CHECK(g.e.slice_count() == 0);
+}
+
+// --- Task 5: the STEP slice core -----------------------------------------
+
+// STEP slice rig: clicky content, STEP mode, phrase context pushed by hand
+// the way Part will in Task 8. 8 clicks over 1 s -> 8 slices; step clock
+// 6000 samples (an 8th at 120-ish bpm).
+struct StepRig : Rig {
+    StepRig() : Rig(0) {
+        feed_clicks(*this, 48000, 8);
+        e.set_flow(false);
+        e.set_step_clock(6000.f);
+        feed(0.5f);                     // MOTION 0, SIZE 0.5 (slice unity)
+    }
+    // one composed note: phrase position, latch, gate on
+    void fire(int slot, int steps = 8, float weight = 1.f) {
+        e.set_phrase_pos(slot, steps, weight);
+        e.trigger(0.5f);
+        e.set_gate(true);
+    }
+    void note_off() { e.set_gate(false); }
+};
+
+TEST_CASE("sampler STEP: a fire spawns exactly one grain at a slice start") {
+    StepRig g;
+    const int before = g.e.spawn_count();
+    g.fire(0);
+    g.render(64);
+    CHECK(g.e.spawn_count() == before + 1);
+    // spawn position sits on a marker
+    bool on_marker = false;
+    for (int i = 0; i < g.e.slice_count(); ++i)
+        if (std::fabs(g.e.last_spawn_pos() - float(i * 6000)) < 200.f)
+            on_marker = true;
+    CHECK(on_marker);
+}
+
+TEST_CASE("sampler STEP: MOTION 0 walks the slices in order and wraps home") {
+    StepRig g;
+    std::vector<int> seq;
+    for (int cycle = 0; cycle < 2; ++cycle)
+        for (int slot = 0; slot < 4; ++slot) {
+            g.fire(slot);
+            g.render(64);
+            seq.push_back(g.e.last_slice());
+            g.note_off();
+            g.render(64);
+        }
+    // ascending within a cycle, identical across cycles
+    for (int i = 0; i < 3; ++i) CHECK(seq[i + 1] == (seq[i] + 1) % 8);
+    for (int i = 0; i < 4; ++i) CHECK(seq[i] == seq[i + 4]);
+}
+
+TEST_CASE("sampler STEP: SIZE centre is slice unity, the ends trim and overrun") {
+    StepRig g;
+    g.fire(0);
+    g.render(64);
+    const int at_unity = g.e.last_spawn_len();
+    CHECK(at_unity == doctest::Approx(6000).epsilon(0.05));
+    g.note_off(); g.render(6000);
+    g.feed(0.5f, 0.f, 0.f);            // SIZE 0: attack tip
+    g.render(96);                       // let the control tick see it
+    g.fire(1);
+    g.render(64);
+    CHECK(g.e.last_spawn_len() < at_unity / 8);
+    g.note_off(); g.render(6000);
+    g.feed(0.5f, 0.f, 1.f);            // SIZE 1: overrun
+    g.render(96);
+    g.fire(2);
+    g.render(64);
+    CHECK(g.e.last_spawn_len() > at_unity * 8);
+}
+
+TEST_CASE("sampler STEP: the gate falling releases the grain, no burst tail") {
+    StepRig g;
+    g.feed(0.5f, 0.f, 1.f);            // long window so it outlives the note
+    g.render(96);
+    g.fire(0);
+    // The measurement window has to land on MATERIAL, and this rig's material
+    // is a click train: the grain starts on the marker at frame 0 at ratio 1,
+    // so output sample n reads frame n, and everything between the clicks
+    // (6000 apart) is genuine silence. Measured at the brief's original
+    // window (1000..1500): rms exactly 0 with a live 94464-sample grain
+    // sitting at pos 0 -- the window, not the engine. Sample 6000 is the
+    // second click, still far inside the grain, and reads 0.058.
+    // 6000..6500 was the original window and it passed only by straddling
+    // exactly one click; the whole 0..8000 span holds two clicks either way,
+    // so it survives a change to the ratio, the marker pre-roll or the attack.
+    auto v = g.render(8000);
+    CHECK(rms(v, 0, 8000) > 0.001f);   // sounding under the gate
+    g.note_off();
+    g.render(48000);                    // far past any release fade
+    CHECK(g.e.active_grains() == 0);   // released, not sustained
+    const int n = g.e.spawn_count();
+    g.render(12000);
+    CHECK(g.e.spawn_count() == n);     // and nothing respawns after the gate
+}
+
+// The Rng draw order inside a STEP fire is a CONTRACT: walk, roll, pan, all
+// three drawn every fire, in that order. Walk only starts being applied in
+// Task 6 and roll in Task 7, so nothing else in the suite would notice if
+// those lines were reordered or made conditional -- and the sharpest way to
+// make one conditional is to skip the draws when the fire is going to be
+// dropped at the grain density ceiling. The drop happens INSIDE _spawn_slice,
+// strictly after the three draws, and it has to stay that way.
+//
+// The proof: run the same fire sequence twice, once where the middle fires
+// hit the ceiling and drop, once where they all spawn. If the dropped fires
+// consumed their draws, the Rng is at the identical position by the last
+// fire, and that last fire's pan -- the only draw-derived value the engine
+// exposes -- is bit-identical between the runs.
+TEST_CASE("sampler STEP: a dropped fire still consumes its Rng draws") {
+    // MOTION well off 0 is load-bearing: pan is `draw * motion`, so at the
+    // rig's default MOTION 0 every pan is 0.f and this test would pass
+    // vacuously no matter which draw (or none) fed it.
+    const float kMotion = 0.8f;
+    const int   kFires  = 6;
+
+    // `drop`: hold every note, so grains pile up and the later fires hit the
+    // ceiling. Otherwise: release after each fire so every one of them spawns.
+    auto last_pan_after = [&](bool drop) {
+        StepRig g;
+        g.e.set_overlap(0.f);              // DENS min -> ceiling 1 + headroom
+        g.feed(0.5f, 0.f, 1.f, kMotion);   // SIZE 1: grains outlive the fires
+        g.render(96);                       // let the control tick see it
+        for (int i = 0; i < kFires; ++i) {
+            g.fire(i);
+            g.render(64);
+            if (!drop) { g.note_off(); g.render(48000); }
+        }
+        const int dropped = g.e.dropped_spawns();
+        // Clear the pool, then one final fire that succeeds in BOTH runs.
+        g.note_off();
+        g.render(48000);
+        REQUIRE(g.e.active_grains() == 0);
+        const int before = g.e.spawn_count();
+        g.fire(kFires);
+        g.render(64);
+        REQUIRE(g.e.spawn_count() == before + 1);   // it really landed
+        // Report the drop count alongside so the caller can assert the two
+        // runs actually differed in outcome.
+        return std::make_pair(g.e.last_spawn_pan(), dropped);
+    };
+
+    const auto with_drops = last_pan_after(true);
+    const auto no_drops   = last_pan_after(false);
+
+    REQUIRE(with_drops.second > 0);          // the ceiling really bit
+    REQUIRE(no_drops.second == 0);           // ...and only in the first run
+    REQUIRE(std::fabs(no_drops.first) > 0.01f);   // pan is not vacuously 0
+    // Same number of fires -> same number of draws -> same pan, regardless of
+    // how many of those fires survived the ceiling.
+    CHECK(with_drops.first == doctest::Approx(no_drops.first).epsilon(1e-6));
+
+    // The pair above pins the draw COUNT, not the ORDER: swapping walk and pan
+    // shifts both runs identically and slips straight through it. So pin the
+    // POSITION too, with a golden value -- the first fire of a fresh rig at
+    // seed 4242, where pan is the THIRD draw of the stream. Reorder the three
+    // and pan reads a different draw and this literal moves.
+    StepRig g;
+    g.feed(0.5f, 0.f, 0.5f, kMotion);
+    g.render(96);
+    g.fire(0);
+    g.render(64);
+    CHECK(g.e.last_spawn_pan() == doctest::Approx(-0.2129190f).epsilon(1e-4));
+}
+
+// --- Task 6: the MOTION walk ---------------------------------------------
+
+TEST_CASE("sampler STEP: MOTION 0 is structurally still -- no walk, centered pan") {
+    StepRig g;
+    for (int slot = 0; slot < 8; ++slot) {
+        g.fire(slot);
+        g.render(64);
+        CHECK(g.e.last_spawn_pan() == 0.f);
+        CHECK(g.e.last_slice() == slot);
+        g.note_off();
+        g.render(64);
+    }
+}
+
+TEST_CASE("sampler STEP: MOTION 1 leaves the ordered path") {
+    StepRig g;
+    g.feed(0.5f, 0.f, 0.5f, 1.f);      // MOTION 1
+    g.render(96);
+    int deviations = 0;
+    int prev = -1;
+    for (int cycle = 0; cycle < 4; ++cycle)
+        for (int slot = 0; slot < 8; ++slot) {
+            g.fire(slot);
+            g.render(64);
+            const int s = g.e.last_slice();
+            if (prev >= 0 && s != (prev + 1) % 8) ++deviations;
+            prev = s;
+            g.note_off();
+            g.render(64);
+        }
+    // The cubed walk leaves small steps common: some fires still land in
+    // order, but across 32 fires a fully-ordered run is out of the question.
+    CHECK(deviations > 4);
+}
+
+TEST_CASE("sampler STEP: transientless material falls back to the tempo grid") {
+    Rig g;                              // default rig: 441 Hz sine, no clicks
+    g.e.set_flow(false);
+    g.e.set_step_clock(6000.f);
+    REQUIRE(g.e.slice_count() < sampler_cfg::kMinSlices);
+    std::vector<float> pos;
+    for (int slot = 0; slot < 3; ++slot) {
+        g.e.set_phrase_pos(slot, 8, 1.f);
+        g.e.trigger(0.5f);
+        g.e.set_gate(true);
+        g.render(64);
+        pos.push_back(g.e.last_spawn_pos());
+        g.e.set_gate(false);
+        g.render(64);
+    }
+    // consecutive fires step exactly one step-clock through the material
+    CHECK(std::fabs(pos[1] - pos[0] - 6000.f) < 1.f);
+    CHECK(std::fabs(pos[2] - pos[1] - 6000.f) < 1.f);
+}
+
+// --- Task 7: rolls --------------------------------------------------------
+
+TEST_CASE("sampler STEP: an off-beat at DENS max rolls at exactly step/subdiv") {
+    StepRig g;
+    g.e.set_overlap(1.f);              // DENS max -> subdiv cap 8
+    g.render(96);
+    // weight 0 = deepest off-beat -> roll probability 1 at DENS max
+    g.fire(1, 8, 0.f);
+    const int period = int(6000.f / 8.f);
+    REQUIRE(g.e.retrig_period() == period);
+    const int start = g.e.spawn_count();
+    g.render(period * 4 + 8);
+    CHECK(g.e.spawn_count() == start + 4);   // 4 retriggers, sample-exact
+    g.note_off();
+    g.render(period * 2);
+    CHECK(g.e.spawn_count() == start + 4);   // gate fall stops the roll dead
+}
+
+// The two halves below are a PAIR, and only together do they discriminate.
+//
+// The arming block reads `max_subdiv >= 2 && rdraw < p_roll`, with
+// p_roll = (1 - weight) * dens_n. At DENS min BOTH conditions fail on their
+// own -- max_subdiv is 1 AND dens_n is 0 -- so the first half alone passes on
+// a build with either guard deleted. It is a test of the all-rolls-off state,
+// not of the subdivision guard it looks like it covers.
+//
+// The second half sits in the window where the two disagree: overlap 1.35
+// gives dens_n = 0.05 (nonzero, so p_roll is a real probability and the dice
+// genuinely land under it) while max_subdiv is still int(1.35 + 0.5) == 1.
+// Delete the `max_subdiv >= 2` guard and that window starts arming rolls at
+// period = step / 1 -- a "roll" that retriggers once per step, i.e. a doubled
+// note. The third half then shows the block is not simply dead just above the
+// minimum: at overlap 1.7 the subdivision reaches 2 and rolls DO appear.
+TEST_CASE("sampler STEP: DENS min never rolls, whatever the dice say") {
+    StepRig g;
+    g.e.set_overlap(0.f);              // DENS min -> subdiv cap 1
+    g.render(96);
+    for (int i = 0; i < 16; ++i) {
+        g.fire(i % 8, 8, 0.f);
+        CHECK(g.e.retrig_period() == 0);
+        g.note_off();
+        g.render(128);
+    }
+}
+
+TEST_CASE("sampler STEP: DENS above the floor but below subdiv 2 still never rolls") {
+    StepRig g;
+    g.e.set_overlap(0.05f);            // overlap 1.35: dens_n 0.05, subdiv 1
+    g.render(96);
+    REQUIRE(g.e.overlap() == doctest::Approx(1.35f).epsilon(1e-4));
+    for (int i = 0; i < 64; ++i) {
+        g.fire(i % 8, 8, 0.f);         // weight 0: the dice are as generous as
+        CHECK(g.e.retrig_period() == 0);   // they get at this DENS
+        g.note_off();
+        g.render(128);
+    }
+}
+
+TEST_CASE("sampler STEP: DENS just past subdiv 2 does roll -- the block is live") {
+    StepRig g;
+    g.e.set_overlap(0.1f);             // overlap 1.7: dens_n 0.1, subdiv 2
+    g.render(96);
+    REQUIRE(g.e.overlap() == doctest::Approx(1.7f).epsilon(1e-4));
+    int rolls = 0;
+    for (int i = 0; i < 64; ++i) {
+        g.fire(i % 8, 8, 0.f);         // weight 0 -> p_roll = dens_n = 0.1
+        if (g.e.retrig_period() > 0) {
+            ++rolls;
+            CHECK(g.e.retrig_period() == int(6000.f / 2.f));   // step / subdiv
+        }
+        g.note_off();
+        g.render(128);
+    }
+    INFO("rolls at overlap 1.7 over 64 fires: " << rolls);
+    CHECK(rolls > 0);                  // ~6 expected at p = 0.1
+}
+
+// --- whole-branch review fixes -------------------------------------------
+
+// F1: a roll armed in STEP must not survive a trip through FLOW.
+//
+// The old STEP scheduler cleared its _release_ctr in set_flow(); that line
+// went with the variable and nothing replaced it for _retrig_period, which is
+// where a roll now lives. set_gate(false) used to return early in FLOW, so a
+// gate that fell while the engine was in FLOW disarmed nothing -- and coming
+// back to STEP with _gate still true let process() roll with NO fire behind
+// it, off a _last_slice and _walk_ref belonging to some earlier note. That is
+// exactly what "F-02: in STEP the gate arms nothing -- only a fire spawns"
+// claims cannot happen; it cannot see this because it never toggles FLOW.
+TEST_CASE("sampler STEP: a roll does not survive a FLOW round trip") {
+    StepRig g;
+    g.e.set_overlap(1.f);              // DENS max -> deep offs always roll
+    g.render(96);
+    g.fire(1, 8, 0.f);                 // weight 0: p_roll = 1
+    REQUIRE(g.e.retrig_period() > 0);
+
+    // Half one: entering FLOW disarms on the spot.
+    g.e.set_flow(true);
+    CHECK(g.e.retrig_period() == 0);   // fails without set_flow's clear
+
+    // Half two: the falling edge disarms even though it arrives in FLOW, so
+    // the round trip cannot resurrect the roll either.
+    g.render(64);
+    g.e.set_gate(false);               // gate falls while still in FLOW
+    g.e.set_flow(false);               // ...back to STEP...
+    g.e.set_gate(true);                // ...gate high again, but NO fire
+    const int before = g.e.spawn_count() + g.e.dropped_spawns();
+    g.render(12000);                   // two full steps: a live roll would fire
+    CHECK(g.e.retrig_period() == 0);
+    CHECK(g.e.spawn_count() + g.e.dropped_spawns() == before);
+}
+
+// F3: a fire whose grain was dropped must not arm a roll.
+//
+// The arming block used to run unconditionally after _spawn_slice, which can
+// return early (empty buffer, density ceiling). _last_slice and _walk_ref then
+// still describe the PREVIOUS note, so the roll retriggers a note the dropped
+// fire never sounded -- "the note you didn't hear retriggers the note before
+// it". The three draws stay unconditional; only the arming is gated.
+TEST_CASE("sampler STEP: a fire that was dropped arms no roll") {
+    StepRig g;
+    g.feed(0.5f, 0.f, 1.f);            // SIZE 1: grains far outlive the fires
+    g.e.set_overlap(1.f);              // DENS max -> p_roll = 1 at weight 0
+    g.render(96);
+
+    // Fire without releasing until the pool ceiling swallows one. _fire_slice
+    // runs inline inside trigger(), so spawn_count answers immediately and
+    // nothing is rendered after the dropped fire -- _retrig_period below can
+    // only be what THAT fire left.
+    bool dropped_fire = false;
+    for (int i = 0; i < 40 && !dropped_fire; ++i) {
+        const int before = g.e.spawn_count();
+        g.fire(i % 8, 8, 0.f);
+        dropped_fire = (g.e.spawn_count() == before);
+        if (!dropped_fire) g.render(64);
+    }
+    REQUIRE(dropped_fire);
+    CHECK(g.e.retrig_period() == 0);
+}
+
+// F2: the phrase wrap resets _walk_ref along with _walk.
+//
+// punch() resets all three (cursor, walk, walk_ref) and its comment explains
+// why; the wrap branch reset only two. It is normally papered over because
+// _spawn_slice re-snapshots _walk_ref -- but only on a SUCCESSFUL spawn, so a
+// fire dropped right after a wrap leaves the difference the roll measures
+// (_walk - _walk_ref) carrying a whole phrase of stale accumulation.
+//
+// Honest note on what this pins: with F3 in place a dropped fire arms no roll,
+// so nothing AUDIBLE reads the stale reference any more -- the two fixes
+// overlap. This case therefore asserts the invariant directly, through
+// walk_offset(), rather than through a sound. Reverting F2 alone fails it;
+// reverting F3 alone does not.
+// The vehicle is a SYMMETRY, because that is the property at issue: punch()
+// and the phrase wrap are the engine's two "go home" gestures and they must
+// leave the same state behind. Two rigs run the identical fire sequence --
+// identical Rng draws, three per fire, punch() draws none -- and differ only
+// in HOW they go home for the last fire: one wraps the phrase, the other
+// punches and does not wrap. That last fire is forced to DROP (the DENS-min
+// pool ceiling), so _spawn_slice cannot re-snapshot _walk_ref and paper the
+// difference over. With the fix both offsets are the last draw's own walk;
+// without it the wrapping rig's offset carries the stale reference on top.
+TEST_CASE("sampler STEP: the phrase wrap resets the roll's walk reference too") {
+    auto go_home = [](bool by_wrap) {
+        StepRig g;
+        g.feed(0.5f, 0.f, 1.f, 1.f);   // SIZE 1 (long grains), MOTION 1 (walk moves)
+        g.e.set_overlap(0.f);          // DENS min -> lowest ceiling: fires drop early
+        g.render(96);
+        for (int slot = 1; slot < 32; ++slot) {   // 31 fires, walk accumulates
+            g.fire(slot, 32, 0.f);
+            g.render(64);
+        }
+        const int dropped = g.e.dropped_spawns();
+        REQUIRE(dropped > 0);          // the ceiling is already biting
+        if (by_wrap) {
+            g.fire(0, 32, 0.f);        // slot 0 < slot 31: the phrase wraps
+        } else {
+            g.e.punch();               // ...the other way home
+            g.fire(31, 32, 0.f);       // slot 31 == last slot: no wrap
+        }
+        REQUIRE(g.e.dropped_spawns() == dropped + 1);   // the last fire dropped
+        return g.e.walk_offset();
+    };
+    const float wrapped  = go_home(true);
+    const float punched  = go_home(false);
+    INFO("wrap offset=" << wrapped << " punch offset=" << punched);
+    // Non-vacuous: a fire really does add walk, so neither is trivially 0.
+    REQUIRE(std::fabs(punched) > 0.01f);
+    CHECK(wrapped == doctest::Approx(punched).epsilon(1e-6));
+}
+
+// F7 (spec Tests, "SCAN verschiebt die Basis"): SCAN must move the base slice
+// in MARKER mode.
+//
+// In grid mode _scan_pos is added to the spawn position continuously
+// (_slice_pos), and several cases upstream cover that. In marker mode it
+// reaches the spawn position ONLY through _slices.index_at(_base_pos()) --
+// quantized marker-hopping, a different code path with a different failure
+// mode (an index_at that ignored its argument, or a base that never left 0,
+// would be invisible to every other STEP test, all of which run at SCAN 0).
+TEST_CASE("sampler STEP: SCAN moves the base slice in marker mode") {
+    // Each pass is a fresh rig so the cursor is always 0 and `last_slice` IS
+    // the base. StepRig's material is 8 clicks over 48000 frames, so one slice
+    // is 6000 frames and SCAN at kScanKnee (0.75) is exactly realtime -- n
+    // steps of 6000 samples walk the base n markers forward.
+    auto base_after = [](int steps) {
+        StepRig g;                      // MOTION 0: no walk on top
+        g.e.set_scan(0.75f);            // exactly 1.0x realtime
+        g.render(steps * 6000);
+        g.e.set_scan(0.f);              // park it, then fire
+        g.fire(0);
+        g.render(64);
+        // The marker index the accumulated head actually sits in.
+        int want = 0;
+        for (int i = 0; i < g.e.slice_count(); ++i)
+            if (float(g.e.slice_start(i)) <= g.e.scan_pos()) want = i;
+        INFO("steps=" << steps << " scan_pos=" << g.e.scan_pos()
+             << " slice=" << g.e.last_slice() << " want=" << want);
+        CHECK(g.e.last_slice() == want);
+        return g.e.last_slice();
+    };
+    const int b0 = base_after(0);
+    CHECK(b0 == 0);                     // SCAN parked: the base is the first slice
+    int moved = 0;
+    for (int s = 1; s <= 5; ++s) if (base_after(s) != b0) ++moved;
+    CHECK(moved == 5);                  // every step past the first moved it
+}
+
+TEST_CASE("sampler STEP: downbeats mostly hit once, offs roll -- the bias is real") {
+    StepRig g;
+    g.e.set_overlap(1.f);
+    g.render(96);
+    int down_rolls = 0, off_rolls = 0;
+    for (int i = 0; i < 64; ++i) {
+        g.fire(0, 8, 1.f);             // weight 1: downbeat
+        if (g.e.retrig_period() > 0) ++down_rolls;
+        g.note_off(); g.render(128);
+        g.fire(1, 8, 0.2f);            // weight 0.2: off
+        if (g.e.retrig_period() > 0) ++off_rolls;
+        g.note_off(); g.render(128);
+    }
+    CHECK(down_rolls == 0);            // p = (1 - 1.0) * dens = 0, structural
+    CHECK(off_rolls > 30);             // p = 0.8 at DENS max
+}
+
+// --- Task 9: the STEP golden vector ---------------------------------------
+//
+// --- STEP golden vector: the slice-groove Rng draw order is a hard contract:
+// per fire: walk, roll, pan. Per roll retrigger: walk, pan. A fire that hits
+// a full pool still draws all three (the drop happens in _spawn_slice, after
+// the draws). Any change to this order re-pins this table AND the spec's
+// Determinism section -- never regenerate silently.
+//
+// The FLOW golden vector further up this file ("sampler: golden vector -- Rng
+// draw order and SOURCE mapping are locked") makes the same argument for the
+// FLOW cloud, and everything its file-level comment says about marginal
+// distributions applies here word for word: every other STEP test in this
+// suite checks a MARGIN (the walk deviates, pan is centred at MOTION 0,
+// downbeats do not roll, the roll period is step/subdiv). Successive xorshift32
+// outputs are all uniform, so swapping walk and pan, or moving the roll draw
+// to either side of them, leaves every one of those margins intact and the
+// suite green. Only the SEQUENCE of drawn values catches it.
+//
+// This table is a GOLDEN VECTOR: captured once from a known-good build, not
+// derived from first principles. If it fails after a change that looks
+// unrelated -- a draw reordered, added or removed in _fire_slice() or the roll
+// branch of process(), the seed decorrelation constant moved, the walk cubing
+// or its pool scaling changed, SliceMap's marker placement shifted -- STOP.
+// Ask WHY the numbers changed before touching them. Updating them to get back
+// to green silently re-opens exactly the hole this test exists to close.
+//
+// RE-BASELINING PROCEDURE, if a change is genuinely meant to move this table
+// (the FLOW vector above carries a worked example of it, dated 2026-07-21):
+//   1. Write down, BEFORE recapturing, what the change predicts: how many rows
+//      the table should have, and which columns should move in which
+//      direction. A removed draw shifts every following row; a changed roll
+//      subdivision changes the table's LENGTH before it changes a row; a walk
+//      change moves `slice` and `pos` but leaves `pan` alone.
+//   2. Recapture the whole table wholesale. Never hand-edit individual rows
+//      until the test goes green -- that fits the numbers to the build instead
+//      of checking the build against the numbers.
+//   3. Check the new table against the prediction from step 1 and record the
+//      comparison here, dated, as a RECAPTURED note. If it does not match the
+//      prediction, the change did something beyond what was intended.
+//   4. Re-pin the spec's Determinism section in the same commit.
+// As of 2026-07-23 (whole-branch review fixes F1-F11) this table has never
+// been recaptured: every fix in that round left all 44 rows byte-identical,
+// which is how they were checked.
+TEST_CASE("sampler STEP: golden vector -- the slice-groove draw order is locked") {
+    StepRig g;                         // seed 4242, 8 clicks -> 8 slices,
+                                       // step clock 6000
+    // MOTION 0.5 makes all three draws OBSERVABLE at once: the walk scales by
+    // MOTION (0 would multiply it away and freeze the slice order), pan scales
+    // by MOTION (0 would make every pan literally 0.f and pin nothing), and
+    // half-scale keeps the walk from saturating so the slice column stays
+    // informative. SIZE 0.35 keeps the grains short enough that a rolling note
+    // does not sit on the density ceiling for the whole table.
+    g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.35f, /*motion*/0.5f);
+    g.e.set_overlap(1.f);              // DENS max: subdiv cap 8, rolls live
+    g.render(96);                       // let the control tick see SIZE/DENS
+
+    // pg_metric_weight's shape over an 8-step phrase, spelled out rather than
+    // included: this test pins the SAMPLER's draw order, and hard-wiring the
+    // weights keeps a future edit to the phrase generator's accent profile
+    // from re-pinning a table that has nothing to do with it.
+    static const float weight[8] = { 1.f, 0.2f, 0.5f, 0.2f,
+                                     0.35f, 0.2f, 0.5f, 0.2f };
+
+    struct Sp { int slice; float pos, pan; int len; };
+    std::vector<Sp> got;
+    int last = g.e.spawn_count();
+    auto pump = [&](int n) {
+        for (int i = 0; i < n; ++i) {
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+            if (g.e.spawn_count() != last) {
+                last = g.e.spawn_count();
+                got.push_back({ g.e.last_slice(), g.e.last_spawn_pos(),
+                                g.e.last_spawn_pan(), g.e.last_spawn_len() });
+            }
+        }
+    };
+    // 12 fires across two phrase cycles: slots 0..7 then 0..3. `slot` is
+    // `fire % 8`, so the wrap sits at fire 8, where slot goes 7 -> 0 -- it is
+    // deliberate, and it drives _fire_slice's "phrase went backwards, cursor
+    // goes home" branch inside the table.
+    for (int fire = 0; fire < 12; ++fire) {
+        const int slot = fire % 8;
+        g.e.set_phrase_pos(slot, 8, weight[slot]);
+        g.e.trigger(0.5f);
+        g.e.set_gate(true);
+        pump(6000);                     // one step of held note (rolls run)
+        g.e.set_gate(false);
+        pump(600);                      // release gap (rolls stop dead)
+    }
+
+    // Golden vector: seed 4242, StepRig (8 clicks over 48000 frames -> 8
+    // slices, step clock 6000), SOURCE 0 / SIZE 0.35 / MOTION 0.5, DENS max,
+    // the 12 fires above. One row per SPAWN, so fires and their roll
+    // retriggers are interleaved: 12 fires produced 44 grains here, and that
+    // COUNT is pinned too -- a roll that stopped arming, or one that ran at a
+    // different subdivision, changes the LENGTH of this table before it
+    // changes any single row.
+    //
+    // Reading the columns: `slice` is the walk's output (marker index), `pos`
+    // the marker start minus SliceMap's pre-roll, `pan` the third draw of a
+    // fire and the second of a retrigger, `len` the slice length scaled by
+    // SIZE. `len` varies between 2569/2611/2653 because the click train's
+    // detected markers are not perfectly equidistant -- that is the SliceMap
+    // talking, and it is what makes `len` worth pinning at all.
+    static const Sp golden[] = {
+        { 1, 5904.f, -0.133075f, 2611 },
+        { 2, 11904.f, -0.220712f, 2611 },
+        { 5, 29904.f, -0.317578f, 2611 },
+        { 5, 29904.f, -0.171948f, 2611 },
+        { 5, 29904.f, -0.198368f, 2611 },
+        { 7, 41904.f, 0.0372394f, 2653 },
+        { 7, 41904.f, 0.139564f, 2653 },
+        { 6, 35904.f, -0.475667f, 2611 },
+        { 6, 35904.f, 0.483503f, 2611 },
+        { 4, 23904.f, 0.216215f, 2611 },
+        { 0, 0.f, 0.323182f, 2569 },
+        { 1, 5904.f, 0.0905479f, 2611 },
+        { 0, 0.f, 0.307441f, 2569 },
+        { 1, 5904.f, -0.411203f, 2611 },
+        { 1, 5904.f, 0.468652f, 2611 },
+        { 6, 35904.f, -0.401812f, 2611 },
+        { 5, 29904.f, -0.35603f, 2611 },
+        { 2, 11904.f, 0.492735f, 2611 },
+        { 1, 5904.f, 0.379274f, 2611 },
+        { 1, 5904.f, 0.359537f, 2611 },
+        { 1, 5904.f, -0.025275f, 2611 },
+        { 4, 23904.f, 0.255384f, 2611 },
+        { 4, 23904.f, -0.297428f, 2611 },
+        { 6, 35904.f, -0.440616f, 2611 },
+        { 6, 35904.f, -0.454998f, 2611 },
+        { 6, 35904.f, -0.353762f, 2611 },
+        { 6, 35904.f, -0.478825f, 2611 },
+        { 3, 17904.f, 0.437026f, 2611 },
+        { 3, 17904.f, 0.463213f, 2611 },
+        { 0, 0.f, 0.457436f, 2569 },
+        { 5, 29904.f, 0.337979f, 2611 },
+        { 5, 29904.f, -0.421374f, 2611 },
+        { 1, 5904.f, -0.291568f, 2611 },
+        { 3, 17904.f, -0.0496832f, 2611 },
+        { 3, 17904.f, 0.155703f, 2611 },
+        { 3, 17904.f, 0.347724f, 2611 },
+        { 4, 23904.f, 0.2745f, 2611 },
+        { 4, 23904.f, -0.306532f, 2611 },
+        { 4, 23904.f, 0.183447f, 2611 },
+        { 3, 17904.f, 0.173856f, 2611 },
+        { 3, 17904.f, -0.168819f, 2611 },
+        { 3, 17904.f, -0.163568f, 2611 },
+        { 2, 11904.f, 0.251479f, 2611 },
+        { 3, 17904.f, -0.347649f, 2611 },
+    };
+    const size_t n = sizeof(golden) / sizeof(golden[0]);
+    REQUIRE(got.size() == n);
+
+    // Absolute, not relative, tolerances, for the reason spelled out at the
+    // FLOW golden vector: pos lives in the tens of thousands, and a relative
+    // epsilon would swallow the sub-sample shifts this table exists to catch.
+    // slice and len are integers and are compared exactly.
+    for (size_t i = 0; i < n; ++i) {
+        INFO("spawn #", i);
+        CHECK(got[i].slice == golden[i].slice);
+        CHECK(std::fabs(got[i].pos - golden[i].pos) < 0.01f);
+        CHECK(std::fabs(got[i].pan - golden[i].pan) < 0.00002f);
+        CHECK(got[i].len == golden[i].len);
+    }
 }

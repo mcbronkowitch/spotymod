@@ -105,6 +105,13 @@ public:
     bool  sampler_is_recording(int p) const { return _parts[p].sampler().is_recording(); }
     void  sampler_monitor(int p, bool on)   { _parts[p].sampler().set_monitor(on); }
     int   sampler_grains(int p) const       { return _parts[p].sampler().active_grains(); }
+    // Live marker count. In the CSV this is the one observable that separates
+    // the slice-groove's two STEP modes: >= sampler_cfg::kMinSlices means the
+    // walk is following transients, below it means the tempo-grid fallback.
+    // The render scenarios' whole claim about which mode they exercise rests
+    // on this column -- before it existed, sampler_slice_field.json asserted
+    // "falls back to the grid" in a comment and in fact ran in marker mode.
+    int   sampler_slices(int p) const       { return _parts[p].sampler().slice_count(); }
     void  sampler_speed_mode(int p, bool tape) { _parts[p].sampler().set_tape_mode(tape); }
     void  sampler_reverse(int p, bool on)   { _parts[p].sampler().set_reverse(on); }
     void  sampler_feedback(int p, float n)  { _parts[p].sampler().set_feedback(n); }

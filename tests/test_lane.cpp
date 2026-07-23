@@ -78,3 +78,58 @@ TEST_CASE("lane shape_offset: shifts the effective shape; offset 0 is bit-identi
     for (int i = 0; i < 48000; ++i) if (c.process() != d.process()) same = false;
     CHECK(same);
 }
+
+TEST_CASE("lane: step clock accessors expose slot and step duration") {
+    ModLane l;
+    l.init(48000.f, 77);
+    l.set_melodic(true);
+    l.set_rate_hz(1.f);            // 1 Hz cycle
+    l.set_step(true, 8);
+    // step_samples: phase covers one cycle per 1/(rate*clock_scale) seconds;
+    // with 8 steps at clock_scale 8/8 = 1 a step is sr / (rate * 8) = 6000.
+    CHECK(l.steps() == 8);
+    CHECK(l.step_samples() == doctest::Approx(6000.f).epsilon(0.001));
+    CHECK(l.cur_step() == -1);     // no boundary yet
+    // run one full step: the slot counter must have advanced into range
+    for (int i = 0; i < 6001; ++i) l.process();
+    CHECK(l.cur_step() >= 0);
+    CHECK(l.cur_step() < 8);
+}
+
+// F4 (whole-branch review): step_samples() must account for the EVOLVE rate
+// walk. The lane advances its phase by _phase_inc * (1 + _ev_rate) -- both in
+// process() and in tick()'s dp1 -- and _ev_rate is clamped to +-0.2, so a
+// step_samples() built on _phase_inc alone is wrong by up to 20% under
+// EVOLVE/GROW. The sampler pushes this number to the engine as its step clock,
+// where the spec promises roll retriggers at "step_samples / subdiv,
+// sample-exact"; a 20% error there is audible drift against the phrase.
+//
+// The measurement is the definition: count samples between the lane's own step
+// boundaries and require step_samples() to agree. It is taken inside a single
+// cycle, because _ev_rate only moves at a wrap (_wrap_events), so the step
+// duration is constant across the seven boundaries measured.
+TEST_CASE("lane: step_samples() accounts for the EVOLVE rate walk") {
+    ModLane l;
+    l.init(48000.f, 4242);
+    l.set_melodic(true);
+    l.set_rate_hz(1.f);                 // nominal step = 48000 / (1 * 8) = 6000
+    l.set_step(true, 8);
+    l.set_variation(1.f);               // GROW: _ev_rate random-walks at each wrap
+    for (int i = 0; i < 48000 * 200; ++i) l.process();   // 200 cycles: let it leave 0
+
+    while (!l.wrapped()) l.process();   // land on a wrap: _ev_rate is now fixed
+                                        // for the whole cycle below
+    const float claimed = l.step_samples();
+    int prev = l.cur_step(), boundaries = 0, samples = 0;
+    while (boundaries < 7) {            // steps 1..7 of this cycle
+        l.process();
+        ++samples;
+        if (l.cur_step() != prev) { prev = l.cur_step(); ++boundaries; }
+    }
+    const float measured = static_cast<float>(samples) / 7.f;
+    INFO("claimed=" << claimed << " measured=" << measured);
+    // Non-vacuous: the rate walk really did move off zero, so the uncorrected
+    // 1/(_phase_inc * steps) == 6000 is a materially different answer.
+    REQUIRE(std::fabs(measured - 6000.f) > 60.f);
+    CHECK(claimed == doctest::Approx(measured).epsilon(0.002));
+}

@@ -227,6 +227,13 @@ void Part::_control_tick() {
         : 0.f;
     _overlap_eff = clampf(_overlap + omod, 0.f, 1.f);
     _sampler.set_overlap(_overlap_eff);
+
+    // Slice-groove side channel (spec 2026-07-22): the step clock rides the
+    // same raster as every other engine push. Same idiom as set_overlap --
+    // sampler-only, pushed at _sampler directly.
+    if (_engine_id == ENGINE_SAMPLER)
+        _sampler.set_step_clock(_mod.pitch_step_samples());
+
     float chord[ChordBuilder::kMaxNotes];
     // apply() runs unconditionally even when the sampler discards its result:
     // ChordBuilder carries zone hysteresis and voice-leading state across
@@ -320,6 +327,11 @@ void Part::process(float inL, float inR, float& outL, float& outR,
     --_ctrl_ctr;
 
     if (fired && !_note_suppressed) {
+        if (_engine_id == ENGINE_SAMPLER) {
+            const int slot = _mod.pitch_cur_step();
+            _sampler.set_phrase_pos(slot, _mod.pitch_steps(),
+                                    pg_metric_weight(slot));
+        }
         float chord[ChordBuilder::kMaxNotes];
         // build() unconditionally, for the same state reason as apply() in
         // _control_tick.

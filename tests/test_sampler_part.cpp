@@ -191,43 +191,62 @@ TEST_CASE("part: the composed gate reaches the sampler in STEP") {
     }
     CHECK(hi > 0.005f);          // it sounds
     CHECK(lo < 0.4f * hi);       // ...and it is chopped, not a standing cloud
+}
 
-    // Swap re-sync: forcing an engine swap while a note is held must
-    // re-push the CURRENT gate to the freshly active engine (part.cpp's
-    // swap block), the same way it already re-pushes flow/hold/cycle.
-    // Without that push the sampler is left believing the gate is still
-    // low, so it silently swallows the next edge too -- its own set_gate
-    // no-ops on "already at this value" (engine_iface.h) -- and stays
-    // silent until the NEXT natural STEP fire.
-    //
-    // A fresh rig, on ENGINE_SYNTH (the boot default) and never yet
-    // switched to the sampler, so there is no leftover grain tail from the
-    // render above to confound the read. Material is loaded and STEP armed
-    // up front so the sampler is ready to sound the instant it activates.
-    // A manual gate pulse (5 ms = 240 samples) is opened on the SYNTH,
-    // outliving the swap's ~4 ms (192-sample) fade-out, then the part is
-    // switched to the sampler while that pulse is still open: the gate
-    // never actually CHANGES value across the swap, so the per-sample edge
-    // detector (unlike the swap block) has nothing to forward either way --
-    // the re-push is the only path that can inform the freshly active
-    // engine. The fade-out zeroes the synth's own note before the swap
-    // completes (part.cpp's `fade` factor), so any sound from sample 192
-    // on can only be the sampler's.
-    //
-    // The observable is active_grains(), not the audio itself: the swap's
-    // fade-in is still near-zero gain this close to the swap point, and the
-    // reverb tail from the synth's own pre-swap note dwarfs a single quiet
-    // grain in the raw signal -- active_grains() observes the scheduler
-    // directly, with neither confound.
-    InstRig g2;
-    g2.inst.set_target_active(PART_B, LANE_LEVEL, false);
-    g2.inst.set_target_base(PART_B, LANE_LEVEL, 0.f);
-    g2.inst.load_sample(PART_A, tone.data(), tone.data(), tone.size());
-    g2.inst.set_step(PART_A, true, 8);
-    g2.inst.trigger_manual(PART_A);
-    g2.inst.set_engine(PART_A, ENGINE_SAMPLER);
-    g2.render(250);   // covers the ~192-sample fade-out/swap plus slack
-    CHECK(g2.inst.sampler_grains(PART_A) > 0);
+// Task 9 rewrite. Split out of "part: the composed gate reaches the sampler in
+// STEP" above, whose first half still holds. The Part-side requirement is
+// unchanged -- an engine swap must re-push the CURRENT gate to the freshly
+// active engine (part.cpp's swap block), the same way it already re-pushes
+// flow/hold/cycle -- but its OBSERVABLE had to move.
+//
+// The old observable was active_grains() a few hundred samples after the swap:
+// with the pre-Task-5 scheduler a live gate spawned a grain, so a sampler that
+// missed the gate stayed empty. Task 5 removed that: a STEP grain now comes
+// from trigger()/trigger_chord(), never from the gate, so active_grains() says
+// nothing about _gate either way and the old assertion is now vacuous in both
+// directions.
+//
+// What _gate still does in the new STEP core is exactly one thing -- it lets
+// rolls retrigger (sampler_engine.cpp, process(): `!_hold && _gate &&
+// _retrig_period > 0`) -- and that is conditional on a roll having been armed
+// by a fire with a sub-unity metric weight, which needs several phrase cycles
+// of luck to land inside the same unbroken gate window as the swap. Far too
+// indirect. So the observable is now SamplerEngine::gate(), a const observer
+// added in Task 9 for this test, which reads the pushed state directly.
+TEST_CASE("part: an engine swap re-pushes the held gate to the sampler") {
+    // The scenario, unchanged from the original: a fresh Part on ENGINE_SYNTH
+    // (the boot default), never yet switched to the sampler. A manual gate
+    // pulse (5 ms = 240 samples) is opened while the SYNTH is still active, so
+    // Part's per-sample edge detector forwards the rising edge to the SYNTH
+    // and the sampler never sees it. The part is then switched while that
+    // pulse is still open, and the swap completes ~192 samples (4 ms fade-out)
+    // later -- still inside the pulse. The gate never CHANGES value across the
+    // swap, so the edge detector has nothing to forward either way: the
+    // swap-block re-push is the only path that can inform the freshly active
+    // engine. Delete `_engine->set_gate(_last_gate)` from part.cpp and the
+    // final CHECK fails.
+    std::vector<float> tone(24000);
+    for (size_t i = 0; i < tone.size(); ++i)
+        tone[i] = std::sin(6.2831853f * 300.f * float(i) / 48000.f);
+
+    Part p;
+    std::vector<SampleBuffer::Frame> mem(48000);
+    p.init(48000.f, 1234, nullptr, nullptr, mem.data(), mem.size());
+    p.sampler().load_sample(tone.data(), tone.data(), tone.size());
+    p.set_step(true, 8);
+    REQUIRE(p.engine_id() == ENGINE_SYNTH);
+    REQUIRE(p.sampler().gate() == false);
+
+    p.trigger_manual();                 // 5 ms pulse, on the SYNTH
+    { float a, b; p.process(a, b); }    // one sample: the rising edge forwards
+    REQUIRE(p.gate());                  // ...the composed gate is up
+    REQUIRE(p.sampler().gate() == false);   // ...and it went to the synth only
+
+    p.set_engine(ENGINE_SAMPLER);
+    for (int i = 0; i < 200; ++i) { float a, b; p.process(a, b); }
+    REQUIRE(p.engine_id() == ENGINE_SAMPLER);   // the swap completed...
+    REQUIRE(p.gate());                          // ...inside the same pulse
+    CHECK(p.sampler().gate() == true);          // only the re-push can do this
 }
 
 TEST_CASE("part: engine switch synth <-> sampler is click-free") {
@@ -735,4 +754,132 @@ TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
     const int spawns = g.inst.sampler_spawn_count(p) - spawns_before;
     INFO("spawns in window=" << spawns);
     REQUIRE(spawns > 5);
+}
+
+TEST_CASE("part: a sampler STEP part pushes a real step clock and fires on slices") {
+    // Rig idiom of this file: Part + injected sampler memory. Load clicks,
+    // STEP on, run -- the engine must receive a real step clock and fires
+    // must land on slice starts without any test-side set_phrase_pos.
+    //
+    // Scope warning (review 2026-07-22, Finding 1): of the four assertions
+    // below, only the step_clock() one discriminates a Part-side push. The
+    // RED run taken before EITHER push was wired already showed
+    // slice_count() == 8, spawns > 4 and spawns_on_marker == spawns passing:
+    // fires land on slice starts because the engine's OWN grid/marker
+    // fallback puts them there (_slice_pos/_fire_slice), not because the
+    // phrase position reached it. So this case pins set_step_clock only.
+    // The set_phrase_pos push is pinned separately, by the roll-arming case
+    // below -- do not read this one as covering it.
+    std::vector<SampleBuffer::Frame> mem(48000 * 4);
+    Part p;
+    p.init(48000.f, 1234, nullptr, nullptr, mem.data(), mem.size());
+    p.set_engine(ENGINE_SAMPLER);
+    for (int i = 0; i < 400; ++i) { float a,b,c,d; p.process(a,b,c,d); } // fade+swap
+    std::vector<float> l(48000, 0.f);
+    for (int c = 0; c < 8; ++c)
+        for (int i = 0; i < 240; ++i)
+            l[c * 6000 + i] = std::exp(-float(i) / 60.f);
+    p.sampler().load_sample(l.data(), l.data(), l.size());
+    REQUIRE(p.sampler().slice_count() == 8);
+    // Rate tightened off the SuperModulator default (also 0.5, super_
+    // modulator.h:97): at the default, the push made during the fade+swap
+    // loop above and the push made here after configuring STEP land on the
+    // exact same computed step_samples (clock_scale is 1.0 either way once
+    // _steps == 8 matches the default), so the CHECK below would pass
+    // vacuously -- same collision class the brief flags for the 6000
+    // sentinel, just a different coincidental value. 0.35 forces a real
+    // change in the pushed clock (empirically ~7745.97 -> ~23200.1 samples).
+    p.mod().set_rate(0.35f);
+    p.set_step(true, 8);
+    const float before = p.sampler().step_clock();
+    int spawns_on_marker = 0, spawns = 0;
+    // Plain local, NOT a function-local static (review 2026-07-22, Finding 2):
+    // a static here survives every re-entry into this TEST_CASE within the
+    // same process, so the moment this case gains a SUBCASE the second pass
+    // would start with the first pass's spawn count and silently miscount.
+    int last_count = 0;
+    for (int i = 0; i < 48000 * 4; ++i) {
+        float a, b, c, d;
+        p.process(a, b, c, d);
+        if (p.sampler().spawn_count() != last_count) {
+            last_count = p.sampler().spawn_count();
+            ++spawns;
+            const float pos = p.sampler().last_spawn_pos();
+            for (int s = 0; s < 8; ++s)
+                if (std::fabs(pos - float(s * 6000)) < 200.f) { ++spawns_on_marker; break; }
+        }
+    }
+    CHECK(p.sampler().step_clock() != before);   // Part pushed a real clock
+    CHECK(spawns > 4);                            // the phrase actually fired
+    CHECK(spawns_on_marker == spawns);            // every fire hit a slice
+}
+
+TEST_CASE("part: the phrase position reaches the sampler -- off-beat fires arm rolls") {
+    // The discriminating half of the slice-groove wiring (review 2026-07-22,
+    // Finding 1). The sibling case above cannot tell whether Part actually
+    // pushes set_phrase_pos: fires land on slice starts by way of the
+    // engine's own grid/marker fallback either way. This one can, because it
+    // observes the ONE piece of engine state that is structurally unreachable
+    // without the push.
+    //
+    // The mechanism (sampler_engine.cpp, _fire_slice):
+    //
+    //     const float p_roll = (1.f - _phrase_weight) * dens_n;
+    //     if (max_subdiv >= 2 && rdraw < p_roll) { _retrig_period = ...; }
+    //
+    // _phrase_weight is initialised to 1.f (sampler_engine.h) and is written
+    // by exactly one function, set_phrase_pos, whose only caller in the whole
+    // engine is Part's per-fire push. With the push removed, every fire looks
+    // to the engine like slot 0 -- a downbeat, weight 1 -- so p_roll is
+    // identically 0, rdraw < 0 is false for the unipolar draw, and
+    // _retrig_period can never leave 0 no matter how long the render runs or
+    // how high DENS sits. With the push in place, Part passes
+    // pg_metric_weight(slot): 1.0 on slot 0, but 0.2 on every odd slot and
+    // 0.35/0.5 on the even offs (phrase_gen.h), so at DENS max (dens_n == 1)
+    // the odd slots roll with p == 0.8 and a roll arms within the first
+    // phrase cycle or two.
+    //
+    // DENS is pinned at maximum and MOD at zero so MOTION's swing on the
+    // overlap (part.cpp: _overlap_eff = _overlap + omod) cannot pull dens_n
+    // down mid-render; max_subdiv == 8 then also clears the >= 2 gate.
+    //
+    // The observable is retrig_period() sampled every process() call, not a
+    // spawn count: a roll re-arms and clears on the very next fire, so a
+    // once-at-the-end read would almost always miss it, and spawn counts are
+    // confounded by the ordinary per-fire spawn.
+    std::vector<SampleBuffer::Frame> mem(48000 * 4);
+    Part p;
+    p.init(48000.f, 1234, nullptr, nullptr, mem.data(), mem.size());
+    p.set_engine(ENGINE_SAMPLER);
+    for (int i = 0; i < 400; ++i) { float a, b, c, d; p.process(a, b, c, d); }
+    std::vector<float> l(48000, 0.f);
+    for (int c = 0; c < 8; ++c)
+        for (int i = 0; i < 240; ++i)
+            l[c * 6000 + i] = std::exp(-float(i) / 60.f);
+    p.sampler().load_sample(l.data(), l.data(), l.size());
+    REQUIRE(p.sampler().slice_count() == 8);
+
+    p.set_depth(0.f);                 // no MOTION swing on the overlap
+    p.set_sampler_overlap(1.f);       // DENS max -> dens_n == 1, max_subdiv == 8
+    p.mod().set_rate(0.35f);
+    p.set_step(true, 8);
+    p.set_target_base(LANE_LEVEL, 1.f);
+
+    int  fires = 0, last_count = 0;
+    bool rolled = false;
+    for (int i = 0; i < 48000 * 8; ++i) {
+        float a, b, c, d;
+        p.process(a, b, c, d);
+        if (p.sampler().spawn_count() != last_count) {
+            last_count = p.sampler().spawn_count();
+            ++fires;
+        }
+        if (p.sampler().retrig_period() > 0) rolled = true;
+    }
+
+    // Guard against passing vacuously: no fires means no dice were ever
+    // thrown, and `rolled` would be false for a reason that has nothing to do
+    // with the phrase push. Several phrase cycles' worth at this rate.
+    REQUIRE(fires > 16);
+    CHECK(rolled);   // only reachable if _phrase_weight < 1, i.e. Part pushed it
 }
