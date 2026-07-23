@@ -32,18 +32,14 @@ deck is deliberately not a second melodic instrument — it is the room the
 synth part plays in. Both sit behind the same five modulation lanes and the
 same voice row, so no knob goes dead when you flip the engine.
 
-On the texture deck, **STEP** doesn't step a metronome grid — it walks a
-`SliceMap` of transients marked as the buffer is recorded or loaded, so each
-phrase fire spawns exactly one grain on a real attack in the material. MOTION
-orders that walk at zero and scrambles it toward one, the same lane that
-scatters the synth's melody now scattering which slice plays next. DENS sets
-both how likely a roll is and how finely it subdivides the step — a rolling
-slot always fills the whole step at that subdivision — biased by the slot's
-metric weight so downbeats stay solid while the offs are free to roll. Material without enough
-transients — a drone, a pad — falls back to the old even tempo grid
-automatically, so nothing goes silent or errors out just because the source
-has nothing to slice. FLOW is unchanged: it still LFOs continuously across
-the same lanes regardless of engine.
+On the texture deck, **STEP** walks a `SliceMap` of transients marked while the
+buffer is recorded or loaded: each phrase fire spawns one grain on a real
+attack in the material. MOTION moves that walk from ordered playback at zero
+toward free traversal. **DENS** controls runtime grain overlap; **COLOR**
+becomes **FEEL** in STEP, deriving accents from the material, and spreads the
+cloud's pitch in FLOW. Material without enough transients falls back to the
+even tempo grid automatically, so drones and pads stay playable. FLOW still
+moves continuously across the same lanes regardless of engine.
 
 Each of the two **parts** is a **SuperModulator** — one performable macro
 surface (RATE, SHAPE, DENSITY, SMOOTH, RANGE, MOD) sitting on top of
@@ -54,11 +50,11 @@ melody can rise while the filter falls. (A single output driving all targets
 would just move everything in unison — a tremolo, not an instrument.)
 
 Each lane can run as a smooth LFO (**FLOW**), a stepped sequence (**STEP**), or
-grow, loop, or erode over time (**ENTROPY**). A center section — **MORPH / COUPLE /
-DRIFT / SPOT / SETTLE** — makes the interaction between the two parts playable, a
-shared **Oliverb**-based ambient reverb turns the room into an instrument (Doppler
-SIZE, a DECAY that blooms past 100 %), and CV + gate outputs extend the modulation
-to the rest of the rack.
+grow, loop, or erode over time (**ENTROPY**). A center section -- **MORPH / COUPLE / DRIFT / SPOT / SETTLE** -- makes the
+interaction between the two parts playable. One shared **Oliverb**-based
+ambient reverb turns the room into an instrument (Doppler SIZE and a DECAY that
+blooms past 100 %), while each deck has its own **ROOM** dry/send mix into that
+shared room. CV + gate outputs extend the modulation to the rest of the rack.
 
 The full design intent lives in the residency's design spec; this README is a
 self-contained summary of it.
@@ -123,8 +119,8 @@ playable Rack module and a permanent part of the workflow, not yet a finished
 instrument.
 
 **[Download the latest release](https://github.com/mcbronkowitch/spotymod/releases/latest)**
-— `.vcvplugin` builds for Windows, Apple Silicon and Linux, currently **2.8.0**
-(both engines, the texture deck included). Unpack into Rack's user plugin
+— `.vcvplugin` builds for Windows, Apple Silicon and Linux, currently **2.10.1**
+(both engines, the expanded texture deck included). Unpack into Rack's user plugin
 directory and restart Rack.
 
 Building it yourself needs its own toolchain (a native MinGW/GCC compiler, not
@@ -145,9 +141,10 @@ the desktop clang path); the build, install and I/O details live in
 | **M4.8** | Reverb dry/wet — equal-power MIX at the master join + clear-on-sleep CPU bypass | **done** (engine + host) |
 | **M4.9** | Reverb DIFFUSION knob (replaces DEPTH) — room density 0–0.9, weak line-mod coupling | **done** (engine + host) |
 | **M4.10** | Chord layer — COLOR knob, diatonic stacks, voice-leading, live FLOW surface | **done** (engine + hosts; hardware placement deferred) |
-| **M5** | Sampler — the texture deck: a granular cloud as a second selectable part engine, live recording + overdub, WAV load/save, the Morphagene-style surface (GENE SIZE, ORGANIZE, SCAN, DENS, NEW) | **done** (engine + hosts, released in 2.8.0) |
+| **M5** | Sampler -- the texture deck: granular cloud, live recording + overdub, WAV load/save, Morphagene-style DENS/SCAN/NEW/LEN/ORG controls, clocked slice-groove, FEEL accents, and FLOW cloud dispersion | **done** (engine + hosts; released through 2.10.1) |
+| **M5h** | Per-deck ROOM mix: independent dry/send mix per deck into one shared Oliverb reverb | **done** (engine + VCV panel; pending the next release) |
 | **CPU** | Three measured rounds on real hardware: `instrument_worst`'s worst block went from ~156 % of the audio-block budget to 94 %. Method and every number in [`bench/`](bench/README.md) and [`docs/bench/`](docs/bench/) | **done** (ongoing as a tool) |
-| **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | planned |
+| **M6** | Firmware shell: pads, gestures, panel, LEDs -- runs on real hardware | planned (spec ready; implementation not started) |
 
 Per-milestone detail and current status live in [`docs/roadmap.md`](docs/roadmap.md).
 

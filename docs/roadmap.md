@@ -10,7 +10,7 @@ is actually built today, and what is still design-only.
   (`2026-07-11-spotykach-fx-design.md`), the center-section spec
   (`2026-07-12-spotykach-center-section-design.md`) and the ambient-reverb v2
   spec (`2026-07-12-spotykach-ambient-reverb-v2-design.md`).
-- **Last updated:** 2026-07-19 (fast tanh in the echo loop and the master limiter, plus a bound-correctness fix; measured at `6e38090`; worst case 104 % -> 98 % anchored max — **under budget for the first time, gate and all**, with 2.3 points of margin).
+- **Last updated:** 2026-07-23 (sampler slice-groove, FEEL accents, FLOW dispersion, and a playability pass; plus the per-deck ROOM mix). These software milestones are complete; M6 remains the next, hardware-facing milestone.
 
 > **Reminder:** the engine and its milestones are still verified only against
 > the desktop offline renderer (unit tests + WAV/CSV render) — the Daisy
@@ -41,6 +41,11 @@ is actually built today, and what is still design-only.
 | **M5a — generous ranges** | SIZE, PITCH, resonance, MOTION scatter and record-feedback ranges opened from M5a's conservative first pass, each ceiling chosen from measurement rather than habit; listening renders produced for the ranges to be judged by ear | ✅ **done** (engine + render host; spec `docs/superpowers/specs/2026-07-21-sampler-generous-ranges-design.md`; merged) |
 | **M5b** | Sampler on the panel — ENG remap, REC pad, WAV load/save, patch persistence, factory sample | ✅ **done** (VCV host; merged) |
 | **M5c** | Morphagene-style control surface — DENS (runtime grain overlap), SCAN (running playhead with a real dead zone), NEW/punch, LEN and ORG remapped onto the voice row; SIZE made live downward so turning LEN back shortens what is already sounding | ✅ **done** (engine + VCV host; spec `docs/superpowers/specs/2026-07-21-sampler-morphagene-controls.md`) |
+| **M5d** | Slice-groove -- recorded/loaded material becomes a live slice map; STEP plays clocked slices, MOTION moves from ordered playback to free traversal, and SIZE sets the slice length | ✅ **done** (engine + render host; released in 2.9.0) |
+| **M5e** | Sampler FEEL -- COLOR becomes material-derived accents in STEP, while preserving the synth COLOR/chord path | ✅ **done** (engine + VCV panel; released in 2.9.0) |
+| **M5f** | Sampler cloud dispersion -- COLOR in FLOW spreads grain pitch through detune and octave layers, with no new control or RNG draw | ✅ **done** (engine + VCV panel; released in 2.10.0) |
+| **M5g** | Sampler playability pass -- FLOW-to-STEP snaps the entering deck to the transport, SCAN is linear below its knee (up to 4x), and MOD reaches the read position quadratically | ✅ **done** (engine; released in 2.10.1) |
+| **M5h** | Per-deck ROOM mix -- each deck has its own equal-power dry/send mix into one shared reverb; the central REV_MIX is removed | ✅ **done** (engine + VCV panel; post-2.10.1, pending the next release) |
 | **Sampler bench + grain cap** | The texture deck priced on the Daisy (7 rows + 6 ablations), and the grain-count spike it exposed capped via `kSpawnHeadroom` | ✅ **done** (`bench/workloads_sampler.cpp`, `docs/bench/2026-07-22-*`) |
 | **CPU hunt round 3** | Three measured removals: libm `sinf` on the reverb send per sample, a filter computing five outputs to use one (`engine/util/svf_lp.h`), and control-rate libm re-run on unchanged inputs | ✅ **done** (engine; released in 2.8.0) |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
@@ -587,6 +592,14 @@ Shipped in three passes — **M5a** engine + render host, **M5b** the VCV panel
 (ENG/REC, WAV load/save, patch persistence, factory sample), **M5c** the
 Morphagene-style surface (DENS, SCAN, NEW, LEN/ORG). Released in **2.8.0**.
 
+The deck then received five completed follow-up milestones before hardware work:
+
+- **M5d -- Slice-groove:** live `SliceMap` analysis while recording or loading; STEP triggers slices on the phrase clock, MOTION traverses the pool, and SIZE shapes the slice duration. Released in **2.9.0**.
+- **M5e -- FEEL accents:** on sampler decks, COLOR becomes FEEL in STEP and derives accents from the recorded material; synth COLOR remains unchanged. Released in **2.9.0**.
+- **M5f -- Cloud dispersion:** on sampler decks in FLOW, COLOR controls the existing per-grain detune/octave spread without adding a random draw or a new surface. Released in **2.10.0**.
+- **M5g -- Playability pass:** entering STEP locks only the entering deck to the running transport; SCAN gets a usable linear lower range (maximum 4x), and MOD's source-position influence is quadratic. Released in **2.10.1**.
+- **M5h -- Per-deck ROOM:** the former shared master reverb mix is replaced by one ROOM control per deck. Both decks still feed one shared Oliverb room; the change is complete on `main` and awaits the next release.
+
 Spec: `docs/superpowers/specs/2026-07-18-sampler-texture-deck-design.md`
 (supersedes the older Deck/Vox adapter spec, whose slice-player trigger model
 predates the melody rework, the groove engine, CHOKE and the chord layer),
@@ -607,13 +620,15 @@ Two things a later reader should not have to re-derive:
 
 ## Planned
 
-### M6 — Firmware shell ⬜
+### M6 — Firmware shell ⬜ (next; spec ready)
 Thin Daisy shell hosting `engine/` next to the original `app.cpp` (kept
 buildable). Wires up pads (release-based tap/hold gestures), the three 3-position
 panel switches, LED ring / pad / CYCLE feedback, CV + gate + V/Oct + clock I/O,
 preset persistence, and the deferred scale gestures (ALT-hold inspect, ALT+TUNE
 scale select, ALT+PITCH-pad mode cycle). **First milestone that runs on real
 hardware.**
+
+The M6 shell specification is complete (`docs/superpowers/specs/2026-07-12-spotykach-firmware-shell-design.md`), but implementation has not started.
 
 ## Build & verify
 
