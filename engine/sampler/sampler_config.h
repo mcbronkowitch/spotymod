@@ -241,10 +241,16 @@ constexpr float  kOverlapMax = 8.f;
 // still earns its keep: three-quarters of travel is a knob position you can
 // find by feel, and a frozen head stays frozen right up against it.
 //
-// The lower zone starts its ramp at kScanMinRate, not at 0: starting at 0
-// would blur the dead zone's edge, because the head would sit at
+// The lower zone starts its ramp at kScanMinRate, not at 0. That was load-
+// bearing under the old exponential lower zone, where starting at 0 would
+// have blurred the dead zone's edge -- the head would have sat at
 // practically-zero rate for a stretch right past it anyway, and the knob
-// would feel like it had two dead zones instead of one.
+// would have felt like it had two dead zones instead of one. Under the
+// current lerpf(kScanMinRate, 1.f, t) that argument no longer applies:
+// kScanMinRate (0.001, below) only ever shifts the lower zone's output by up
+// to its own value, at t == 0 -- inaudible and numerically inert. The
+// constant is left in place, but the next person tuning this knob should
+// treat it as decorative rather than load-bearing.
 //
 // kScanMaxRate was 8.f; this spec pulls it back to 4.f, a deliberate walkback
 // of that earlier decision, not a drift. Listening to the knob showed the

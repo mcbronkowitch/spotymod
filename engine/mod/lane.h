@@ -66,6 +66,10 @@ public:
     static int step_index(float phase, int steps) {
         int s = static_cast<int>(phase * static_cast<float>(steps));
         if (s >= steps) s = steps - 1;
+        // Guard, not a live path: every production caller (lane.cpp's three
+        // call sites, Center's STEP-entry snap) passes a phase already in
+        // [0, 1), so s is never negative in practice. Kept for any future
+        // caller that doesn't -- don't go hunting for the one that needs it.
         if (s < 0)      s = 0;
         return s;
     }

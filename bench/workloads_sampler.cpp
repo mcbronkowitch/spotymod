@@ -174,13 +174,15 @@ void setup_overdub_worst()
     settle(4000);              // past kRecordFade and into sustain
 }
 
-// --- SCAN's control-rate pow ------------------------------------------------
-// SamplerEngine::set_scan calls std::pow, and its header comment names the
-// caller that matters: the VCV host drives it every 16 samples, six times
-// more often than the engine's own 96-sample control tick. "Measured
-// affordable at that rate" was a desktop measurement. This is that rate on
-// the Daisy, against sampler_flow_worst as the baseline -- the delta is the
-// pow.
+// --- SCAN at the VCV host's control rate -------------------------------------
+// SamplerEngine::set_scan, and its header comment names the caller that
+// matters: the VCV host drives it every 16 samples, six times more often
+// than the engine's own 96-sample control tick. "Measured affordable at that
+// rate" was a desktop measurement. This is that rate on the Daisy, against
+// sampler_flow_worst as the baseline -- the delta is set_scan's clampf/lerpf
+// work at that call frequency (the lower branch's std::pow is gone as of
+// spec 2026-07-23 sampler-performance-fixes; the curve is piecewise-linear
+// now).
 void setup_scan_ctrl() { setup_flow_worst(); }
 
 float proc_solo()
@@ -221,7 +223,7 @@ float proc_solo_scan()
             g_scan_ctr = 0;
             // A moving value, not a constant: set_scan has no early-out on an
             // unchanged argument, but a constant would still let the branch
-            // predictor and the pow's own path settle into one case.
+            // predictor and lerpf's own path settle into one case.
             acc += 0.f;
             g_s.set_scan(0.4f + 0.2f * sinf(static_cast<float>(i) * 0.07f));
         }

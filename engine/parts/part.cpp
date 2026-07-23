@@ -64,6 +64,12 @@ float Part::target_raw(int slot) const {
     // auch die Slice-Basisposition in STEP. Denselben Regler je nach Modus
     // verschieden tief wirken zu lassen waere genau die versteckte Kopplung,
     // die die FEEL-Spec abgeschafft hat.
+    // Reads _engine_id here, NOT _pending_engine during a switch -- the
+    // opposite of snap_sampler_cursor's rule (part.h), which counts the
+    // target engine mid-switch. Deliberate, not an oversight: during the
+    // fade the OLD engine is what is actually sounding, so shaping SOURCE's
+    // MOD curve by the currently-sounding engine is defensible here even
+    // though the two rules diverge.
     if (slot == LANE_SOURCE && _engine_id == ENGINE_SAMPLER)
         d = std::pow(d, sampler_cfg::kSourceModExp);
     float mod = _active[slot] ? _mod.lane_output(slot) * d * _tdepth[slot] : 0.f;

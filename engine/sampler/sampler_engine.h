@@ -160,13 +160,16 @@ public:
     // zone. The accumulated position is ADDED to the SOURCE target in
     // _spawn_one, so ORGANIZE sets where the head starts and SCAN moves it.
     //
-    // Calls std::pow (scan_rate(), sampler_engine.cpp) -- a control-rate-only
-    // caller, never the per-sample audio path. This engine's own control tick
-    // is kCtrlInterval = 96 samples (~2 ms @ 48 kHz); the VCV host currently
-    // calls this more often than that -- ctrlDiv divides by 16 samples
-    // (host/vcv/src/Spotymod.cpp), i.e. every ~0.33 ms @ 48 kHz. Measured
-    // affordable at that rate; a future caller pushing this every audio
-    // sample would put a std::pow on the per-sample path and must not.
+    // scan_rate() (sampler_engine.cpp) used to spend a std::pow in its lower
+    // branch; the curve is piecewise-linear now (spec 2026-07-23 sampler-
+    // performance-fixes), so that cost is gone. set_scan is still a
+    // control-rate-only caller, never the per-sample audio path: this
+    // engine's own control tick is kCtrlInterval = 96 samples (~2 ms @
+    // 48 kHz), and the VCV host currently calls this more often than that --
+    // ctrlDiv divides by 16 samples (host/vcv/src/Spotymod.cpp), i.e. every
+    // ~0.33 ms @ 48 kHz. Measured affordable at that rate; a future caller
+    // pushing this every audio sample would still be spending clampf/lerpf
+    // on the per-sample path for no reason and must not.
     void set_scan(float bipolar);
 
     // "New gene now" (spec 2026-07-21 morphagene-controls): the playhead

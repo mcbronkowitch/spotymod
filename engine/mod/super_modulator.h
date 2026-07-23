@@ -84,8 +84,15 @@ public:
     // Der Onset-Gap-Ring wird mitgenullt, dieselbe Kopplung, auf der
     // reset_phases oben besteht: nach einem Phasensprung misst der erste
     // Onset sonst einen Abstand, den es nie gab, und dieser Rhythmus-Blick
-    // steuert ueber Instrument die FX-Abgriffe des ANDEREN Decks -- eines
-    // Decks, das von diesem Snap nichts merken soll.
+    // steuert ueber Instrument die FX-Abgriffe des ANDEREN Decks. Das Nullen
+    // hier setzt _rhythm.valid auf false (super_modulator.cpp, _onsets >= 3),
+    // und derive_offsets (taps.cpp) liefert fuer ein ungueltiges RhythmView
+    // kMuted auf beiden Taps -- das andere Deck verliert also seine beiden
+    // Tape-Abgriffe, bis das snappende Deck erneut drei Onsets gezaehlt hat.
+    // Das ist kein neuer Nebeneffekt: reset_phases loescht denselben Ring auf
+    // dieselbe Weise, also traegt RST bereits denselben Preis eines
+    // Phasensprungs. Ob dieser Preis bleibt, ist eine offene Entscheidung des
+    // Autors, keine, die dieser Kommentar trifft.
     void snap_pitch_phase(float ph) {
         _lanes[LANE_PITCH].reset(ph);
         _since_onset = 0;

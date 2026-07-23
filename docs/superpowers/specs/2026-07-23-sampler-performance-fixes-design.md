@@ -144,8 +144,15 @@ Onset-Gap-Ring** (`_since_onset`, `_onsets`, `_gap[]`, `_rhythm`) — genau die
 Kopplung, auf der der Kommentar an `reset_phases` besteht. Ohne das misst der
 erste Onset nach dem Sprung einen Abstand, den es nie gab, und dieser
 Rhythmus-Blick steuert über `Instrument` die FX-Abgriffe des **anderen** Decks
-(`instrument.cpp:81-86`) — ein Deck, das von diesem Snap nichts merken soll.
-Die vier Textur-Lanes bleiben unberührt.
+(`instrument.cpp:81-86`). Das Nullen setzt `_rhythm.valid` auf false
+(`super_modulator.cpp`, `_onsets >= 3`), und `derive_offsets` (`taps.cpp:15-17`)
+liefert für ein ungültiges `RhythmView` `kMuted` auf beiden Taps — das andere
+Deck verliert also seine beiden Tape-Abgriffe, bis das snappende Deck erneut
+drei Onsets gezählt hat. Das ist kein neuer Nebeneffekt: `reset_phases` löscht
+denselben Ring auf dieselbe Weise, also trägt schon RST diesen Preis eines
+Phasensprungs; dieser Snap erbt ihn nur. Ob der Preis bleibt, ist eine offene
+Entscheidung, keine, die hier getroffen wird. Die vier Textur-Lanes bleiben
+unberührt.
 
 ### Der Slice-Cursor
 
