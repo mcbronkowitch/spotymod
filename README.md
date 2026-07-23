@@ -119,7 +119,7 @@ playable Rack module and a permanent part of the workflow, not yet a finished
 instrument.
 
 **[Download the latest release](https://github.com/mcbronkowitch/spotymod/releases/latest)**
-— `.vcvplugin` builds for Windows, Apple Silicon and Linux, currently **2.10.1**
+— `.vcvplugin` builds for Windows, Apple Silicon and Linux, currently **2.11.0**
 (both engines, the expanded texture deck included). Unpack into Rack's user plugin
 directory and restart Rack.
 

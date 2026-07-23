@@ -45,7 +45,7 @@ is actually built today, and what is still design-only.
 | **M5e** | Sampler FEEL -- COLOR becomes material-derived accents in STEP, while preserving the synth COLOR/chord path | ✅ **done** (engine + VCV panel; released in 2.9.0) |
 | **M5f** | Sampler cloud dispersion -- COLOR in FLOW spreads grain pitch through detune and octave layers, with no new control or RNG draw | ✅ **done** (engine + VCV panel; released in 2.10.0) |
 | **M5g** | Sampler playability pass -- FLOW-to-STEP snaps the entering deck to the transport, SCAN is linear below its knee (up to 4x), and MOD reaches the read position quadratically | ✅ **done** (engine; released in 2.10.1) |
-| **M5h** | Per-deck ROOM mix -- each deck has its own equal-power dry/send mix into one shared reverb; the central REV_MIX is removed | ✅ **done** (engine + VCV panel; post-2.10.1, pending the next release) |
+| **M5h** | Per-deck ROOM mix -- each deck has its own equal-power dry/send mix into one shared reverb; the central REV_MIX is removed | ✅ **done** (engine + VCV panel; released in 2.11.0) |
 | **Sampler bench + grain cap** | The texture deck priced on the Daisy (7 rows + 6 ablations), and the grain-count spike it exposed capped via `kSpawnHeadroom` | ✅ **done** (`bench/workloads_sampler.cpp`, `docs/bench/2026-07-22-*`) |
 | **CPU hunt round 3** | Three measured removals: libm `sinf` on the reverb send per sample, a filter computing five outputs to use one (`engine/util/svf_lp.h`), and control-rate libm re-run on unchanged inputs | ✅ **done** (engine; released in 2.8.0) |
 | **M6** | Firmware shell: pads, gestures, panel, LEDs — runs on real hardware | ⬜ planned |
@@ -598,7 +598,7 @@ The deck then received five completed follow-up milestones before hardware work:
 - **M5e -- FEEL accents:** on sampler decks, COLOR becomes FEEL in STEP and derives accents from the recorded material; synth COLOR remains unchanged. Released in **2.9.0**.
 - **M5f -- Cloud dispersion:** on sampler decks in FLOW, COLOR controls the existing per-grain detune/octave spread without adding a random draw or a new surface. Released in **2.10.0**.
 - **M5g -- Playability pass:** entering STEP locks only the entering deck to the running transport; SCAN gets a usable linear lower range (maximum 4x), and MOD's source-position influence is quadratic. Released in **2.10.1**.
-- **M5h -- Per-deck ROOM:** the former shared master reverb mix is replaced by one ROOM control per deck. Both decks still feed one shared Oliverb room; the change is complete on `main` and awaits the next release.
+- **M5h -- Per-deck ROOM:** the former shared master reverb mix is replaced by one ROOM control per deck. Both decks still feed one shared Oliverb room. Released in **2.11.0**.
 
 Spec: `docs/superpowers/specs/2026-07-18-sampler-texture-deck-design.md`
 (supersedes the older Deck/Vox adapter spec, whose slice-player trigger model
