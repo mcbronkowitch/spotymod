@@ -3358,3 +3358,47 @@ TEST_CASE("sampler: set_dispersion clamps its argument before the curve") {
     CHECK(g.e.detune() == doctest::Approx(1.f).epsilon(1e-4));
     CHECK(g.e.sub()    == doctest::Approx(kSubSpreadMax).epsilon(1e-4));
 }
+
+// Der reale Preis der Streuung ist keine Rechenlast, sondern Dichte. Im
+// Tape-Modus haengt die Grain-Laenge an der Ratio (lenf = _grain_len / ratio),
+// ein oktavtiefes Korn ist also laenger; laengere Koerner fuellen den Pool
+// frueher; verworfene Spawns duennen die Wolke aus. Ein Regler, der "mehr
+// Variation" verspricht und Dichte wegnimmt, waere die Regression.
+//
+// Gemessen wird im schlimmsten Eck: Tape an, DENS max (kuerzestes
+// Spawn-Intervall, hoechste Dichte). Die Schranke ist bewusst grosszuegig --
+// dieser Test ist ein Waechter gegen einen Einbruch, kein Feintuning des
+// Klangs. Die tatsaechlichen Zahlen gehoeren in den Bericht und ins Ohr.
+TEST_CASE("sampler FLOW: dispersion does not starve the cloud at DENS max in tape") {
+    auto measure = [](float dispersion) {
+        Rig g;
+        g.e.set_flow(true);
+        g.e.set_tape_mode(true);
+        g.e.set_overlap(1.f);               // DENS max
+        g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.5f, /*motion*/0.5f);
+        g.e.set_dispersion(dispersion);
+        g.render(96);                        // Control-Tick sieht die Werte
+        const int dropped0 = g.e.dropped_spawns();
+        const int spawned0 = g.e.spawn_count();
+        g.render(48000 * 4);                 // vier Sekunden Wolke
+        const int dropped = g.e.dropped_spawns() - dropped0;
+        const int spawned = g.e.spawn_count()  - spawned0;
+        return std::make_pair(dropped, spawned);
+    };
+
+    const auto off = measure(0.f);
+    const auto on  = measure(1.f);
+
+    REQUIRE(off.second > 100);               // es lief ueberhaupt eine Wolke
+    REQUIRE(on.second  > 100);
+
+    MESSAGE("dispersion 0: ", off.second, " spawned, ", off.first, " dropped");
+    MESSAGE("dispersion 1: ", on.second,  " spawned, ", on.first,  " dropped");
+
+    // Die Wolke darf am oberen Reglerende nicht einbrechen. Halb so viele
+    // gelandete Spawns waere ein hoerbarer Dichteverlust und damit genau die
+    // Regression, gegen die dieser Test steht.
+    const int landed_off = off.second - off.first;
+    const int landed_on  = on.second  - on.first;
+    CHECK(landed_on * 2 >= landed_off);
+}

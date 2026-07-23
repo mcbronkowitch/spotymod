@@ -1,0 +1,25 @@
+{
+  "_comment": "Cloud-dispersion listening aid (spec 2026-07-23): COLOR streut in FLOW die Tonhoehen. Bleibt die ganzen 40s in FLOW -- kein set_step -- damit nur diese eine Achse laeuft. MOTION steht fest auf 0.35, damit die Wolke lebt, aber den Streuwert nicht selbst mitbewegt (FLOW liest _color_eff, also Knopf PLUS MOTION-Swing). COLOR faehrt in vier Stufen: 0 (unisono, klingt wie vor dieser Aenderung), 0.25 und 0.5 (Verstimmungsbreite laeuft auf, eine Farbe), 0.75 und 1.0 (Oktavanteil kommt dazu -- am oberen Ende SPALTUNG in zwei Lagen, nicht Grundierung).",
+  "sample_rate": 48000,
+  "bpm": 96,
+  "duration_s": 40.0,
+  "input_wav": "host/render/scenarios/assets/in_drone.wav",
+  "init": [
+    { "action": "set_engine", "part": 1, "value": "sampler" },
+    { "_comment": "Part A stumm -- nur die Wolke soll zu hoeren sein",
+      "action": "set_target_base", "part": 0, "slot": 4, "value": 0.0 },
+    { "action": "set_target_active", "part": 0, "slot": 4, "flag": false },
+    { "action": "set_target_base", "part": 1, "slot": 4, "value": 1.0 },
+    { "action": "set_target_base", "part": 1, "slot": 3, "value": 0.35 },
+    { "action": "sampler_feedback", "part": 1, "value": 0.95 },
+    { "action": "set_color", "part": 1, "value": 0.0 }
+  ],
+  "events": [
+    { "t": 1.0,  "action": "sampler_record", "part": 1, "flag": true },
+    { "t": 9.0,  "action": "sampler_record", "part": 1, "flag": false },
+    { "t": 16.0, "action": "set_color", "part": 1, "value": 0.25 },
+    { "t": 22.0, "action": "set_color", "part": 1, "value": 0.5 },
+    { "t": 28.0, "action": "set_color", "part": 1, "value": 0.75 },
+    { "t": 34.0, "action": "set_color", "part": 1, "value": 1.0 }
+  ]
+}
