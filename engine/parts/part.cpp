@@ -27,6 +27,15 @@ void Part::init(float sample_rate, uint32_t seed_base,
     _engine_fade.init(sample_rate);
     _engine_fade.set_on(true, true);            // boot: engine fully on
     _step_on = false;
+    // init() means "no prior observation of the switch exists" -- that is
+    // exactly what _step_seen = false encodes. The VCV host calls init()
+    // again mid-session (audio-device / sample-rate change), and if
+    // _step_seen survived a reinit while STEP stayed physically held, the
+    // next set_step(true, ...) push -- the same switch state, not a gesture
+    // -- would read as a rising edge and fake a snap (spec 2026-07-23
+    // sampler-performance-fixes, review finding on a5751f3).
+    _step_seen = false;
+    _step_snap = false;
     _engine->set_flow(true);                    // lanes boot in FLOW -> drone
     _last_master_hz = -1.f;                     // force a cycle forward on
                                                 // the first process()

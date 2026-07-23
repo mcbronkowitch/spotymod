@@ -772,3 +772,32 @@ TEST_CASE("part: the FLOW->STEP edge raises the snap request exactly once") {
     p.set_step(false, 8);
     CHECK(p.take_step_snap() == false);
 }
+
+// --- init() muss die Flankenerkennung mit zuruecksetzen (spec 2026-07-23) --
+//
+// init() ist nicht nur Konstruktion: der VCV-Host ruft inst.init(...) bei
+// jedem Audiogeraete- oder Samplerate-Wechsel erneut auf, mitten in der
+// Session. Wenn dabei _step_on auf false zurueckgesetzt wird, aber _step_seen
+// (die Beobachtung "der Schalter wurde schon einmal gesehen") stehen bleibt,
+// sieht der naechste set_step(true, ...)-Push -- der lediglich denselben,
+// physisch weiter gehaltenen Schalterzustand vom Host bestaetigt -- wie eine
+// steigende Flanke aus. Ein Reinit waehrend STEP gehalten wird darf keinen
+// Snap erzeugen, den niemand gestisch ausgeloest hat.
+TEST_CASE("part: init() resets the STEP edge memory so a mid-session reinit cannot fake a gesture") {
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, nullptr, 0);
+
+    // Eine echte Geste: raus aus der Wolke, rein in STEP.
+    p.set_step(false, 8);
+    p.set_step(true, 8);
+    CHECK(p.take_step_snap() == true);   // Flag konsumiert.
+
+    // Samplerate-Wechsel waehrend STEP physisch weiter gehalten wird: der
+    // Host ruft init() erneut auf, der Schalter selbst hat sich nicht bewegt.
+    p.init(44100.f, 0, nullptr, nullptr, nullptr, 0);
+
+    // Derselbe (unveraenderte) Schalterzustand wird erneut gepusht. Das ist
+    // keine Geste -- init() darf hier keine Flanke vorspiegeln.
+    p.set_step(true, 8);
+    CHECK(p.take_step_snap() == false);
+}
