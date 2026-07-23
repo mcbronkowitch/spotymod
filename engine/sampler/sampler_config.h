@@ -393,5 +393,21 @@ constexpr float  kDispersionKnee = 0.5f;
 // ohne den Wert wechseln.
 constexpr float  kSubSpreadMax   = 0.5f;
 
+// --- MOD auf die Leseposition (spec 2026-07-23 sampler-performance-fixes) ---
+// Die SOURCE-Lane greift auf einem Sampler-Deck ueber die GESAMTE Aufnahme
+// und ist ungedaempft (_tdepth[LANE_SOURCE] == 1.0), anders als FILTER (0.55)
+// und MOTION (0.7). Linear wanderte die Leseposition damit schon bei MOD 0.3
+// um +-30% des Materials -- auf zehn Sekunden +-3 s. Der Exponent zieht den
+// unteren Reglerweg zusammen, ohne oben etwas wegzunehmen: bei MOD 1 ist
+// 1^n == 1, das Ausbrechen bleibt vollstaendig erhalten und liegt nur dort,
+// wo man es bestellt.
+//
+// Ear-tunable. Kubisch war die Alternative (bei MOD 0.3 nur noch +-1.5% statt
+// +-9%); die Entscheidung fiel bewusst auf die sanftere Kurve, weil sie das
+// untere Drittel nicht stillstellt. Fuehlt es sich weiter zu nervoes an, ist
+// DIESER Wert die Stellschraube -- nicht _tdepth, das die vom Nutzer gesetzte
+// Ziel-Tiefe ist und keine Kennlinie.
+constexpr float  kSourceModExp = 2.f;
+
 }  // namespace sampler_cfg
 }  // namespace spky

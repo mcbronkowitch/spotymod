@@ -1104,3 +1104,128 @@ TEST_CASE("sampler part: COLOR 0 leaves the cloud unswung even at full MOTION") 
         REQUIRE(p.sampler().sub()    == 0.f);
     }
 }
+
+// --- MOD auf die Leseposition (spec 2026-07-23 sampler-performance-fixes) ---
+//
+// Die SOURCE-Lane greift ueber die GESAMTE Aufnahme (sampler_engine.cpp:548)
+// und ist ungedaempft (_tdepth[LANE_SOURCE] == 1.0). Linear wanderte die
+// Position schon bei MOD 0.3 um +-30% des Materials -- eine Prise MOD warf
+// die Position durchs Material. Quadratisch bleibt das Ausbrechen erhalten,
+// rueckt aber ans obere Reglerende.
+//
+// SATURATION TRAP (repaired 2026-07-23): the original version of this test
+// compared swing(0.5) against swing(1.0). With _base[SOURCE] = 0.5 and the
+// lane's raw output at full unity amplitude (_range stays 1 for texture
+// lanes -- see part.cpp:186), depth 0.5 already drives the position to the
+// clamp's exact rails and depth 1.0 saturates far past it, for EITHER curve.
+// Both reference points end up pinned to the same [0,1] span regardless of
+// exponent, so the "quarter, not half" ratio held vacuously -- it was
+// measuring clampf(), not the curve. Fixed by comparing two depths (0.3 and
+// 0.6) that stay strictly inside the clamp under the quadratic law (they
+// scale by 0.09 and 0.36 -- a clean factor of 4), with an explicit assertion
+// that both stayed off the rails so a future regression back into
+// saturation fails loudly instead of going quiet again.
+TEST_CASE("sampler part: MOD moves the read position quadratically") {
+    struct Extent { float lo, hi; };
+    auto measure = [](float depth) {
+        std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+        Part p;
+        p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+        p.set_engine(ENGINE_SAMPLER);
+        p.set_target_base(LANE_SOURCE, 0.5f);   // Mitte: Platz nach beiden Seiten
+        p.set_depth(depth);
+        p.set_target_active(LANE_SOURCE, true);
+
+        Extent e{ 2.f, -2.f };
+        for (int i = 0; i < 48000; ++i) {
+            float a = 0.f, b = 0.f;
+            p.process(a, b);
+            const float v = p.target_value(LANE_SOURCE);
+            if (v < e.lo) e.lo = v;
+            if (v > e.hi) e.hi = v;
+        }
+        return e;
+    };
+
+    // Neither depth may saturate the clamp -- if it did, the ratio below
+    // would be measuring clampf(), not the quadratic curve (see the trap
+    // note above). Measured: depth 0.3 -> [0.410, 0.590], depth 0.6 ->
+    // [0.140, 0.860], both comfortably inside (0.01, 0.99).
+    const Extent at_low  = measure(0.3f);
+    const Extent at_high = measure(0.6f);
+    CHECK(at_low.hi  < 0.99f); CHECK(at_low.lo  > 0.01f);
+    CHECK(at_high.hi < 0.99f); CHECK(at_high.lo > 0.01f);
+
+    const float low_swing  = at_low.hi  - at_low.lo;   // MOD 0.3: 0.3^2 = 0.09
+    const float high_swing = at_high.hi - at_high.lo;  // MOD 0.6: 0.6^2 = 0.36
+
+    // 0.09 / 0.36 = 1/4 -- the quadratic factor, not the clamp's.
+    // NOTE: doctest's Approx defaults scale=1.0, which is ADDED into the
+    // tolerance denominator -- for swing values well under 1.0 that makes
+    // .epsilon(0.1) alone far looser than "10% relative" (it verified this
+    // check tolerated a 2x-off ratio during the mutation probe below).
+    // .scale(0.0) makes the comparison purely relative to the values being
+    // compared, which is what "epsilon" is supposed to mean here.
+    CHECK(low_swing == doctest::Approx(0.25f * high_swing).epsilon(0.1).scale(0.0));
+
+    // MOD 1 loses nothing at the top (1^2 == 1): the position genuinely
+    // reaches (close to) the whole material. This is deliberately the
+    // saturating case, not a ratio measurement -- pinned here honestly as
+    // "the full-depth swing spans essentially the entire range", which is
+    // the actual promise the exponent-1-at-MOD-1 choice makes.
+    const Extent at_full = measure(1.f);
+    CHECK(at_full.hi - at_full.lo > 0.95f);
+}
+
+// Auf einem Synth-Deck bedeutet SOURCE etwas anderes und bleibt linear --
+// die Kurve ist eine Sampler-Entscheidung, keine Aenderung am Mod-Plane.
+//
+// Same saturation flaw as above, repaired the same way -- but the linear
+// law saturates at HALF the depth the quadratic law does (swing = 2*A*d
+// hits the clamp once d >= 0.5), so reusing 0.3/0.6 verbatim does not work
+// here: measured swing(0.6) on a synth deck is already [0, 1], fully
+// saturated. The two depths below (0.2 and 0.4) keep the same 1:2 depth
+// ratio -- and therefore the same 1:2 swing ratio under a truly linear law
+// -- while staying strictly inside the clamp (measured [0.300, 0.700] and
+// [0.100, 0.900]).
+TEST_CASE("sampler part: the SOURCE curve leaves a synth deck alone") {
+    struct Extent { float lo, hi; };
+    auto measure = [](float depth) {
+        Part p;
+        p.init(48000.f, 0, nullptr, nullptr, nullptr, 0);
+        p.set_engine(ENGINE_SYNTH);
+        p.set_target_base(LANE_SOURCE, 0.5f);
+        p.set_depth(depth);
+        p.set_target_active(LANE_SOURCE, true);
+
+        Extent e{ 2.f, -2.f };
+        for (int i = 0; i < 48000; ++i) {
+            float a = 0.f, b = 0.f;
+            p.process(a, b);
+            const float v = p.target_value(LANE_SOURCE);
+            if (v < e.lo) e.lo = v;
+            if (v > e.hi) e.hi = v;
+        }
+        return e;
+    };
+
+    // Self-guarding: neither reference point may sit on the clamp rails --
+    // otherwise the 0.5 ratio below would (as it did before this repair)
+    // hold only because both sides saturated to the same span, not because
+    // the deck stayed linear.
+    const Extent at_low  = measure(0.2f);
+    const Extent at_high = measure(0.4f);
+    CHECK(at_low.hi  < 0.99f); CHECK(at_low.lo  > 0.01f);
+    CHECK(at_high.hi < 0.99f); CHECK(at_high.lo > 0.01f);
+
+    const float low_swing  = at_low.hi  - at_low.lo;
+    const float high_swing = at_high.hi - at_high.lo;
+    // .scale(0.0): see the identical note in the sampler test above -- without
+    // it this check does not actually discriminate a curved deck from a
+    // linear one at these swing magnitudes.
+    CHECK(low_swing == doctest::Approx(0.5f * high_swing).epsilon(0.1).scale(0.0));
+
+    // MOD 1 on a synth deck saturates too (it always did, curve or not) --
+    // not asserted here as a ratio for the same reason as above; the linear
+    // deck simply has no exponent to pin an identity-at-1 promise for.
+}

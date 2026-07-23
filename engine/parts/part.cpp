@@ -1,4 +1,5 @@
 #include "parts/part.h"
+#include <cmath>
 
 using namespace spky;
 
@@ -53,7 +54,18 @@ void Part::init(float sample_rate, uint32_t seed_base,
 float Part::target_raw(int slot) const {
     // Master MOD (ex-DEPTH) shapes the texture only; the PITCH lane is the
     // anchor and keeps its per-slot depth alone (spec 2026-07-17 mod-tide).
-    const float d = (slot == LANE_PITCH) ? 1.f : _depth;
+    float d = (slot == LANE_PITCH) ? 1.f : _depth;
+    // Die SOURCE-Lane ist auf einem Sampler-Deck die LESEPOSITION und greift
+    // ueber die gesamte Aufnahme -- linear warf schon eine Prise MOD die
+    // Position durchs Material (spec 2026-07-23 sampler-performance-fixes).
+    // Bei MOD 1 unveraendert (1^n == 1); gebogen wird nur der untere Weg.
+    //
+    // Gilt in BEIDEN Modi: _targets[LANE_SOURCE] speist ueber _base_pos()
+    // auch die Slice-Basisposition in STEP. Denselben Regler je nach Modus
+    // verschieden tief wirken zu lassen waere genau die versteckte Kopplung,
+    // die die FEEL-Spec abgeschafft hat.
+    if (slot == LANE_SOURCE && _engine_id == ENGINE_SAMPLER)
+        d = std::pow(d, sampler_cfg::kSourceModExp);
     float mod = _active[slot] ? _mod.lane_output(slot) * d * _tdepth[slot] : 0.f;
     float v = clampf(_base[slot] + mod, 0.f, 1.f);
     // LEVEL floor (play-test rev 2026-07-17): modulation may duck the part to
