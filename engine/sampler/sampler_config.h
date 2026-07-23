@@ -349,6 +349,16 @@ constexpr float  kSliceSizeOct  = 4.f;
 // the worst case this was measured at is unchanged; it is an emergency stop,
 // not a control. NOT ear-tunable: it is a CPU budget.
 constexpr int    kStepGrainCeil = 10;
+// FEEL: how quiet the WEAKEST transient may get at COLOR 1. gain =
+// lerp(1, lerp(kAccentFloor, 1, s), feel), with s = strength/255.
+// Ear-tunable, and explicitly so: too low and soft hits vanish from the
+// loop, too high and the knob does nothing audible. 0.35 is a starting
+// point, not a measurement -- it belongs in a listening pass.
+//
+// Read the strength note in the spec before tuning it: strength is the
+// fast/slow envelope ratio at the onset, so it measures how SUDDEN a hit is,
+// not how loud. The first hit after any gap scores 255 regardless of level.
+constexpr float  kAccentFloor   = 0.35f;
 
 }  // namespace sampler_cfg
 }  // namespace spky

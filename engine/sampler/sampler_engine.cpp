@@ -856,7 +856,20 @@ bool SamplerEngine::_spawn_slice(int k, float pan) {
     if (atk < 1) atk = 1;
     if (dec < 1) dec = 1;
 
-    _grains[slot].spawn(pos, ratio, pan, len, atk, dec, _reverse, 1.f);
+    // FEEL (spec 2026-07-23): the grain inherits the attack strength of its
+    // own transient, as deeply as COLOR asks. At _feel == 0 the outer lerp
+    // returns exactly 1 for every grain -- the flat reference, and the
+    // kColorGate idiom's structural silence without a branch. In grid
+    // fallback there is no marker and therefore no strength: gain stays 1 at
+    // every knob position, which is the honest answer for transientless
+    // material rather than a silent duck to the floor.
+    float gain = 1.f;
+    if (_marker_mode()) {
+        const float s = static_cast<float>(_slices.strength(k)) * (1.f / 255.f);
+        gain = lerpf(1.f, lerpf(kAccentFloor, 1.f, s), _feel);
+    }
+
+    _grains[slot].spawn(pos, ratio, pan, len, atk, dec, _reverse, gain);
     // _size_ref = 0 keeps _trim_running's hands off slice grains: its rescale
     // maps SIZE-in-seconds to grain length, which no longer holds here, and
     // the note end (gate fall) already cuts them. 0 is its "no live grain"
@@ -993,6 +1006,8 @@ void SamplerEngine::set_detune(float n) { _detune_n = clampf(n, 0.f, 1.f); }
 void SamplerEngine::set_overlap(float n) {
     _overlap = lerpf(kOverlapMin, kOverlapMax, clampf(n, 0.f, 1.f));
 }
+
+void SamplerEngine::set_feel(float n) { _feel = clampf(n, 0.f, 1.f); }
 
 void SamplerEngine::set_scan(float bipolar) { _scan_rate = scan_rate(bipolar); }
 

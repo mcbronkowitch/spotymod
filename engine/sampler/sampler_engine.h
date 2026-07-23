@@ -193,6 +193,13 @@ public:
     // See the definition in sampler_engine.cpp for why they stay.
     void set_phrase_pos(int slot, int steps, float weight);
 
+    // FEEL (spec 2026-07-23): COLOR on a sampler deck in STEP. Accent depth,
+    // 0..1. At 0 every grain plays at unity -- the flat reference. Pushed
+    // from Part at the control tick, from the RAW knob: COLOR's MOTION swing
+    // (kColorMod) is right for the chord and wrong for accents, which must
+    // not breathe. Ignored in FLOW, where COLOR still means chord.
+    void set_feel(float n);
+
     // --- voice row, remapped ---
     void set_window_attack(float n);
     void set_window_decay(float n);
@@ -205,8 +212,10 @@ public:
     int   active_grains() const;
     int   slice_count() const { return _slices.count(); }
     uint32_t slice_start(int i) const { return _slices.start(i); }
+    uint8_t slice_strength(int i) const { return _slices.strength(i); }
     float grain_len_samples() const { return _grain_len; }
     float overlap() const               { return _overlap; }
+    float feel() const                  { return _feel; }
     float spawn_interval_samples() const { return _spawn_every; }
     // Accumulated playhead offset in frames, folded into [0, rec_size).
     // Drives the VCV ring's read-position dot as well as the tests.
@@ -343,6 +352,7 @@ private:
     float _walk   = 0.f;             // MOTION walk offset, in slice units
     int   _last_slot  = -1;          // wrap detection: slot went backwards
     int   _last_slice = -1;
+    float _feel = 0.f;                // FEEL: accent depth, 0..1
     float _dec_ref[kGrains] = {};    // dec samples per slot, for gate-fall release
 
     float _in_l = 0.f, _in_r = 0.f;

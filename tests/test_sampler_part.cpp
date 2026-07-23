@@ -892,3 +892,39 @@ TEST_CASE("part: the phrase position reaches the sampler -- the wrap sends the c
     CHECK(phrase_period);    // the wrap sent the cursor home: Part pushed
     CHECK(!pool_period);     // ...and it is not just free-running mod 8
 }
+
+// FEEL reaches the sampler from the RAW COLOR knob, with no MOTION swing on
+// it (spec 2026-07-23). The proof is a part whose MOTION lane is wide open:
+// _color_eff visibly breathes (the chord tests pin that), but what the
+// sampler receives must not. Push _color_eff instead and this fails.
+TEST_CASE("sampler part: FEEL reaches the sampler unswung by MOTION") {
+    std::vector<SampleBuffer::Frame> sbuf(kSFrames, SampleBuffer::Frame{ 0.f, 0.f });
+    Part p;
+    p.init(48000.f, 0, nullptr, nullptr, sbuf.data(), sbuf.size());
+    p.set_engine(ENGINE_SAMPLER);
+    p.set_color(0.5f);                  // mid-knob: the swing has room both ways
+    p.set_depth(1.f);
+    p.set_target_active(LANE_MOTION, true);
+
+    // Both observables read their construction defaults (0) until the first
+    // control tick lands, and set_engine only swaps the engine in after a
+    // 4 ms fade-out, so the sampler sees nothing at all before that. Warm
+    // past both, or the minima below are just "before anything was pushed".
+    for (int i = 0; i < 2000; ++i) { float a = 0.f, b = 0.f; p.process(a, b); }
+    REQUIRE(p.sampler().feel() == doctest::Approx(0.5f));
+
+    float clo = 2.f, chi = -2.f, flo = 2.f, fhi = -2.f;
+    for (int i = 0; i < 48000; ++i) {
+        float a = 0.f, b = 0.f;
+        p.process(a, b);
+        const float c = p.color_eff();
+        if (c < clo) clo = c;
+        if (c > chi) chi = c;
+        const float f = p.sampler().feel();
+        if (f < flo) flo = f;
+        if (f > fhi) fhi = f;
+    }
+    CHECK(chi > clo + 0.02f);            // _color_eff really breathes...
+    CHECK(flo == doctest::Approx(0.5f)); // ...and FEEL really does not
+    CHECK(fhi == doctest::Approx(0.5f));
+}

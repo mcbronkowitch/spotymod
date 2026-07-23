@@ -3000,3 +3000,197 @@ TEST_CASE("sampler FLOW: a chord still rotates through its notes") {
         if (std::fabs(ratios[i] - ratios[0]) > 1e-5f) all_same = false;
     CHECK_FALSE(all_same);
 }
+
+// ---------------------------------------------------------------------------
+// FEEL (spec 2026-07-23): COLOR sets how deeply each grain inherits the
+// attack strength of its own transient. The observable is the grain's peak
+// output level, so drive markers whose stored strengths differ and compare.
+//
+// Detector note, load-bearing for reading these tests: strength is the
+// fast/slow envelope RATIO at the onset, not the peak amplitude -- the first
+// click after silence scores 255 whatever its level. So the comparisons below
+// are between MARKERS, not between click amplitudes.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct FeelProbe {
+    float   peak     = 0.f;
+    float   residual = 0.f;    // what the preceding notes left ringing
+    int     slice    = -1;
+    uint8_t strength = 0;
+};
+
+// Fire the (nth+1)-th composed note of a fresh STEP rig at the given FEEL and
+// return the peak of THAT note.
+//
+// Firing in sequence is what makes the notes land on DIFFERENT markers:
+// StepRig has MOTION 0, so _fire_slice's walk is structurally 0 and the slice
+// is base + _cursor -- and _cursor only advances by firing. A fresh rig fired
+// once lands on the same marker whatever phrase slot it is handed, so "three
+// different slices" has to mean "the 1st, 2nd and 3rd note of a phrase".
+FeelProbe feel_probe(float feel, int nth) {
+    StepRig g;
+    g.e.set_feel(feel);
+    g.render(96);                        // let the control tick see it
+    for (int i = 0; i < nth; ++i) {      // walk the cursor to the wanted slice
+        g.fire(i);
+        g.render(4000);
+        g.note_off();
+        g.render(12000);                 // ...and let that note release fully
+    }
+    FeelProbe p;
+    for (int i = 0; i < 240; ++i) {      // tail of the settle: must be gone,
+        float a = 0.f, b = 0.f;          // or the peak below is not this note's
+        g.e.process(a, b);
+        const float m = std::fabs(a) > std::fabs(b) ? std::fabs(a) : std::fabs(b);
+        if (m > p.residual) p.residual = m;
+    }
+    g.fire(nth);
+    for (int i = 0; i < 3000; ++i) {
+        float a = 0.f, b = 0.f;
+        g.e.process(a, b);
+        const float m = std::fabs(a) > std::fabs(b) ? std::fabs(a) : std::fabs(b);
+        if (m > p.peak) p.peak = m;
+    }
+    p.slice    = g.e.last_slice();
+    p.strength = g.e.slice_strength(p.slice);
+    return p;
+}
+
+}  // namespace
+
+TEST_CASE("sampler STEP: FEEL 0 is exactly flat") {
+    // FEEL 0 is the reference the loop must be audible without: EVERY grain
+    // plays at unity, whatever its marker says. The outer lerp returns
+    // exactly 1 there -- structural, not approximate.
+    StepRig probe;
+    REQUIRE(probe.e.slice_count() >= 3);
+    for (int nth : { 0, 1, 2 }) {
+        const FeelProbe a = feel_probe(0.f, nth);
+        const FeelProbe b = feel_probe(0.f, nth);
+        const FeelProbe f = feel_probe(1.f, nth);
+        INFO("note ", nth, " slice ", a.slice, " strength ", int(a.strength));
+        REQUIRE(a.peak > 0.f);
+        REQUIRE(a.residual < 0.01f * a.peak);      // the note we measured is this one
+        CHECK(a.peak == doctest::Approx(b.peak));  // deterministic to begin with
+        REQUIRE(a.slice == f.slice);               // same fire, same marker
+        // and no accent at all: the FEEL-1 run of the same fire is quieter
+        // or equal, never louder, since lerp(kAccentFloor, 1, s) <= 1.
+        CHECK(f.peak <= doctest::Approx(a.peak).epsilon(1e-4));
+    }
+}
+
+// The exact law, not just its direction: at FEEL 1 the ratio between a
+// grain's peak and its FEEL-0 peak must equal lerp(kAccentFloor, 1, s) for
+// that grain's own marker. This is the test that catches a floor applied at
+// the wrong end, or s read off the wrong marker, or the outer lerp dropped.
+TEST_CASE("sampler STEP: the accent factor equals lerp(kAccentFloor, 1, s)") {
+    uint8_t seen[3] = { 0, 0, 0 };
+    for (int nth : { 0, 1, 2 }) {
+        const FeelProbe flat = feel_probe(0.f, nth);
+        const FeelProbe felt = feel_probe(1.f, nth);
+        REQUIRE(flat.slice == felt.slice);            // same fire, same marker
+        REQUIRE(flat.strength == felt.strength);
+        REQUIRE(flat.peak > 0.f);
+        REQUIRE(flat.residual < 0.01f * flat.peak);
+        seen[nth] = flat.strength;
+        const float s = static_cast<float>(flat.strength) * (1.f / 255.f);
+        const float want = sampler_cfg::kAccentFloor
+                         + (1.f - sampler_cfg::kAccentFloor) * s;
+        INFO("note ", nth, " slice ", flat.slice,
+             " strength ", int(flat.strength), " want ", want);
+        CHECK(felt.peak / flat.peak == doctest::Approx(want).epsilon(1e-3));
+    }
+    // Anti-vacuity guard, and it is the point of the case: if every marker in
+    // the rig carried the SAME strength, `want` would be one constant and a
+    // build that ignored strength(k) entirely would satisfy every CHECK
+    // above. The three notes must land on markers that really differ.
+    const bool all_same = (seen[0] == seen[1]) && (seen[1] == seen[2]);
+    INFO("strengths ", int(seen[0]), " ", int(seen[1]), " ", int(seen[2]));
+    CHECK_FALSE(all_same);
+}
+
+// Grid fallback: below kMinSlices the engine slices on the tempo grid, and a
+// grid step is not a marker -- it has no strength. FEEL must be a no-op
+// there, at every knob position, not a silent duck towards kAccentFloor.
+//
+// The rig is deliberately NOT the plain sine. Three clicks 6000 frames apart
+// give a map that is too small to walk (3 < kMinSlices) but whose markers do
+// carry different strengths -- and a 6000-frame step clock puts every grid
+// step exactly on a click, so each note has something to sound. A sine rig
+// would be grid fallback too, but its single marker scores 255, so its gain
+// would come out 1 whether the _marker_mode() guard were there or not: the
+// case would pass against a build that had no guard at all.
+TEST_CASE("sampler STEP: FEEL does nothing on transientless material") {
+    auto peak_at = [](float feel, int nth) {
+        Rig g(0);
+        feed_clicks(g, 18000, 3);           // 3 markers: under kMinSlices
+        g.e.set_flow(false);
+        g.e.set_step_clock(6000.f);         // ...and the grid lands on them
+        g.e.set_feel(feel);
+        g.render(96);
+        auto fire = [&g](int slot) {
+            g.e.set_phrase_pos(slot, 8, 1.f);
+            g.e.trigger(0.5f);
+            g.e.set_gate(true);
+        };
+        for (int i = 0; i < nth; ++i) {     // walk the cursor to the wanted step
+            fire(i);
+            g.render(3000);
+            g.e.set_gate(false);
+            g.render(9000);
+        }
+        fire(nth);
+        float p = 0.f;
+        for (int i = 0; i < 3000; ++i) {
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+            const float m = std::fabs(a) > std::fabs(b) ? std::fabs(a) : std::fabs(b);
+            if (m > p) p = m;
+        }
+        return p;
+    };
+    // The map this run must NOT read: small enough to force the grid, spread
+    // enough that reading it would show. Without the spread the case is
+    // vacuous -- see the comment above.
+    Rig map(0);
+    feed_clicks(map, 18000, 3);
+    REQUIRE(map.e.slice_count() == 3);
+    REQUIRE(map.e.slice_count() < sampler_cfg::kMinSlices);
+    const uint8_t s0 = map.e.slice_strength(0);
+    const uint8_t s1 = map.e.slice_strength(1);
+    const uint8_t s2 = map.e.slice_strength(2);
+    const bool all_same = (s0 == s1) && (s1 == s2);
+    INFO("unread marker strengths ", int(s0), " ", int(s1), " ", int(s2));
+    REQUIRE_FALSE(all_same);
+
+    for (int nth : { 0, 1, 2 }) {
+        const float off = peak_at(0.f, nth);
+        const float on  = peak_at(1.f, nth);
+        INFO("note ", nth);
+        REQUIRE(off > 0.f);
+        CHECK(on == doctest::Approx(off).epsilon(1e-5));
+    }
+}
+
+// FLOW never accents: COLOR means chord there and the grains stay at gain 1.
+TEST_CASE("sampler FLOW: FEEL does not touch the cloud") {
+    auto rms_at = [](float feel) {
+        StepRig g;                          // 8 clicks -> plenty of markers
+        g.e.set_flow(true);
+        g.e.set_feel(feel);
+        g.render(96);
+        double acc = 0.0;
+        const int n = 48000;
+        for (int i = 0; i < n; ++i) {
+            float a = 0.f, b = 0.f;
+            g.e.process(a, b);
+            acc += double(a) * a + double(b) * b;
+        }
+        return std::sqrt(acc / (2.0 * n));
+    };
+    const double off = rms_at(0.f);
+    REQUIRE(off > 1e-4);
+    CHECK(rms_at(1.f) == doctest::Approx(off).epsilon(1e-5));
+}
