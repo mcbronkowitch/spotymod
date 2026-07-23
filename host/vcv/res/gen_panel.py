@@ -161,7 +161,7 @@ def orbit_label(cx, cy, ang_deg, mir):
 # VOICE and FX sit side by side, PLAY spans the full part width below them.
 VOICE_X  = [9.5, 22.5, 35.5]        # ATK DEC FILT / RES SUB DTUN
 ROW_V1, ROW_V2 = 77.3, 89.4
-# 4-wide, aligned to FX_BOT so the FX box's two rows fluch: FRATE FLUX FFB ROOM.
+# 4-wide, aligned to FX_BOT so the FX box's two rows flush: FRATE FLUX FFB ROOM.
 FX_TOP   = [49.5, 58.333, 67.167, 76.0]   # FRATE FLUX FFB | ROOM (per-deck reverb mix)
 # FX bottom row went from two slots to four (spec 2026-07-18 dust-grain-cloud):
 # GRIT COMP DUST ROT. Pitch 8.833 mm against a 3.0 mm knob radius, so the
