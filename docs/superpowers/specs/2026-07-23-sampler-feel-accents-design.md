@@ -76,6 +76,17 @@ nicht in eine Rechnung.
 warum sie nicht ermüden wie ein Roll: dieselbe Stelle klingt in jedem Durchlauf gleich,
 aber verschiedene Stellen klingen verschieden.
 
+**Was `strength` wirklich misst.** Der Detektor speichert nicht den Pegel eines
+Anschlags, sondern das fast/slow-Envelope-Verhältnis (`slice_map.cpp:46-53`) — also wie
+*plötzlich* ein Onset relativ zu dem ist, was davor lief. Zwei Konsequenzen für die
+Hörprobe: ein leiser Schlag nach einer Pause bekommt strength 255 (slow env ≈ 0, "leading
+silence maps to full strength"), der erste Hit nach jeder Lücke akzentiert also immer
+maximal, egal wie leise er im Material ist. Und die gemessene Verteilung (255/0/1/6) ist
+quasi binär — bei FEEL = 1 kann das eher nach "alles geduckt außer den härtesten Hits"
+klingen als nach gradueller Dynamik. Beides ist kein Defekt dieser Spec, aber die
+Hörprobe muss wissen, dass sie Onset-Schärfe hört und nicht Anschlagstärke — sonst
+testet sie etwas anderes, als der Reglername verspricht.
+
 **FEEL liest den rohen Reglerwert, nicht `_color_eff`.** COLOR bekommt in Part einen
 MOTION-Swing (`kColorMod`, `part.cpp:214-217`). Für den Akkord ist das gewollt, für die
 Akzente nicht: eine atmende Akzent-Tiefe wäre eine versteckte Kopplung genau der Art,
@@ -212,3 +223,10 @@ nicht über dem bisherigen Maximum, die gemessene Spitzenlast steigt also nicht.
 - **Spreizung der `strength`-Werte.** Gemessen wurden 255/0/1/6 über ein Klick-Signal —
   die Dynamik des Detektors ist konstruktionsbedingt schmal. Ob `kAccentFloor` reicht
   oder der Detektor selbst gespreizt gehört, entscheidet die Hörprobe, nicht diese Spec.
+  Falls sie durchfällt, sind die Kandidaten benannt, in aufsteigender Eingriffstiefe:
+  **(a)** Normalisierung gegen das Map-Maximum (`s = strength(k) / max_strength`) — eine
+  Zeile im FEEL-Pfad, spreizt die vorhandenen Werte über den vollen Bereich, ändert den
+  Detektor nicht; **(b)** der Detektor misst statt des Envelope-Verhältnisses die
+  Peak-Amplitude im Slice-Fenster — das wäre dann tatsächlich Anschlagstärke im Sinne
+  des Reglernamens und behebt auch den Stille-davor-Maximalakzent. Beides bleibt
+  deterministisch; beides ist eine eigene kleine Änderung, kein Umbau dieser Spec.
