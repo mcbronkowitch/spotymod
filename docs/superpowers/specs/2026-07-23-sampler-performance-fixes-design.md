@@ -42,42 +42,98 @@ das gerade spielt.
 Beim Wechsel eines Decks von FLOW nach STEP schnappt genau dieses Deck auf die
 Position, an der der Takt gerade steht. Steht der Transport auf Zählzeit 3,
 setzt das Deck auf 3 ein — nicht auf 1 und nicht erst beim nächsten Taktanfang.
-Es klingt ab dem ersten Schritt das, was geklungen hätte, wäre das Deck die
-ganze Zeit im Takt mitgelaufen.
+Es setzt ab dem ersten *klingenden* Schritt dort ein, wo es gestanden hätte,
+wäre das Deck die ganze Zeit im Takt mitgelaufen. „Ab dem ersten Schritt"
+heißt nicht „sofort hörbar": ist der getroffene Slot bei niedriger DENSE
+gerastet oder maskiert, schweigt das Deck bis zum nächsten gegateten Schritt
+(`_on_boundary` liest `_effective_gate`, `lane.cpp:288-294`). Das ist richtig
+so — der Snap setzt die Position, nicht die Gate-Politik.
 
 Nichts sonst bewegt sich: der Transport behält seinen Downbeat, die externe
 Clock bleibt unangetastet, das andere Deck merkt nichts davon.
 
 ### GRID-Welt (SYNC an)
 
-Das Ziel ist dieselbe Zahl, gegen die der Servo ohnehin rechnet
-(`center.cpp:161-164`):
+Das Ziel ist dieselbe Zahl, gegen die der Grid-Servo rechnet
+(`Center::_grid_servo`, `center.cpp:206-218`):
 
 ```
-tgt = frac(transport.beats() * kDivisions[div].cpb * clock_scale)
+tgt = frac(transport.beats() * kDivisions[div].cpb * clock_scale + _grid_off[i])
 ```
 
-Drei Zuweisungen für das schaltende Deck `i`:
+Drei Zuweisungen für das schaltende Deck `i`, **in dieser Reihenfolge**:
 
 1. `_grid_off[i] = 0.f` — der Free-Run-Offset entfällt, das Ziel ist wieder das
-   reine Transport-Raster.
-2. Pitch-Lane-Phase := `tgt`, über `ModLane::reset(float)` (`lane.h:76`).
-3. Slice-Cursor := die zur neuen Phase gehörende Phrasenposition, also
-   `pitch_cur_step()` **nach** Schritt 2 gelesen (siehe unten). Das gilt nur
-   für ein Deck mit geladener Sampler-Engine; auf einem Synth-Deck entfällt
-   Schritt 3 ersatzlos, die Schritte 1 und 2 gelten dort unverändert.
+   reine Transport-Raster. Muss zuerst passieren: `tgt` wird danach mit dem
+   genullten Offset berechnet, sonst landet der Snap um genau den alten Offset
+   daneben.
+2. Pitch-Lane-Phase := `tgt`.
+3. Slice-Cursor := der zu `tgt` gehörende Slot (siehe unten). Nur auf einem Deck
+   mit Sampler-Engine; auf einem Synth-Deck entfällt Schritt 3 ersatzlos, die
+   Schritte 1 und 2 gelten dort unverändert. Schaltet das Deck gerade die Engine
+   um (`_switching`), zählt die **Ziel**-Engine (`_pending_engine`) — sonst
+   verlöre ein Wechsel „auf Sampler und auf STEP zugleich" die Ausrichtung.
 
 Weil die Phase *auf* das Ziel gesetzt wird statt umgekehrt, ist der Servofehler
 ab dem ersten Sample 0. Kein Zerren, kein Tempo-Wobble — die Umkehrung von
 `_rebase_grid`, mit derselben Begründung.
+
+**Reihenfolge im Tick:** der Moduswechsel ändert `clock_scale` (1 in FLOW,
+8/S in STEP, `lane.h:55`) und löst damit im selben `Center::update` einen
+`_rebase_grid`-Aufruf aus (`center.cpp:74-75`, `:196-198`). Der Snap muss
+**nach** den beiden `_rebase_grid`-Aufrufen laufen, sonst überschreibt der
+Rebase den genullten Offset gleich wieder. Das ist eine Zusicherung, die der
+Plan festnageln muss, keine glückliche Fügung.
 
 ### Freie Welt (SYNC aus)
 
 Ohne Transport gibt es kein Raster, an dem sich „gerade bei 3" festmachen
 ließe; die Decks hängen dort nur über die Kuramoto-Kopplung aneinander. Dann
 ist das andere Deck die Referenz: Pitch-Phase := `pitch_phase()` des anderen
-Decks (roh, dieselbe Größe, aus der `center.cpp:100` `_phase_err` bildet).
-`_grid_off` spielt in diesem Zweig keine Rolle und wird nicht angefasst.
+Decks (roh, dieselbe Größe, aus der `center.cpp:100` `_phase_err` bildet, und
+dieselbe, aus der `lane.cpp:288` die Schrittgrenzen ableitet — roh auf roh
+nullt Phasenfehler und Schrittraster zugleich).
+
+Drei Randfälle, die entschieden sind:
+
+- **Beide Decks schalten im selben Tick.** Deck A ist die Phasenreferenz des
+  Paars (so nennt es `center.cpp:155-157` selbst): A bleibt stehen, B schnappt
+  auf A. Ohne diese Regel schnappten beide auf die jeweils andere Vorher-Phase
+  und tauschten sie nur.
+- **COUPLE = 0.** Der Snap feuert trotzdem. Was der Moduswechsel zusagt, darf
+  nicht an der Stellung eines anderen Reglers hängen; A bleibt auch ungekoppelt
+  eine definierte Referenz.
+- **`_grid_off[i]` wird auch hier genullt**, obwohl es in der freien Welt
+  niemand liest. Sonst steht dort ein Offset, der zur neuen Phase nicht mehr
+  passt, und das spätere Einschalten von SYNC zöge einmal am Tempo. Damit
+  lautet die Regel schlicht: immer nullen, dann je nach Welt die Phase setzen.
+
+### Nebenwirkungen von `ModLane::reset`
+
+`reset` setzt nicht nur die Phase: es nullt `_note_age` und `_note_hold` und
+setzt beide Slews (`lane.cpp:133-140`). Auf einem melodischen Synth-Deck fällt
+`gate_state()` damit bis zum nächsten Fire auf false — eine gehaltene Note
+bricht im Umschaltmoment ab. Das ist hingenommen: der Moduswechsel ist ohnehin
+ein Schnitt, und ein eigener Phasen-Setter ohne diese Nebenwirkungen wäre ein
+zweiter Weg in denselben Zustand.
+
+### Der pitch-only Hook
+
+`SuperModulator::reset_phases()` (`super_modulator.h:71-77`) taugt nicht: es
+setzt **alle** Lanes und ist damit die RST-Geste. Gebraucht wird ein neuer
+Einstieg, der nur die PITCH-Lane setzt:
+
+```cpp
+void SuperModulator::snap_pitch_phase(float ph);
+```
+
+Er setzt die Pitch-Lane über `ModLane::reset(ph)` **und nullt den
+Onset-Gap-Ring** (`_since_onset`, `_onsets`, `_gap[]`, `_rhythm`) — genau die
+Kopplung, auf der der Kommentar an `reset_phases` besteht. Ohne das misst der
+erste Onset nach dem Sprung einen Abstand, den es nie gab, und dieser
+Rhythmus-Blick steuert über `Instrument` die FX-Abgriffe des **anderen** Decks
+(`instrument.cpp:81-86`) — ein Deck, das von diesem Snap nichts merken soll.
+Die vier Textur-Lanes bleiben unberührt.
 
 ### Der Slice-Cursor
 
@@ -86,6 +142,26 @@ den Slice-Index ein (`k = (_cursor + wo) % pool`, `sampler_engine.cpp:808`).
 Beim Schnappen auf Zählzeit 3 soll Slice 3 klingen, nicht Slice 1 — sonst läge
 das Material dauerhaft gegen die Phrase versetzt, bis der nächste Wrap es
 geraderückt.
+
+**Der Slot lässt sich nicht zurücklesen.** Der naheliegende Weg — Phase setzen,
+dann `pitch_cur_step()` fragen — ist versperrt: `ModLane::reset` setzt
+`_cur_step` ausdrücklich auf **−1** (`lane.cpp:133-140`), und der Wert entsteht
+erst wieder im nächsten `process()`/`tick()` (`lane.cpp:288-294`), also nach
+`Center::update`. Zurückgelesen käme −1 heraus, `_cursor` und `_last_slot`
+stünden auf −1, und der erste Fire spielte `k = (-1 + wo) % pool`, also den
+*letzten* Slice statt Slot n.
+
+Der Slot wird deshalb aus `tgt` selbst berechnet, mit derselben Formel, die die
+Lane benutzt (`lane.cpp:288-290`):
+
+```
+slot = min(int(tgt * steps), steps - 1)
+```
+
+Damit die beiden nicht auseinanderlaufen können, gehört diese Zeile an **eine**
+Stelle — ein kleiner Helfer an der Lane, den sowohl `process()` als auch der
+Snap ruft. Zwei Kopien derselben Rundungsregel sind genau die Art Duplikat, die
+später still divergiert.
 
 Der Sampler bekommt dafür eine Methode, die Cursor und Wrap-Erkennung
 gemeinsam setzt:
@@ -154,10 +230,14 @@ sampler-cloud-dispersion). Die Verzögerung beträgt höchstens einen Control-Ti
 
 Die Mechanik ist deterministisch und gehört in Tests, nicht in einen Render:
 
-1. **GRID:** Transport auf eine bekannte Position bringen, Deck in FLOW frei
-   laufen lassen (`_grid_off` ungleich 0 erzwingen, wie es eine STEPS-Drehung
-   tut), auf STEP schalten, einen Control-Tick rechnen. Danach muss die
-   Pitch-Phase gleich `tgt` sein und `_grid_off` für dieses Deck 0.
+1. **GRID:** Transport auf eine bekannte Position bringen, Deck mit einem
+   Offset ungleich 0 in FLOW laufen lassen, auf STEP schalten, einen
+   Control-Tick rechnen. Danach muss die Pitch-Phase gleich `tgt` sein und
+   `_grid_off` für dieses Deck 0. **Achtung beim Aufbau:** eine STEPS-Drehung
+   *in FLOW* erzeugt den Offset nicht — `clock_scale()` ist in FLOW immer 1
+   (`lane.h:55`), und `_rebase_grid` feuert nur bei dessen Änderung
+   (`center.cpp:196-197`). Der Offset entsteht durch den Moduswechsel selbst
+   oder durch Drehungen im STEP-Modus.
 2. **Kein Servo-Zerren:** über mehrere Ticks nach dem Snap darf die
    Rate-Skalierung des Decks nicht vom Servo weggezogen werden — der Fehler
    startet bei 0 und bleibt dort. Das ist die eigentliche Zusage gegenüber
@@ -172,6 +252,23 @@ Die Mechanik ist deterministisch und gehört in Tests, nicht in einen Render:
    Cursor wird nicht durch die Wrap-Erkennung sofort wieder genullt.
 6. **Nur eine Flanke:** ein zweiter Control-Tick mit unverändertem STEP-Schalter
    löst keinen zweiten Snap aus.
+7. **Kein Snap beim Laden.** Hosts pushen `set_step` in jedem Tick, und
+   `_step_on` bootet auf false (`part.cpp:29`) — ein Patch, der mit STEP an
+   geladen wird, erzeugt beim ersten Push eine steigende Flanke. Dort gab es
+   keine Geste und keine Wolke, aus der man käme: die erste Beobachtung des
+   Schalters nach `init()` setzt nur den Zustand, ohne zu schnappen.
+
+**Zum Testaufbau:** das Rig in `test_center.cpp:12-19` reicht `SuperModulator`s
+herein, die **nicht** `pa.mod()` / `pb.mod()` sind — anders als im echten
+`Instrument`. Der Snap muss deshalb auf den übergebenen Referenzen `a` / `b`
+arbeiten, sonst lassen sich die Fälle 1–4 gegen dieses Rig gar nicht schreiben.
+
+**Erwartete Kollateraltreffer:** mehrere bestehende Tests schalten mitten im
+Lauf von FLOW auf STEP, etwa `test_sampler_part.cpp:181` (SYNC aus, also der
+Freie-Welt-Zweig) und die Annahme „STEP-Einstieg: Schritt −1 → 0" bei
+`test_instrument.cpp:283-286`. Ihre Zusicherungen sind weit genug gefasst, dass
+sie voraussichtlich halten — aber wenn dort etwas rot wird, ist das ein Befund
+und keine Störung, und gehört gemeldet statt umgebogen.
 
 ## Offen, nach dem Hören zu entscheiden
 
@@ -225,6 +322,24 @@ wird hier umgestoßen. Der Block muss die neue Form UND die neue Begründung
 tragen, sonst widerspricht die Datei sich selbst — mit dem Hinweis, dass das
 kleinere Maximum eine bewusste Rücknahme ist und keine übersehene Zeile.
 
+Und noch vier Stellen außerhalb der Engine, die von der alten Kurve erzählen:
+
+- `host/vcv/README.md:66` und `:78-81` dokumentieren die exponentielle Form,
+  die 8x und die Init-Patch-Notiz „−8x realtime". Mit dem neuen Maximum wird
+  daraus −4x, und der dort genannte Reglerwert −0.728 ergibt künftig ~−0.97x
+  statt −0.81x — die beschriebene Wirkung ändert ihren Charakter, nicht nur
+  ihre Zahl.
+- `host/vcv/src/Spotymod.cpp:461-464` begründet ein Sampler-Gate (K-03) mit dem
+  `std::pow` im exponentiellen Zweig. Genau dieses `pow` entfällt hier. Das Gate
+  darf bleiben, seine Begründung muss neu geschrieben werden.
+- `bench/workloads_sampler.cpp:178-226` samt Eintrag in `bench/run.py:276` misst
+  eigens dieses `std::pow`. Der Workload verliert seine Prämisse — ihn stehen zu
+  lassen, als messe er noch etwas, wäre die schlechtere Variante. Ob er
+  umgewidmet oder entfernt wird, ist eine gemeldete Entscheidung.
+- Der Testfallname `test_sampler_engine.cpp:1699` sagt „tops at 8x", der
+  Kommentar bei `:1915-1917` spricht vom „sub-knee exponential segment". Beide
+  Zusicherungen überleben (sie prüfen gegen die Konstanten), die Wörter nicht.
+
 ## Vertrag und Risiken
 
 - **Beide Golden Vectors bleiben bit-identisch.** Zu verifizieren, nicht
@@ -250,19 +365,30 @@ kleinere Maximum eine bewusste Rücknahme ist und keine übersehene Zeile.
 Die Leseposition entsteht als `clampf(_targets[LANE_SOURCE], 0, 1) * span +
 _scan_pos + jitter` (`sampler_engine.cpp:548`) — die SOURCE-Lane greift also
 über die **gesamte** Aufnahme. Ihr Modulationsanteil ist
-`lane_output * MOD * _tdepth[LANE_SOURCE]` (`part.cpp:48`), mit
-`_tdepth[LANE_SOURCE]` = 0.55 als Default (`part.h:273`).
+`lane_output * MOD * _tdepth[LANE_SOURCE]` (`part.cpp:48`), und
+`_tdepth[LANE_SOURCE]` ist **1.0** (`part.h:273` in Verbindung mit
+`LANE_SOURCE = 0`, `lane_id.h:8`): die SOURCE-Lane läuft ungedämpft. Die
+gestaffelten 0.55 und 0.7 gehören zu FILTER und MOTION, nicht hierher.
 
-Bei MOD 0.3 wandert die Position damit um ±16.5% des Materials: auf einer
-10-Sekunden-Aufnahme ±1.65 s. Dass eine Prise MOD die Position durchs Material
-wirft, ist also kein Fehler im Detail, sondern die lineare Kennlinie selbst.
+Bei MOD 0.3 wandert die Position damit um ±30% des Materials: auf einer
+10-Sekunden-Aufnahme ±3 s. Dass eine Prise MOD die Position durchs Material
+wirft, ist also kein Fehler im Detail, sondern die ungedämpfte lineare
+Kennlinie selbst.
 
 ## Die Änderung
 
 Auf einem Sampler-Deck geht die Master-MOD **quadratisch** in die SOURCE-Lane:
-statt `MOD` wirkt `MOD²`. Bei MOD 0.3 bleiben ±0.5 s statt ±1.65 s, bei MOD 0.5
-±0.7 s. Bei voll aufgerissener MOD ändert sich exakt nichts (1² = 1) — das
-Ausbrechen bleibt erhalten und rückt nur ans obere Reglerende, wo es hingehört.
+statt `MOD` wirkt `MOD²`. Bei MOD 0.3 bleiben ±0.9 s statt ±3 s, bei MOD 0.5
+±1.25 s statt ±5 s. Bei voll aufgerissener MOD ändert sich exakt nichts
+(1² = 1) — das Ausbrechen bleibt erhalten und rückt nur ans obere Reglerende,
+wo es hingehört.
+
+**Das gilt in beiden Modi.** `_targets[LANE_SOURCE]` speist über `_base_pos()`
+(`sampler_engine.h:306-314`) auch die Slice-Basisposition in STEP, nicht nur
+die Wolke in FLOW. Die Kennlinie dort auszunehmen hieße, denselben Regler je
+nach Modus verschieden tief wirken zu lassen — genau die versteckte Kopplung,
+die die FEEL-Spec abgeschafft hat. Soll STEP anders, ist das eine eigene
+Entscheidung mit eigener Begründung.
 
 Die Stelle ist `Part::target_raw` (`part.cpp:47`), wo bereits die Ausnahme für
 die PITCH-Lane steht (*„the PITCH lane is the anchor"*) — also die etablierte
@@ -274,10 +400,10 @@ unverändert — es ist die vom Nutzer gesetzte Ziel-Tiefe, nicht der Ort für e
 Kennlinie.
 
 Der Exponent gehört als benannte Konstante nach `sampler_config.h`, mit
-Kommentar, dass er ear-tunable ist. Zu prüfen bei der Umsetzung: `part.cpp`
-inkludiert nur `parts/part.h` — ob `sampler_cfg` dort überhaupt sichtbar ist,
-entscheidet, wo die Konstante stehen kann. Sie in Part zu duplizieren wäre
-falsch; dann gehört sie an eine Stelle, die beide sehen.
+Kommentar, dass er ear-tunable ist. Die Sichtbarkeit ist geprüft: `part.h:10`
+inkludiert `sampler/sampler_engine.h`, das wiederum `sampler_config.h` zieht —
+`sampler_cfg` ist in `part.cpp` sichtbar, die Konstante braucht kein zweites
+Zuhause.
 
 ## Vertrag und Risiken
 
