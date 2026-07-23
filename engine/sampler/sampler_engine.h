@@ -187,9 +187,22 @@ public:
     void set_step_clock(float samples_per_step);
     // Phrase position of the CURRENT fire, pushed immediately before
     // trigger/trigger_chord. weight is the slot's metric weight
-    // (pg_metric_weight): downbeats near 1, offs low -- the roll dice reads
-    // it inverted.
+    // (pg_metric_weight): downbeats near 1, offs low. Only `slot` is read
+    // today (the phrase-wrap detection in _fire_slice); steps and weight are
+    // accepted and ignored -- weight fed the roll dice, removed 2026-07-23.
+    // See the definition in sampler_engine.cpp for why they stay.
     void set_phrase_pos(int slot, int steps, float weight);
+
+    // FEEL (spec 2026-07-23): COLOR on a sampler deck in STEP. Accent depth,
+    // 0..1. At 0 every grain plays at unity -- the flat reference. Pushed
+    // from Part at the control tick, from the RAW knob: COLOR's MOTION swing
+    // (kColorMod) is right for the chord and wrong for accents, which must
+    // not breathe. Ignored in FLOW, where COLOR still means chord -- though
+    // on a sampler DECK that chord never arrives: Part::_flatten_for_sampler
+    // collapses it to the triggered tone for ENGINE_SAMPLER in every mode, so
+    // COLOR is inert in FLOW there. True of the engine on its own, which is
+    // still a general granular engine and does spread a chord.
+    void set_feel(float n);
 
     // --- voice row, remapped ---
     void set_window_attack(float n);
@@ -203,15 +216,20 @@ public:
     int   active_grains() const;
     int   slice_count() const { return _slices.count(); }
     uint32_t slice_start(int i) const { return _slices.start(i); }
+    uint8_t slice_strength(int i) const { return _slices.strength(i); }
     float grain_len_samples() const { return _grain_len; }
     float overlap() const               { return _overlap; }
+    float feel() const                  { return _feel; }
     float spawn_interval_samples() const { return _spawn_every; }
     // Accumulated playhead offset in frames, folded into [0, rec_size).
     // Drives the VCV ring's read-position dot as well as the tests.
     float scan_pos() const { return _scan_pos; }
     int   spawn_count() const       { return _spawn_count; }
-    // Incremented in _spawn_one when every slot is busy and the spawn is
-    // skipped -- the exact moment a spawn is lost. Never reset except by
+    // Incremented in BOTH spawn paths -- _spawn_one (FLOW, DENS-derived
+    // ceiling) and _spawn_slice (STEP, the fixed kStepGrainCeil) -- when
+    // every slot is busy and the spawn is skipped, the exact moment a spawn
+    // is lost. The STEP ceiling test reads the _spawn_slice path
+    // specifically. Never reset except by
     // construction (matches _spawn_count, which has no reset path either).
     int   dropped_spawns() const    { return _dropped_spawns; }
     float last_spawn_ratio() const  { return _last_ratio; }
@@ -224,21 +242,12 @@ public:
     float last_spawn_pos() const    { return _last_pos; }
     int   last_spawn_len() const    { return _last_len; }
     int   last_slice() const    { return _last_slice; }
-    // The offset a roll retrigger adds to _last_slice: the walk accumulated
-    // since the last landed spawn. Exposed because it is the one piece of
-    // slice-groove state with no audible signature of its own -- every reset
-    // path (punch, the phrase wrap) has to zero BOTH halves of this
-    // difference, and a stale half is silent until a fire happens to drop.
-    // See "the phrase wrap resets the roll's walk reference too".
-    float walk_offset() const   { return _walk - _walk_ref; }
     float step_clock() const    { return _step_samples; }
-    int   retrig_period() const { return _retrig_period; }
-    // The composed gate as this engine last received it. Pure observer, added
-    // in Task 9: with the STEP burst gone, _gate has exactly one remaining
-    // externally visible effect (it lets rolls retrigger), and that effect is
-    // conditional on a roll having been armed -- far too indirect to pin
-    // Part's "re-push the held gate at an engine swap" contract on. See
-    // "part: an engine swap re-pushes the held gate to the sampler".
+    // The composed gate as this engine last received it. Pure observer: _gate
+    // now has exactly one effect, releasing sounding grains on the falling
+    // edge in STEP, which is far too indirect to pin Part's "re-push the held
+    // gate at an engine swap" contract on. See "part: an engine swap
+    // re-pushes the held gate to the sampler".
     bool  gate() const          { return _gate; }
 
 private:
@@ -262,7 +271,7 @@ private:
 
     void _fire_slice();               // STEP: one fire = one slice grain
     // true when a grain landed; false when it was dropped (empty buffer or
-    // density ceiling). _fire_slice gates its roll arming on this.
+    // density ceiling).
     bool _spawn_slice(int k, float pan);
     int  _pool_size() const;          // live slices, or grid count in fallback
     // Enough transients to walk markers, or grid fallback? Asked in three
@@ -319,23 +328,22 @@ private:
     float _chord_ratio[kMaxChord] = {};
     int   _chord_n = 1;
     float _burst_pitch   = 0.5f;
-    // ratio_for(_burst_pitch), cached at the trigger that sets _burst_pitch.
-    // This is a SEPARATE cache from _chord_ratio[] on purpose: _chord_ratio[]
-    // tracks _chord[] live (refreshed every control tick, per _update_control),
-    // but _next_ratio's latched single-note branch must NOT track live pitch
-    // -- that is exactly what "latched" means for that branch (see the
-    // comment in _next_ratio). Reading _chord_ratio[0] there instead would
-    // replace the frozen trigger-time pitch with whatever _chord[0] has
-    // drifted to since (e.g. PITCH vibrato under a held STEP gate), which is
-    // a real behaviour change, not a refactor. Default 1.0 == ratio_for(0.5f),
-    // matching what _burst_pitch's own 0.5f default would produce, so a spawn
-    // that somehow precedes any trigger reads unity, not silence or NaN.
+    // ratio_for(_burst_pitch), cached at the trigger that sets _burst_pitch
+    // and persisting until the next trigger -- that is what "trigger latches
+    // the pitch for the burst" means. In STEP, _next_ratio reads this value
+    // unconditionally: the chord round-robin is unreachable there (spec
+    // 2026-07-23 feel-accents). This is a SEPARATE cache from _chord_ratio[]
+    // on purpose: _chord_ratio[] tracks _chord[] live (refreshed every
+    // control tick, per _update_control), but _burst_ratio must NOT --
+    // reading _chord_ratio[0] instead would replace the frozen trigger-time
+    // pitch with whatever _chord[0] has drifted to since (e.g. PITCH vibrato
+    // under a held STEP gate), which is a real behaviour change, not a
+    // refactor. Part::process calls trigger_chord BEFORE forwarding the
+    // gate, so set_gate must not touch this. Default 1.0 == ratio_for(0.5f),
+    // matching what _burst_pitch's own 0.5f default would produce, so a
+    // spawn that somehow precedes any trigger reads unity, not silence or
+    // NaN.
     float _burst_ratio   = 1.f;
-    // Set by trigger/trigger_chord, persists until the next trigger -- that
-    // is what "trigger latches the pitch for the burst" means. Part::process
-    // calls trigger_chord BEFORE forwarding the gate, so set_gate must not
-    // clear this or the latch would be wiped every time.
-    bool  _burst_latched = false;
     float _last_pos = 0.f;
     int   _spawn_count = 0;
     int   _dropped_spawns = 0;
@@ -347,17 +355,11 @@ private:
     // --- slice groove state ---
     float _step_samples = 6000.f;     // Part pushes; default = sane grid
     int   _phrase_slot  = 0;
-    int   _phrase_steps = 8;
-    float _phrase_weight = 1.f;
     int   _cursor = 0;                // slices advanced since the phrase wrap
     float _walk   = 0.f;             // MOTION walk offset, in slice units
-    // _walk as it stood at the last fire's spawn: roll retriggers add only the
-    // walk accumulated since, because the rest is already inside _last_slice.
-    float _walk_ref = 0.f;
-    int   _retrig_period = 0;        // samples between roll retriggers; 0 = none
-    int   _retrig_ctr    = 0;
     int   _last_slot  = -1;          // wrap detection: slot went backwards
     int   _last_slice = -1;
+    float _feel = 0.f;                // FEEL: accent depth, 0..1
     float _dec_ref[kGrains] = {};    // dec samples per slot, for gate-fall release
 
     float _in_l = 0.f, _in_r = 0.f;

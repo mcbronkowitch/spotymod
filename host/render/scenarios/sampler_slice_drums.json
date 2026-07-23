@@ -1,5 +1,5 @@
 {
-  "_comment": "Slice-groove listening aid: drum material, MARKER mode (the render CSV's a_slices/b_slices column shows the live marker count; it must sit well above kMinSlices = 4 here, which is what makes this the counterpart to sampler_slice_field.json's grid fallback). Record 1-9s, STEP from 10s. MOTION on a sampler deck is driven by MOD (set_depth), not the LANE_MOTION base (see part.cpp sampler MOTION note) -- opens 14/22/30, ordered slice-walk first, disordered chop-kit last. That opening order needs BOTH: set_depth 0 and LANE_MOTION pinned to 0 and made inactive in init, the way sampler_solo.json does it. Part's default base for that lane is 0.5, so until 2026-07-23 -- when this scenario set only set_depth -- the headline loop-fidelity section played half-scrambled and this comment was false. DENS max from 26s lets the offs roll. Action note: the plan draft named 'set_sampler_overlap', which is not in scenario.cpp's action table -- the nearest existing action is 'sampler_overlap' (inst.sampler_overlap(part, value)), used below.",
+  "_comment": "Slice-groove listening aid: drum material, MARKER mode (the render CSV's a_slices/b_slices column shows the live marker count; it must sit well above kMinSlices = 4 here, which is what makes this the counterpart to sampler_slice_field.json's grid fallback). Record 1-9s, STEP from 10s. MOTION on a sampler deck is driven by MOD (set_depth), not the LANE_MOTION base (see part.cpp sampler MOTION note) -- opens 14/22/30, ordered slice-walk first, disordered chop-kit last. That opening order needs BOTH: set_depth 0 and LANE_MOTION pinned to 0 and made inactive in init, the way sampler_solo.json does it. Part's default base for that lane is 0.5, so until 2026-07-23 -- when this scenario set only set_depth -- the headline loop-fidelity section played half-scrambled and this comment was false. COLOR to maximum from 26s opens FEEL -- the depth to which each grain inherits its own source transient's attack strength -- to full, so the second half of the render should show the loop's dynamics tracking the recorded material's own transients.",
   "sample_rate": 48000,
   "bpm": 120,
   "duration_s": 40.0,
@@ -19,7 +19,7 @@
     { "t": 10.0, "action": "set_step", "part": 1, "flag": true, "ivalue": 8 },
     { "t": 14.0, "action": "set_depth", "part": 1, "value": 0.3 },
     { "t": 22.0, "action": "set_depth", "part": 1, "value": 0.6 },
-    { "t": 26.0, "action": "sampler_overlap", "part": 1, "value": 1.0 },
+    { "t": 26.0, "action": "set_color", "part": 1, "value": 1.0 },
     { "t": 30.0, "action": "set_depth", "part": 1, "value": 1.0 }
   ]
 }

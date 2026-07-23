@@ -74,6 +74,10 @@ ist MOTION weiter der Streuer (Position, Pan, Spawn-Timing).
 
 ### Rolls
 
+> **Überholt (2026-07-23):** Rolls wurden ersatzlos entfernt; siehe die Spec
+> `2026-07-23-sampler-feel-accents-design.md`. Dieser Abschnitt bleibt als historischer
+> Stand stehen.
+
 - Pro Note ein Rng-Wurf, gewichtet mit dem metrischen Gewicht: Downbeats schlagen
   meist einmal, Off-Beats rollen gern.
 - DENS deckelt die maximale Subdivision: unten 1 Hit/Note, oben bis Step/8. DENS bleibt
@@ -123,6 +127,10 @@ Step-Häppchen" — groovt ohne einen einzigen Anschlag im Material. Der Wechsel
 Marker↔Raster ist ein Zustand der SliceMap, nicht der Aufrufer.
 
 ### 4. Determinismus
+
+> **Überholt (2026-07-23):** die Roll-Züge unten gibt es nicht mehr — der STEP-Vertrag ist
+> seit `2026-07-23-sampler-feel-accents-design.md` genau zwei Züge pro Fire (Walk, dann
+> Pan). Dieser Abschnitt bleibt als historischer Stand stehen.
 
 Die Rng-Zugfolge des STEP-Pfads ändert sich (Position-Zug entfällt, Walk- und Roll-Züge
 kommen dazu) und wird neu dokumentiert und als **neuer Golden Vector** gepinnt — wie die

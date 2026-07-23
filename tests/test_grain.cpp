@@ -428,3 +428,60 @@ TEST_CASE("grain: trimming mid-fade shortens it, and stays continuous") {
     CHECK(std::fabs(l - mid) < 0.02f);     // no jump at the re-arm
     CHECK(life_left(g, f.buf) == 499);     // 500 total, one already consumed
 }
+
+// The accent gain (spec 2026-07-23 feel-accents) is latched at spawn and
+// scales the whole grain -- window, release fade and all. Two grains
+// identical but for the gain must differ by exactly that factor at EVERY
+// sample, not just on the plateau: folding the gain into the pan gains is
+// what makes that true, and a gain applied only to the plateau (or only
+// outside a fade) would break this at the window edges.
+TEST_CASE("grain: the spawn gain scales the whole window, sample for sample") {
+    std::vector<SampleBuffer::Frame> mem{kCap};
+    SampleBuffer buf;
+    buf.init(mem.data(), kCap, 48000.f);
+    for (size_t i = 0; i < kCap; ++i) { mem[i].l = 0.5f; mem[i].r = -0.5f; }
+    buf.set_rec_size(kCap);
+
+    Grain full, half;
+    full.spawn(0.f, 1.f, 0.f, 400, 40, 40, false);          // default gain 1
+    half.spawn(0.f, 1.f, 0.f, 400, 40, 40, false, 0.5f);
+
+    for (int i = 0; i < 400; ++i) {
+        float fl = 0.f, fr = 0.f, hl = 0.f, hr = 0.f;
+        full.process(buf, fl, fr);
+        half.process(buf, hl, hr);
+        INFO("sample ", i);
+        CHECK(hl == doctest::Approx(fl * 0.5f).epsilon(1e-6));
+        CHECK(hr == doctest::Approx(fr * 0.5f).epsilon(1e-6));
+    }
+}
+
+// The same factor must survive a release fade: release() freezes the WINDOW
+// level, and the gain is applied after it, so the ratio holds through the
+// fade too. A gain multiplied into the frozen level instead would square
+// itself here.
+TEST_CASE("grain: the spawn gain survives a release fade") {
+    std::vector<SampleBuffer::Frame> mem{kCap};
+    SampleBuffer buf;
+    buf.init(mem.data(), kCap, 48000.f);
+    for (size_t i = 0; i < kCap; ++i) { mem[i].l = 0.5f; mem[i].r = 0.5f; }
+    buf.set_rec_size(kCap);
+
+    Grain full, half;
+    full.spawn(0.f, 1.f, 0.f, 4000, 40, 40, false);
+    half.spawn(0.f, 1.f, 0.f, 4000, 40, 40, false, 0.5f);
+    for (int i = 0; i < 500; ++i) {          // well onto the plateau
+        float a = 0.f, b = 0.f;
+        full.process(buf, a, b);
+        half.process(buf, a, b);
+    }
+    full.release(200);
+    half.release(200);
+    for (int i = 0; i < 200; ++i) {
+        float fl = 0.f, fr = 0.f, hl = 0.f, hr = 0.f;
+        full.process(buf, fl, fr);
+        half.process(buf, hl, hr);
+        INFO("fade sample ", i);
+        CHECK(hl == doctest::Approx(fl * 0.5f).epsilon(1e-6));
+    }
+}

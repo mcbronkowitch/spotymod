@@ -125,19 +125,7 @@ void SamplerEngine::set_targets(const float* t, float /*tune*/) {
 }
 
 void SamplerEngine::set_flow(bool flow) {
-    if (flow == _flow) return;
     _flow = flow;
-    // A roll armed in STEP must not survive a trip through FLOW. The old STEP
-    // scheduler cleared its _release_ctr here; that line went with the
-    // variable and nothing replaced it for _retrig_period, which is the state
-    // the roll now lives in. Without this, STEP arms a roll under a held gate
-    // -> flip to FLOW -> the gate falls (set_gate's STEP disarm is skipped in
-    // FLOW) -> flip back to STEP with _gate still true, and process() rolls
-    // with NO fire having happened: _last_slice and _walk_ref still belong to
-    // whatever note last landed. Clearing on both flow edges is deliberate --
-    // entering FLOW there is no roll to keep, leaving it there was none to
-    // resume.
-    _retrig_period = 0;
 }
 
 void SamplerEngine::set_hold(bool on) {
@@ -148,22 +136,13 @@ void SamplerEngine::set_hold(bool on) {
 
 // The gate no longer ARMS anything in STEP: the fire itself spawns (see
 // _fire_slice, called from trigger/trigger_chord). All that is left for the
-// falling edge is to stop rolls and release what is sounding, each grain over
-// its own DEC -- so a composed note ends where the composer wrote it, with a
-// window tail rather than the old fixed kBurstReleaseS burst.
+// falling edge is to release what is sounding, each grain over its own DEC --
+// so a composed note ends where the composer wrote it, with a window tail
+// rather than the old fixed kBurstReleaseS burst.
 //
-// FLOW is untouched by this: it never read _gate in the scheduler, and the
-// _release_ctr this used to arm existed only for the STEP burst.
+// FLOW is untouched by this: it never read _gate in the scheduler.
 void SamplerEngine::set_gate(bool on) {
     _gate = on;
-    // Disarming happens BEFORE the FLOW early-return, so a falling edge always
-    // stops a roll whichever mode the engine is in when it arrives. This is
-    // provably bit-identical for FLOW: _retrig_period is read in exactly one
-    // place (process()'s `else if` branch), which the FLOW branch never
-    // reaches, so writing 0 to it while _flow is true cannot change a sample.
-    // The GRAIN RELEASE below stays behind the early-return -- releasing the
-    // standing cloud on a gate edge would be a real FLOW behaviour change.
-    if (!on) _retrig_period = 0;
     if (_flow) return;
     if (!on) {
         for (int i = 0; i < kGrains; ++i) {
@@ -215,7 +194,6 @@ void SamplerEngine::load_sample(const float* l, const float* r, size_t frames) {
 void SamplerEngine::trigger(float pitch_norm) {
     _burst_pitch   = pitch_norm;
     _burst_ratio   = ratio_for(_burst_pitch);   // control-rate: std::pow is fine here
-    _burst_latched = true;
     _chord[0] = pitch_norm;
     _chord_n  = 1;
     _rr = 0;
@@ -229,7 +207,6 @@ void SamplerEngine::trigger_chord(const float* p, int n) {
     _chord_n       = n;
     _burst_pitch   = p[0];
     _burst_ratio   = ratio_for(_burst_pitch);   // control-rate: std::pow is fine here
-    _burst_latched = true;
     _rr = 0;
     if (!_flow) _fire_slice();
 }
@@ -335,34 +312,31 @@ void SamplerEngine::_release_all() {
 // following draws (timing, sub, detune) -- the sampler has no bit-identity
 // promise to keep here, and its listening scenarios pin no hashes.
 float SamplerEngine::_next_ratio() {
-    const bool latched = (!_flow && _burst_latched);
+    // STEP pins the chord to one tone (spec 2026-07-23 feel-accents). A fire
+    // spawns exactly ONE grain, so a round-robin there is an arpeggio, not a
+    // cloud -- and COLOR has to mean FEEL in STEP and nothing else, or the
+    // DENS overload this spec removes just moves to another knob.
+    //
+    // _burst_ratio is frozen at the trigger that set it, not _chord_ratio[0]
+    // -- see the comment at _burst_ratio's declaration for why these are two
+    // caches and not one. Its 1.0 default (== ratio_for(0.5f)) makes a spawn
+    // that somehow precedes any trigger read unity, not silence or NaN.
+    //
+    // Side effect worth recording: the deviation this function used to carry
+    // -- chords were NOT frozen at the gate, contrary to the texture-deck
+    // spec -- is settled rather than fixed. The chord path is simply not
+    // reachable in STEP any more.
+    if (!_flow) return _burst_ratio;
 
-    float ratio;
-    if (latched && _chord_n <= 1) {
-        // Frozen at the trigger that set it, not _chord_ratio[0] -- see the
-        // comment at _burst_ratio's declaration for why these are two caches
-        // and not one.
-        ratio = _burst_ratio;
-    } else {
-        // COLOR > 0 (_chord_n > 1) takes this branch even during a latched
-        // STEP burst, and reads _chord_ratio[] live rather than a value
-        // frozen at trigger time. Part::_control_tick refreshes _chord[]
-        // (and _update_control refreshes _chord_ratio[] from it) every 96
-        // samples, so the note set a round-robin burst is drawing from can
-        // change mid-burst if the composed chord changes underneath it. The
-        // spec (sampler-texture-deck-design.md) says trigger "latches the
-        // pitch (or chord set) for the burst" -- for chords (COLOR > 0) the
-        // current code does not do that; only the single-note path above
-        // (_chord_n <= 1) is actually latched. This is a known deviation,
-        // not a bug to silently fix: whether a burst should freeze its whole
-        // chord set at the gate edge is a musical call for the instrument's
-        // author, not an engine-layer decision.
-        const int idx = _rr % _chord_n;   // capture before _rr advances
-        _rr = (_rr + 1) % _chord_n;
-        ratio = _chord_ratio[idx];
-    }
-
-    return ratio;
+    // FLOW: the round-robin IS the chord cloud, and COLOR still sizes it.
+    // Reads _chord_ratio[] live, refreshed every control tick. Engine layer
+    // only: a sampler DECK never gets more than one note here either, because
+    // Part::_flatten_for_sampler collapses the chord for ENGINE_SAMPLER in
+    // every mode -- so _chord_n is 1 and COLOR is inert. Not a regression;
+    // that flattening predates the FEEL spec.
+    const int idx = _rr % _chord_n;   // capture before _rr advances
+    _rr = (_rr + 1) % _chord_n;
+    return _chord_ratio[idx];
 }
 
 float SamplerEngine::_next_interval() const {
@@ -491,9 +465,10 @@ void SamplerEngine::_update_control() {
     // Chord ratios, precomputed at control rate. _chord[] is refreshed by
     // Part::_control_tick on this same 96-sample tick, so this cache is
     // never stale by more than one tick -- the same freshness the chord
-    // itself has. Feeds only _next_ratio's round-robin (COLOR > 0) branch;
-    // the latched single-note branch has its own cache, _burst_ratio, set at
-    // trigger time -- see the comment at _burst_ratio's declaration.
+    // itself has. Feeds only FLOW's read of _next_ratio's round-robin
+    // branch; STEP never reaches it -- STEP reads its own cache,
+    // _burst_ratio, set at trigger time and returned unconditionally -- see
+    // the comment at _burst_ratio's declaration.
     const int n_notes = _chord_n > 0 ? _chord_n : 1;
     for (int i = 0; i < n_notes; ++i) _chord_ratio[i] = ratio_for(_chord[i]);
 }
@@ -702,7 +677,12 @@ void SamplerEngine::_spawn_one() {
     if (atk < 1) atk = 1;
     if (dec < 1) dec = 1;
 
-    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse);
+    // FLOW passes 1.f explicitly: COLOR means chord here, not accent, and the
+    // spec (2026-07-23) keeps it that way. Named rather than defaulted so the
+    // FLOW/STEP split is visible at the call site. On a sampler DECK there is
+    // no chord to mean, either: Part::_flatten_for_sampler collapses it in
+    // every mode, so COLOR does nothing at all in FLOW there.
+    _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse, 1.f);
     // The pair _trim_running rescales against. Recording _grain_len rather
     // than the SIZE knob keeps tape mode honest: lenf there is _grain_len /
     // ratio, so the QUOTIENT len / _size_ref carries the mode, the pitch and
@@ -772,16 +752,17 @@ void SamplerEngine::_slice_pos(int k, float& pos, float& slice_len) const {
 }
 
 // One fire = one slice grain (spec 2026-07-22).
-// --- Rng draw order is contract: walk, roll, pan. All three ALWAYS drawn. ---
-// Roll applies from Task 7; drawing it from day one means the draw contract
-// never shifts once tests pin it.
+// --- Rng draw order is contract: walk, then pan. Both ALWAYS drawn before
+// the grain-ceiling drop inside _spawn_slice, so a fire dropped there
+// consumes exactly the same stream as one that lands. ---
 //
 // _hold is deliberately NOT consulted here (decided in Task 9, after the Task
 // 5 review flagged the asymmetry rather than letting it stand by omission).
 // The old STEP scheduler had `spawning = !_hold && ...` and the FLOW branch in
 // process() still has `if (!_hold)`, so the omission looks like an oversight;
 // it is not. Everywhere _hold appears it gates a SELF-SUSTAINING stream -- the
-// FLOW drone, the old free-running burst, the roll retrigger loop below --
+// FLOW drone, the old free-running burst, the roll retrigger loop that used
+// to live below (removed 2026-07-23) --
 // because that is what CHOKE (Instrument's other-part duck, instrument.cpp)
 // has to be able to silence. A fire is not a stream, it is one discrete note.
 //
@@ -799,19 +780,12 @@ void SamplerEngine::_fire_slice() {
     if (_buf.is_empty()) return;
 
     // Phrase wrap: the slot counter went backwards -> cursor goes home.
-    // _walk_ref goes with _walk, for punch()'s reason word for word: a wrap
-    // under a held note would otherwise leave _walk_ref stranded at the old
-    // accumulation and throw every retrigger by that stale difference. It is
-    // usually papered over because _spawn_slice re-snapshots _walk_ref -- but
-    // only on a SUCCESSFUL spawn, so a fire dropped at the density ceiling
-    // right after a wrap leaves the difference live.
-    if (_phrase_slot < _last_slot) { _cursor = 0; _walk = 0.f; _walk_ref = 0.f; }
+    if (_phrase_slot < _last_slot) { _cursor = 0; _walk = 0.f; }
     _last_slot = _phrase_slot;
 
     const float motion = clampf(_targets[LANE_MOTION], 0.f, 1.f);
-    const float wdraw = _rng.next_bipolar();     // 1st: walk
-    const float rdraw = _rng.next_unipolar();    // 2nd: roll
-    const float pan   = _rng.next_bipolar() * motion;  // 3rd: pan
+    const float wdraw = _rng.next_bipolar();           // 1st: walk
+    const float pan   = _rng.next_bipolar() * motion;  // 2nd: pan
 
     const int pool = _pool_size();
     // Walk: cubed like pg_contour_walk (neighbour steps common, leaps rare),
@@ -832,52 +806,19 @@ void SamplerEngine::_fire_slice() {
     }
     if (k < 0) k += pool;
 
-    const bool landed = _spawn_slice(k, pan);   // snapshots _walk_ref on success
+    _spawn_slice(k, pan);
     ++_cursor;
-
-    // Rolls: DENS SETS the subdivision AND scales the odds; the metric weight
-    // biases them -- downbeats (weight 1) structurally never roll (p
-    // multiplies to 0, the kColorGate idiom again), deep offs gladly.
-    //
-    // "Sets", not "caps", and the word matters because the spec says cap: the
-    // code uses max_subdiv AS the subdivision, unconditionally. No subdivision
-    // is ever DRAWN inside [2, max_subdiv], so a rolling slot always fills the
-    // whole step at exactly the density DENS asks for. Implementing the spec's
-    // cap semantics would need a FOURTH draw per fire, which re-pins the draw
-    // contract and the golden vector -- a call for the instrument's author,
-    // not a comment fix. The comment is what moved here; the behaviour did not.
-    //
-    // `landed` gates the arming: a fire whose grain was dropped (empty buffer,
-    // density ceiling) has left _last_slice and _walk_ref pointing at the
-    // PREVIOUS note, so arming here would retrigger a note you never heard the
-    // head of -- "the note you didn't hear retriggers the note before it". The
-    // draw contract is untouched: rdraw above is drawn unconditionally, before
-    // any of this, and stays that way.
-    const float dens_n = (_overlap - kOverlapMin) / (kOverlapMax - kOverlapMin);
-    const int max_subdiv = static_cast<int>(_overlap + 0.5f);
-    const float p_roll = (1.f - _phrase_weight) * dens_n;
-    if (landed && max_subdiv >= 2 && rdraw < p_roll) {
-        int period = static_cast<int>(_step_samples / static_cast<float>(max_subdiv));
-        const int floor_s = static_cast<int>(kSpawnMinSamples);
-        _retrig_period = period < floor_s ? floor_s : period;
-        _retrig_ctr    = _retrig_period;
-    } else {
-        _retrig_period = 0;
-    }
 }
 
-// Returns true when a grain actually landed. The caller needs the answer:
-// _fire_slice must not arm a roll on top of a dropped fire (_last_slice and
-// _walk_ref would still describe the previous note), and the roll path itself
-// simply ignores it -- a dropped retrigger leaves the reference exactly where
-// the last landed grain put it, which is already correct.
+// Returns true when a grain actually landed (false: empty buffer or density
+// ceiling). The bool is not read on this path any more -- the roll arming that
+// consumed it went with spec 2026-07-23 -- but it stays, because later slice
+// work builds on the same answer.
 bool SamplerEngine::_spawn_slice(int k, float pan) {
-    // Same first line as _spawn_one, and load-bearing on the OTHER caller:
-    // _fire_slice already guards this, but the roll path (Task 7) reaches
-    // here straight from process(), and a clear() under a held note would
-    // then send _slice_pos's grid fold (`while (centre >= c) centre -= c`)
-    // into an infinite loop at c == 0. Cheaper to be empty-safe here than to
-    // make every future caller remember.
+    // Same first line as _spawn_one. _fire_slice already guards this, but a
+    // clear() racing a fire would otherwise send _slice_pos's grid fold
+    // (`while (centre >= c) centre -= c`) into an infinite loop at c == 0.
+    // Cheaper to be empty-safe here than to make every future caller remember.
     if (_buf.is_empty()) return false;
 
     // Slot search + density ceiling: the same shape as _spawn_one, and the
@@ -888,7 +829,10 @@ bool SamplerEngine::_spawn_slice(int k, float pan) {
         if (_grains[i].active())      ++live;
         else if (slot < 0)            slot = i;
     }
-    const int ceiling = static_cast<int>(std::ceil(_overlap)) + kSpawnHeadroom;
+    // Fixed, not DENS-derived (spec 2026-07-23): DENS must not be able to
+    // swallow composed notes. FLOW's _spawn_one keeps its DENS-derived
+    // ceiling -- there the density knob genuinely IS the cloud density.
+    const int ceiling = kStepGrainCeil;
     if (slot < 0 || live >= (ceiling < kGrains ? ceiling : kGrains)) {
         ++_dropped_spawns;
         return false;
@@ -918,7 +862,21 @@ bool SamplerEngine::_spawn_slice(int k, float pan) {
     if (atk < 1) atk = 1;
     if (dec < 1) dec = 1;
 
-    _grains[slot].spawn(pos, ratio, pan, len, atk, dec, _reverse);
+    // FEEL (spec 2026-07-23): the grain inherits the attack strength of its
+    // own transient, as deeply as COLOR asks. At _feel == 0 the outer lerp
+    // returns exactly 1 for every grain -- the flat reference, and the
+    // kColorGate idiom's structural silence without a branch on FEEL (the
+    // `if` below guards MODE, a different axis). In grid
+    // fallback there is no marker and therefore no strength: gain stays 1 at
+    // every knob position, which is the honest answer for transientless
+    // material rather than a silent duck to the floor.
+    float gain = 1.f;
+    if (_marker_mode()) {
+        const float s = static_cast<float>(_slices.strength(k)) * (1.f / 255.f);
+        gain = lerpf(1.f, lerpf(kAccentFloor, 1.f, s), _feel);
+    }
+
+    _grains[slot].spawn(pos, ratio, pan, len, atk, dec, _reverse, gain);
     // _size_ref = 0 keeps _trim_running's hands off slice grains: its rescale
     // maps SIZE-in-seconds to grain length, which no longer holds here, and
     // the note end (gate fall) already cuts them. 0 is its "no live grain"
@@ -928,15 +886,6 @@ bool SamplerEngine::_spawn_slice(int k, float pan) {
     _dec_ref[slot]  = static_cast<float>(dec);
 
     _last_slice = k;
-    // The walk value the roll retriggers measure from. It MUST advance in
-    // lockstep with _last_slice: taking it in _fire_slice left it current
-    // while _last_slice stayed one fire stale whenever the spawn dropped
-    // (empty buffer / density ceiling), so the next roll's (_walk - _walk_ref)
-    // omitted the walk that ran in between and landed at the wrong index.
-    // Re-snapshotting here also makes the retrigger's offset incremental --
-    // k already carries every earlier step, so only what accumulates AFTER
-    // this spawn may move the next one.
-    _walk_ref   = _walk;
     _last_ratio = ratio;
     _last_pan   = pan;
     _last_pos   = pos;
@@ -953,40 +902,18 @@ void SamplerEngine::process(float& outL, float& outR) {
     --_ctrl_ctr;
 
     // --- scheduling ---
-    if (_flow) {
-        if (!_hold) {
-            _spawn_ctr -= 1.f;
-            if (_spawn_ctr <= 0.f) {
-                _spawn_one();                    // zieht _spawn_jitter neu
-                // _next_interval() bodet bereits auf kSpawnMinSamples, und
-                // _spawn_ctr ist an dieser Stelle > -1, also bleibt die Summe
-                // sicher positiv -- die alte `if (_spawn_ctr < 1.f)`-Klemme war
-                // genau die Stelle, an der der Jitter den CPU-Boden unterlief.
-                _spawn_ctr += _next_interval();
-            }
-        }
-    } else if (!_hold && _gate && _retrig_period > 0) {
-        // Rolls (Task 7): tempo-locked retriggers while the note holds.
-        if (--_retrig_ctr <= 0) {
-            _retrig_ctr = _retrig_period;
-            const float motion = clampf(_targets[LANE_MOTION], 0.f, 1.f);
-            const float wdraw = _rng.next_bipolar();          // walk
-            const float pan   = _rng.next_bipolar() * motion; // pan
-            _walk += wdraw * wdraw * wdraw * motion * static_cast<float>(_pool_size());
-            // _last_slice is -1 until the first successful spawn, and
-            // SliceMap::start(int) is unguarded -- a roll that fires before any
-            // slice has landed would index the marker array at -1. The draws
-            // above happen either way, so skipping the spawn costs no Rng
-            // determinism.
-            if (_last_slice >= 0) {
-                // Only the walk accumulated SINCE the last spawn moves the
-                // retrigger -- the rest is already folded into _last_slice.
-                // At MOTION 0 the walk never moves, so the roll stutters one
-                // slice: the spec's ratchet semantics.
-                int k = (_last_slice + static_cast<int>(_walk - _walk_ref)) % _pool_size();
-                if (k < 0) k += _pool_size();
-                _spawn_slice(k, pan);
-            }
+    // FLOW only. In STEP nothing schedules itself: a fire spawns exactly one
+    // grain and the gate falling releases it (spec 2026-07-23 removed the
+    // roll retrigger that used to live here).
+    if (_flow && !_hold) {
+        _spawn_ctr -= 1.f;
+        if (_spawn_ctr <= 0.f) {
+            _spawn_one();                    // zieht _spawn_jitter neu
+            // _next_interval() bodet bereits auf kSpawnMinSamples, und
+            // _spawn_ctr ist an dieser Stelle > -1, also bleibt die Summe
+            // sicher positiv -- die alte `if (_spawn_ctr < 1.f)`-Klemme war
+            // genau die Stelle, an der der Jitter den CPU-Boden unterlief.
+            _spawn_ctr += _next_interval();
         }
     }
 
@@ -1087,16 +1014,22 @@ void SamplerEngine::set_overlap(float n) {
     _overlap = lerpf(kOverlapMin, kOverlapMax, clampf(n, 0.f, 1.f));
 }
 
+void SamplerEngine::set_feel(float n) { _feel = clampf(n, 0.f, 1.f); }
+
 void SamplerEngine::set_scan(float bipolar) { _scan_rate = scan_rate(bipolar); }
 
 void SamplerEngine::set_step_clock(float samples_per_step) {
     if (samples_per_step > 0.f) _step_samples = samples_per_step;
 }
 
-void SamplerEngine::set_phrase_pos(int slot, int steps, float weight) {
-    _phrase_slot   = slot;
-    _phrase_steps  = steps > 0 ? steps : 1;
-    _phrase_weight = clampf(weight, 0.f, 1.f);
+// steps and weight are accepted and ignored: the phrase-position push is a
+// Part->Sampler contract with one live consumer left, the wrap detection on
+// `slot`. weight fed the roll dice (removed 2026-07-23) and steps was never
+// read at all. The parameters stay in the signature because the contract is
+// the interesting thing to keep stable -- a future accent or swing feature
+// wants exactly these two numbers back.
+void SamplerEngine::set_phrase_pos(int slot, int /*steps*/, float /*weight*/) {
+    _phrase_slot = slot;
 }
 
 void SamplerEngine::punch() {
@@ -1106,10 +1039,6 @@ void SamplerEngine::punch() {
     // starts the walk over from the base slice.
     _cursor    = 0;
     _walk      = 0.f;
-    // Keep the roll's reference on the same clock: a punch under a held note
-    // would otherwise leave _walk_ref stranded at the old accumulation and
-    // throw every retrigger by that stale difference.
-    _walk_ref  = 0.f;
 }
 
 }  // namespace spky
