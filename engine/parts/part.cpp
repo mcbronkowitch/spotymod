@@ -233,9 +233,14 @@ void Part::_control_tick() {
     // sampler-only, pushed at _sampler directly.
     // FEEL (spec 2026-07-23) rides the same push: COLOR reaches the sampler
     // RAW, not as _color_eff. The MOTION swing on COLOR (kColorMod, computed
-    // just above) is right for the chord -- a breathing chord size is the
-    // point there -- and wrong for accents: an accent depth that breathes
-    // would be exactly the hidden coupling this spec exists to remove.
+    // in the COLOR block above) is right for the chord -- a breathing chord
+    // size is the point there -- and wrong for accents: an accent depth that
+    // breathes would be exactly the hidden coupling this spec exists to
+    // remove.
+    // In FLOW the engine ignores _feel and COLOR means chord instead -- but
+    // on THIS deck there is no chord either: _flatten_for_sampler (part.h)
+    // collapses it for ENGINE_SAMPLER in every mode, so COLOR does nothing
+    // at all in FLOW here. Pre-existing, not something the FEEL spec broke.
     if (_engine_id == ENGINE_SAMPLER) {
         _sampler.set_step_clock(_mod.pitch_step_samples());
         _sampler.set_feel(_color);

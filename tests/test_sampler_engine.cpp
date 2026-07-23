@@ -2867,13 +2867,15 @@ TEST_CASE("sampler STEP: golden vector -- the slice-groove draw order is locked"
     // informative. SIZE 0.35 keeps the grains short enough that no fire sits
     // on the density ceiling.
     g.feed(/*pitch*/0.5f, /*source*/0.f, /*size*/0.35f, /*motion*/0.5f);
-    g.e.set_overlap(1.f);              // DENS max: harmless now that the
-                                       // ceiling is fixed at kStepGrainCeil
-                                       // (Task 3) -- kept so this table stays
-                                       // pinned at the value it was captured
-                                       // against, not to still drive the
-                                       // ceiling
-    g.render(96);                       // let the control tick see SIZE/DENS
+    g.e.set_overlap(1.f);              // DENS max: PROVABLY INERT here. STEP
+                                       // has no reader of _overlap left at
+                                       // all -- the ceiling became the fixed
+                                       // kStepGrainCeil (Task 3) and nothing
+                                       // else in _fire_slice/_spawn_slice
+                                       // touches it (pinned by "DENS is
+                                       // decoupled"). Kept only so the rig
+                                       // stays literally as captured.
+    g.render(96);                       // let the control tick see SIZE
 
     // pg_metric_weight's shape over an 8-step phrase, spelled out rather than
     // included: this test pins the SAMPLER's draw order, and hard-wiring the
@@ -3019,6 +3021,12 @@ struct FeelProbe {
     float   residual = 0.f;    // what the preceding notes left ringing
     int     slice    = -1;
     uint8_t strength = 0;
+    // Spawn parameters of the measured fire. Carried alongside the peak so
+    // the DENS-decoupling case can compare BOTH halves of the spec's claim
+    // ("weder Spawn-Zeitpunkte noch Pegel") from one probe.
+    float   pos      = 0.f;
+    float   pan      = 0.f;
+    int     len      = 0;
 };
 
 // Fire the (nth+1)-th composed note of a fresh STEP rig at the given FEEL and
@@ -3029,9 +3037,14 @@ struct FeelProbe {
 // is base + _cursor -- and _cursor only advances by firing. A fresh rig fired
 // once lands on the same marker whatever phrase slot it is handed, so "three
 // different slices" has to mean "the 1st, 2nd and 3rd note of a phrase".
-FeelProbe feel_probe(float feel, int nth) {
+//
+// `overlap` < 0 (the default) leaves DENS wherever the rig booted it, which
+// is what every FEEL case wants. The decoupling case passes 0 and 1 to run
+// the same phrase at both ends of the knob.
+FeelProbe feel_probe(float feel, int nth, float overlap = -1.f) {
     StepRig g;
     g.e.set_feel(feel);
+    if (overlap >= 0.f) g.e.set_overlap(overlap);
     g.render(96);                        // let the control tick see it
     for (int i = 0; i < nth; ++i) {      // walk the cursor to the wanted slice
         g.fire(i);
@@ -3055,6 +3068,9 @@ FeelProbe feel_probe(float feel, int nth) {
     }
     p.slice    = g.e.last_slice();
     p.strength = g.e.slice_strength(p.slice);
+    p.pos      = g.e.last_spawn_pos();
+    p.pan      = g.e.last_spawn_pan();
+    p.len      = g.e.last_spawn_len();
     return p;
 }
 
@@ -3062,8 +3078,16 @@ FeelProbe feel_probe(float feel, int nth) {
 
 TEST_CASE("sampler STEP: FEEL 0 is exactly flat") {
     // FEEL 0 is the reference the loop must be audible without: EVERY grain
-    // plays at unity, whatever its marker says. The outer lerp returns
-    // exactly 1 there -- structural, not approximate.
+    // plays at unity, whatever its marker says.
+    //
+    // What this case does NOT do, despite the name: pin the outer lerp
+    // structurally. It checks determinism and the direction of the accent
+    // (FEEL 1 is never louder), and a build that dropped the outer lerp and
+    // applied lerp(kAccentFloor, 1, s) unconditionally would still satisfy
+    // both. The exact-law case next door -- "the accent factor equals
+    // lerp(kAccentFloor, 1, s)" -- is the one that catches that.
+    // Note also that note 0's marker carries strength 255, so its want is 1
+    // and it discriminates nothing; only notes 1 and 2 do.
     StepRig probe;
     REQUIRE(probe.e.slice_count() >= 3);
     for (int nth : { 0, 1, 2 }) {
@@ -3109,6 +3133,64 @@ TEST_CASE("sampler STEP: the accent factor equals lerp(kAccentFloor, 1, s)") {
     const bool all_same = (seen[0] == seen[1]) && (seen[1] == seen[2]);
     INFO("strengths ", int(seen[0]), " ", int(seen[1]), " ", int(seen[2]));
     CHECK_FALSE(all_same);
+}
+
+// The headline claim of the 2026-07-23 spec: "DENS ist entkoppelt -- eine
+// DENS-Fahrt ueber den ganzen Weg aendert in STEP weder Spawn-Zeitpunkte noch
+// Pegel". The count half of that (a DENS ride does change how many fires
+// survive the ceiling) is pinned elsewhere; this case pins the half that was
+// actually in dispute, and it pins it per fire: slice, position, pan, length
+// AND measured peak must come out identical at DENS 0 and DENS 1.
+//
+// FEEL is held at 1 on purpose. At FEEL 0 the accent path returns a constant
+// and the peak comparison would be blind to a DENS-derived accent depth.
+//
+// The phrase is WALKED, not re-fired from scratch per note: StepRig has
+// MOTION 0, so the slice is base + _cursor and _cursor only advances by
+// firing. feel_probe does that walk internally -- see its comment.
+TEST_CASE("sampler STEP: DENS is decoupled -- a full ride changes no fire") {
+    constexpr int kNotes = 6;
+    std::vector<int>   slice_lo, slice_hi;
+    std::vector<float> pos_lo, pos_hi, pan_lo, pan_hi, peak_lo, peak_hi;
+    std::vector<int>   len_lo, len_hi;
+
+    for (int nth = 0; nth < kNotes; ++nth) {
+        const FeelProbe lo = feel_probe(1.f, nth, 0.f);   // DENS min
+        const FeelProbe hi = feel_probe(1.f, nth, 1.f);   // DENS max
+        INFO("note ", nth);
+        // The peaks below belong to the note under test, not to a tail.
+        REQUIRE(lo.peak > 0.f);
+        REQUIRE(hi.peak > 0.f);
+        REQUIRE(lo.residual < 0.01f * lo.peak);
+        REQUIRE(hi.residual < 0.01f * hi.peak);
+        slice_lo.push_back(lo.slice); slice_hi.push_back(hi.slice);
+        pos_lo.push_back(lo.pos);     pos_hi.push_back(hi.pos);
+        pan_lo.push_back(lo.pan);     pan_hi.push_back(hi.pan);
+        len_lo.push_back(lo.len);     len_hi.push_back(hi.len);
+        peak_lo.push_back(lo.peak);   peak_hi.push_back(hi.peak);
+    }
+
+    for (int i = 0; i < kNotes; ++i) {
+        INFO("note ", i, " slice ", slice_lo[i], "/", slice_hi[i],
+             " len ", len_lo[i], "/", len_hi[i],
+             " peak ", peak_lo[i], "/", peak_hi[i]);
+        CHECK(slice_lo[i] == slice_hi[i]);
+        CHECK(pos_lo[i] == doctest::Approx(pos_hi[i]));
+        CHECK(pan_lo[i] == doctest::Approx(pan_hi[i]));
+        CHECK(len_lo[i] == len_hi[i]);
+        CHECK(peak_lo[i] == doctest::Approx(peak_hi[i]).epsilon(1e-5));
+    }
+
+    // Anti-vacuity: a rig whose cursor froze would emit the same slice, the
+    // same position and the same peak for every note, and every CHECK above
+    // would pass against it. The phrase has to actually walk.
+    bool slices_move = false, peaks_move = false;
+    for (int i = 1; i < kNotes; ++i) {
+        if (slice_lo[i] != slice_lo[0])                     slices_move = true;
+        if (std::fabs(peak_lo[i] - peak_lo[0]) > 1e-4f)     peaks_move = true;
+    }
+    CHECK(slices_move);
+    CHECK(peaks_move);   // FEEL 1 over markers of differing strength
 }
 
 // Grid fallback: below kMinSlices the engine slices on the tempo grid, and a

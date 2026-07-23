@@ -197,7 +197,11 @@ public:
     // 0..1. At 0 every grain plays at unity -- the flat reference. Pushed
     // from Part at the control tick, from the RAW knob: COLOR's MOTION swing
     // (kColorMod) is right for the chord and wrong for accents, which must
-    // not breathe. Ignored in FLOW, where COLOR still means chord.
+    // not breathe. Ignored in FLOW, where COLOR still means chord -- though
+    // on a sampler DECK that chord never arrives: Part::_flatten_for_sampler
+    // collapses it to the triggered tone for ENGINE_SAMPLER in every mode, so
+    // COLOR is inert in FLOW there. True of the engine on its own, which is
+    // still a general granular engine and does spread a chord.
     void set_feel(float n);
 
     // --- voice row, remapped ---
@@ -221,8 +225,11 @@ public:
     // Drives the VCV ring's read-position dot as well as the tests.
     float scan_pos() const { return _scan_pos; }
     int   spawn_count() const       { return _spawn_count; }
-    // Incremented in _spawn_one when every slot is busy and the spawn is
-    // skipped -- the exact moment a spawn is lost. Never reset except by
+    // Incremented in BOTH spawn paths -- _spawn_one (FLOW, DENS-derived
+    // ceiling) and _spawn_slice (STEP, the fixed kStepGrainCeil) -- when
+    // every slot is busy and the spawn is skipped, the exact moment a spawn
+    // is lost. The STEP ceiling test reads the _spawn_slice path
+    // specifically. Never reset except by
     // construction (matches _spawn_count, which has no reset path either).
     int   dropped_spawns() const    { return _dropped_spawns; }
     float last_spawn_ratio() const  { return _last_ratio; }

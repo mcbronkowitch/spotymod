@@ -329,7 +329,11 @@ float SamplerEngine::_next_ratio() {
     if (!_flow) return _burst_ratio;
 
     // FLOW: the round-robin IS the chord cloud, and COLOR still sizes it.
-    // Reads _chord_ratio[] live, refreshed every control tick.
+    // Reads _chord_ratio[] live, refreshed every control tick. Engine layer
+    // only: a sampler DECK never gets more than one note here either, because
+    // Part::_flatten_for_sampler collapses the chord for ENGINE_SAMPLER in
+    // every mode -- so _chord_n is 1 and COLOR is inert. Not a regression;
+    // that flattening predates the FEEL spec.
     const int idx = _rr % _chord_n;   // capture before _rr advances
     _rr = (_rr + 1) % _chord_n;
     return _chord_ratio[idx];
@@ -675,7 +679,9 @@ void SamplerEngine::_spawn_one() {
 
     // FLOW passes 1.f explicitly: COLOR means chord here, not accent, and the
     // spec (2026-07-23) keeps it that way. Named rather than defaulted so the
-    // FLOW/STEP split is visible at the call site.
+    // FLOW/STEP split is visible at the call site. On a sampler DECK there is
+    // no chord to mean, either: Part::_flatten_for_sampler collapses it in
+    // every mode, so COLOR does nothing at all in FLOW there.
     _grains[slot].spawn(centre, ratio, pan, len, atk, dec, _reverse, 1.f);
     // The pair _trim_running rescales against. Recording _grain_len rather
     // than the SIZE knob keeps tape mode honest: lenf there is _grain_len /
@@ -859,7 +865,8 @@ bool SamplerEngine::_spawn_slice(int k, float pan) {
     // FEEL (spec 2026-07-23): the grain inherits the attack strength of its
     // own transient, as deeply as COLOR asks. At _feel == 0 the outer lerp
     // returns exactly 1 for every grain -- the flat reference, and the
-    // kColorGate idiom's structural silence without a branch. In grid
+    // kColorGate idiom's structural silence without a branch on FEEL (the
+    // `if` below guards MODE, a different axis). In grid
     // fallback there is no marker and therefore no strength: gain stays 1 at
     // every knob position, which is the honest answer for transientless
     // material rather than a silent duck to the floor.

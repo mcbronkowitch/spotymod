@@ -175,10 +175,23 @@ dasselbe Feature.
 `SAMPLER_LBL` in `host/vcv/res/gen_panel.py` bekommt `("COLOR", "FEEL")`, in derselben
 Inline-Form wie SCAN, LEN und ORG.
 
-**Bekannte Unschärfe:** die Zweitbeschriftung ist engine-abhängig, die Bedeutung aber
-modus-abhängig — auf einem Sampler-Deck steht FEEL am Regler, obwohl COLOR in FLOW
-weiterhin die Akkordwolke ist. Auf Hardware ist das ein Wort, das nur in einem der beiden
-Modi stimmt. Bewusst akzeptiert: die Alternative wäre, die Akkordwolke in FLOW zu opfern.
+**Korrektur (2026-07-23, Review):** hier stand, die Beschriftung sei eine Unschärfe, weil
+COLOR in FLOW weiterhin die Akkordwolke sei und die Alternative wäre, „die Akkordwolke in
+FLOW zu opfern". Das war falsch — es gibt auf einem Sampler-Deck keine Akkordwolke zu
+opfern. `Part::_flatten_for_sampler` (`engine/parts/part.h`) klappt den Akkord für
+`ENGINE_SAMPLER` **ohne Modus-Prüfung** auf den getriggerten Ton zusammen, auf dem
+`set_chord`- wie auf dem Fire-Pfad. Ein Sampler-Deck hatte also auch in FLOW nie einen
+Akkord.
+
+Damit ist die Beschriftung FEEL auf einem Sampler-Deck eindeutig richtig. Was statt der
+behaupteten Unschärfe tatsächlich gilt: **COLOR tut auf einem Sampler-Deck in FLOW gar
+nichts** — der Akkord ist stromaufwärts plattgeklappt, `_feel` wird stromabwärts ignoriert,
+weil Akzente STEP-only sind. Das ist **keine Regression dieser Spec**: COLOR war dort schon
+vorher wirkungslos, die Spec macht es nur sichtbar.
+
+**Offene Frage an den Instrumentenbauer** (hier bewusst nicht beantwortet): soll ein
+totgelegter Regler in FLOW so bleiben, oder soll COLOR dort etwas anderes bekommen? Das ist
+eine Gestaltungsentscheidung, keine Reparatur — an FLOW wird in dieser Spec nichts geändert.
 
 ## CPU und Speicher (Seed)
 
