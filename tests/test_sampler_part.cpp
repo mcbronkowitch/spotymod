@@ -206,13 +206,14 @@ TEST_CASE("part: the composed gate reaches the sampler in STEP") {
 // nothing about _gate either way and the old assertion is now vacuous in both
 // directions.
 //
-// What _gate still does in the new STEP core is exactly one thing -- it lets
-// rolls retrigger (sampler_engine.cpp, process(): `!_hold && _gate &&
-// _retrig_period > 0`) -- and that is conditional on a roll having been armed
-// by a fire with a sub-unity metric weight, which needs several phrase cycles
-// of luck to land inside the same unbroken gate window as the swap. Far too
-// indirect. So the observable is now SamplerEngine::gate(), a const observer
-// added in Task 9 for this test, which reads the pushed state directly.
+// What _gate still does in the new STEP core is exactly one thing -- release
+// the sounding grains on its falling edge (sampler_engine.cpp, set_gate) --
+// which says nothing about a gate that stays HIGH across the swap, the very
+// case here. (Until 2026-07-23 it also let rolls retrigger; that was no more
+// observable, needing a roll armed by a sub-unity metric weight to land
+// inside the same unbroken gate window as the swap.) Far too indirect either
+// way. So the observable is SamplerEngine::gate(), a const observer added in
+// Task 9 for this test, which reads the pushed state directly.
 TEST_CASE("part: an engine swap re-pushes the held gate to the sampler") {
     // The scenario, unchanged from the original: a fresh Part on ENGINE_SYNTH
     // (the boot default), never yet switched to the sampler. A manual gate
@@ -768,7 +769,7 @@ TEST_CASE("part: a sampler STEP part pushes a real step clock and fires on slice
     // fires land on slice starts because the engine's OWN grid/marker
     // fallback puts them there (_slice_pos/_fire_slice), not because the
     // phrase position reached it. So this case pins set_step_clock only.
-    // The set_phrase_pos push is pinned separately, by the roll-arming case
+    // The set_phrase_pos push is pinned separately, by the phrase-wrap case
     // below -- do not read this one as covering it.
     std::vector<SampleBuffer::Frame> mem(48000 * 4);
     Part p;
@@ -814,39 +815,31 @@ TEST_CASE("part: a sampler STEP part pushes a real step clock and fires on slice
     CHECK(spawns_on_marker == spawns);            // every fire hit a slice
 }
 
-TEST_CASE("part: the phrase position reaches the sampler -- off-beat fires arm rolls") {
-    // The discriminating half of the slice-groove wiring (review 2026-07-22,
-    // Finding 1). The sibling case above cannot tell whether Part actually
-    // pushes set_phrase_pos: fires land on slice starts by way of the
-    // engine's own grid/marker fallback either way. This one can, because it
-    // observes the ONE piece of engine state that is structurally unreachable
-    // without the push.
-    //
-    // The mechanism (sampler_engine.cpp, _fire_slice):
-    //
-    //     const float p_roll = (1.f - _phrase_weight) * dens_n;
-    //     if (max_subdiv >= 2 && rdraw < p_roll) { _retrig_period = ...; }
-    //
-    // _phrase_weight is initialised to 1.f (sampler_engine.h) and is written
-    // by exactly one function, set_phrase_pos, whose only caller in the whole
-    // engine is Part's per-fire push. With the push removed, every fire looks
-    // to the engine like slot 0 -- a downbeat, weight 1 -- so p_roll is
-    // identically 0, rdraw < 0 is false for the unipolar draw, and
-    // _retrig_period can never leave 0 no matter how long the render runs or
-    // how high DENS sits. With the push in place, Part passes
-    // pg_metric_weight(slot): 1.0 on slot 0, but 0.2 on every odd slot and
-    // 0.35/0.5 on the even offs (phrase_gen.h), so at DENS max (dens_n == 1)
-    // the odd slots roll with p == 0.8 and a roll arms within the first
-    // phrase cycle or two.
-    //
-    // DENS is pinned at maximum and MOD at zero so MOTION's swing on the
-    // overlap (part.cpp: _overlap_eff = _overlap + omod) cannot pull dens_n
-    // down mid-render; max_subdiv == 8 then also clears the >= 2 gate.
-    //
-    // The observable is retrig_period() sampled every process() call, not a
-    // spawn count: a roll re-arms and clears on the very next fire, so a
-    // once-at-the-end read would almost always miss it, and spawn counts are
-    // confounded by the ordinary per-fire spawn.
+// Part must push set_phrase_pos before every fire. With the roll gone (spec
+// 2026-07-23) the one remaining observable consumer is the phrase wrap:
+// _fire_slice resets the cursor when the slot number goes BACKWARDS, so a
+// sampler driven through more than one phrase cycle at MOTION 0 must replay
+// the same slice order. Delete Part's set_phrase_pos call and _phrase_slot
+// stays 0 forever, no wrap is ever seen, and the cursor climbs straight
+// through the second cycle -- which this test catches as a slice sequence
+// whose period is the POOL SIZE instead of the phrase length.
+//
+// Why the phrase length must not be the pool size, and why this test uses 5
+// steps where its two siblings use 8: at MOTION 0 the walk is structurally 0,
+// so every fire lands on slice (base + cursor) % 8. With 8 steps the phrase
+// fires once per slot and cursor % 8 cycles 4,5,6,7,0,1,2,3 forever WITH or
+// WITHOUT the wrap -- the two builds agree exactly and the test would be
+// decorative. At 5 steps the wrapping build repeats every 5 fires and the
+// non-wrapping one every 8, so the two assertions below are a matched pair:
+// the first fails without the push, the second fails if a future change makes
+// the cursor free-run again.
+//
+// (base is 4, not 0: SOURCE sits at its 0.5 default, which _base_pos maps to
+// the middle marker of the eight. Nothing here depends on the value.)
+TEST_CASE("part: the phrase position reaches the sampler -- the wrap sends the cursor home") {
+    // Same rig idiom as the two sibling slice-groove cases above: Part +
+    // injected sampler memory, eight decaying clicks 6000 frames apart, MOD
+    // rate 0.35 so the pushed step clock is a real value.
     std::vector<SampleBuffer::Frame> mem(48000 * 4);
     Part p;
     p.init(48000.f, 1234, nullptr, nullptr, mem.data(), mem.size());
@@ -857,29 +850,37 @@ TEST_CASE("part: the phrase position reaches the sampler -- off-beat fires arm r
         for (int i = 0; i < 240; ++i)
             l[c * 6000 + i] = std::exp(-float(i) / 60.f);
     p.sampler().load_sample(l.data(), l.data(), l.size());
-    REQUIRE(p.sampler().slice_count() == 8);
+    REQUIRE(p.sampler().slice_count() == 8);   // marker mode, pool of 8
 
-    p.set_depth(0.f);                 // no MOTION swing on the overlap
-    p.set_sampler_overlap(1.f);       // DENS max -> dens_n == 1, max_subdiv == 8
+    p.set_depth(0.f);                 // MOTION lane silent: the walk is 0
+    p.set_sampler_overlap(1.f);       // DENS max: no fire drops at the ceiling
     p.mod().set_rate(0.35f);
-    p.set_step(true, 8);
+    p.set_step(true, 5);              // 5 steps, 8 slices: see above
     p.set_target_base(LANE_LEVEL, 1.f);
 
-    int  fires = 0, last_count = 0;
-    bool rolled = false;
-    for (int i = 0; i < 48000 * 8; ++i) {
+    const int kPhrase = 5;
+    const int kPool   = 8;
+    std::vector<int> slices;
+    int last_count = p.sampler().spawn_count();
+    for (int i = 0; i < 48000 * 40 && int(slices.size()) < 4 * kPhrase; ++i) {
         float a, b, c, d;
         p.process(a, b, c, d);
         if (p.sampler().spawn_count() != last_count) {
             last_count = p.sampler().spawn_count();
-            ++fires;
+            slices.push_back(p.sampler().last_slice());
         }
-        if (p.sampler().retrig_period() > 0) rolled = true;
     }
+    REQUIRE(int(slices.size()) == 4 * kPhrase);   // the phrase really fired
 
-    // Guard against passing vacuously: no fires means no dice were ever
-    // thrown, and `rolled` would be false for a reason that has nothing to do
-    // with the phrase push. Several phrase cycles' worth at this rate.
-    REQUIRE(fires > 16);
-    CHECK(rolled);   // only reachable if _phrase_weight < 1, i.e. Part pushed it
+    // Periodicity, not alignment: the cursor going home every phrase cycle
+    // makes the slice sequence repeat with the PHRASE's period wherever the
+    // collection happened to start, so no window has to be lined up with a
+    // cycle boundary.
+    bool phrase_period = true, pool_period = true;
+    for (int i = 0; i + kPhrase < int(slices.size()); ++i)
+        if (slices[i] != slices[i + kPhrase]) phrase_period = false;
+    for (int i = 0; i + kPool < int(slices.size()); ++i)
+        if (slices[i] != slices[i + kPool]) pool_period = false;
+    CHECK(phrase_period);    // the wrap sent the cursor home: Part pushed
+    CHECK(!pool_period);     // ...and it is not just free-running mod 8
 }

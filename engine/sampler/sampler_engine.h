@@ -187,8 +187,10 @@ public:
     void set_step_clock(float samples_per_step);
     // Phrase position of the CURRENT fire, pushed immediately before
     // trigger/trigger_chord. weight is the slot's metric weight
-    // (pg_metric_weight): downbeats near 1, offs low -- the roll dice reads
-    // it inverted.
+    // (pg_metric_weight): downbeats near 1, offs low. Only `slot` is read
+    // today (the phrase-wrap detection in _fire_slice); steps and weight are
+    // accepted and ignored -- weight fed the roll dice, removed 2026-07-23.
+    // See the definition in sampler_engine.cpp for why they stay.
     void set_phrase_pos(int slot, int steps, float weight);
 
     // --- voice row, remapped ---
@@ -224,21 +226,12 @@ public:
     float last_spawn_pos() const    { return _last_pos; }
     int   last_spawn_len() const    { return _last_len; }
     int   last_slice() const    { return _last_slice; }
-    // The offset a roll retrigger adds to _last_slice: the walk accumulated
-    // since the last landed spawn. Exposed because it is the one piece of
-    // slice-groove state with no audible signature of its own -- every reset
-    // path (punch, the phrase wrap) has to zero BOTH halves of this
-    // difference, and a stale half is silent until a fire happens to drop.
-    // See "the phrase wrap resets the roll's walk reference too".
-    float walk_offset() const   { return _walk - _walk_ref; }
     float step_clock() const    { return _step_samples; }
-    int   retrig_period() const { return _retrig_period; }
-    // The composed gate as this engine last received it. Pure observer, added
-    // in Task 9: with the STEP burst gone, _gate has exactly one remaining
-    // externally visible effect (it lets rolls retrigger), and that effect is
-    // conditional on a roll having been armed -- far too indirect to pin
-    // Part's "re-push the held gate at an engine swap" contract on. See
-    // "part: an engine swap re-pushes the held gate to the sampler".
+    // The composed gate as this engine last received it. Pure observer: _gate
+    // now has exactly one effect, releasing sounding grains on the falling
+    // edge in STEP, which is far too indirect to pin Part's "re-push the held
+    // gate at an engine swap" contract on. See "part: an engine swap
+    // re-pushes the held gate to the sampler".
     bool  gate() const          { return _gate; }
 
 private:
@@ -262,7 +255,7 @@ private:
 
     void _fire_slice();               // STEP: one fire = one slice grain
     // true when a grain landed; false when it was dropped (empty buffer or
-    // density ceiling). _fire_slice gates its roll arming on this.
+    // density ceiling).
     bool _spawn_slice(int k, float pan);
     int  _pool_size() const;          // live slices, or grid count in fallback
     // Enough transients to walk markers, or grid fallback? Asked in three
@@ -347,15 +340,8 @@ private:
     // --- slice groove state ---
     float _step_samples = 6000.f;     // Part pushes; default = sane grid
     int   _phrase_slot  = 0;
-    int   _phrase_steps = 8;
-    float _phrase_weight = 1.f;
     int   _cursor = 0;                // slices advanced since the phrase wrap
     float _walk   = 0.f;             // MOTION walk offset, in slice units
-    // _walk as it stood at the last fire's spawn: roll retriggers add only the
-    // walk accumulated since, because the rest is already inside _last_slice.
-    float _walk_ref = 0.f;
-    int   _retrig_period = 0;        // samples between roll retriggers; 0 = none
-    int   _retrig_ctr    = 0;
     int   _last_slot  = -1;          // wrap detection: slot went backwards
     int   _last_slice = -1;
     float _dec_ref[kGrains] = {};    // dec samples per slot, for gate-fall release
