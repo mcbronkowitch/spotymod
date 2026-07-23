@@ -519,20 +519,40 @@ TEST_CASE("part: the sampler does not quantize its pitch, the synth still does")
     CHECK(g.inst.pitch_cv(PART_B) == doctest::Approx(17.f / 36.f));
 }
 
-TEST_CASE("part: the sampler granulates at ONE pitch whatever COLOR says") {
-    // COLOR builds a chord, and the sampler's cloud spreads a chord round-robin
-    // across grains -- one grain per note, cycling. On a synth that is a chord.
-    // On a granulated recording it is the same material replayed at several
-    // transpositions at once: a harmoniser, heard as grains jumping octaves.
+// Renamed (spec 2026-07-23-sampler-cloud-dispersion). The old title -- "the
+// sampler granulates at ONE pitch whatever COLOR says" -- is the premise
+// SamplerEngine::set_dispersion deliberately breaks: COLOR now spreads spawn
+// ratios round the cloud's centre in FLOW (pushed from _color_eff, part.cpp,
+// Part::_control_tick). What survives from the old contract, and what this
+// test now pins instead:
+TEST_CASE("part: the sampler's cloud disperses around TUNE, not the chord") {
+    // COLOR used to build a chord, and the sampler's cloud spread that chord
+    // round-robin across grains -- one grain per note, cycling. On a synth
+    // that is a chord. On a granulated recording it was the same material
+    // replayed at several transpositions at once: a harmoniser, heard as
+    // grains jumping octaves.
     //
     // COLOR_A ships at 0.647 ("pad blooms into a seventh/ninth stack"), a synth
-    // decision, so a freshly flipped deck A granulated at four ratios spanning
-    // nearly two octaves without the user touching anything. COLOR is not part
-    // of the sampler's control surface -- it reached pitch through the chord
-    // surface the way MOTION reached it through the octave scatter.
+    // decision, so a freshly flipped deck A once granulated at four ratios
+    // spanning nearly two octaves without the user touching anything. That
+    // chord path is gone now (Part::_flatten_for_sampler still collapses the
+    // CHORD to a single note for ENGINE_SAMPLER, unconditionally) -- but COLOR
+    // is no longer inert on a sampler deck either: it now drives dispersion
+    // (SamplerEngine::set_dispersion), a genuinely different pitch mechanism
+    // that scatters ratios round a centre instead of cycling through discrete
+    // chord notes.
     //
-    // The deck now plays exactly one pitch: the PITCH target, which with the
-    // lane off is TUNE alone.
+    // The centre stays exactly what it always was: the PITCH target, which
+    // with the lane off is TUNE alone. Dispersion must not move it -- SUB
+    // (sampler_engine.cpp) only ever multiplies a grain's ratio DOWN, never
+    // up, so the observed maximum ratio at any COLOR is anchored by DTUN's
+    // symmetric cents jitter alone and stays close to unity regardless of
+    // whether SUB has engaged. That asymmetry is why this test reads the
+    // maximum, not the mean/median: SUB's one-sided coin-flip (ear-tuned,
+    // see sampler_config.h "cloud dispersion") drags a plain mean/median down
+    // as COLOR opens even though the centre has not moved at all, which would
+    // make exactly the right implementation look like a regression.
+    float spread_dtun_only = -1.f;   // set at COLOR 0.35, the SUB-free baseline
     for (float color : {0.f, 0.35f, 0.647f, 1.f}) {
         InstRig g;
         g.inst.set_engine(PART_A, ENGINE_SAMPLER);
@@ -561,9 +581,50 @@ TEST_CASE("part: the sampler granulates at ONE pitch whatever COLOR says") {
             }
         }
         INFO("COLOR = ", color);
-        // One ratio, and it is unity: TUNE sits at its centre detent.
-        REQUIRE(seen.size() == 1);
-        CHECK(seen[0] == doctest::Approx(1.f));
+        REQUIRE(!seen.empty());
+
+        float lo = seen[0], hi = seen[0];
+        for (float s : seen) { if (s < lo) lo = s; if (s > hi) hi = s; }
+        const float spread = hi - lo;
+        INFO("lo=", lo, " hi=", hi, " spread=", spread);
+
+        if (color < 0.01f) {
+            // kColorGate (part.h): below 0.01 knob travel the swing is gated
+            // to exactly zero, so this branch of the OLD contract survives
+            // untouched -- one ratio, and it is unity.
+            REQUIRE(seen.size() == 1);
+            CHECK(seen[0] == doctest::Approx(1.f));
+        } else {
+            // The centre pin: hi stays anchored near unity at every open
+            // COLOR, because SUB cannot push it past there and DTUN's own
+            // ceiling is +-35 cents (sampler_config.h kDetuneCeilCt, ~2% in
+            // ratio). A mutation that transposed the deck (fed the round-robin
+            // a different base than TUNE) would carry hi away from 1.0 with
+            // it -- see the mutation note in the Task 2.5 report for the
+            // observed failure.
+            CHECK(hi < 1.05f);
+            CHECK(hi > 0.99f);
+            // The spread pin: COLOR must still do SOMETHING (the whole point
+            // of spec 2026-07-23-sampler-cloud-dispersion), so the cloud must
+            // not have collapsed back to the single value the OLD contract
+            // required. Measured while building this test: spread jumps from
+            // ~0.028 at 0.35 (DTUN only, below the SUB knee) to ~0.53 at both
+            // 0.647 and 1.0 (SUB has engaged) -- a ~19x gap, comfortably
+            // robust. 0.647 vs 1.0 themselves are NOT compared pairwise on
+            // purpose: SUB's per-grain depth is a fixed x0.5
+            // (sampler_engine.cpp), only its firing PROBABILITY grows with
+            // COLOR, so once it has fired at least once in an 8 s window
+            // (already near-certain at 0.647) the observed low end plateaus
+            // rather than sinking further at 1.0 -- a real property of the
+            // feature, not a bug, and pinning 0.647 < 1.0 directly measured a
+            // ~0.00003-wide difference here: noise, not signal.
+            if (spread_dtun_only < 0.f) {
+                CHECK(spread > 0.f);
+                spread_dtun_only = spread;
+            } else {
+                CHECK(spread > spread_dtun_only);
+            }
+        }
     }
 
     // The synth must keep its chord. Without this, flattening unconditionally
@@ -732,18 +793,59 @@ TEST_CASE("K-01: trigger_manual flattens the chord on a sampler deck") {
     g.inst.load_sample(p, l.data(), r.data(), kSFrames);
     g.render(4800);
 
+    // spec 2026-07-23-sampler-cloud-dispersion: COLOR now ALSO drives
+    // set_dispersion(_color_eff), which scatters every spawn's ratio at
+    // random even when chord_n() stays 1 -- SUB (sampler_engine.cpp) rolls
+    // an independent per-grain coin, DTUN an independent per-grain cents
+    // draw. At COLOR = 1 (this rig, "maximaler Chord" -- also maximal
+    // dispersion) that means two different spawns of the SAME flattened note
+    // can legitimately read different ratios, so "every spawn in the window
+    // equals the first" no longer isolates the flatten contract: it would
+    // now fail on CORRECT code too, confounded by dispersion's own scatter,
+    // not by a broken flatten.
+    //
+    // SamplerEngine has no chord_n()-style accessor exposed today (unlike
+    // SynthEngine::chord_n(), read via synth_chord_n() above) -- adding one
+    // would touch engine/instrument source, out of scope for this test-only
+    // change (see the Task 2.5 report). Instead this re-derives the
+    // dispersion-only ratio envelope from SamplerEngine's own PUBLIC tuning
+    // constants (sampler_config.h) and its public test_detune_factor() seam,
+    // mirroring the same idiom test_sampler_engine.cpp already uses for DTUN
+    // ("sampler: DTUN spreads grain ratios in cents, 0 is exact") -- no new
+    // observation point needed. If the chord actually leaked (the bug this
+    // test guards against), the round-robin would cycle through up to four
+    // real chord notes spanning close to two octaves (see "part: the
+    // sampler's cloud disperses..." above, "+1.80, -3.20, +4.80, +21.13
+    // semitones" at a MUCH narrower COLOR), which blows straight through the
+    // envelope below -- confirmed by mutation, see the Task 2.5 report.
+    using sampler_cfg::kDetuneCeilCt;
+    // COLOR = 1 saturates BOTH zones of set_dispersion's curve (COLOR/knee
+    // clamped to 1, and the SUB zone's own fraction clamped to 1): DTUN runs
+    // to its full +-kDetuneCeilCt cents, and any spawn SUB catches is
+    // multiplied by exactly 0.5 (sampler_engine.cpp) -- a fixed depth, not a
+    // knob-scaled one, so the floor below does not need SUB's share, only
+    // that it fires AT LEAST ONCE across the whole window (which the
+    // trailing REQUIRE(spawns > 5) already establishes over a dozen spawns).
+    const float hi_theory = spky::test_detune_factor(kDetuneCeilCt);
+    const float lo_theory = 0.5f * spky::test_detune_factor(-kDetuneCeilCt);
+    // 15% headroom on both sides -- same margin the DTUN band test above
+    // uses -- keeps this a real envelope, not a hairline-exact one, while
+    // staying far short of a leaked chord's multi-octave spread.
+    const float hi_bound = hi_theory * 1.15f;
+    const float lo_bound = lo_theory / 1.15f;
+
     g.inst.trigger_manual(p);
-    // Direkt nach dem Trigger, vor dem naechsten Control-Tick, muessen alle
-    // Spawns auf demselben Verhaeltnis landen.
+    // Direkt nach dem Trigger, vor dem naechsten Control-Tick, muss jeder
+    // Spawn innerhalb der Dispersion-Huelle bleiben -- nicht mehr bei einem
+    // einzigen Verhaeltnis (das jetzt legitim wandert).
     const int spawns_before = g.inst.sampler_spawn_count(p);
-    float first = 0.f;
-    bool  have  = false;
     for (int i = 0; i < 90; ++i) {
         g.render(1);
         const float ratio = g.inst.sampler_last_spawn_ratio(p);
-        if (!have) { first = ratio; have = true; }
-        INFO("i=" << i << " ratio=" << ratio << " first=" << first);
-        CHECK(ratio == doctest::Approx(first).epsilon(1e-4));
+        INFO("i=" << i << " ratio=" << ratio
+                   << " bounds=[" << lo_bound << ", " << hi_bound << "]");
+        CHECK(ratio <= hi_bound);
+        CHECK(ratio >= lo_bound);
     }
 
     // Guard against passing vacuously (Minor 5, review 2026-07-22): every
