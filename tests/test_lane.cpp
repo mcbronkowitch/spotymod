@@ -100,9 +100,9 @@ TEST_CASE("lane: step clock accessors expose slot and step duration") {
 // walk. The lane advances its phase by _phase_inc * (1 + _ev_rate) -- both in
 // process() and in tick()'s dp1 -- and _ev_rate is clamped to +-0.2, so a
 // step_samples() built on _phase_inc alone is wrong by up to 20% under
-// EVOLVE/GROW. The sampler pushes this number to the engine as its step clock,
-// where the spec promises roll retriggers at "step_samples / subdiv,
-// sample-exact"; a 20% error there is audible drift against the phrase.
+// EVOLVE/GROW. Part pushes this number to the sampler as its step clock
+// (set_step_clock), which the STEP grid fallback slices on directly; a 20%
+// error there is audible drift against the phrase.
 //
 // The measurement is the definition: count samples between the lane's own step
 // boundaries and require step_samples() to agree. It is taken inside a single

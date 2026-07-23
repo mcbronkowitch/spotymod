@@ -872,6 +872,14 @@ TEST_CASE("part: the phrase position reaches the sampler -- the wrap sends the c
     }
     REQUIRE(int(slices.size()) == 4 * kPhrase);   // the phrase really fired
 
+    // Coupling worth flagging: comparing slices[i] to slices[i + kPhrase]
+    // below only measures the phrase's period if every one of the 5 steps
+    // in a cycle actually fires -- true today, since nothing in this rig
+    // gates a fire below step rate. A future phrase-density feature that
+    // skips steps would break this comparison for a reason unrelated to
+    // what the test pins (that Part pushes set_phrase_pos): fires-per-cycle
+    // would stop equaling kPhrase, not the push itself.
+    //
     // Periodicity, not alignment: the cursor going home every phrase cycle
     // makes the slice sequence repeat with the PHRASE's period wherever the
     // collection happened to start, so no window has to be lined up with a

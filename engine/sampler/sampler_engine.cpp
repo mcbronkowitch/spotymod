@@ -753,11 +753,10 @@ void SamplerEngine::_slice_pos(int k, float& pos, float& slice_len) const {
     slice_len = _step_samples;
 }
 
-// One fire = one slice grain (spec 2026-07-22), accented from its own
-// transient (spec 2026-07-23).
-// --- Rng draw order is contract: walk, then pan. Both ALWAYS drawn, before
-// any early return, so a fire dropped at the grain ceiling consumes exactly
-// the same stream as one that lands. ---
+// One fire = one slice grain (spec 2026-07-22).
+// --- Rng draw order is contract: walk, then pan. Both ALWAYS drawn before
+// the grain-ceiling drop inside _spawn_slice, so a fire dropped there
+// consumes exactly the same stream as one that lands. ---
 //
 // _hold is deliberately NOT consulted here (decided in Task 9, after the Task
 // 5 review flagged the asymmetry rather than letting it stand by omission).

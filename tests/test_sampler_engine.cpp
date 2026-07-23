@@ -2892,11 +2892,12 @@ TEST_CASE("sampler STEP: golden vector -- the slice-groove draw order is locked"
     // LENGTH of this table before it changes any single row, and the
     // REQUIRE(got.size() == n) below is where it lands.
     //
-    // Reading the columns: `slice` is the walk's output (marker index), `pos`
-    // the marker start minus SliceMap's pre-roll, `pan` the second (and last)
-    // draw of a fire, `len` the slice length scaled by SIZE. `len` varies between 2569/2611/2653 because the click train's
-    // detected markers are not perfectly equidistant -- that is the SliceMap
-    // talking, and it is what makes `len` worth pinning at all.
+    // Reading the columns: `slice` is the walk's output (marker index),
+    // `pos` the marker start minus SliceMap's pre-roll, `pan` the second
+    // (and last) draw of a fire, `len` the slice length scaled by SIZE.
+    // `len` varies between 2569/2611/2653 because the click train's
+    // detected markers are not perfectly equidistant -- that is the
+    // SliceMap talking, and it is what makes `len` worth pinning at all.
     static const Sp golden[] = {
         { 1, 5904.f, 0.480647f, 2611 },
         { 2, 11904.f, -0.0516768f, 2611 },
