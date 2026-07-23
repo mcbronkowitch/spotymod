@@ -193,6 +193,15 @@ public:
     // See the definition in sampler_engine.cpp for why they stay.
     void set_phrase_pos(int slot, int steps, float weight);
 
+    // STEP-Einstiegs-Snap (spec 2026-07-23 sampler-performance-fixes): der
+    // Moduswechsel FLOW->STEP setzt das Deck auf die Taktposition, an der der
+    // Transport steht -- der Cursor muss auf denselben Slot, damit das
+    // Material zur Zaehlzeit passt und nicht bei Slice 1 anfaengt.
+    //
+    // Setzt _last_slot MIT: ohne das haelt _fire_slice den Sprung fuer einen
+    // Phrasen-Wrap und nullt den Cursor beim ersten Feuern wieder.
+    void snap_phrase_cursor(int slot);
+
     // FEEL (spec 2026-07-23): COLOR on a sampler deck in STEP. Accent depth,
     // 0..1. At 0 every grain plays at unity -- the flat reference. Pushed
     // from Part at the control tick, from the RAW knob: COLOR's MOTION swing
@@ -276,6 +285,12 @@ public:
     // gate at an engine swap" contract on. See "part: an engine swap
     // re-pushes the held gate to the sampler".
     bool  gate() const          { return _gate; }
+
+    // Test seams only: _cursor and _last_slot have no other observer, and
+    // snap_phrase_cursor's whole contract (Task 2 brief) is that it sets both
+    // together -- there is no way to check that from outside without them.
+    int test_cursor() const    { return _cursor; }
+    int test_last_slot() const { return _last_slot; }
 
 private:
     void  _update_control();     // recompute derived values on the raster

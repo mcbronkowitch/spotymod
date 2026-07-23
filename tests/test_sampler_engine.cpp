@@ -3408,3 +3408,25 @@ TEST_CASE("sampler FLOW: dispersion does not starve the cloud at DENS max in tap
     const int landed_on  = on.second;
     CHECK(landed_on * 2 >= landed_off);
 }
+
+// --- STEP-Einstiegs-Snap: der Slice-Cursor (spec 2026-07-23) ---------------
+//
+// Beim Schnappen auf Zaehlzeit n soll Slice n klingen, nicht Slice 1 -- sonst
+// laege das Material dauerhaft gegen die Phrase versetzt, bis der naechste
+// Wrap es geraderueckt.
+//
+// _last_slot MITZUSETZEN ist der Kern dieses Tests und keine Kosmetik: ohne
+// das sieht _fire_slice beim naechsten Feuern einen rueckwaerts gesprungenen
+// Slot, haelt das fuer einen Phrasen-Wrap und nullt den Cursor sofort wieder
+// (sampler_engine.cpp:786) -- die Ausrichtung waere nach einem Schritt weg.
+TEST_CASE("sampler: snap_phrase_cursor aligns the slice cursor and survives the next fire") {
+    Rig g;
+    g.e.snap_phrase_cursor(3);
+    CHECK(g.e.test_cursor()    == 3);
+    CHECK(g.e.test_last_slot() == 3);
+
+    // Der Wrap-Waechter darf beim naechsten regulaeren Push NICHT zuschlagen:
+    // Slot 4 folgt auf 3, das ist vorwaerts.
+    g.e.set_phrase_pos(4, 8, 0.f);
+    CHECK(g.e.test_last_slot() == 3);   // erst _fire_slice zieht nach
+}

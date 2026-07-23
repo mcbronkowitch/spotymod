@@ -1049,6 +1049,16 @@ void SamplerEngine::set_phrase_pos(int slot, int /*steps*/, float /*weight*/) {
     _phrase_slot = slot;
 }
 
+void SamplerEngine::snap_phrase_cursor(int slot) {
+    if (slot < 0) slot = 0;
+    _cursor    = slot;
+    _last_slot = slot;
+    // _walk gehoert zum Cursor: im Wrap-Pfad (:786) werden die beiden immer
+    // zusammen gesetzt, und ein stehengebliebener Walk-Offset verschoebe die
+    // gerade hergestellte Ausrichtung sofort wieder.
+    _walk      = 0.f;
+}
+
 void SamplerEngine::punch() {
     _scan_pos  = 0.f;
     _spawn_ctr = 0.f;   // the next process() spawns; see the scheduling block
