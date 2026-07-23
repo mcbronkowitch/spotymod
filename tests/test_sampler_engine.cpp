@@ -3398,7 +3398,13 @@ TEST_CASE("sampler FLOW: dispersion does not starve the cloud at DENS max in tap
     // Die Wolke darf am oberen Reglerende nicht einbrechen. Halb so viele
     // gelandete Spawns waere ein hoerbarer Dichteverlust und damit genau die
     // Regression, gegen die dieser Test steht.
-    const int landed_off = off.second - off.first;
-    const int landed_on  = on.second  - on.first;
+    //
+    // spawn_count() and dropped_spawns() are mutually exclusive counters --
+    // _spawn_one (and its STEP-path mirror) either increments dropped_spawns
+    // and returns early, or increments spawn_count, never both. spawn_count()
+    // is therefore already the landed count; do not subtract dropped from it
+    // here, that would double-subtract the drops.
+    const int landed_off = off.second;
+    const int landed_on  = on.second;
     CHECK(landed_on * 2 >= landed_off);
 }
